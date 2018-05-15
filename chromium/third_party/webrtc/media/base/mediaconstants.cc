@@ -86,6 +86,7 @@ const char kRtcpFbParamTransportCc[] = "transport-cc";
 
 const char kRtcpFbParamCcm[] = "ccm";
 const char kRtcpFbCcmParamFir[] = "fir";
+const char kRtcpFbParamRrtr[] = "rrtr";
 const char kCodecParamMaxBitrate[] = "x-google-max-bitrate";
 const char kCodecParamMinBitrate[] = "x-google-min-bitrate";
 const char kCodecParamStartBitrate[] = "x-google-start-bitrate";
@@ -112,4 +113,8 @@ const char kH264FmtpSpropParameterSets[] = "sprop-parameter-sets";
 const char kH264ProfileLevelConstrainedBaseline[] = "42e01f";
 
 const int kDefaultVideoMaxFramerate = 60;
+
+const size_t kConferenceMaxNumSpatialLayers = 3;
+const size_t kConferenceMaxNumTemporalLayers = 3;
+const size_t kConferenceDefaultNumTemporalLayers = 3;
 }  // namespace cricket

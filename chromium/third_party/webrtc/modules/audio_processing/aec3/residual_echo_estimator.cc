@@ -15,11 +15,26 @@
 #include <vector>
 
 #include "rtc_base/checks.h"
+#include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
+namespace {
+
+bool EnableSoftTransparentMode() {
+  return !field_trial::IsEnabled("WebRTC-Aec3SoftTransparentModeKillSwitch");
+}
+
+bool OverrideEstimatedEchoPathGain() {
+  return !field_trial::IsEnabled("WebRTC-Aec3OverrideEchoPathGainKillSwitch");
+}
+
+}  // namespace
 
 ResidualEchoEstimator::ResidualEchoEstimator(const EchoCanceller3Config& config)
-    : config_(config), S2_old_(config_.filter.main.length_blocks) {
+    : config_(config),
+      S2_old_(config_.filter.main.length_blocks),
+      soft_transparent_mode_(EnableSoftTransparentMode()),
+      override_estimated_echo_path_gain_(OverrideEstimatedEchoPathGain()) {
   Reset();
 }
 
@@ -38,16 +53,10 @@ void ResidualEchoEstimator::Estimate(
 
   // Estimate the residual echo power.
   if (aec_state.UsableLinearEstimate()) {
-    LinearEstimate(S2_linear, aec_state.Erle(), aec_state.FilterDelayBlocks(),
-                   R2);
-    AddEchoReverb(S2_linear, aec_state.SaturatedEcho(),
-                  aec_state.FilterDelayBlocks(), aec_state.ReverbDecay(), R2);
-
-    // If the echo is saturated, estimate the echo power as the maximum echo
-    // power with a leakage factor.
-    if (aec_state.SaturatedEcho()) {
-      R2->fill((*std::max_element(R2->begin(), R2->end())) * 100.f);
-    }
+    RTC_DCHECK(!aec_state.SaturatedEcho());
+    LinearEstimate(S2_linear, aec_state.Erle(), R2);
+    AddEchoReverb(S2_linear, aec_state.FilterDelayBlocks(),
+                  aec_state.ReverbDecay(), R2);
   } else {
     // Estimate the echo generating signal power.
     std::array<float, kFftLengthBy2Plus1> X2;
@@ -69,22 +78,34 @@ void ResidualEchoEstimator::Estimate(
                          0.f, a - config_.echo_model.stationary_gate_slope * b);
                    });
 
-    NonLinearEstimate(aec_state.SaturatedEcho(), aec_state.EchoPathGain(), X2,
-                      Y2, R2);
-
-    if (aec_state.SaturatedEcho()) {
-      // TODO(peah): Modify to make sense theoretically.
-      AddEchoReverb(*R2, aec_state.SaturatedEcho(),
-                    config_.filter.main.length_blocks, aec_state.ReverbDecay(),
-                    R2);
+    float echo_path_gain;
+    if (override_estimated_echo_path_gain_) {
+      echo_path_gain =
+          aec_state.TransparentMode() && soft_transparent_mode_ ? 0.01f : 1.f;
+    } else {
+      echo_path_gain = aec_state.TransparentMode() && soft_transparent_mode_
+                           ? 0.01f
+                           : aec_state.EchoPathGain();
     }
+    NonLinearEstimate(echo_path_gain, X2, Y2, R2);
+
+    // If the echo is saturated, estimate the echo power as the maximum echo
+    // power with a leakage factor.
+    if (aec_state.SaturatedEcho()) {
+      R2->fill((*std::max_element(R2->begin(), R2->end())) * 100.f);
+    }
+
+    AddEchoReverb(*R2, config_.filter.main.length_blocks,
+                  aec_state.ReverbDecay(), R2);
   }
 
-  // If the echo is deemed inaudible, set the residual echo to zero.
-  if (aec_state.TransparentMode()) {
-    R2->fill(0.f);
-    R2_old_.fill(0.f);
-    R2_hold_counter_.fill(0.f);
+  if (!soft_transparent_mode_) {
+    // If the echo is deemed inaudible, set the residual echo to zero.
+    if (aec_state.TransparentMode()) {
+      R2->fill(0.f);
+      R2_old_.fill(0.f);
+      R2_hold_counter_.fill(0.f);
+    }
   }
 
   std::copy(R2->begin(), R2->end(), R2_old_.begin());
@@ -104,7 +125,6 @@ void ResidualEchoEstimator::Reset() {
 void ResidualEchoEstimator::LinearEstimate(
     const std::array<float, kFftLengthBy2Plus1>& S2_linear,
     const std::array<float, kFftLengthBy2Plus1>& erle,
-    size_t delay,
     std::array<float, kFftLengthBy2Plus1>* R2) {
   std::fill(R2_hold_counter_.begin(), R2_hold_counter_.end(), 10.f);
   std::transform(erle.begin(), erle.end(), S2_linear.begin(), R2->begin(),
@@ -115,17 +135,15 @@ void ResidualEchoEstimator::LinearEstimate(
 }
 
 void ResidualEchoEstimator::NonLinearEstimate(
-    bool saturated_echo,
     float echo_path_gain,
     const std::array<float, kFftLengthBy2Plus1>& X2,
     const std::array<float, kFftLengthBy2Plus1>& Y2,
     std::array<float, kFftLengthBy2Plus1>* R2) {
-  float echo_path_gain_use = saturated_echo ? 10000.f : echo_path_gain;
 
   // Compute preliminary residual echo.
-  std::transform(
-      X2.begin(), X2.end(), R2->begin(),
-      [echo_path_gain_use](float a) { return a * echo_path_gain_use; });
+  std::transform(X2.begin(), X2.end(), R2->begin(), [echo_path_gain](float a) {
+    return a * echo_path_gain * echo_path_gain;
+  });
 
   for (size_t k = 0; k < R2->size(); ++k) {
     // Update hold counter.
@@ -144,7 +162,6 @@ void ResidualEchoEstimator::NonLinearEstimate(
 
 void ResidualEchoEstimator::AddEchoReverb(
     const std::array<float, kFftLengthBy2Plus1>& S2,
-    bool saturated_echo,
     size_t delay,
     float reverb_decay_factor,
     std::array<float, kFftLengthBy2Plus1>* R2) {
@@ -171,12 +188,7 @@ void ResidualEchoEstimator::AddEchoReverb(
       });
 
   // Update the buffer of old echo powers.
-  if (saturated_echo) {
-    S2_old_[S2_old_index_].fill((*std::max_element(S2.begin(), S2.end())) *
-                                100.f);
-  } else {
-    std::copy(S2.begin(), S2.end(), S2_old_[S2_old_index_].begin());
-  }
+  std::copy(S2.begin(), S2.end(), S2_old_[S2_old_index_].begin());
 
   // Add the power of the echo reverb to the residual echo power.
   std::transform(R2->begin(), R2->end(), R2_reverb_.begin(), R2->begin(),

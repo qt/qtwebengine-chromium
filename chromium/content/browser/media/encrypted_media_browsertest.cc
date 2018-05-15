@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <tuple>
+
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -14,8 +16,8 @@
 #include "media/base/media.h"
 #include "media/base/media_switches.h"
 #include "media/base/test_data_util.h"
-#include "media/media_features.h"
-#include "media/mojo/features.h"
+#include "media/media_buildflags.h"
+#include "media/mojo/buildflags.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/build_info.h"
@@ -49,6 +51,9 @@ const char kWebMVP8VideoOnly[] = "video/webm; codecs=\"vp8\"";
 const char kWebMVP9VideoOnly[] = "video/webm; codecs=\"vp9\"";
 const char kWebMOpusAudioVP9Video[] = "video/webm; codecs=\"opus, vp9\"";
 const char kWebMVorbisAudioVP8Video[] = "video/webm; codecs=\"vorbis, vp8\"";
+#if BUILDFLAG(USE_PROPRIETARY_CODECS)
+const char kMP4VideoOnly[] = "video/mp4; codecs=\"avc1.64001E\"";
+#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
 
 // EME-specific test results and errors.
 const char kEmeKeyError[] = "KEYERROR";
@@ -72,19 +77,15 @@ enum class ConfigChangeType {
 // - SrcType: The type of video src used to load media, MSE or SRC.
 // It is okay to run this test as a non-parameterized test, in this case,
 // GetParam() should not be called.
-class EncryptedMediaTest : public MediaBrowserTest,
-                           public testing::WithParamInterface<
-                               std::tr1::tuple<const char*, SrcType>> {
+class EncryptedMediaTest
+    : public MediaBrowserTest,
+      public testing::WithParamInterface<std::tuple<const char*, SrcType>> {
  public:
   // Can only be used in parameterized (*_P) tests.
-  const std::string CurrentKeySystem() {
-    return std::tr1::get<0>(GetParam());
-  }
+  const std::string CurrentKeySystem() { return std::get<0>(GetParam()); }
 
   // Can only be used in parameterized (*_P) tests.
-  SrcType CurrentSourceType() {
-    return std::tr1::get<1>(GetParam());
-  }
+  SrcType CurrentSourceType() { return std::get<1>(GetParam()); }
 
   void TestSimplePlayback(const std::string& encrypted_media,
                           const std::string& media_type) {
@@ -139,6 +140,19 @@ class EncryptedMediaTest : public MediaBrowserTest,
     RunEncryptedMediaTest(kDefaultEmePlayer, media_file, media_type, key_system,
                           src_type, media::kEnded);
   }
+
+#if BUILDFLAG(USE_PROPRIETARY_CODECS)
+  void TestMP4EncryptionPlayback(const std::string& media_file,
+                                 const std::string& expected_title) {
+    if (CurrentSourceType() != SrcType::MSE) {
+      DVLOG(0) << "Skipping test; Can only play MP4 encrypted streams by MSE.";
+      return;
+    }
+
+    RunEncryptedMediaTest(kDefaultEmePlayer, media_file, kMP4VideoOnly,
+                          CurrentKeySystem(), SrcType::MSE, expected_title);
+  }
+#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
 
  protected:
   // We want to fail quickly when a test fails because an error is encountered.
@@ -269,6 +283,28 @@ IN_PROC_BROWSER_TEST_P(EncryptedMediaTest,
 IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, MAYBE_FrameSizeChangeVideo) {
   TestFrameSizeChange();
 }
+
+#if BUILDFLAG(USE_PROPRIETARY_CODECS)
+IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, Playback_Encryption_CENC) {
+  TestMP4EncryptionPlayback("bear-640x360-v_frag-cenc.mp4", media::kEnded);
+}
+
+IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, Playback_Encryption_CBC1) {
+  TestMP4EncryptionPlayback("bear-640x360-v_frag-cbc1.mp4", media::kError);
+}
+
+IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, Playback_Encryption_CENS) {
+  TestMP4EncryptionPlayback("bear-640x360-v_frag-cens.mp4", media::kError);
+}
+
+IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, Playback_Encryption_CBCS) {
+#if BUILDFLAG(ENABLE_CBCS_ENCRYPTION_SCHEME)
+  TestMP4EncryptionPlayback("bear-640x360-v_frag-cbcs.mp4", media::kEnded);
+#else
+  TestMP4EncryptionPlayback("bear-640x360-v_frag-cbcs.mp4", media::kError);
+#endif
+}
+#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
 
 IN_PROC_BROWSER_TEST_F(EncryptedMediaTest, UnknownKeySystemThrowsException) {
   RunEncryptedMediaTest(kDefaultEmePlayer, "bear-a_enc-a.webm",

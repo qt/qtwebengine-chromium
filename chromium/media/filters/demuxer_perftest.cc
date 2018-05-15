@@ -22,7 +22,7 @@
 #include "media/base/timestamp_constants.h"
 #include "media/filters/ffmpeg_demuxer.h"
 #include "media/filters/file_data_source.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/perf/perf_test.h"
 
@@ -88,7 +88,7 @@ class StreamReader {
                   bool* end_of_stream,
                   base::TimeDelta* timestamp,
                   media::DemuxerStream::Status status,
-                  const scoped_refptr<media::DecoderBuffer>& buffer);
+                  scoped_refptr<DecoderBuffer> buffer);
   int GetNextStreamIndexToRead();
 
   Streams streams_;
@@ -146,9 +146,9 @@ void StreamReader::OnReadDone(
     bool* end_of_stream,
     base::TimeDelta* timestamp,
     media::DemuxerStream::Status status,
-    const scoped_refptr<media::DecoderBuffer>& buffer) {
+    scoped_refptr<DecoderBuffer> buffer) {
   CHECK_EQ(status, media::DemuxerStream::kOk);
-  CHECK(buffer.get());
+  CHECK(buffer);
   *end_of_stream = buffer->end_of_stream();
   *timestamp = *end_of_stream ? media::kNoTimestamp : buffer->timestamp();
   task_runner->PostTask(FROM_HERE, quit_when_idle_closure);

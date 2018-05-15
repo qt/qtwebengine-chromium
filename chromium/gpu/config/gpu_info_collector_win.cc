@@ -8,14 +8,17 @@
 #include "third_party/re2/src/re2/re2.h"
 
 #include <windows.h>
+
 #include <cfgmgr32.h>
-#include <d3d9.h>
 #include <d3d11.h>
+#include <d3d12.h>
+#include <d3d9.h>
 #include <dxgi.h>
 #include <setupapi.h>
 #include <stddef.h>
 #include <stdint.h>
 
+#include "base/file_version_info_win.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -33,6 +36,7 @@
 #include "base/threading/thread.h"
 #include "base/trace_event/trace_event.h"
 #include "base/win/scoped_com_initializer.h"
+#include "third_party/vulkan/include/vulkan/vulkan.h"
 
 namespace gpu {
 
@@ -226,6 +230,134 @@ bool CollectDriverInfoD3D(const std::wstring& device_id, GPUInfo* gpu_info) {
   return found;
 }
 
+void GetGpuSupportedD3DVersion(GPUInfo* gpu_info) {
+  TRACE_EVENT0("gpu", "GetGpuSupportedD3DVersion");
+
+  gpu_info->supports_dx12 = false;
+
+  base::NativeLibrary d3d12_library =
+      base::LoadNativeLibrary(base::FilePath(L"d3d12.dll"), nullptr);
+
+  if (d3d12_library) {
+    PFN_D3D12_CREATE_DEVICE D3D12CreateDevice =
+        reinterpret_cast<PFN_D3D12_CREATE_DEVICE>(
+            GetProcAddress(d3d12_library, "D3D12CreateDevice"));
+
+    if (D3D12CreateDevice) {
+      // For the default adapter only. (*pAdapter == nullptr)
+      // Check to see if the adapter supports Direct3D 12, but don't create the
+      // actual device yet. (**ppDevice == nullptr)
+      if (SUCCEEDED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_0,
+                                      _uuidof(ID3D12Device), nullptr))) {
+        gpu_info->supports_dx12 = true;
+      }
+    }
+    base::UnloadNativeLibrary(d3d12_library);
+  }
+}
+
+bool BadAMDVulkanDriverVersion(GPUInfo* gpu_info) {
+  bool secondary_gpu_amd = false;
+  for (size_t i = 0; i < gpu_info->secondary_gpus.size(); ++i) {
+    if (gpu_info->secondary_gpus[i].vendor_id == 0x1002) {
+      secondary_gpu_amd = true;
+      break;
+    }
+  }
+
+  // Check both primary and seconday
+  if (gpu_info->gpu.vendor_id == 0x1002 || secondary_gpu_amd) {
+    std::unique_ptr<FileVersionInfoWin> file_version_info(
+        static_cast<FileVersionInfoWin*>(
+            FileVersionInfoWin::CreateFileVersionInfo(
+                base::FilePath(FILE_PATH_LITERAL("amdvlk64.dll")))));
+
+    if (file_version_info) {
+      const int major =
+          HIWORD(file_version_info->fixed_file_info()->dwFileVersionMS);
+      const int minor =
+          LOWORD(file_version_info->fixed_file_info()->dwFileVersionMS);
+      const int minor_1 =
+          HIWORD(file_version_info->fixed_file_info()->dwFileVersionLS);
+
+      // From the Canary crash logs, the broken amdvlk64.dll versions
+      // are 1.0.39.0, 1.0.51.0 and 1.0.54.0. In the manual test, version
+      // 9.2.10.1 dated 12/6/2017 works and version 1.0.54.0 dated 11/2/1017
+      // crashes. All version numbers small than 1.0.54.0 will be marked as
+      // broken.
+      if (major == 1 && minor == 0 && minor_1 <= 54) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+void GetGpuSupportedVulkanVersion(GPUInfo* gpu_info) {
+  TRACE_EVENT0("gpu", "GetGpuSupportedVulkanVersion");
+
+  gpu_info->supports_vulkan = false;
+
+  // Skip if the system has an older AMD Vulkan driver amdvlk64.dll which
+  // crashes when vkCreateInstance() gets called. This bug is fixed in the
+  // latest driver.
+  if (BadAMDVulkanDriverVersion(gpu_info)) {
+    return;
+  }
+
+  base::NativeLibrary vulkan_library =
+      base::LoadNativeLibrary(base::FilePath(L"vulkan-1.dll"), nullptr);
+
+  if (vulkan_library) {
+    PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr =
+        reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+            GetProcAddress(vulkan_library, "vkGetInstanceProcAddr"));
+
+    if (vkGetInstanceProcAddr) {
+      PFN_vkCreateInstance vkCreateInstance =
+          reinterpret_cast<PFN_vkCreateInstance>(
+              vkGetInstanceProcAddr(nullptr, "vkCreateInstance"));
+
+      if (vkCreateInstance) {
+        VkApplicationInfo app_info = {};
+        app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+        app_info.apiVersion = VK_API_VERSION_1_0;
+
+        VkInstanceCreateInfo createInfo = {};
+        createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+        createInfo.pApplicationInfo = &app_info;
+
+        VkInstance vk_instance;
+        VkResult result = vkCreateInstance(&createInfo, nullptr, &vk_instance);
+        if (result == VK_SUCCESS) {
+          PFN_vkEnumeratePhysicalDevices vkEnumeratePhysicalDevices =
+              reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(
+                  vkGetInstanceProcAddr(vk_instance,
+                                        "vkEnumeratePhysicalDevices"));
+
+          if (vkEnumeratePhysicalDevices) {
+            uint32_t physical_device_count = 0;
+            result = vkEnumeratePhysicalDevices(
+                vk_instance, &physical_device_count, nullptr);
+            if (result == VK_SUCCESS && physical_device_count > 0) {
+              gpu_info->supports_vulkan = true;
+            }
+          }
+        }
+      }
+    }
+    base::UnloadNativeLibrary(vulkan_library);
+  }
+}
+
+void RecordGpuSupportedRuntimeVersionHistograms(GPUInfo* gpu_info) {
+  GetGpuSupportedD3DVersion(gpu_info);
+  GetGpuSupportedVulkanVersion(gpu_info);
+
+  UMA_HISTOGRAM_BOOLEAN("GPU.SupportsDX12", gpu_info->supports_dx12);
+  UMA_HISTOGRAM_BOOLEAN("GPU.SupportsVulkan", gpu_info->supports_vulkan);
+}
+
 bool CollectContextGraphicsInfo(GPUInfo* gpu_info) {
   TRACE_EVENT0("gpu", "CollectGraphicsInfo");
 
@@ -302,7 +434,7 @@ bool CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
 
   // nvd3d9wrap.dll is loaded into all processes when Optimus is enabled.
   HMODULE nvd3d9wrap = GetModuleHandleW(L"nvd3d9wrap.dll");
-  gpu_info->optimus = nvd3d9wrap != NULL;
+  gpu_info->optimus = nvd3d9wrap != nullptr;
 
   // Taken from http://www.nvidia.com/object/device_ids.html
   DISPLAY_DEVICE dd;
@@ -324,6 +456,9 @@ bool CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
     // Chained DD" or the citrix display driver.
     if (wcscmp(dd.DeviceString, L"RDPUDD Chained DD") != 0 &&
         wcscmp(dd.DeviceString, L"Citrix Systems Inc. Display Driver") != 0) {
+      // Set vendor_id/device_id for blacklisting purpose.
+      gpu_info->gpu.vendor_id = 0xffff;
+      gpu_info->gpu.device_id = 0xfffe;
       return false;
     }
   }

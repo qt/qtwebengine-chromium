@@ -12,7 +12,8 @@
 #include "core/fpdfapi/parser/cpdf_number.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
 
-CPDF_FlateEncoder::CPDF_FlateEncoder(CPDF_Stream* pStream, bool bFlateEncode)
+CPDF_FlateEncoder::CPDF_FlateEncoder(const CPDF_Stream* pStream,
+                                     bool bFlateEncode)
     : m_dwSize(0), m_pAcc(pdfium::MakeRetain<CPDF_StreamAcc>(pStream)) {
   m_pAcc->LoadAllDataRaw();
 
@@ -28,7 +29,7 @@ CPDF_FlateEncoder::CPDF_FlateEncoder(CPDF_Stream* pStream, bool bFlateEncode)
     return;
   }
   if (bHasFilter || !bFlateEncode) {
-    m_pData = const_cast<uint8_t*>(m_pAcc->GetData());
+    m_pData = m_pAcc->GetData();
     m_dwSize = m_pAcc->GetSize();
     m_pDict = pStream->GetDict();
     return;

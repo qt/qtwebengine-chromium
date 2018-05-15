@@ -1,0 +1,40 @@
+# Copyright 2018 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/config/sanitizers/sanitizers.gni")
+
+# Determine whetner fuzzer_test targets are built.
+does_fuzzer_test_compile =
+    !disable_libfuzzer && (use_fuzzing_engine || use_drfuzz || is_linux)
+
+if (does_fuzzer_test_compile || is_ios) {
+  # Compile for production under iOS and for fuzzing whenever fuzzer_tests are built.
+  static_library("form_parsing") {
+    sources = [
+      "ios_form_parser.cc",
+      "ios_form_parser.h",
+    ]
+
+    deps = [
+      "//base",
+      "//components/autofill/core/common",
+    ]
+  }
+
+  source_set("unit_tests") {
+    testonly = true
+    sources = [
+      "ios_form_parser_unittest.cc",
+    ]
+
+    deps = [
+      ":form_parsing",
+      "//base",
+      "//components/autofill/core/common",
+      "//testing/gmock",
+      "//testing/gtest",
+      "//url",
+    ]
+  }
+}  # if (does_fuzzer_test_compile || is_ios)

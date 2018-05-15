@@ -40,7 +40,6 @@ source_set("rlz_utils") {
 if (!is_android) {
   source_set("rlz_lib") {
     sources = [
-      "chromeos/lib/machine_id_chromeos.cc",
       "chromeos/lib/rlz_value_store_chromeos.cc",
       "chromeos/lib/rlz_value_store_chromeos.h",
       "ios/lib/machine_id_ios.cc",
@@ -86,6 +85,10 @@ if (!is_android) {
       "//url",
     ]
 
+    if (is_chromeos) {
+      deps += [ "//chromeos" ]
+    }
+
     if (is_mac) {
       libs = [
         "Foundation.framework",
@@ -116,6 +119,9 @@ if (!is_android) {
       "//base/test:test_support",
       "//testing/gtest",
     ]
+    if (is_chromeos) {
+      deps += [ "//chromeos" ]
+    }
   }
 
   test("rlz_unittests") {
@@ -144,6 +150,9 @@ if (!is_android) {
       "//testing/gtest",
       "//third_party/zlib",
     ]
+    if (is_chromeos) {
+      deps += [ "//chromeos" ]
+    }
   }
 }
 

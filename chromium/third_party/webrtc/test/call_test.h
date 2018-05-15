@@ -16,8 +16,8 @@
 #include "call/call.h"
 #include "call/rtp_transport_controller_send.h"
 #include "logging/rtc_event_log/rtc_event_log.h"
+#include "modules/audio_device/include/test_audio_device.h"
 #include "test/encoder_settings.h"
-#include "test/fake_audio_device.h"
 #include "test/fake_decoder.h"
 #include "test/fake_encoder.h"
 #include "test/fake_videorenderer.h"
@@ -42,17 +42,19 @@ class CallTest : public ::testing::Test {
   static const int kDefaultFramerate = 30;
   static const int kDefaultTimeoutMs;
   static const int kLongTimeoutMs;
-  static const uint8_t kVideoSendPayloadType;
-  static const uint8_t kSendRtxPayloadType;
-  static const uint8_t kFakeVideoSendPayloadType;
-  static const uint8_t kRedPayloadType;
-  static const uint8_t kRtxRedPayloadType;
-  static const uint8_t kUlpfecPayloadType;
-  static const uint8_t kFlexfecPayloadType;
-  static const uint8_t kAudioSendPayloadType;
-  static const uint8_t kPayloadTypeH264;
-  static const uint8_t kPayloadTypeVP8;
-  static const uint8_t kPayloadTypeVP9;
+  enum classPayloadTypes : uint8_t {
+    kSendRtxPayloadType = 98,
+    kRtxRedPayloadType = 99,
+    kVideoSendPayloadType = 100,
+    kAudioSendPayloadType = 103,
+    kRedPayloadType = 118,
+    kUlpfecPayloadType = 119,
+    kFlexfecPayloadType = 120,
+    kPayloadTypeH264 = 122,
+    kPayloadTypeVP8 = 123,
+    kPayloadTypeVP9 = 124,
+    kFakeVideoSendPayloadType = 125,
+  };
   static const uint32_t kSendRtxSsrcs[kNumSsrcs];
   static const uint32_t kVideoSendSsrcs[kNumSsrcs];
   static const uint32_t kAudioSendSsrc;
@@ -99,8 +101,8 @@ class CallTest : public ::testing::Test {
                                              int height);
   void CreateFrameGeneratorCapturer(int framerate, int width, int height);
   void CreateFakeAudioDevices(
-      std::unique_ptr<FakeAudioDevice::Capturer> capturer,
-      std::unique_ptr<FakeAudioDevice::Renderer> renderer);
+      std::unique_ptr<TestAudioDeviceModule::Capturer> capturer,
+      std::unique_ptr<TestAudioDeviceModule::Renderer> renderer);
 
   void CreateVideoStreams();
   void CreateAudioStreams();
@@ -141,8 +143,8 @@ class CallTest : public ::testing::Test {
   size_t num_video_streams_;
   size_t num_audio_streams_;
   size_t num_flexfec_streams_;
-  rtc::scoped_refptr<AudioDecoderFactory> decoder_factory_;
-  rtc::scoped_refptr<AudioEncoderFactory> encoder_factory_;
+  rtc::scoped_refptr<AudioDecoderFactory> audio_decoder_factory_;
+  rtc::scoped_refptr<AudioEncoderFactory> audio_encoder_factory_;
   test::FakeVideoRenderer fake_renderer_;
 
   SingleThreadedTaskQueueForTesting task_queue_;
@@ -150,8 +152,8 @@ class CallTest : public ::testing::Test {
  private:
   rtc::scoped_refptr<AudioProcessing> apm_send_;
   rtc::scoped_refptr<AudioProcessing> apm_recv_;
-  rtc::scoped_refptr<test::FakeAudioDevice> fake_send_audio_device_;
-  rtc::scoped_refptr<test::FakeAudioDevice> fake_recv_audio_device_;
+  rtc::scoped_refptr<TestAudioDeviceModule> fake_send_audio_device_;
+  rtc::scoped_refptr<TestAudioDeviceModule> fake_recv_audio_device_;
 };
 
 class BaseTest : public RtpRtcpObserver {
@@ -167,10 +169,11 @@ class BaseTest : public RtpRtcpObserver {
   virtual size_t GetNumAudioStreams() const;
   virtual size_t GetNumFlexfecStreams() const;
 
-  virtual std::unique_ptr<FakeAudioDevice::Capturer> CreateCapturer();
-  virtual std::unique_ptr<FakeAudioDevice::Renderer> CreateRenderer();
-  virtual void OnFakeAudioDevicesCreated(FakeAudioDevice* send_audio_device,
-                                         FakeAudioDevice* recv_audio_device);
+  virtual std::unique_ptr<TestAudioDeviceModule::Capturer> CreateCapturer();
+  virtual std::unique_ptr<TestAudioDeviceModule::Renderer> CreateRenderer();
+  virtual void OnFakeAudioDevicesCreated(
+      TestAudioDeviceModule* send_audio_device,
+      TestAudioDeviceModule* recv_audio_device);
 
   virtual Call::Config GetSenderCallConfig();
   virtual Call::Config GetReceiverCallConfig();

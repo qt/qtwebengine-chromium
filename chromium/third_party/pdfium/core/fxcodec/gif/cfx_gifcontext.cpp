@@ -322,7 +322,8 @@ CFX_GifDecodeStatus CFX_GifContext::LoadFrame(int32_t frame_num) {
                           &img_row_avail_size_)
                     : CFX_GifDecodeStatus::Error;
         }
-        if (ret == CFX_GifDecodeStatus::Error) {
+        if (ret == CFX_GifDecodeStatus::InsufficientDestSize ||
+            ret == CFX_GifDecodeStatus::Error) {
           DecodingFailureAtTailCleanup(gif_image);
           return CFX_GifDecodeStatus::Error;
         }
@@ -348,21 +349,21 @@ uint32_t CFX_GifContext::GetAvailInput(uint8_t** avail_buf) const {
   return avail_in_;
 }
 
-uint8_t* CFX_GifContext::ReadData(uint8_t** des_buf_pp, uint32_t data_size) {
+uint8_t* CFX_GifContext::ReadData(uint8_t** dest_buf_pp, uint32_t data_size) {
   if (!next_in_)
     return nullptr;
   if (avail_in_ <= skip_size_)
     return nullptr;
-  if (!des_buf_pp)
+  if (!dest_buf_pp)
     return nullptr;
   if (data_size == 0)
     return nullptr;
   if (avail_in_ - skip_size_ < data_size)
     return nullptr;
 
-  *des_buf_pp = next_in_ + skip_size_;
+  *dest_buf_pp = next_in_ + skip_size_;
   skip_size_ += data_size;
-  return *des_buf_pp;
+  return *dest_buf_pp;
 }
 
 CFX_GifDecodeStatus CFX_GifContext::ReadGifSignature() {

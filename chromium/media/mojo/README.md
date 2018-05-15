@@ -66,7 +66,8 @@ enable_mojo_media = true
 mojo_media_services = ["renderer", "cdm"]
 ```
 Note that you must set `enable_mojo_media` first.  Also, some remote media
-components are also controlled by run time features, e.g. `media::kMojoCdm`.
+components are also controlled by run time features, e.g.
+`media::kMojoVideoDecoder`.
 
 ### Media Mojo Interface Factory
 
@@ -226,11 +227,11 @@ calls to the `Decryptor` in the remote CDM.
 In some cases the media component is set to work with a specific CDM. For
 example, on Android, MediaCodec-based decoders (e.g. `MediaCodecAudioDecoder`
 and `AndroidVideoDecodeAccelerator`) can only use MediaDrm-based CDM via
-`MediaDrmBridgeCdmContext`. The media component and the CDM must live in the
-same process because the interaction of these two are typically happening deep
-at the OS level. In theory, they can both live in the render process. But in
-practice, typically both the CDM and the media component are hosted by the
-MediaService in a remote (e.g. GPU) process.
+`MediaCryptoContext`. The media component and the CDM must live in the same
+process because the interaction of these two are typically happening deep at the
+OS level. In theory, they can both live in the render process. But in practice,
+typically both the CDM and the media component are hosted by the MediaService in
+a remote (e.g. GPU) process.
 
 To be able to attach a remote CDM with a remote media component, each
 `InterfaceFactoryImpl` instance (corresponding to one `RenderFrame`) in the

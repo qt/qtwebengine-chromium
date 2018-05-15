@@ -9,8 +9,6 @@
  */
 #include "modules/audio_processing/aec3/echo_canceller3.h"
 
-#include <sstream>
-
 #include "modules/audio_processing/logging/apm_data_dumper.h"
 #include "rtc_base/atomicops.h"
 #include "rtc_base/logging.h"
@@ -375,6 +373,11 @@ EchoControl::Metrics EchoCanceller3::GetMetrics() const {
   Metrics metrics;
   block_processor_->GetMetrics(&metrics);
   return metrics;
+}
+
+void EchoCanceller3::SetAudioBufferDelay(size_t delay_ms) {
+  RTC_DCHECK_RUNS_SERIALIZED(&capture_race_checker_);
+  block_processor_->SetAudioBufferDelay(delay_ms);
 }
 
 void EchoCanceller3::EmptyRenderQueue() {

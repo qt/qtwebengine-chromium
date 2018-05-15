@@ -118,13 +118,14 @@ void BackgroundLoaderContents::RequestMediaAccessPermission(
 }
 
 bool BackgroundLoaderContents::CheckMediaAccessPermission(
-    content::WebContents* contents,
+    content::RenderFrameHost* render_frame_host,
     const GURL& security_origin,
     content::MediaStreamType type) {
   return false;  // No permissions granted.
 }
 
 void BackgroundLoaderContents::AdjustPreviewsStateForNavigation(
+    content::WebContents* web_contents,
     content::PreviewsState* previews_state) {
   DCHECK(previews_state);
 

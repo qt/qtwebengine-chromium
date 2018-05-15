@@ -7,10 +7,12 @@
 #import "base/mac/scoped_nsobject.h"
 #import "base/mac/scoped_sending_event.h"
 #include "base/message_loop/message_loop.h"
+#import "base/message_loop/message_pump_mac.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
+#import "content/browser/renderer_host/render_widget_host_view_cocoa.h"
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
 #include "content/browser/renderer_host/webmenurunner_mac.h"
 #include "content/public/browser/notification_details.h"
@@ -93,6 +95,9 @@ void PopupMenuHelper::ShowPopupMenu(
     // be done manually.
     base::mac::ScopedSendingEvent sending_event_scoper;
 
+    // Ensure the UI can update while the menu is fading out.
+    pump_in_fade_ = std::make_unique<base::ScopedPumpMessagesInPrivateModes>();
+
     // Now run a NESTED EVENT LOOP until the pop-up is finished.
     [runner runMenuInView:cocoa_view
                withBounds:[cocoa_view flipRectToNSRect:bounds]
@@ -102,6 +107,7 @@ void PopupMenuHelper::ShowPopupMenu(
   if (!weak_ptr)
     return;  // Handle |this| being deleted.
 
+  pump_in_fade_ = nullptr;
   menu_runner_ = nil;
 
   // The RenderFrameHost may be deleted while running the menu, or it may have
@@ -117,6 +123,14 @@ void PopupMenuHelper::ShowPopupMenu(
 }
 
 void PopupMenuHelper::Hide() {
+  // Blink core reuses the PopupMenu of an element and first invokes Hide() over
+  // IPC if a menu is already showing. Attempting to show a new menu while the
+  // old menu is fading out confuses AppKit, since we're still in the NESTED
+  // EVENT LOOP of ShowPopupMenu(). Disable pumping of events in the fade
+  // animation of the old menu in this case so that it closes synchronously.
+  // See http://crbug.com/812260.
+  pump_in_fade_ = nullptr;
+
   if (menu_runner_)
     [menu_runner_ hide];
   popup_was_hidden_ = true;

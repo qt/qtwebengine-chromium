@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_PASSTHROUGH_DOER_PROTOTYPES_H_
+#define GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_PASSTHROUGH_DOER_PROTOTYPES_H_
+
 error::Error DoActiveTexture(GLenum texture);
 error::Error DoAttachShader(GLuint program, GLuint shader);
 error::Error DoBindAttribLocation(GLuint program,
@@ -866,7 +869,8 @@ error::Error DoScheduleDCLayerCHROMIUM(
     GLenum filter,
     const GLfloat* bounds_rect);
 error::Error DoCommitOverlayPlanesCHROMIUM();
-error::Error DoSwapInterval(GLint interval);
+error::Error DoSetColorSpaceMetadataCHROMIUM(GLuint texture_id,
+                                             gfx::ColorSpace color_space);
 error::Error DoFlushDriverCachesCHROMIUM();
 error::Error DoMatrixLoadfCHROMIUM(GLenum matrixMode,
                                    const volatile GLfloat* m);
@@ -1005,7 +1009,6 @@ error::Error DoBeginRasterCHROMIUM(GLuint texture_id,
                                    GLuint sk_color,
                                    GLuint msaa_sample_count,
                                    GLboolean can_use_lcd_text,
-                                   GLboolean use_distance_field_text,
                                    GLint color_type,
                                    GLuint color_space_transfer_cache_id);
 error::Error DoRasterCHROMIUM(GLsizeiptr size, const void* list);
@@ -1033,3 +1036,5 @@ error::Error DoUnpremultiplyAndDitherCopyCHROMIUM(GLuint src_texture,
                                                   GLint y,
                                                   GLsizei width,
                                                   GLsizei height);
+
+#endif  // GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_PASSTHROUGH_DOER_PROTOTYPES_H_

@@ -10,25 +10,23 @@
 #include <utility>
 
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/task_runner.h"
-#include "base/threading/sequenced_task_runner_handle.h"
-#include "content/public/renderer/render_frame.h"
 #include "content/renderer/media/stream/apply_constraints_processor.h"
 #include "content/renderer/media/stream/media_stream_device_observer.h"
 #include "content/renderer/media/stream/media_stream_video_track.h"
 #include "content/renderer/media/webrtc/peer_connection_tracker.h"
 #include "content/renderer/media/webrtc/webrtc_uma_histograms.h"
 #include "content/renderer/media/webrtc_logging.h"
+#include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
-#include "third_party/WebKit/public/platform/WebMediaConstraints.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
-#include "third_party/WebKit/public/web/WebUserMediaRequest.h"
+#include "third_party/blink/public/platform/web_media_constraints.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_user_gesture_indicator.h"
+#include "third_party/blink/public/web/web_user_media_request.h"
 
 namespace content {
 namespace {
@@ -87,21 +85,24 @@ UserMediaClientImpl::Request::MoveUserMediaRequest() {
 }
 
 UserMediaClientImpl::UserMediaClientImpl(
-    RenderFrame* render_frame,
-    std::unique_ptr<UserMediaProcessor> user_media_processor)
+    RenderFrameImpl* render_frame,
+    std::unique_ptr<UserMediaProcessor> user_media_processor,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner)
     : RenderFrameObserver(render_frame),
       user_media_processor_(std::move(user_media_processor)),
       apply_constraints_processor_(new ApplyConstraintsProcessor(
           base::BindRepeating(&UserMediaClientImpl::GetMediaDevicesDispatcher,
-                              base::Unretained(this)))),
+                              base::Unretained(this)),
+          std::move(task_runner))),
       weak_factory_(this) {}
 
 // base::Unretained(this) is safe here because |this| owns
 // |user_media_processor_|.
 UserMediaClientImpl::UserMediaClientImpl(
-    RenderFrame* render_frame,
+    RenderFrameImpl* render_frame,
     PeerConnectionDependencyFactory* dependency_factory,
-    std::unique_ptr<MediaStreamDeviceObserver> media_stream_device_observer)
+    std::unique_ptr<MediaStreamDeviceObserver> media_stream_device_observer,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner)
     : UserMediaClientImpl(
           render_frame,
           std::make_unique<UserMediaProcessor>(
@@ -110,7 +111,8 @@ UserMediaClientImpl::UserMediaClientImpl(
               std::move(media_stream_device_observer),
               base::BindRepeating(
                   &UserMediaClientImpl::GetMediaDevicesDispatcher,
-                  base::Unretained(this)))) {}
+                  base::Unretained(this))),
+          std::move(task_runner)) {}
 
 UserMediaClientImpl::~UserMediaClientImpl() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -125,7 +127,7 @@ void UserMediaClientImpl::RequestUserMedia(
   // Save histogram data so we can see how much GetUserMedia is used.
   // The histogram counts the number of calls to the JS API
   // webGetUserMedia.
-  UpdateWebRTCMethodCount(WEBKIT_GET_USER_MEDIA);
+  UpdateWebRTCMethodCount(blink::WebRTCAPIName::kGetUserMedia);
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(!web_request.IsNull());
   DCHECK(web_request.Audio() || web_request.Video());
@@ -217,10 +219,12 @@ void UserMediaClientImpl::CurrentRequestCompleted() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   is_processing_request_ = false;
   if (!pending_request_infos_.empty()) {
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE,
-        base::BindOnce(&UserMediaClientImpl::MaybeProcessNextRequestInfo,
-                       weak_factory_.GetWeakPtr()));
+    render_frame()
+        ->GetTaskRunner(blink::TaskType::kInternalMedia)
+        ->PostTask(
+            FROM_HERE,
+            base::BindOnce(&UserMediaClientImpl::MaybeProcessNextRequestInfo,
+                           weak_factory_.GetWeakPtr()));
   }
 }
 

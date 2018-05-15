@@ -63,26 +63,26 @@
 #include "services/network/public/cpp/resource_request_body.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebData.h"
-#include "third_party/WebKit/public/platform/WebHTTPBody.h"
-#include "third_party/WebKit/public/platform/WebRuntimeFeatures.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebURLResponse.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerNetworkProvider.h"
-#include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
-#include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
-#include "third_party/WebKit/public/web/WebDocumentLoader.h"
-#include "third_party/WebKit/public/web/WebFrameContentDumper.h"
-#include "third_party/WebKit/public/web/WebGlobalObjectReusePolicy.h"
-#include "third_party/WebKit/public/web/WebHistoryCommitType.h"
-#include "third_party/WebKit/public/web/WebHistoryItem.h"
-#include "third_party/WebKit/public/web/WebInputMethodController.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebPerformance.h"
-#include "third_party/WebKit/public/web/WebScriptSource.h"
-#include "third_party/WebKit/public/web/WebSettings.h"
-#include "third_party/WebKit/public/web/WebView.h"
-#include "third_party/WebKit/public/web/WebWindowFeatures.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_network_provider.h"
+#include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/web_data.h"
+#include "third_party/blink/public/platform/web_http_body.h"
+#include "third_party/blink/public/platform/web_runtime_features.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_url_response.h"
+#include "third_party/blink/public/web/web_device_emulation_params.h"
+#include "third_party/blink/public/web/web_document_loader.h"
+#include "third_party/blink/public/web/web_frame_content_dumper.h"
+#include "third_party/blink/public/web/web_global_object_reuse_policy.h"
+#include "third_party/blink/public/web/web_history_commit_type.h"
+#include "third_party/blink/public/web/web_history_item.h"
+#include "third_party/blink/public/web/web_input_method_controller.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_performance.h"
+#include "third_party/blink/public/web/web_script_source.h"
+#include "third_party/blink/public/web/web_settings.h"
+#include "third_party/blink/public/web/web_view.h"
+#include "third_party/blink/public/web/web_window_features.h"
 #include "ui/accessibility/ax_modes.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/event.h"
@@ -92,10 +92,10 @@
 #include "ui/native_theme/native_theme_features.h"
 
 #if defined(OS_ANDROID)
-#include "third_party/WebKit/public/platform/WebCoalescedInputEvent.h"
-#include "third_party/WebKit/public/platform/WebGestureDevice.h"
-#include "third_party/WebKit/public/platform/WebGestureEvent.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/blink/public/platform/web_coalesced_input_event.h"
+#include "third_party/blink/public/platform/web_gesture_device.h"
+#include "third_party/blink/public/platform/web_gesture_event.h"
+#include "third_party/blink/public/platform/web_input_event.h"
 #endif
 
 #if defined(OS_WIN)
@@ -103,7 +103,6 @@
 #endif
 
 #if defined(USE_AURA) && defined(USE_X11)
-#include "base/memory/ptr_util.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/keyboard_code_conversion.h"
 #include "ui/events/test/events_test_utils.h"
@@ -446,6 +445,10 @@ class RenderViewImplScaleFactorTest : public RenderViewImplBlinkSettingsTest {
     params.new_size = gfx::Size(100, 100);
     params.compositor_viewport_pixel_size = gfx::Size(200, 200);
     params.visible_viewport_size = params.new_size;
+    params.auto_resize_enabled = view()->auto_resize_mode();
+    params.auto_resize_sequence_number = view()->auto_resize_sequence_number();
+    params.min_size_for_auto_resize = view()->min_size_for_auto_resize();
+    params.max_size_for_auto_resize = view()->max_size_for_auto_resize();
     params.needs_resize_ack = false;
     params.content_source_id = view()->GetContentSourceId();
     view()->OnResize(params);
@@ -517,10 +520,9 @@ static blink::WebCoalescedInputEvent FatTap(int x,
                                             int height) {
   blink::WebGestureEvent event(
       blink::WebInputEvent::kGestureTap, blink::WebInputEvent::kNoModifiers,
-      blink::WebInputEvent::GetStaticTimeStampForTests());
-  event.source_device = blink::kWebGestureDeviceTouchscreen;
-  event.x = x;
-  event.y = y;
+      blink::WebInputEvent::GetStaticTimeStampForTests(),
+      blink::kWebGestureDeviceTouchscreen);
+  event.SetPositionInWidget(gfx::PointF(x, y));
   event.data.tap.width = width;
   event.data.tap.height = height;
   return blink::WebCoalescedInputEvent(event);
@@ -1524,8 +1526,7 @@ TEST_F(RenderViewImplTest, AndroidContextMenuSelectionOrdering) {
   WebGestureEvent gesture_event(
       WebInputEvent::kGestureLongPress, WebInputEvent::kNoModifiers,
       ui::EventTimeStampToSeconds(ui::EventTimeForNow()));
-  gesture_event.x = 250;
-  gesture_event.y = 250;
+  gesture_event.SetPositionInWidget(gfx::PointF(250, 250));
 
   SendWebGestureEvent(gesture_event);
 
@@ -2434,6 +2435,54 @@ TEST_F(RenderViewImplTest, DispatchBeforeUnloadCanDetachFrame) {
   // Simulates a BeforeUnload IPC received from the browser.
   frame()->OnMessageReceived(
       FrameMsg_BeforeUnload(frame()->GetRoutingID(), false));
+
+  render_thread_->sink().RemoveFilter(callback_filter.get());
+}
+
+// IPC Listener that runs a callback when a javascript modal dialog is
+// triggered.
+class AlertCallbackFilter : public IPC::Listener {
+ public:
+  explicit AlertCallbackFilter(
+      base::RepeatingCallback<void(const base::string16&)> callback)
+      : callback_(std::move(callback)) {}
+
+  bool OnMessageReceived(const IPC::Message& msg) override {
+    bool handled = true;
+    IPC_BEGIN_MESSAGE_MAP(AlertCallbackFilter, msg)
+      IPC_MESSAGE_HANDLER(FrameHostMsg_RunJavaScriptDialog,
+                          OnRunJavaScriptDialog)
+      IPC_MESSAGE_UNHANDLED(handled = false)
+    IPC_END_MESSAGE_MAP()
+    return handled;
+  }
+
+  // Not really part of IPC::Listener but required to intercept a sync msg.
+  void Send(const IPC::Message* msg) { delete msg; }
+
+  void OnRunJavaScriptDialog(const base::string16& message,
+                             const base::string16&,
+                             JavaScriptDialogType,
+                             bool*,
+                             base::string16*) {
+    callback_.Run(message);
+  }
+
+ private:
+  base::RepeatingCallback<void(const base::string16&)> callback_;
+};
+
+// Test that invoking one of the modal dialogs doesn't crash.
+TEST_F(RenderViewImplTest, ModalDialogs) {
+  LoadHTML("<body></body>");
+
+  std::unique_ptr<AlertCallbackFilter> callback_filter(new AlertCallbackFilter(
+      base::BindRepeating([](const base::string16& msg) {
+        EXPECT_EQ(base::UTF8ToUTF16("Please don't crash"), msg);
+      })));
+  render_thread_->sink().AddFilter(callback_filter.get());
+
+  frame()->GetWebFrame()->Alert(WebString::FromUTF8("Please don't crash"));
 
   render_thread_->sink().RemoveFilter(callback_filter.get());
 }

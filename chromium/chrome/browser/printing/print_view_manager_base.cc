@@ -10,7 +10,7 @@
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
+#include "base/memory/ref_counted_memory.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -46,7 +46,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "mojo/public/cpp/system/buffer.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 #include "printing/pdf_metafile_skia.h"
 #include "printing/print_settings.h"
 #include "printing/printed_document.h"
@@ -143,7 +143,7 @@ bool PrintViewManagerBase::PrintNow(content::RenderFrameHost* rfh) {
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
 void PrintViewManagerBase::PrintForPrintPreview(
     std::unique_ptr<base::DictionaryValue> job_settings,
-    const scoped_refptr<base::RefCountedBytes>& print_data,
+    const scoped_refptr<base::RefCountedMemory>& print_data,
     content::RenderFrameHost* rfh,
     PrinterHandler::PrintCallback callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -164,7 +164,7 @@ void PrintViewManagerBase::PrintForPrintPreview(
 
 void PrintViewManagerBase::PrintDocument(
     PrintedDocument* document,
-    const scoped_refptr<base::RefCountedBytes>& print_data,
+    const scoped_refptr<base::RefCountedMemory>& print_data,
     const gfx::Size& page_size,
     const gfx::Rect& content_area,
     const gfx::Point& offsets) {
@@ -210,7 +210,7 @@ void PrintViewManagerBase::PrintDocument(
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
 void PrintViewManagerBase::OnPrintSettingsDone(
-    const scoped_refptr<base::RefCountedBytes>& print_data,
+    const scoped_refptr<base::RefCountedMemory>& print_data,
     int page_count,
     PrinterHandler::PrintCallback callback,
     scoped_refptr<printing::PrinterQuery> printer_query) {
@@ -249,7 +249,7 @@ void PrintViewManagerBase::OnPrintSettingsDone(
 }
 
 void PrintViewManagerBase::StartLocalPrintJob(
-    const scoped_refptr<base::RefCountedBytes>& print_data,
+    const scoped_refptr<base::RefCountedMemory>& print_data,
     int page_count,
     scoped_refptr<printing::PrinterQuery> printer_query,
     PrinterHandler::PrintCallback callback) {
@@ -333,11 +333,13 @@ void PrintViewManagerBase::OnComposePdfDone(
 
   std::unique_ptr<base::SharedMemory> shared_buf =
       GetShmFromMojoHandle(std::move(handle));
-  scoped_refptr<base::RefCountedBytes> bytes =
-      base::MakeRefCounted<base::RefCountedBytes>(
-          reinterpret_cast<const unsigned char*>(shared_buf->memory()),
-          shared_buf->mapped_size());
-  PrintDocument(document, bytes, params.page_size, params.content_area,
+  if (!shared_buf)
+    return;
+
+  size_t size = shared_buf->mapped_size();
+  auto data = base::MakeRefCounted<base::RefCountedSharedMemory>(
+      std::move(shared_buf), size);
+  PrintDocument(document, data, params.page_size, params.content_area,
                 params.physical_offsets);
 }
 
@@ -371,11 +373,10 @@ void PrintViewManagerBase::OnDidPrintDocument(
     web_contents()->Stop();
     return;
   }
-  scoped_refptr<base::RefCountedBytes> bytes =
-      base::MakeRefCounted<base::RefCountedBytes>(
-          reinterpret_cast<const unsigned char*>(shared_buf->memory()),
-          content.data_size);
-  PrintDocument(document, bytes, params.page_size, params.content_area,
+
+  auto data = base::MakeRefCounted<base::RefCountedSharedMemory>(
+      std::move(shared_buf), content.data_size);
+  PrintDocument(document, data, params.page_size, params.content_area,
                 params.physical_offsets);
 }
 
@@ -587,7 +588,7 @@ bool PrintViewManagerBase::CreateNewPrintJob(PrintJobWorkerOwner* job) {
   if (!job)
     return false;
 
-  print_job_ = new PrintJob();
+  print_job_ = base::MakeRefCounted<PrintJob>();
   print_job_->Initialize(job, RenderSourceName(), number_pages_);
   registrar_.Add(this, chrome::NOTIFICATION_PRINT_JOB_EVENT,
                  content::Source<PrintJob>(print_job_.get()));

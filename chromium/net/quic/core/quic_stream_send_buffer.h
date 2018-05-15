@@ -123,14 +123,13 @@ class QUIC_EXPORT_PRIVATE QuicStreamSendBuffer {
   friend class test::QuicStreamSendBufferPeer;
   friend class test::QuicStreamPeer;
 
-  // Another version of WriteStreamData() to be able to start writing from
-  // write_index_ points to instead of searching through the slices to find the
-  // place to write.
-  // TODO(danzh): inline this method into WriteStreamData() after
-  // quic_reloadable_flag_quic_use_write_index is deprecated.
-  bool WriteStreamDataWithIndex(QuicStreamOffset offset,
-                                QuicByteCount data_length,
-                                QuicDataWriter* writer);
+  // Called when data within offset [start, end) gets acked. Frees fully
+  // acked buffered slices if any. Returns false if the corresponding data does
+  // not exist or has been acked.
+  bool FreeMemSlices(QuicStreamOffset start, QuicStreamOffset end);
+
+  // Cleanup empty slices in order from buffered_slices_.
+  void CleanUpBufferedSlices();
 
   QuicDeque<BufferedSlice> buffered_slices_;
 
@@ -155,8 +154,12 @@ class QUIC_EXPORT_PRIVATE QuicStreamSendBuffer {
   // time. -1 if send buffer is empty or all data has been written.
   int32_t write_index_;
 
-  // Latched value of quic_reloadable_flag_quic_stream_send_buffer_write_index.
-  const bool use_write_index_;
+  // Latched value of quic_reloadable_flag_quic_free_mem_slice_out_of_order.
+  const bool free_mem_slice_out_of_order_;
+
+  // Latched value of quic_reloadable_flag_quic_free_mem_slice_out_of_order and
+  // quic_reloadable_flag_quic_fast_path_on_stream_data_acked.
+  const bool enable_fast_path_on_data_acked_;
 };
 
 }  // namespace net

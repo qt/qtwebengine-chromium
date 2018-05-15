@@ -41,6 +41,12 @@ source_set("event_constants") {
   ]
 }
 
+source_set("platform_event") {
+  sources = [
+    "platform_event.h",
+  ]
+}
+
 component("events_base") {
   sources = [
     "android/scroller.cc",
@@ -80,6 +86,7 @@ component("events_base") {
   public_deps = [
     ":dom_keycode_converter",
     ":event_constants",
+    ":platform_event",
     "//base",
     "//ui/events/platform",
     "//ui/gfx/geometry",
@@ -352,13 +359,14 @@ static_library("test_support") {
     libs = [ "Carbon.framework" ]
   }
 
-  if (use_x11) {
+  if (use_x11 || ozone_platform_x11) {
     sources += [
       "test/events_test_utils_x11.cc",
       "test/events_test_utils_x11.h",
     ]
     deps += [
       "//ui/events/devices/x11",
+      "//ui/events/keycodes:x11",
       "//ui/gfx/x",
     ]
   }
@@ -376,6 +384,8 @@ if (!is_ios) {
       "blink/fling_booster_unittest.cc",
       "blink/input_handler_proxy_unittest.cc",
       "blink/input_scroll_elasticity_controller_unittest.cc",
+      "blink/snap_fling_controller_unittest.cc",
+      "blink/snap_fling_curve_unittest.cc",
       "blink/web_input_event_traits_unittest.cc",
       "blink/web_input_event_unittest.cc",
       "cocoa/events_mac_unittest.mm",
@@ -384,6 +394,7 @@ if (!is_ios) {
       "event_dispatcher_unittest.cc",
       "event_processor_unittest.cc",
       "event_rewriter_unittest.cc",
+      "event_target_unittest.cc",
       "event_unittest.cc",
       "fraction_of_time_without_user_input_recorder_unittest.cc",
       "gesture_detection/bitset_32_unittest.cc",
@@ -421,7 +432,7 @@ if (!is_ios) {
       "//skia",
       "//testing/gmock",
       "//testing/gtest",
-      "//third_party/WebKit/public:blink_headers",
+      "//third_party/blink/public:blink_headers",
       "//ui/base:test_support",
       "//ui/display",
       "//ui/events/blink",

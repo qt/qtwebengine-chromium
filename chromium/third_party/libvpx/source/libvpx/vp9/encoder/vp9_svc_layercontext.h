@@ -19,6 +19,12 @@
 extern "C" {
 #endif
 
+typedef enum {
+  INTER_LAYER_PRED_ON,
+  INTER_LAYER_PRED_OFF,
+  INTER_LAYER_PRED_OFF_NONKEY
+} INTER_LAYER_PRED;
+
 typedef struct {
   RATE_CONTROL rc;
   int target_bandwidth;
@@ -57,7 +63,6 @@ typedef struct SVC {
 
   int spatial_layer_to_encode;
   int first_spatial_layer_to_encode;
-  int rc_drop_superframe;
 
   // Workaround for multiple frame contexts
   enum { ENCODED = 0, ENCODING, NEED_TO_ENCODE } encode_empty_frame_state;
@@ -89,6 +94,7 @@ typedef struct SVC {
   int current_superframe;
   int non_reference_frame;
   int use_base_mv;
+  int use_partition_reuse;
   // Used to control the downscaling filter for source scaling, for 1 pass CBR.
   // downsample_filter_phase: = 0 will do sub-sampling (no weighted average),
   // = 8 will center the target pixel and get a symmetric averaging filter.
@@ -105,6 +111,13 @@ typedef struct SVC {
   int skip_enhancement_layer;
 
   int lower_layer_qindex;
+
+  int last_layer_dropped[VPX_MAX_LAYERS];
+  int drop_spatial_layer[VPX_MAX_LAYERS];
+  int framedrop_thresh[VPX_MAX_LAYERS];
+  SVC_LAYER_DROP_MODE framedrop_mode;
+
+  INTER_LAYER_PRED disable_inter_layer_pred;
 } SVC;
 
 struct VP9_COMP;

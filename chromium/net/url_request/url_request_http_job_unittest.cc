@@ -29,7 +29,8 @@
 #include "net/log/test_net_log.h"
 #include "net/log/test_net_log_entry.h"
 #include "net/log/test_net_log_util.h"
-#include "net/net_features.h"
+#include "net/net_buildflags.h"
+#include "net/socket/next_proto.h"
 #include "net/socket/socket_test_util.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/gtest_util.h"
@@ -39,7 +40,7 @@
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "net/url_request/url_request_status.h"
 #include "net/url_request/url_request_test_util.h"
-#include "net/websockets/websocket_handshake_stream_base.h"
+#include "net/url_request/websocket_handshake_userdata_key.h"
 #include "net/websockets/websocket_test_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -261,7 +262,7 @@ TEST(URLRequestHttpJobWithProxy, TestSuccessfulWithOneProxy) {
 
   std::unique_ptr<ProxyResolutionService> proxy_resolution_service =
       ProxyResolutionService::CreateFixedFromPacResult(
-          proxy_server.ToPacString());
+          proxy_server.ToPacString(), TRAFFIC_ANNOTATION_FOR_TESTS);
 
   MockWrite writes[] = {MockWrite(kSimpleProxyGetMockWrite)};
   MockRead reads[] = {MockRead(SYNCHRONOUS, ERR_CONNECTION_RESET)};
@@ -310,7 +311,8 @@ TEST(URLRequestHttpJobWithProxy,
   std::unique_ptr<ProxyResolutionService> proxy_resolution_service =
       ProxyResolutionService::CreateFixedFromPacResult(
           proxy_server.ToPacString() + "; " +
-          ProxyServer::Direct().ToPacString());
+              ProxyServer::Direct().ToPacString(),
+          TRAFFIC_ANNOTATION_FOR_TESTS);
 
   MockWrite writes[] = {MockWrite(kSimpleGetMockWrite)};
   MockRead reads[] = {MockRead("HTTP/1.1 200 OK\r\n"
@@ -1581,7 +1583,7 @@ TEST_F(URLRequestHttpJobWebSocketTest, CreateHelperPassedThrough) {
   auto websocket_stream_create_helper =
       std::make_unique<TestWebSocketHandshakeStreamCreateHelper>();
 
-  req_->SetUserData(WebSocketHandshakeStreamBase::CreateHelper::DataKey(),
+  req_->SetUserData(kWebSocketHandshakeUserDataKey,
                     std::move(websocket_stream_create_helper));
   req_->SetLoadFlags(LOAD_DISABLE_CACHE);
   req_->Start();

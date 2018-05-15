@@ -309,8 +309,10 @@ void QuicPacketGenerator::SetMaxPacketLength(QuicByteCount length) {
 
 std::unique_ptr<QuicEncryptedPacket>
 QuicPacketGenerator::SerializeVersionNegotiationPacket(
+    bool ietf_quic,
     const ParsedQuicVersionVector& supported_versions) {
-  return packet_creator_.SerializeVersionNegotiationPacket(supported_versions);
+  return packet_creator_.SerializeVersionNegotiationPacket(ietf_quic,
+                                                           supported_versions);
 }
 
 OwningSerializedPacketPointer
@@ -344,9 +346,10 @@ void QuicPacketGenerator::set_encryption_level(EncryptionLevel level) {
   packet_creator_.set_encryption_level(level);
 }
 
-void QuicPacketGenerator::SetEncrypter(EncryptionLevel level,
-                                       QuicEncrypter* encrypter) {
-  packet_creator_.SetEncrypter(level, encrypter);
+void QuicPacketGenerator::SetEncrypter(
+    EncryptionLevel level,
+    std::unique_ptr<QuicEncrypter> encrypter) {
+  packet_creator_.SetEncrypter(level, std::move(encrypter));
 }
 
 void QuicPacketGenerator::AddRandomPadding() {

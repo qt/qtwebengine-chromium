@@ -16,7 +16,6 @@
 #include "base/environment.h"
 #include "base/i18n/time_formatting.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringize_macros.h"
@@ -40,6 +39,7 @@
 #include "gpu/config/gpu_feature_type.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/config/gpu_lists_version.h"
+#include "gpu/ipc/common/gpu_memory_buffer_support.h"
 #include "gpu/ipc/host/gpu_memory_buffer_support.h"
 #include "skia/ext/skia_commit_hash.h"
 #include "third_party/angle/src/common/version.h"
@@ -153,8 +153,6 @@ std::unique_ptr<base::DictionaryValue> GpuInfoAsDictionaryValue() {
   basic_info->Append(NewDescriptionValuePair(
       "Optimus", std::make_unique<base::Value>(gpu_info.optimus)));
   basic_info->Append(NewDescriptionValuePair(
-      "Optimus", std::make_unique<base::Value>(gpu_info.optimus)));
-  basic_info->Append(NewDescriptionValuePair(
       "AMD switchable",
       std::make_unique<base::Value>(gpu_info.amd_switchable)));
 #if defined(OS_WIN)
@@ -177,6 +175,13 @@ std::unique_ptr<base::DictionaryValue> GpuInfoAsDictionaryValue() {
     basic_info->Append(
         NewDescriptionValuePair(description_string, size_string));
   }
+
+  basic_info->Append(NewDescriptionValuePair(
+      "DX12", std::make_unique<base::Value>(gpu_info.supports_dx12)));
+
+  basic_info->Append(NewDescriptionValuePair(
+      "Vulkan", std::make_unique<base::Value>(gpu_info.supports_vulkan)));
+
 #endif
 
   std::string disabled_extensions;
@@ -307,8 +312,10 @@ std::unique_ptr<base::ListValue> CompositorInfo() {
 std::unique_ptr<base::ListValue> GpuMemoryBufferInfo() {
   auto gpu_memory_buffer_info = std::make_unique<base::ListValue>();
 
+  gpu::GpuMemoryBufferSupport gpu_memory_buffer_support;
+
   const auto native_configurations =
-      gpu::GetNativeGpuMemoryBufferConfigurations();
+      gpu::GetNativeGpuMemoryBufferConfigurations(&gpu_memory_buffer_support);
   for (size_t format = 0;
        format < static_cast<size_t>(gfx::BufferFormat::LAST) + 1; format++) {
     std::string native_usage_support;
@@ -495,12 +502,13 @@ GpuMessageHandler::~GpuMessageHandler() {
 void GpuMessageHandler::RegisterMessages() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  web_ui()->RegisterMessageCallback("browserBridgeInitialized",
-      base::Bind(&GpuMessageHandler::OnBrowserBridgeInitialized,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("callAsync",
-      base::Bind(&GpuMessageHandler::OnCallAsync,
-                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "browserBridgeInitialized",
+      base::BindRepeating(&GpuMessageHandler::OnBrowserBridgeInitialized,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "callAsync", base::BindRepeating(&GpuMessageHandler::OnCallAsync,
+                                       base::Unretained(this)));
 }
 
 void GpuMessageHandler::OnCallAsync(const base::ListValue* args) {

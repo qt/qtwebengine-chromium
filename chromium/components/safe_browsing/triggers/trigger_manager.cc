@@ -4,6 +4,7 @@
 
 #include "components/safe_browsing/triggers/trigger_manager.h"
 
+#include "base/threading/thread_task_runner_handle.h"
 #include "components/prefs/pref_service.h"
 #include "components/safe_browsing/base_ui_manager.h"
 #include "components/safe_browsing/browser/threat_details.h"
@@ -12,7 +13,7 @@
 #include "components/security_interstitials/content/unsafe_resource.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "net/url_request/url_request_context_getter.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(
     safe_browsing::TriggerManagerWebContentsHelper);
@@ -27,11 +28,14 @@ bool TriggerNeedsScout(const TriggerType trigger_type) {
       // Security interstitials only need legacy SBER opt-in.
       return false;
     case TriggerType::AD_SAMPLE:
-      // Ad samples need Scout-level opt-in.
+      // Ad samples need Scout-level opt-in (background data collection).
       return true;
     case TriggerType::GAIA_PASSWORD_REUSE:
       // Gaia password reuses only need legacy SBER opt-in.
       return false;
+    case TriggerType::SUSPICIOUS_SITE:
+      // Suspicious sites need Scout-level opt-in (background data collection).
+      return true;
   }
   // By default, require Scout so we are more restrictive on data collection.
   return true;
@@ -52,6 +56,10 @@ bool TriggerNeedsOptInForCollection(const TriggerType trigger_type) {
       // while the trigger runs, so we require opt-in for collection to avoid
       // overheads.
       return true;
+    case TriggerType::SUSPICIOUS_SITE:
+      // Suspicious site collection happens in the background so the user must
+      // already be opted in before the trigger is allowed to run.
+      return true;
   }
   // By default, require opt-in for all triggers.
   return true;
@@ -62,7 +70,7 @@ bool CanSendReport(const SBErrorOptions& error_display_options,
   // If the |kAdSamplerCollectButDontSendFeature| feature is enabled then we
   // will overlook other checks to force the report to be created (which is safe
   // because we ensure it will be discarded downstream).
-  // TODO(crbug.com/776893): Remote the feature and this logic.
+  // TODO(crbug.com/776893): Remove the feature and this logic.
   if (trigger_type == TriggerType::AD_SAMPLE &&
       base::FeatureList::IsEnabled(kAdSamplerCollectButDontSendFeature)) {
     return true;
@@ -150,7 +158,7 @@ bool TriggerManager::StartCollectingThreatDetails(
     const TriggerType trigger_type,
     content::WebContents* web_contents,
     const security_interstitials::UnsafeResource& resource,
-    net::URLRequestContextGetter* request_context_getter,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     history::HistoryService* history_service,
     const SBErrorOptions& error_display_options) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -166,7 +174,7 @@ bool TriggerManager::StartCollectingThreatDetails(
   bool should_trim_threat_details = trigger_type == TriggerType::AD_SAMPLE;
   collectors->threat_details =
       scoped_refptr<ThreatDetails>(ThreatDetails::NewThreatDetails(
-          ui_manager_, web_contents, resource, request_context_getter,
+          ui_manager_, web_contents, resource, url_loader_factory,
           history_service, should_trim_threat_details,
           base::Bind(&TriggerManager::ThreatDetailsDone,
                      weak_factory_.GetWeakPtr())));
@@ -195,8 +203,8 @@ bool TriggerManager::FinishCollectingThreatDetails(
     // Find the data collector and tell it to finish collecting data. We expect
     // it to notify us when it's finished so we can clean up references to it.
 
-    content::BrowserThread::PostDelayedTask(
-        content::BrowserThread::IO, FROM_HERE,
+    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+        FROM_HERE,
         base::BindOnce(&ThreatDetails::FinishCollection,
                        collectors->threat_details, did_proceed, num_visits),
         delay);

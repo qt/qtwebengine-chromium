@@ -16,7 +16,7 @@
 #include "content/common/service_worker/service_worker_utils.h"
 #include "net/cert/cert_status_flags.h"
 #include "services/network/public/cpp/resource_response.h"
-#include "third_party/WebKit/public/common/mime_util/mime_util.h"
+#include "third_party/blink/public/common/mime_util/mime_util.h"
 
 namespace content {
 
@@ -52,8 +52,8 @@ void ServiceWorkerInstalledScriptLoader::OnStarted(
   // Just drain the metadata (V8 code cache): this entire class is just to
   // handle a corner case for non-installed service workers and high performance
   // is not needed.
-  metadata_drainer_ = std::make_unique<mojo::common::DataPipeDrainer>(
-      this, std::move(metadata_handle));
+  metadata_drainer_ =
+      std::make_unique<mojo::DataPipeDrainer>(this, std::move(metadata_handle));
 
   // We continue in OnHttpInfoRead().
 }
@@ -78,11 +78,10 @@ void ServiceWorkerInstalledScriptLoader::OnHttpInfoRead(
   head.socket_address = info->socket_address;
   head.cert_status = info->ssl_info.cert_status;
 
-  base::Optional<net::SSLInfo> ssl_info;
   if (options_ & network::mojom::kURLLoadOptionSendSSLInfoWithResponse)
-    ssl_info = info->ssl_info;
+    head.ssl_info = info->ssl_info;
 
-  client_->OnReceiveResponse(head, ssl_info, nullptr /* downloaded_file */);
+  client_->OnReceiveResponse(head, nullptr /* downloaded_file */);
   client_->OnStartLoadingResponseBody(std::move(body_handle_));
   // We continue in OnFinished().
 }

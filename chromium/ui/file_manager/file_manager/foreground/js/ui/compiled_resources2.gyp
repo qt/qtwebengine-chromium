@@ -268,6 +268,7 @@
       'dependencies': [
         '../../../../externs/compiled_resources2.gyp:platform',
         '../../../../externs/compiled_resources2.gyp:volume_manager',
+        '../../../common/js/compiled_resources2.gyp:metrics',
         '../../../common/js/compiled_resources2.gyp:util',
         '../../../common/js/compiled_resources2.gyp:volume_manager_common',
         '../compiled_resources2.gyp:volume_manager_wrapper',
@@ -309,6 +310,7 @@
       'dependencies': [
         '../../../../externs/compiled_resources2.gyp:search_item',
         '../../../common/js/compiled_resources2.gyp:file_type',
+        '../../../common/js/compiled_resources2.gyp:metrics',
         '../../../common/js/compiled_resources2.gyp:util',
         '../../elements/compiled_resources2.gyp:files_toggle_ripple',
         '<(DEPTH)/ui/webui/resources/js/compiled_resources2.gyp:assert',

@@ -4,8 +4,16 @@
 
 #include "components/sessions/core/session_id.h"
 
+#include <ostream>
+
 static SessionID::id_type next_id = 1;
 
-SessionID::SessionID() {
-  id_ = next_id++;
+// static
+SessionID SessionID::NewUnique() {
+  return SessionID(next_id++);
+}
+
+std::ostream& operator<<(std::ostream& out, SessionID id) {
+  out << id.id();
+  return out;
 }

@@ -18,6 +18,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/stl_util.h"
 #include "base/trace_event/trace_event.h"
+#include "build/build_config.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/devtools/render_frame_devtools_agent_host.h"
 #include "content/browser/frame_host/debug_urls.h"
@@ -35,7 +36,6 @@
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/site_instance_impl.h"
-#include "content/browser/site_isolation_policy.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/common/frame_messages.h"
 #include "content/common/frame_owner_properties.h"
@@ -46,10 +46,15 @@
 #include "content/public/browser/render_process_host_observer.h"
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/site_isolation_policy.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
+
+#if defined(OS_MACOSX)
+#include "ui/gfx/mac/scoped_cocoa_disable_screen_updates.h"
+#endif  // defined(OS_MACOSX)
 
 namespace content {
 
@@ -420,7 +425,7 @@ void RenderFrameHostManager::DiscardUnusedFrame(
   // deleted below.  See https://crbug.com/627400.
   if (frame_tree_node_->IsMainFrame()) {
     rvh->set_main_frame_routing_id(MSG_ROUTING_NONE);
-    rvh->set_is_active(false);
+    rvh->SetIsActive(false);
     rvh->set_is_swapped_out(true);
   }
 
@@ -509,9 +514,12 @@ RenderFrameHostImpl* RenderFrameHostManager::GetFrameHostForNavigation(
       // already updated its state properly, and doesn't need to be notified.
       if (speculative_render_frame_host_->GetNavigationHandle() &&
           request.from_begin_navigation()) {
+        DCHECK(!speculative_render_frame_host_->GetNavigationHandle()
+                    ->IsDownload());
         frame_tree_node_->navigator()->DiscardPendingEntryIfNeeded(
             speculative_render_frame_host_->GetNavigationHandle()
-                ->pending_nav_entry_id());
+                ->pending_nav_entry_id(),
+            false /* is_download */);
       }
       DiscardUnusedFrame(UnsetSpeculativeRenderFrameHost());
     }
@@ -548,9 +556,12 @@ RenderFrameHostImpl* RenderFrameHostManager::GetFrameHostForNavigation(
       if (speculative_render_frame_host_ &&
           speculative_render_frame_host_->GetNavigationHandle() &&
           request.from_begin_navigation()) {
+        DCHECK(!speculative_render_frame_host_->GetNavigationHandle()
+                    ->IsDownload());
         frame_tree_node_->navigator()->DiscardPendingEntryIfNeeded(
             speculative_render_frame_host_->GetNavigationHandle()
-                ->pending_nav_entry_id());
+                ->pending_nav_entry_id(),
+            false /* is_download */);
       }
 
       // If a previous speculative RenderFrameHost didn't exist or if its
@@ -1027,9 +1038,10 @@ RenderFrameHostManager::GetSiteInstanceForNavigation(
     CHECK_NE(new_instance, current_instance);
 
   if (new_instance == current_instance) {
-    // If we're navigating to the same site instance, we won't need to use any
-    // spare RenderProcessHost.
-    RenderProcessHostImpl::CleanupSpareRenderProcessHost();
+    // If we're navigating to the same site instance, we won't need to use the
+    // current spare RenderProcessHost.
+    RenderProcessHostImpl::NotifySpareManagerAboutRecentlyUsedBrowserContext(
+        browser_context);
   }
 
   // Double-check that the new SiteInstance is associated with the right
@@ -1250,10 +1262,9 @@ RenderFrameHostManager::DetermineSiteInstanceForURL(
   // redirect arbitary requests to those URLs using webRequest or
   // declarativeWebRequest API.  For these cases, the content isn't controlled
   // by the source SiteInstance, so it need not use it.
-  GURL about_blank(url::kAboutBlankURL);
   GURL about_srcdoc(content::kAboutSrcDocURL);
   bool dest_is_data_or_about = dest_url == about_srcdoc ||
-                               dest_url == about_blank ||
+                               dest_url.IsAboutBlank() ||
                                dest_url.scheme() == url::kDataScheme;
   if (source_instance && dest_is_data_or_about && !was_server_redirect)
     return SiteInstanceDescriptor(source_instance);
@@ -1261,6 +1272,15 @@ RenderFrameHostManager::DetermineSiteInstanceForURL(
   // Use the current SiteInstance for same site navigations.
   if (IsCurrentlySameSite(render_frame_host_.get(), dest_url))
     return SiteInstanceDescriptor(render_frame_host_->GetSiteInstance());
+
+  // At this point, |dest_url| corresponds to a cross-site navigation.  See if
+  // we can swap BrowsingInstances to avoid unneeded process sharing.  This is
+  // done for certain main frame browser-initiated navigations. See
+  // https://crbug.com/803367.
+  if (IsBrowsingInstanceSwapAllowedForPageTransition(transition, dest_url)) {
+    return SiteInstanceDescriptor(browser_context, dest_url,
+                                  SiteInstanceRelation::UNRELATED);
+  }
 
   // Shortcut some common cases for reusing an existing frame's SiteInstance.
   // There are several reasons for this:
@@ -1336,6 +1356,43 @@ RenderFrameHostManager::DetermineSiteInstanceForURL(
   // BrowsingInstance.
   return SiteInstanceDescriptor(browser_context, dest_url,
                                 SiteInstanceRelation::RELATED);
+}
+
+bool RenderFrameHostManager::IsBrowsingInstanceSwapAllowedForPageTransition(
+    ui::PageTransition transition,
+    const GURL& dest_url) {
+  // Disallow BrowsingInstance swaps for subframes.
+  if (!frame_tree_node_->IsMainFrame())
+    return false;
+
+  // Skip data: and file: URLs, as some tests rely on browser-initiated
+  // navigations to those URLs to stay in the same process.  Swapping
+  // BrowsingInstances for those URLs may not carry much benefit anyway, since
+  // they're likely less common.
+  //
+  // Note that such URLs are not considered same-site, but since their
+  // SiteInstance site URL is based only on scheme (e.g., all data URLs use a
+  // site URL of "data:"), a browser-initiated navigation from one such URL to
+  // another will still stay in the same SiteInstance, due to the matching site
+  // URL.
+  if (dest_url.SchemeIsFile() || dest_url.SchemeIs(url::kDataScheme))
+    return false;
+
+  // Allow page transitions corresponding to certain browser-initiated
+  // navigations: typing in the URL, using a bookmark, or using search.
+  switch (ui::PageTransitionStripQualifier(transition)) {
+    case ui::PAGE_TRANSITION_TYPED:
+    case ui::PAGE_TRANSITION_AUTO_BOOKMARK:
+    case ui::PAGE_TRANSITION_GENERATED:
+    case ui::PAGE_TRANSITION_KEYWORD:
+      return true;
+    // TODO(alexmos): PAGE_TRANSITION_AUTO_TOPLEVEL is not included due to a
+    // bug that would cause unneeded BrowsingInstance swaps for DevTools,
+    // https://crbug.com/733767.  Once that bug is fixed, consider adding this
+    // transition here.
+    default:
+      return false;
+  }
 }
 
 bool RenderFrameHostManager::IsRendererTransferNeededForNavigation(
@@ -1502,6 +1559,20 @@ bool RenderFrameHostManager::IsCurrentlySameSite(RenderFrameHostImpl* candidate,
           browser_context,
           GURL(candidate->GetLastCommittedOrigin().Serialize()), dest_url,
           should_compare_effective_urls)) {
+    return true;
+  }
+
+  // If the last successful URL was "about:blank" with a unique origin (which
+  // implies that it was a browser-initiated navigation to "about:blank"), none
+  // of the cases above apply, but we should still allow a scenario like
+  // foo.com -> about:blank -> foo.com to be treated as same-site, as some
+  // tests rely on that behavior.  To accomplish this, compare |dest_url|
+  // against the site URL.
+  if (candidate->last_successful_url().IsAboutBlank() &&
+      candidate->GetLastCommittedOrigin().unique() &&
+      SiteInstanceImpl::IsSameWebSite(
+          browser_context, candidate->GetSiteInstance()->original_url(),
+          dest_url, should_compare_effective_urls)) {
     return true;
   }
 
@@ -2011,6 +2082,17 @@ void RenderFrameHostManager::CommitPending() {
                "FrameTreeNode id", frame_tree_node_->frame_tree_node_id());
   DCHECK(speculative_render_frame_host_);
 
+#if defined(OS_MACOSX)
+  // The old RenderWidgetHostView will be hidden before the new
+  // RenderWidgetHostView takes its contents. Ensure that Cocoa sees this as
+  // a single transaction.
+  // https://crbug.com/829523
+  // TODO(ccameron): This can be removed when the RenderWidgetHostViewMac uses
+  // the same ui::Compositor as MacViews.
+  // https://crbug.com/331669
+  gfx::ScopedCocoaDisableScreenUpdates disabler;
+#endif  // defined(OS_MACOSX)
+
   bool is_main_frame = frame_tree_node_->IsMainFrame();
 
   // First check whether we're going to want to focus the location bar after
@@ -2037,15 +2119,6 @@ void RenderFrameHostManager::CommitPending() {
   DCHECK(speculative_render_frame_host_);
   old_render_frame_host =
       SetRenderFrameHost(std::move(speculative_render_frame_host_));
-
-  // Save off the old background color before possibly deleting the
-  // old RenderWidgetHostView.
-  SkColor old_background_color = SK_ColorWHITE;
-  bool has_old_background_color = false;
-  if (old_render_frame_host->GetView()) {
-    has_old_background_color = true;
-    old_background_color = old_render_frame_host->GetView()->background_color();
-  }
 
   // For top-level frames, also hide the old RenderViewHost's view.
   // TODO(creis): As long as show/hide are on RVH, we don't want to hide on
@@ -2088,8 +2161,13 @@ void RenderFrameHostManager::CommitPending() {
   delegate_->NotifySwappedFromRenderManager(
       old_render_frame_host.get(), render_frame_host_.get(), is_main_frame);
 
-  if (has_old_background_color && render_frame_host_->GetView())
-    render_frame_host_->GetView()->SetBackgroundColor(old_background_color);
+  // Make the new view show the contents of old view until it has something
+  // useful to show.
+  if (is_main_frame && old_render_frame_host->GetView() &&
+      render_frame_host_->GetView()) {
+    render_frame_host_->GetView()->TakeFallbackContentFrom(
+        old_render_frame_host->GetView());
+  }
 
   // The RenderViewHost keeps track of the main RenderFrameHost routing id.
   // If this is committing a main frame navigation, update it and set the
@@ -2109,7 +2187,7 @@ void RenderFrameHostManager::CommitPending() {
     if (!rvh->is_active())
       rvh->PostRenderViewReady();
 
-    rvh->set_is_active(true);
+    rvh->SetIsActive(true);
     rvh->set_is_swapped_out(false);
     old_render_frame_host->render_view_host()->set_main_frame_routing_id(
         MSG_ROUTING_NONE);

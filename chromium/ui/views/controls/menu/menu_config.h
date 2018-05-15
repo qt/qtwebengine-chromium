@@ -44,8 +44,18 @@ struct VIEWS_EXPORT MenuConfig {
   int item_no_icon_top_margin;
   int item_no_icon_bottom_margin;
 
+  // Fixed dimensions used for entire items. If these are nonzero, they override
+  // the vertical margin constants given above - the item's text and icon are
+  // vertically centered within these heights.
+  int fixed_text_item_height;
+  int fixed_container_item_height;
+  int fixed_menu_width;
+
   // Margins between the left of the item and the icon.
   int item_left_margin;
+
+  // Margins between the left of the touchable item and the icon.
+  int touchable_item_left_margin;
 
   // Padding between the label and submenu arrow.
   int label_to_arrow_padding;
@@ -55,6 +65,15 @@ struct VIEWS_EXPORT MenuConfig {
 
   // Padding between the icon and label.
   int icon_to_label_padding;
+
+  // Padding between the icon and label for touchable menu items.
+  int touchable_icon_to_label_padding;
+
+  // The icon size used for icons in touchable menu items.
+  int touchable_icon_size;
+
+  // The color used for icons in touchable menu items.
+  SkColor touchable_icon_color;
 
   // The space reserved for the check. The actual size of the image may be
   // different.
@@ -120,6 +139,24 @@ struct VIEWS_EXPORT MenuConfig {
 
   // Radius of the rounded corners of the menu border. Must be >= 0.
   int corner_radius;
+
+  // Radius of the rounded corners of the touchable menu border
+  int touchable_corner_radius;
+
+  // Anchor offset for touchable menus created by a touch event.
+  int touchable_anchor_offset;
+
+  // Height of child MenuItemViews for touchable menus.
+  int touchable_menu_height;
+
+  // Width of touchable menus.
+  int touchable_menu_width;
+
+  // Shadow elevation of touchable menus.
+  int touchable_menu_shadow_elevation;
+
+  // Vertical padding for touchable menus.
+  int vertical_touchable_menu_item_padding;
 
  private:
   // Configures a MenuConfig as appropriate for the current platform.

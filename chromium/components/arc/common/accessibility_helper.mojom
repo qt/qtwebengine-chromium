@@ -6,7 +6,7 @@
 
 module arc.mojom;
 
-import "gfx.mojom";
+import "components/arc/common/gfx.mojom";
 
 // For future maintainers, each of the below enums were hand picked
 // from their equivalents in the Android source. Keep them in the
@@ -142,7 +142,8 @@ enum AccessibilityIntProperty {
 [Extensible]
 enum AccessibilityIntListProperty {
   CHILD_NODE_IDS,
-  CUSTOM_ACTION_IDS
+  CUSTOM_ACTION_IDS,
+  STANDARD_ACTION_IDS
 };
 
 // These fields are taken from List<String> instance members of

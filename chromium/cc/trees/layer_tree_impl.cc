@@ -505,7 +505,31 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
   target_tree->has_ever_been_drawn_ = false;
 
   // Note: this needs to happen after SetPropertyTrees.
+  target_tree->HandleTickmarksVisibilityChange();
   target_tree->HandleScrollbarShowRequestsFromMain();
+}
+
+void LayerTreeImpl::HandleTickmarksVisibilityChange() {
+  if (!host_impl_->ViewportMainScrollLayer())
+    return;
+
+  ScrollbarAnimationController* controller =
+      host_impl_->ScrollbarAnimationControllerForElementId(
+          OuterViewportScrollLayer()->element_id());
+
+  if (!controller)
+    return;
+
+  for (ScrollbarLayerImplBase* scrollbar : controller->Scrollbars()) {
+    if (scrollbar->orientation() != VERTICAL)
+      continue;
+
+    // Android Overlay Scrollbar don't have FindInPage Tickmarks.
+    if (scrollbar->GetScrollbarAnimator() != LayerTreeSettings::AURA_OVERLAY)
+      DCHECK(!scrollbar->HasFindInPageTickmarks());
+
+    controller->UpdateTickmarksVisibility(scrollbar->HasFindInPageTickmarks());
+  }
 }
 
 void LayerTreeImpl::HandleScrollbarShowRequestsFromMain() {
@@ -551,6 +575,14 @@ LayerImplList::const_iterator LayerTreeImpl::begin() const {
 
 LayerImplList::const_iterator LayerTreeImpl::end() const {
   return layer_list_.cend();
+}
+
+LayerImplList::const_reverse_iterator LayerTreeImpl::rbegin() const {
+  return layer_list_.crbegin();
+}
+
+LayerImplList::const_reverse_iterator LayerTreeImpl::rend() const {
+  return layer_list_.crend();
 }
 
 LayerImplList::reverse_iterator LayerTreeImpl::rbegin() {
@@ -1340,6 +1372,10 @@ TaskRunnerProvider* LayerTreeImpl::task_runner_provider() const {
   return host_impl_->task_runner_provider();
 }
 
+LayerTreeFrameSink* LayerTreeImpl::layer_tree_frame_sink() {
+  return host_impl_->layer_tree_frame_sink();
+}
+
 const LayerTreeSettings& LayerTreeImpl::settings() const {
   return host_impl_->settings();
 }
@@ -1382,6 +1418,10 @@ MemoryHistory* LayerTreeImpl::memory_history() const {
 
 gfx::Size LayerTreeImpl::device_viewport_size() const {
   return host_impl_->device_viewport_size();
+}
+
+gfx::Rect LayerTreeImpl::viewport_visible_rect() const {
+  return host_impl_->viewport_visible_rect();
 }
 
 DebugRectHistory* LayerTreeImpl::debug_rect_history() const {
@@ -1593,11 +1633,13 @@ void LayerTreeImpl::AppendSwapPromises(
   new_swap_promises.clear();
 }
 
-void LayerTreeImpl::FinishSwapPromises(viz::CompositorFrameMetadata* metadata) {
+void LayerTreeImpl::FinishSwapPromises(
+    viz::CompositorFrameMetadata* metadata,
+    FrameTokenAllocator* frame_token_allocator) {
   for (const auto& swap_promise : swap_promise_list_)
-    swap_promise->WillSwap(metadata);
+    swap_promise->WillSwap(metadata, frame_token_allocator);
   for (const auto& swap_promise : pinned_swap_promise_list_)
-    swap_promise->WillSwap(metadata);
+    swap_promise->WillSwap(metadata, frame_token_allocator);
 }
 
 void LayerTreeImpl::ClearSwapPromises() {

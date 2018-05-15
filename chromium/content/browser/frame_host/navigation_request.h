@@ -107,7 +107,8 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
       mojom::BeginNavigationParamsPtr begin_params,
       int current_history_list_offset,
       int current_history_list_length,
-      bool override_user_agent);
+      bool override_user_agent,
+      scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory);
 
   ~NavigationRequest() override;
 
@@ -161,6 +162,8 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
     associated_site_instance_type_ = type;
   }
 
+  void set_was_discarded() { request_params_.was_discarded = true; }
+
   NavigationHandleImpl* navigation_handle() const {
     return navigation_handle_.get();
   }
@@ -202,6 +205,9 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   // due to another navigation committing in the meantime.
   void ResetForCrossDocumentRestart();
 
+  void RegisterSubresourceOverride(
+      mojom::TransferrableURLLoaderPtr transferrable_loader);
+
  private:
   // This enum describes the result of a Content Security Policy (CSP) check for
   // the request.
@@ -231,7 +237,6 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
       const scoped_refptr<network::ResourceResponse>& response,
       network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
       std::unique_ptr<StreamHandle> body,
-      const net::SSLInfo& ssl_info,
       std::unique_ptr<NavigationData> navigation_data,
       const GlobalRequestID& request_id,
       bool is_download,
@@ -331,6 +336,9 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   // NavigationUIData at the beginning of the navigation.
   std::unique_ptr<NavigationUIData> navigation_ui_data_;
 
+  // URLLoaderFactory to facilitate loading blob URLs.
+  scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory_;
+
   NavigationState state_;
 
   std::unique_ptr<NavigationURLLoader> loader_;
@@ -390,6 +398,9 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
 
   // See comment on accessor.
   base::UnguessableToken devtools_navigation_token_;
+
+  base::Optional<std::vector<mojom::TransferrableURLLoaderPtr>>
+      subresource_overrides_;
 
   base::WeakPtrFactory<NavigationRequest> weak_factory_;
 

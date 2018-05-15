@@ -11,6 +11,8 @@
 #ifndef MODULES_AUDIO_PROCESSING_AEC3_AEC_STATE_H_
 #define MODULES_AUDIO_PROCESSING_AEC3_AEC_STATE_H_
 
+#include <math.h>
+
 #include <algorithm>
 #include <memory>
 #include <vector>
@@ -46,7 +48,7 @@ class AecState {
   bool UseLinearFilterOutput() const { return use_linear_filter_output_; }
 
   // Returns the estimated echo path gain.
-  bool EchoPathGain() const { return filter_analyzer_.Gain(); }
+  float EchoPathGain() const { return filter_analyzer_.Gain(); }
 
   // Returns whether the render signal is currently active.
   bool ActiveRender() const { return blocks_with_active_render_ > 200; }
@@ -78,9 +80,6 @@ class AecState {
 
   // Returns whether the echo signal is saturated.
   bool SaturatedEcho() const { return echo_saturation_; }
-
-  // Returns whether the echo path can saturate.
-  bool SaturatingEchoPath() const { return saturating_echo_path_; }
 
   // Updates the capture signal saturation.
   void UpdateCaptureSaturation(bool capture_signal_saturation) {
@@ -125,10 +124,12 @@ class AecState {
   void UpdateReverb(const std::vector<float>& impulse_response);
   bool DetectActiveRender(rtc::ArrayView<const float> x) const;
   void UpdateSuppressorGainLimit(bool render_activity);
-  bool DetectEchoSaturation(rtc::ArrayView<const float> x);
+  bool DetectEchoSaturation(rtc::ArrayView<const float> x,
+                            float echo_path_gain);
 
   static int instance_count_;
   std::unique_ptr<ApmDataDumper> data_dumper_;
+  const bool allow_transparent_mode_;
   ErlEstimator erl_estimator_;
   ErleEstimator erle_estimator_;
   size_t capture_block_counter_ = 0;
@@ -139,17 +140,22 @@ class AecState {
   bool capture_signal_saturation_ = false;
   bool echo_saturation_ = false;
   bool transparent_mode_ = false;
-  float previous_max_sample_ = 0.f;
   bool render_received_ = false;
   int filter_delay_blocks_ = 0;
   size_t blocks_since_last_saturation_ = 1000;
-  float reverb_decay_to_test_ = 0.9f;
-  float reverb_decay_candidate_ = 0.f;
-  float reverb_decay_candidate_residual_ = -1.f;
+  float tail_energy_ = 0.f;
+  float accumulated_nz_ = 0.f;
+  float accumulated_nn_ = 0.f;
+  float accumulated_count_ = 0.f;
+  size_t current_reverb_decay_section_ = 0;
+  size_t num_reverb_decay_sections_ = 0;
+  size_t num_reverb_decay_sections_next_ = 0;
+  bool found_end_of_reverb_decay_ = false;
+  bool main_filter_is_adapting_ = true;
+  std::array<float, kMaxAdaptiveFilterLength> block_energies_;
   const EchoCanceller3Config config_;
   std::vector<float> max_render_;
-  float reverb_decay_;
-  bool saturating_echo_path_ = false;
+  float reverb_decay_ = fabsf(config_.ep_strength.default_len);
   bool filter_has_had_time_to_converge_ = false;
   bool initial_state_ = true;
   const float gain_rampup_increase_;

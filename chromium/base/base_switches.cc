@@ -7,6 +7,9 @@
 
 namespace switches {
 
+// Delays execution of base::TaskPriority::BACKGROUND tasks until shutdown.
+const char kDisableBackgroundTasks[] = "disable-background-tasks";
+
 // Disables the crash reporting.
 const char kDisableBreakpad[]               = "disable-breakpad";
 
@@ -132,6 +135,12 @@ const char kEnableCrashReporterForTesting[] =
 // given in base/android/library_loader/anchor_functions.h, via madvise and
 // changing the library prefetch behavior.
 const char kOrderfileMemoryOptimization[] = "orderfile-memory-optimization";
+// Force prefetching of the native library even if otherwise disabled, eg by
+// --orderfile-memory-optimization.
+const char kForceNativePrefetch[] = "force-native-prefetch";
+// If prefetching is enabled, only prefetch the ordered part of the native
+// library. Has no effect if prefetching is disabled.
+const char kNativePrefetchOrderedOnly[] = "native-prefetch-ordered-only";
 #endif
 
 }  // namespace switches

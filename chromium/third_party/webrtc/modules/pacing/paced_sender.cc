@@ -21,7 +21,6 @@
 #include "modules/pacing/alr_detector.h"
 #include "modules/pacing/bitrate_prober.h"
 #include "modules/pacing/interval_budget.h"
-#include "modules/pacing/packet_queue.h"
 #include "modules/pacing/round_robin_packet_queue.h"
 #include "modules/utility/include/process_thread.h"
 #include "rtc_base/checks.h"
@@ -34,20 +33,13 @@
 namespace {
 // Time limit in milliseconds between packet bursts.
 const int64_t kMinPacketLimitMs = 5;
-const int64_t kPausedPacketIntervalMs = 500;
+const int64_t kCongestedPacketIntervalMs = 500;
+const int64_t kPausedProcessIntervalMs = kCongestedPacketIntervalMs;
+const int64_t kMaxElapsedTimeMs = 2000;
 
 // Upper cap on process interval, in case process has not been called in a long
 // time.
 const int64_t kMaxIntervalTimeMs = 30;
-
-const char kRoundRobinExperimentName[] = "WebRTC-RoundRobinPacing";
-
-bool IsRoundRobinPacingEnabled() {
-  return webrtc::field_trial::IsEnabled(kRoundRobinExperimentName) || (
-      !webrtc::field_trial::IsDisabled(kRoundRobinExperimentName) &&
-      webrtc::runtime_enabled_features::IsFeatureEnabled(
-          webrtc::runtime_enabled_features::kDualStreamModeFeatureName));
-}
 
 }  // namespace
 
@@ -56,24 +48,13 @@ namespace webrtc {
 const int64_t PacedSender::kMaxQueueLengthMs = 2000;
 const float PacedSender::kDefaultPaceMultiplier = 2.5f;
 
-namespace {
-std::unique_ptr<PacketQueueInterface> CreatePacketQueue(const Clock* clock,
-                                                        bool round_robin) {
-  if (round_robin) {
-    return rtc::MakeUnique<RoundRobinPacketQueue>(clock);
-  } else {
-    return rtc::MakeUnique<PacketQueue>(clock);
-  }
-}
-}  // namespace
-
 PacedSender::PacedSender(const Clock* clock,
                          PacketSender* packet_sender,
                          RtcEventLog* event_log)
     : PacedSender(clock,
                   packet_sender,
                   event_log,
-                  CreatePacketQueue(clock, IsRoundRobinPacingEnabled())) {}
+                  rtc::MakeUnique<RoundRobinPacketQueue>(clock)) {}
 
 PacedSender::PacedSender(const Clock* clock,
                          PacketSender* packet_sender,
@@ -139,6 +120,22 @@ void PacedSender::Resume() {
     process_thread_->WakeUp(this);
 }
 
+void PacedSender::SetCongestionWindow(int64_t congestion_window_bytes) {
+  rtc::CritScope cs(&critsect_);
+  congestion_window_bytes_ = congestion_window_bytes;
+}
+
+void PacedSender::UpdateOutstandingData(int64_t outstanding_bytes) {
+  rtc::CritScope cs(&critsect_);
+  outstanding_bytes_ = outstanding_bytes;
+}
+
+bool PacedSender::Congested() const {
+  if (congestion_window_bytes_ == kNoCongestionWindow)
+    return false;
+  return outstanding_bytes_ >= congestion_window_bytes_;
+}
+
 void PacedSender::SetProbingEnabled(bool enabled) {
   rtc::CritScope cs(&critsect_);
   RTC_CHECK_EQ(0, packet_counter_);
@@ -194,7 +191,7 @@ void PacedSender::InsertPacket(RtpPacketSender::Priority priority,
   if (capture_time_ms < 0)
     capture_time_ms = now_ms;
 
-  packets_->Push(PacketQueue::Packet(priority, ssrc, sequence_number,
+  packets_->Push(PacketQueueInterface::Packet(priority, ssrc, sequence_number,
                                      capture_time_ms, now_ms, bytes,
                                      retransmission, packet_counter_++));
 }
@@ -245,7 +242,7 @@ int64_t PacedSender::TimeUntilNextProcess() {
   // When paused we wake up every 500 ms to send a padding packet to ensure
   // we won't get stuck in the paused state due to no feedback being received.
   if (paused_)
-    return std::max<int64_t>(kPausedPacketIntervalMs - elapsed_time_ms, 0);
+    return std::max<int64_t>(kPausedProcessIntervalMs - elapsed_time_ms, 0);
 
   if (prober_->IsProbing()) {
     int64_t ret = prober_->TimeUntilNextProbe(clock_->TimeInMilliseconds());
@@ -260,13 +257,20 @@ void PacedSender::Process() {
   rtc::CritScope cs(&critsect_);
   time_last_process_us_ = now_us;
   int64_t elapsed_time_ms = (now_us - last_send_time_us_ + 500) / 1000;
-
-  // When paused we send a padding packet every 500 ms to ensure we won't get
-  // stuck in the paused state due to no feedback being received.
-  if (paused_) {
+  if (elapsed_time_ms > kMaxElapsedTimeMs) {
+    RTC_LOG(LS_WARNING) << "Elapsed time (" << elapsed_time_ms
+                        << " ms) longer than expected, limiting to "
+                        << kMaxElapsedTimeMs << " ms";
+    elapsed_time_ms = kMaxElapsedTimeMs;
+  }
+  // When congested we send a padding packet every 500 ms to ensure we won't get
+  // stuck in the congested state due to no feedback being received.
+  // TODO(srte): Stop sending packet in paused state when pause is no longer
+  // used for congestion windows.
+  if (paused_ || Congested()) {
     // We can not send padding unless a normal packet has first been sent. If we
     // do, timestamps get messed up.
-    if (elapsed_time_ms >= kPausedPacketIntervalMs && packet_counter_ > 0) {
+    if (elapsed_time_ms >= kCongestedPacketIntervalMs && packet_counter_ > 0) {
       PacedPacketInfo pacing_info;
       size_t bytes_sent = SendPadding(1, pacing_info);
       alr_detector_->OnBytesSent(bytes_sent, elapsed_time_ms);
@@ -307,11 +311,11 @@ void PacedSender::Process() {
   }
   // The paused state is checked in the loop since SendPacket leaves the
   // critical section allowing the paused state to be changed from other code.
-  while (!packets_->Empty() && !paused_) {
+  while (!packets_->Empty() && !paused_ && !Congested()) {
     // Since we need to release the lock in order to send, we first pop the
     // element from the priority queue but keep it in storage, so that we can
     // reinsert it if send fails.
-    const PacketQueue::Packet& packet = packets_->BeginPop();
+    const PacketQueueInterface::Packet& packet = packets_->BeginPop();
 
     if (SendPacket(packet, pacing_info)) {
       bytes_sent += packet.bytes;
@@ -326,7 +330,7 @@ void PacedSender::Process() {
     }
   }
 
-  if (packets_->Empty()) {
+  if (packets_->Empty() && !Congested()) {
     // We can not send padding unless a normal packet has first been sent. If we
     // do, timestamps get messed up.
     if (packet_counter_ > 0) {
@@ -352,7 +356,7 @@ void PacedSender::ProcessThreadAttached(ProcessThread* process_thread) {
   process_thread_ = process_thread;
 }
 
-bool PacedSender::SendPacket(const PacketQueue::Packet& packet,
+bool PacedSender::SendPacket(const PacketQueueInterface::Packet& packet,
                              const PacedPacketInfo& pacing_info) {
   RTC_DCHECK(!paused_);
   if (media_budget_->bytes_remaining() == 0 &&
@@ -403,6 +407,7 @@ void PacedSender::UpdateBudgetWithElapsedTime(int64_t delta_time_ms) {
 }
 
 void PacedSender::UpdateBudgetWithBytesSent(size_t bytes_sent) {
+  outstanding_bytes_ += bytes_sent;
   media_budget_->UseBudget(bytes_sent);
   padding_budget_->UseBudget(bytes_sent);
 }

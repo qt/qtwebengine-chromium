@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
 #include "content/renderer/media/audio_message_filter.h"
 #include "content/renderer/media/mojo_audio_output_ipc.h"
@@ -39,7 +38,8 @@ AudioOutputIPCFactory::CreateAudioOutputIPC(int frame_id) const {
     // Unretained is safe due to the contract at the top of the header file.
     return std::make_unique<MojoAudioOutputIPC>(
         base::BindRepeating(&AudioOutputIPCFactory::GetRemoteFactory,
-                            base::Unretained(this), frame_id));
+                            base::Unretained(this), frame_id),
+        io_task_runner_);
   }
   return audio_message_filter_->CreateAudioOutputIPC(frame_id);
 }

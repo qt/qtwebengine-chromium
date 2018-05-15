@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/test/simple_test_tick_clock.h"
 #include "cc/test/fake_layer_tree_frame_sink_client.h"
 #include "components/viz/common/display/renderer_settings.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
@@ -196,7 +197,7 @@ TEST_F(DirectLayerTreeFrameSinkTest, HitTestRegionList) {
 
   const auto* hit_test_region_list =
       frame_sink_manager_.hit_test_manager()->GetActiveHitTestRegionList(
-          display_->CurrentSurfaceId());
+          display_.get(), display_->CurrentSurfaceId().frame_sink_id());
   EXPECT_TRUE(hit_test_region_list);
   EXPECT_EQ(display_rect_, hit_test_region_list->bounds);
   EXPECT_EQ(mojom::kHitTestMouse | mojom::kHitTestTouch | mojom::kHitTestMine,
@@ -272,7 +273,7 @@ TEST_F(DirectLayerTreeFrameSinkTest, HitTestRegionList) {
 
   const auto* hit_test_region_list1 =
       frame_sink_manager_.hit_test_manager()->GetActiveHitTestRegionList(
-          display_->CurrentSurfaceId());
+          display_.get(), display_->CurrentSurfaceId().frame_sink_id());
   EXPECT_TRUE(hit_test_region_list1);
   EXPECT_EQ(display_rect_, hit_test_region_list1->bounds);
   EXPECT_EQ(mojom::kHitTestMouse | mojom::kHitTestTouch | mojom::kHitTestMine,
@@ -280,8 +281,6 @@ TEST_F(DirectLayerTreeFrameSinkTest, HitTestRegionList) {
   EXPECT_EQ(1u, hit_test_region_list1->regions.size());
   EXPECT_EQ(child_surface_id.frame_sink_id(),
             hit_test_region_list1->regions[0]->frame_sink_id);
-  EXPECT_EQ(child_surface_id.local_surface_id(),
-            hit_test_region_list1->regions[0]->local_surface_id);
   EXPECT_EQ(
       mojom::kHitTestMouse | mojom::kHitTestTouch | mojom::kHitTestChildSurface,
       hit_test_region_list1->regions[0]->flags);

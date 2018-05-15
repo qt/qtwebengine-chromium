@@ -301,11 +301,7 @@ enum class ReportingType { PERIODIC, ON_CHANGE };
 // Histograms
 // -----------------------------------------------------------------------------
 
-// Tracks the access point of sign in on desktop.
-void LogSigninAccessPointStarted(AccessPoint access_point);
-void LogSigninAccessPointCompleted(AccessPoint access_point);
-
-// Tracks the access point of sign in on iOS.
+// Tracks the access point of sign in.
 void LogSigninAccessPointStarted(AccessPoint access_point,
                                  PromoAction promo_action);
 void LogSigninAccessPointCompleted(AccessPoint access_point,
@@ -358,7 +354,7 @@ void LogExternalCcResultFetches(
     const base::TimeDelta& time_to_check_connections);
 
 // Track when the current authentication error changed.
-void LogAuthError(GoogleServiceAuthError::State auth_error);
+void LogAuthError(const GoogleServiceAuthError& auth_error);
 
 void LogSigninConfirmHistogramValue(ConfirmationUsage action);
 
@@ -401,8 +397,16 @@ void LogIsShared(const bool is_shared, const ReportingType type);
 // -----------------------------------------------------------------------------
 
 // Records corresponding sign in user action for an access point.
-void RecordSigninUserActionForAccessPoint(
-    signin_metrics::AccessPoint access_point);
+void RecordSigninUserActionForAccessPoint(AccessPoint access_point,
+                                          PromoAction promo_action);
+
+// Records |Signin_ImpressionWithAccount_From*| user action.
+void RecordSigninImpressionUserActionForAccessPoint(AccessPoint access_point);
+
+// Records |Signin_Impression{With|No}Account_From*| user action.
+void RecordSigninImpressionWithAccountUserActionForAccessPoint(
+    AccessPoint access_point,
+    bool with_account);
 
 }  // namespace signin_metrics
 

@@ -71,7 +71,8 @@ class CC_EXPORT LayerTreeResourceProvider : public ResourceProvider {
       gfx::BufferUsage usage,
       const gfx::ColorSpace& color_space);
   viz::ResourceId CreateBitmapResource(const gfx::Size& size,
-                                       const gfx::ColorSpace& color_space);
+                                       const gfx::ColorSpace& color_space,
+                                       viz::ResourceFormat format);
 
   void DeleteResource(viz::ResourceId id);
 
@@ -185,6 +186,7 @@ class CC_EXPORT LayerTreeResourceProvider : public ResourceProvider {
 
     // The following are copied from the resource.
     gfx::Size size_;
+    gfx::BufferUsage usage_;
     viz::ResourceFormat format_;
     gfx::ColorSpace color_space_;
     GLuint texture_id_;
@@ -285,12 +287,13 @@ class CC_EXPORT LayerTreeResourceProvider : public ResourceProvider {
                     GLenum texture_target,
                     const gfx::Size& size,
                     viz::ResourceFormat format,
-                    bool use_distance_field_text,
                     bool can_use_lcd_text,
                     int msaa_sample_count);
     ~ScopedSkSurface();
 
     SkSurface* surface() const { return surface_.get(); }
+
+    static SkSurfaceProps ComputeSurfaceProps(bool can_use_lcd_text);
 
    private:
     sk_sp<SkSurface> surface_;

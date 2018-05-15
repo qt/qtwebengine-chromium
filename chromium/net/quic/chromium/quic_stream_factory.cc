@@ -14,7 +14,6 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/rand_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -32,6 +31,7 @@
 #include "net/cert/cert_verifier.h"
 #include "net/cert/ct_verifier.h"
 #include "net/dns/host_resolver.h"
+#include "net/log/net_log.h"
 #include "net/log/net_log_capture_mode.h"
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_source_type.h"
@@ -1346,7 +1346,7 @@ std::unique_ptr<DatagramClientSocket> QuicStreamFactory::CreateSocket(
     NetLog* net_log,
     const NetLogSource& source) {
   auto socket = client_socket_factory_->CreateDatagramClientSocket(
-      DatagramSocket::DEFAULT_BIND, RandIntCallback(), net_log, source);
+      DatagramSocket::DEFAULT_BIND, net_log, source);
   if (enable_socket_recv_optimization_)
     socket->EnableRecvOptimization();
   return socket;

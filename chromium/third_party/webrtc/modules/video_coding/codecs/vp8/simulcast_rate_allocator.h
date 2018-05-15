@@ -15,6 +15,7 @@
 
 #include <map>
 #include <memory>
+#include <vector>
 
 #include "api/video_codecs/video_encoder.h"
 #include "common_video/include/video_bitrate_allocator.h"
@@ -23,15 +24,9 @@
 
 namespace webrtc {
 
-class SimulcastRateAllocator : public VideoBitrateAllocator,
-                               public TemporalLayersListener {
+class SimulcastRateAllocator : public VideoBitrateAllocator {
  public:
-  explicit SimulcastRateAllocator(
-      const VideoCodec& codec,
-      std::unique_ptr<TemporalLayersFactory> tl_factory);
-
-  void OnTemporalLayersCreated(int simulcast_id,
-                               TemporalLayers* layers) override;
+  explicit SimulcastRateAllocator(const VideoCodec& codec);
 
   BitrateAllocation GetAllocation(uint32_t total_bitrate_bps,
                                   uint32_t framerate) override;
@@ -41,13 +36,22 @@ class SimulcastRateAllocator : public VideoBitrateAllocator,
  private:
   void DistributeAllocationToSimulcastLayers(
       uint32_t total_bitrate_bps,
-      BitrateAllocation* allocated_bitrates_bps);
+      BitrateAllocation* allocated_bitrates_bps) const;
   void DistributeAllocationToTemporalLayers(
       uint32_t framerate,
-      BitrateAllocation* allocated_bitrates_bps);
+      BitrateAllocation* allocated_bitrates_bps) const;
+  std::vector<uint32_t> DefaultTemporalLayerAllocation(int bitrate_kbps,
+                                                       int max_bitrate_kbps,
+                                                       int framerate,
+                                                       int simulcast_id) const;
+  std::vector<uint32_t> ScreenshareTemporalLayerAllocation(
+      int bitrate_kbps,
+      int max_bitrate_kbps,
+      int framerate,
+      int simulcast_id) const;
+  int NumTemporalStreams(size_t simulcast_id) const;
+
   const VideoCodec codec_;
-  std::map<uint32_t, TemporalLayers*> temporal_layers_;
-  std::unique_ptr<TemporalLayersFactory> tl_factory_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(SimulcastRateAllocator);
 };

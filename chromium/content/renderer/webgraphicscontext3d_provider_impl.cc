@@ -38,10 +38,6 @@ GrContext* WebGraphicsContext3DProviderImpl::GetGrContext() {
   return provider_->GrContext();
 }
 
-void WebGraphicsContext3DProviderImpl::InvalidateGrContext(uint32_t state) {
-  return provider_->InvalidateGrContext(state);
-}
-
 const gpu::Capabilities& WebGraphicsContext3DProviderImpl::GetCapabilities()
     const {
   return provider_->ContextCapabilities();
@@ -96,10 +92,9 @@ cc::ImageDecodeCache* WebGraphicsContext3DProviderImpl::ImageDecodeCache() {
   // TransferCache is used only with OOP raster.
   const bool use_transfer_cache = false;
 
-  DCHECK(provider_->RasterInterface());
   image_decode_cache_ = std::make_unique<cc::GpuImageDecodeCache>(
       provider_.get(), use_transfer_cache, kN32_SkColorType,
-      kMaxWorkingSetBytes);
+      kMaxWorkingSetBytes, provider_->ContextCapabilities().max_texture_size);
   return image_decode_cache_.get();
 }
 

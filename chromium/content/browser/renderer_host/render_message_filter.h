@@ -23,10 +23,11 @@
 #include "content/common/render_message_filter.mojom.h"
 #include "content/public/browser/browser_associated_interface.h"
 #include "content/public/browser/browser_message_filter.h"
+#include "content/public/browser/browser_thread.h"
 #include "gpu/config/gpu_info.h"
 #include "ipc/message_filter.h"
-#include "third_party/WebKit/public/platform/modules/cache_storage/cache_storage.mojom.h"
-#include "third_party/WebKit/public/web/WebPopupType.h"
+#include "third_party/blink/public/platform/modules/cache_storage/cache_storage.mojom.h"
+#include "third_party/blink/public/web/web_popup_type.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gfx/native_widget_types.h"
@@ -113,12 +114,10 @@ class CONTENT_EXPORT RenderMessageFilter
       const url::Origin& cache_storage_origin,
       const std::string& cache_storage_cache_name) override;
   void HasGpuProcess(HasGpuProcessCallback callback) override;
+#if defined(OS_LINUX)
   void SetThreadPriority(int32_t ns_tid,
                          base::ThreadPriority priority) override;
-  // Messages for OOP font loading.  Only used for MACOSX.
-  void LoadFont(const base::string16& font_to_load,
-                float font_point_size,
-                LoadFontCallback callback) override;
+#endif
 
   void OnResolveProxy(const GURL& url, IPC::Message* reply_msg);
 

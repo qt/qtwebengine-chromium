@@ -47,7 +47,11 @@ struct NetworkInformation {
   std::vector<rtc::IPAddress> ip_addresses;
 
   NetworkInformation();
+  NetworkInformation(const NetworkInformation&);
+  NetworkInformation(NetworkInformation&&);
   ~NetworkInformation();
+  NetworkInformation& operator=(const NetworkInformation&);
+  NetworkInformation& operator=(NetworkInformation&&);
 
   std::string ToString() const;
 };
@@ -55,7 +59,8 @@ struct NetworkInformation {
 class AndroidNetworkMonitor : public rtc::NetworkMonitorBase,
                               public rtc::NetworkBinderInterface {
  public:
-  explicit AndroidNetworkMonitor(JNIEnv* env);
+  explicit AndroidNetworkMonitor(JNIEnv* env,
+                                 const JavaRef<jobject>& j_application_context);
   ~AndroidNetworkMonitor() override;
 
   // TODO(sakal): Remove once down stream dependencies have been updated.
@@ -90,6 +95,7 @@ class AndroidNetworkMonitor : public rtc::NetworkMonitorBase,
   void OnNetworkDisconnected_w(NetworkHandle network_handle);
 
   const int android_sdk_int_;
+  ScopedJavaGlobalRef<jobject> j_application_context_;
   ScopedJavaGlobalRef<jobject> j_network_monitor_;
   rtc::ThreadChecker thread_checker_;
   bool started_ = false;
@@ -100,9 +106,18 @@ class AndroidNetworkMonitor : public rtc::NetworkMonitorBase,
 
 class AndroidNetworkMonitorFactory : public rtc::NetworkMonitorFactory {
  public:
-  AndroidNetworkMonitorFactory() {}
+  // Deprecated. Pass in application context to this class.
+  AndroidNetworkMonitorFactory();
+
+  AndroidNetworkMonitorFactory(JNIEnv* env,
+                               const JavaRef<jobject>& j_application_context);
+
+  ~AndroidNetworkMonitorFactory() override;
 
   rtc::NetworkMonitorInterface* CreateNetworkMonitor() override;
+
+ private:
+  ScopedJavaGlobalRef<jobject> j_application_context_;
 };
 
 }  // namespace jni

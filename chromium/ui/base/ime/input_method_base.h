@@ -11,6 +11,7 @@
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "build/build_config.h"
 #include "ui/base/ime/ime_input_context_handler_interface.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/ui_base_ime_export.h"
@@ -34,13 +35,19 @@ class UI_BASE_IME_EXPORT InputMethodBase
       public base::SupportsWeakPtr<InputMethodBase>,
       public IMEInputContextHandlerInterface {
  public:
-  InputMethodBase();
+  explicit InputMethodBase(internal::InputMethodDelegate* delegate = nullptr);
   ~InputMethodBase() override;
 
   // Overriden from InputMethod.
   void SetDelegate(internal::InputMethodDelegate* delegate) override;
   void OnFocus() override;
   void OnBlur() override;
+
+#if defined(OS_WIN)
+  bool OnUntranslatedIMEMessage(const MSG event,
+                                NativeEventResult* result) override;
+#endif
+
   void SetFocusedTextInputClient(TextInputClient* client) override;
   void DetachTextInputClient(TextInputClient* client) override;
   TextInputClient* GetTextInputClient() const override;
@@ -100,8 +107,7 @@ class UI_BASE_IME_EXPORT InputMethodBase
 
   virtual ui::EventDispatchDetails DispatchKeyEventPostIME(
       ui::KeyEvent* event,
-      std::unique_ptr<base::OnceCallback<void(bool)>> ack_callback) const
-      WARN_UNUSED_RESULT;
+      base::OnceCallback<void(bool)> ack_callback) const WARN_UNUSED_RESULT;
 
   // Convenience method to notify all observers of TextInputClient changes.
   void NotifyTextInputStateChanged(const TextInputClient* client);

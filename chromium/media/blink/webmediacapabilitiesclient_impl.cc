@@ -14,13 +14,14 @@
 #include "media/base/video_codecs.h"
 #include "media/base/video_color_space.h"
 #include "media/filters/stream_parser_factory.h"
+#include "media/mojo/interfaces/media_types.mojom.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "services/service_manager/public/cpp/connector.h"
-#include "third_party/WebKit/public/platform/Platform.h"
-#include "third_party/WebKit/public/platform/modules/media_capabilities/WebAudioConfiguration.h"
-#include "third_party/WebKit/public/platform/modules/media_capabilities/WebMediaCapabilitiesInfo.h"
-#include "third_party/WebKit/public/platform/modules/media_capabilities/WebMediaConfiguration.h"
-#include "third_party/WebKit/public/platform/modules/media_capabilities/WebVideoConfiguration.h"
+#include "third_party/blink/public/platform/modules/media_capabilities/web_audio_configuration.h"
+#include "third_party/blink/public/platform/modules/media_capabilities/web_media_capabilities_info.h"
+#include "third_party/blink/public/platform/modules/media_capabilities/web_media_configuration.h"
+#include "third_party/blink/public/platform/modules/media_capabilities/web_video_configuration.h"
+#include "third_party/blink/public/platform/platform.h"
 
 namespace media {
 
@@ -202,9 +203,12 @@ void WebMediaCapabilitiesClientImpl::DecodingInfo(
     BindToHistoryService(&decode_history_ptr_);
   DCHECK(decode_history_ptr_.is_bound());
 
-  decode_history_ptr_->GetPerfInfo(
+  mojom::PredictionFeaturesPtr features = mojom::PredictionFeatures::New(
       video_profile, gfx::Size(video_config.width, video_config.height),
-      video_config.framerate,
+      video_config.framerate);
+
+  decode_history_ptr_->GetPerfInfo(
+      std::move(features),
       base::BindOnce(&VideoPerfInfoCallback, std::move(callbacks),
                      std::move(info)));
 }

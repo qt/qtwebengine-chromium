@@ -21,6 +21,7 @@ using syncer::EntityChangeList;
 using syncer::EntityData;
 using syncer::MetadataChangeList;
 using syncer::ModelError;
+using syncer::ModelTypeChangeProcessor;
 using syncer::MutableDataBatch;
 
 namespace history {
@@ -81,8 +82,8 @@ bool HasTypedUrl(const VisitVector& visits) {
 TypedURLSyncBridge::TypedURLSyncBridge(
     HistoryBackend* history_backend,
     TypedURLSyncMetadataDatabase* sync_metadata_database,
-    const ChangeProcessorFactory& change_processor_factory)
-    : ModelTypeSyncBridge(change_processor_factory, syncer::TYPED_URLS),
+    std::unique_ptr<ModelTypeChangeProcessor> change_processor)
+    : ModelTypeSyncBridge(std::move(change_processor)),
       history_backend_(history_backend),
       processing_syncer_changes_(false),
       sync_metadata_database_(sync_metadata_database),
@@ -288,7 +289,7 @@ void TypedURLSyncBridge::GetData(StorageKeyList storage_keys,
     batch->Put(key, std::move(entity_data));
   }
 
-  callback.Run(std::move(batch));
+  std::move(callback).Run(std::move(batch));
 }
 
 void TypedURLSyncBridge::GetAllData(DataCallback callback) {
@@ -318,7 +319,7 @@ void TypedURLSyncBridge::GetAllData(DataCallback callback) {
     batch->Put(GetStorageKeyFromURLRow(url), std::move(entity_data));
   }
 
-  callback.Run(std::move(batch));
+  std::move(callback).Run(std::move(batch));
 }
 
 // Must be exactly the value of GURL::spec() for backwards comparability with
@@ -739,7 +740,7 @@ void TypedURLSyncBridge::LoadMetadata() {
                                      "TypedURLSyncMetadataDatabase."});
     return;
   }
-  change_processor()->ModelReadyToSync(std::move(batch));
+  change_processor()->ModelReadyToSync(this, std::move(batch));
 }
 
 void TypedURLSyncBridge::ClearErrorStats() {

@@ -114,7 +114,7 @@ static const char kDataChannelLabel[] = "data_channel";
 
 // SRTP cipher name negotiated by the tests. This must be updated if the
 // default changes.
-static const int kDefaultSrtpCryptoSuite = rtc::SRTP_AES128_CM_SHA1_32;
+static const int kDefaultSrtpCryptoSuite = rtc::SRTP_AES128_CM_SHA1_80;
 static const int kDefaultSrtpCryptoSuiteGcm = rtc::SRTP_AEAD_AES_256_GCM;
 
 static const SocketAddress kDefaultLocalAddress("192.168.1.1", 0);
@@ -134,6 +134,21 @@ void RemoveSsrcsAndMsids(cricket::SessionDescription* desc) {
     content.media_description()->mutable_streams().clear();
   }
   desc->set_msid_supported(false);
+}
+
+// Removes all stream information besides the stream ids, simulating an
+// endpoint that only signals a=msid lines to convey stream_ids.
+void RemoveSsrcsAndKeepMsids(cricket::SessionDescription* desc) {
+  for (ContentInfo& content : desc->contents()) {
+    std::vector<std::string> stream_ids;
+    if (!content.media_description()->streams().empty()) {
+      stream_ids = content.media_description()->streams()[0].stream_ids();
+    }
+    content.media_description()->mutable_streams().clear();
+    cricket::StreamParams new_stream;
+    new_stream.set_stream_ids(stream_ids);
+    content.media_description()->AddStream(new_stream);
+  }
 }
 
 int FindFirstMediaStatsIndexByKind(
@@ -314,8 +329,8 @@ class PeerConnectionWrapper : public webrtc::PeerConnectionObserver,
 
   rtc::scoped_refptr<RtpSenderInterface> AddTrack(
       rtc::scoped_refptr<MediaStreamTrackInterface> track,
-      const std::vector<std::string>& stream_labels = {}) {
-    auto result = pc()->AddTrack(track, stream_labels);
+      const std::vector<std::string>& stream_ids = {}) {
+    auto result = pc()->AddTrack(track, stream_ids);
     EXPECT_EQ(RTCErrorType::NONE, result.error().type());
     return result.MoveValue();
   }
@@ -1088,6 +1103,8 @@ class PeerConnectionIntegrationBaseTest : public testing::Test {
         fss_(new rtc::FirewallSocketServer(ss_.get())),
         network_thread_(new rtc::Thread(fss_.get())),
         worker_thread_(rtc::Thread::Create()) {
+    network_thread_->SetName("PCNetworkThread", this);
+    worker_thread_->SetName("PCWorkerThread", this);
     RTC_CHECK(network_thread_->Start());
     RTC_CHECK(worker_thread_->Start());
   }
@@ -1364,13 +1381,10 @@ class PeerConnectionIntegrationBaseTest : public testing::Test {
     return expectations_correct;
   }
 
-  void TestGcmNegotiationUsesCipherSuite(bool local_gcm_enabled,
-                                         bool remote_gcm_enabled,
-                                         int expected_cipher_suite) {
-    PeerConnectionFactory::Options caller_options;
-    caller_options.crypto_options.enable_gcm_crypto_suites = local_gcm_enabled;
-    PeerConnectionFactory::Options callee_options;
-    callee_options.crypto_options.enable_gcm_crypto_suites = remote_gcm_enabled;
+  void TestNegotiatedCipherSuite(
+      const PeerConnectionFactory::Options& caller_options,
+      const PeerConnectionFactory::Options& callee_options,
+      int expected_cipher_suite) {
     ASSERT_TRUE(CreatePeerConnectionWrappersWithOptions(caller_options,
                                                         callee_options));
     rtc::scoped_refptr<webrtc::FakeMetricsObserver> caller_observer =
@@ -1387,6 +1401,17 @@ class PeerConnectionIntegrationBaseTest : public testing::Test {
         1, caller_observer->GetEnumCounter(webrtc::kEnumCounterAudioSrtpCipher,
                                            expected_cipher_suite));
     caller()->pc()->RegisterUMAObserver(nullptr);
+  }
+
+  void TestGcmNegotiationUsesCipherSuite(bool local_gcm_enabled,
+                                         bool remote_gcm_enabled,
+                                         int expected_cipher_suite) {
+    PeerConnectionFactory::Options caller_options;
+    caller_options.crypto_options.enable_gcm_crypto_suites = local_gcm_enabled;
+    PeerConnectionFactory::Options callee_options;
+    callee_options.crypto_options.enable_gcm_crypto_suites = remote_gcm_enabled;
+    TestNegotiatedCipherSuite(caller_options, callee_options,
+                              expected_cipher_suite);
   }
 
  protected:
@@ -2171,6 +2196,27 @@ TEST_P(PeerConnectionIntegrationTest, EndToEndCallWithoutSsrcOrMsidSignaling) {
   ASSERT_TRUE(ExpectNewFrames(media_expectations));
 }
 
+// Basic end-to-end test, without SSRC signaling. This means that the track
+// was created properly and frames are delivered when the MSIDs are communicated
+// with a=msid lines and no a=ssrc lines.
+TEST_F(PeerConnectionIntegrationTestUnifiedPlan,
+       EndToEndCallWithoutSsrcSignaling) {
+  const char kStreamId[] = "streamId";
+  ASSERT_TRUE(CreatePeerConnectionWrappers());
+  ConnectFakeSignaling();
+  // Add just audio tracks.
+  caller()->AddTrack(caller()->CreateLocalAudioTrack(), {kStreamId});
+  callee()->AddAudioTrack();
+
+  // Remove SSRCs from the received offer SDP.
+  callee()->SetReceivedSdpMunger(RemoveSsrcsAndKeepMsids);
+  caller()->CreateAndSetAndSignalOffer();
+  ASSERT_TRUE_WAIT(SignalingStateStable(), kDefaultTimeout);
+  MediaExpectations media_expectations;
+  media_expectations.ExpectBidirectionalAudio();
+  ASSERT_TRUE(ExpectNewFrames(media_expectations));
+}
+
 // Test that if two video tracks are sent (from caller to callee, in this test),
 // they're transmitted correctly end-to-end.
 TEST_P(PeerConnectionIntegrationTest, EndToEndCallWithTwoVideoTracks) {
@@ -2327,16 +2373,16 @@ TEST_P(PeerConnectionIntegrationTest, GetCaptureStartNtpTimeWithOldStatsApi) {
 
   // Get the remote audio track created on the receiver, so they can be used as
   // GetStats filters.
-  StreamCollectionInterface* remote_streams = callee()->remote_streams();
-  ASSERT_EQ(1u, remote_streams->count());
-  ASSERT_EQ(1u, remote_streams->at(0)->GetAudioTracks().size());
-  MediaStreamTrackInterface* remote_audio_track =
-      remote_streams->at(0)->GetAudioTracks()[0];
+  auto receivers = callee()->pc()->GetReceivers();
+  ASSERT_EQ(1u, receivers.size());
+  auto remote_audio_track = receivers[0]->track();
 
   // Get the audio output level stats. Note that the level is not available
   // until an RTCP packet has been received.
-  EXPECT_TRUE_WAIT(callee()->OldGetStatsForTrack(remote_audio_track)->
-                   CaptureStartNtpTime() > 0, 2 * kMaxWaitForFramesMs);
+  EXPECT_TRUE_WAIT(
+      callee()->OldGetStatsForTrack(remote_audio_track)->CaptureStartNtpTime() >
+          0,
+      2 * kMaxWaitForFramesMs);
 }
 
 // Test that we can get stats (using the new stats implemnetation) for
@@ -2599,6 +2645,40 @@ TEST_P(PeerConnectionIntegrationTest, CallerDtls10ToCalleeDtls12) {
   MediaExpectations media_expectations;
   media_expectations.ExpectBidirectionalAudioAndVideo();
   ASSERT_TRUE(ExpectNewFrames(media_expectations));
+}
+
+// The three tests below verify that "enable_aes128_sha1_32_crypto_cipher"
+// works as expected; the cipher should only be used if enabled by both sides.
+TEST_P(PeerConnectionIntegrationTest,
+       Aes128Sha1_32_CipherNotUsedWhenOnlyCallerSupported) {
+  PeerConnectionFactory::Options caller_options;
+  caller_options.crypto_options.enable_aes128_sha1_32_crypto_cipher = true;
+  PeerConnectionFactory::Options callee_options;
+  callee_options.crypto_options.enable_aes128_sha1_32_crypto_cipher = false;
+  int expected_cipher_suite = rtc::SRTP_AES128_CM_SHA1_80;
+  TestNegotiatedCipherSuite(caller_options, callee_options,
+                            expected_cipher_suite);
+}
+
+TEST_P(PeerConnectionIntegrationTest,
+       Aes128Sha1_32_CipherNotUsedWhenOnlyCalleeSupported) {
+  PeerConnectionFactory::Options caller_options;
+  caller_options.crypto_options.enable_aes128_sha1_32_crypto_cipher = false;
+  PeerConnectionFactory::Options callee_options;
+  callee_options.crypto_options.enable_aes128_sha1_32_crypto_cipher = true;
+  int expected_cipher_suite = rtc::SRTP_AES128_CM_SHA1_80;
+  TestNegotiatedCipherSuite(caller_options, callee_options,
+                            expected_cipher_suite);
+}
+
+TEST_P(PeerConnectionIntegrationTest, Aes128Sha1_32_CipherUsedWhenSupported) {
+  PeerConnectionFactory::Options caller_options;
+  caller_options.crypto_options.enable_aes128_sha1_32_crypto_cipher = true;
+  PeerConnectionFactory::Options callee_options;
+  callee_options.crypto_options.enable_aes128_sha1_32_crypto_cipher = true;
+  int expected_cipher_suite = rtc::SRTP_AES128_CM_SHA1_32;
+  TestNegotiatedCipherSuite(caller_options, callee_options,
+                            expected_cipher_suite);
 }
 
 // Test that a non-GCM cipher is used if both sides only support non-GCM.

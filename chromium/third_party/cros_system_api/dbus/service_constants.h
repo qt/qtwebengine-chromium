@@ -12,9 +12,11 @@
 #include "apmanager/dbus-constants.h"
 #include "authpolicy/dbus-constants.h"
 #include "biod/dbus-constants.h"
+#include "cecservice/dbus-constants.h"
 #include "cros-disks/dbus-constants.h"
 #include "cryptohome/dbus-constants.h"
 #include "debugd/dbus-constants.h"
+#include "drivefs/dbus-constants.h"
 #include "hammerd/dbus-constants.h"
 #include "login_manager/dbus-constants.h"
 #include "lorgnette/dbus-constants.h"
@@ -23,6 +25,7 @@
 #include "shill/dbus-constants.h"
 #include "smbprovider/dbus-constants.h"
 #include "update_engine/dbus-constants.h"
+#include "vm_applications/dbus-constants.h"
 #include "vm_concierge/dbus-constants.h"
 
 namespace dbus {
@@ -138,6 +141,8 @@ const char kComponentUpdaterServiceInterface[] =
     "org.chromium.ComponentUpdaterService";
 const char kComponentUpdaterServiceLoadComponentMethod[] = "LoadComponent";
 const char kComponentUpdaterServiceUnloadComponentMethod[] = "UnloadComponent";
+const char kComponentUpdaterServiceComponentInstalledSignal[] =
+    "ComponentInstalled";
 
 const char kKioskAppServiceName[] = "org.chromium.KioskAppService";
 const char kKioskAppServicePath[] = "/org/chromium/KioskAppService";
@@ -155,6 +160,12 @@ const char kDisplayServiceSetPowerMethod[] = "SetPower";
 const char kDisplayServiceSetSoftwareDimmingMethod[] = "SetSoftwareDimming";
 const char kDisplayServiceTakeOwnershipMethod[] = "TakeOwnership";
 const char kDisplayServiceReleaseOwnershipMethod[] = "ReleaseOwnership";
+
+const char kScreenLockServiceName[] = "org.chromium.ScreenLockService";
+const char kScreenLockServicePath[] = "/org/chromium/ScreenLockService";
+const char kScreenLockServiceInterface[] =
+    "org.chromium.ScreenLockServiceInterface";
+const char kScreenLockServiceShowLockScreenMethod[] = "ShowLockScreen";
 
 constexpr char kVirtualFileRequestServiceName[] =
     "org.chromium.VirtualFileRequestService";
@@ -628,9 +639,15 @@ const char kErrorNotAuthorized[] = "org.bluez.Error.NotAuthorized";
 const char kErrorNotAvailable[] = "org.bluez.Error.NotAvailable";
 }  // namespace bluetooth_media_transport
 
+namespace bluez_object_manager {
+// BlueZ daemon Object Manager service identifiers.
+const char kBluezObjectManagerServiceName[] = "org.bluez";
+const char kBluezObjectManagerServicePath[] = "/";
+}  // namespace bluez_object_manager
+
 namespace bluetooth_object_manager {
 // Bluetooth daemon Object Manager service identifiers.
-const char kBluetoothObjectManagerServiceName[] = "org.bluez";
+const char kBluetoothObjectManagerServiceName[] = "org.chromium.Bluetooth";
 const char kBluetoothObjectManagerServicePath[] = "/";
 }  // namespace bluetooth_object_manager
 
@@ -990,6 +1007,7 @@ const char kRemoveActiveInputNode[] = "RemoveActiveInputNode";
 const char kGetNumberOfActiveStreams[] = "GetNumberOfActiveStreams";
 const char kGetNumberOfActiveInputStreams[] = "GetNumberOfActiveInputStreams";
 const char kGetNumberOfActiveOutputStreams[] = "GetNumberOfActiveOutputStreams";
+const char kIsAudioOutputActive[] = "IsAudioOutputActive";
 const char kSetGlobalOutputChannelRemix[] = "SetGlobalOutputChannelRemix";
 
 // Names of properties returned by GetNodes()
@@ -1015,6 +1033,7 @@ const char kNodesChanged[] = "NodesChanged";
 const char kActiveOutputNodeChanged[] = "ActiveOutputNodeChanged";
 const char kActiveInputNodeChanged[] = "ActiveInputNodeChanged";
 const char kNumberOfActiveStreamsChanged[] = "NumberOfActiveStreamsChanged";
+const char kAudioOutputActiveStateChanged[] = "AudioOutputActiveStateChanged";
 const char kHotwordTriggered[] = "HotwordTriggered";
 }  // namespace cras
 
@@ -1068,6 +1087,14 @@ constexpr char kMidisInterfaceName[] = "org.chromium.Midis";
 // Methods
 constexpr char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
 }  // namespace midis
+
+namespace ml {
+constexpr char kMlServiceName[] = "org.chromium.Ml";
+constexpr char kMlServicePath[] = "/org/chromium/Ml";
+constexpr char kMlInterfaceName[] = "org.chromium.Ml";
+// Methods
+constexpr char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
+}  // namespace ml
 
 namespace virtual_file_provider {
 constexpr char kVirtualFileProviderServiceName[] =

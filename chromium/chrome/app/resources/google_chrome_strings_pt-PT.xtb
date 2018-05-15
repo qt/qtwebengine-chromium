@@ -25,7 +25,6 @@
 <translation id="1587325591171447154"><ph name="FILE_NAME" /> é perigoso, por isso o Chrome bloqueou-o.</translation>
 <translation id="1619887657840448962">Para tornar o Chrome mais seguro, desativámos a seguinte extensão, que não está listada na <ph name="IDS_EXTENSION_WEB_STORE_TITLE" />, e é possível que tenha sido adicionada sem o seu conhecimento.</translation>
 <translation id="1628000112320670027">Obter ajuda relacionada com o Chrome</translation>
-<translation id="163860049029591106">Introdução ao Chrome OS</translation>
 <translation id="1674870198290878346">Abrir link numa janela de nave&amp;gação anónima do Chrome</translation>
 <translation id="1682634494516646069">O Google Chrome não consegue ler e escrever no respetivo diretório de dados: <ph name="USER_DATA_DIRECTORY" /></translation>
 <translation id="1698376642261615901">O Google Chrome é um navegador de internet que executa páginas Web e aplicações de forma extremamente rápida. É rápido, estável e fácil de utilizar. Navegue na Web com mais segurança com proteção contra phishing e programas maliciosos incorporada no Google Chrome.</translation>
@@ -40,7 +39,6 @@
 <translation id="1877026089748256423">O Chrome está desatualizado</translation>
 <translation id="2007150628464581396">{0,plural, =1{O Chrome será reiniciado dentro de 1 minuto}other{O Chrome será reiniciado dentro de # minutos}}</translation>
 <translation id="2063848847527508675">O Chrome OS tem de ser reiniciado para aplicar a atualização.</translation>
-<translation id="2077129598763517140">Utilizar aceleração de hardware sempre que estiver disponível</translation>
 <translation id="2084710999043359739">Adicionar ao Chrome</translation>
 <translation id="2094919256425865063">Pretende fechar o Chrome mesmo assim?</translation>
 <translation id="210890598424854131">{0,plural, =0{O Chrome será reiniciado agora}=1{O Chrome será reiniciado dentro de 1 segundo}other{O Chrome será reiniciado dentro de # segundos}}</translation>
@@ -110,6 +108,7 @@ Para obter mais instruções, verifique o seu email em <ph name="ACCOUNT_EMAIL" 
 <translation id="3735758079232443276">A extensão "<ph name="EXTENSION_NAME" />" alterou a página apresentada quando inicia o Chrome.</translation>
 <translation id="3780814664026482060">Chrome – <ph name="PAGE_TITLE" /></translation>
 <translation id="3784527566857328444">Remover do Chrome</translation>
+<translation id="3844992844761326777">Existe software prejudicial no seu computador. O Chrome pode removê-lo e restaurar as suas definições para que o navegador volte a funcionar normalmente.</translation>
 <translation id="386202838227397562">Feche todas as janelas do Google Chrome e tente novamente.</translation>
 <translation id="3870154837782082782">Google Inc.</translation>
 <translation id="3873044882194371212">Abrir link numa janela de nave&amp;gação anónima do Chrome</translation>
@@ -124,12 +123,10 @@ Para obter mais instruções, verifique o seu email em <ph name="ACCOUNT_EMAIL" 
 <translation id="4251615635259297716">Associar os seus dados do Chrome a esta conta?</translation>
 <translation id="4251625577313994583">obtenha o Chrome no seu iPhone</translation>
 <translation id="4293420128516039005">Inicie sessão para sincronizar e personalizar o Chrome em todos os dispositivos.</translation>
-<translation id="4309555186815777032">(é necessário <ph name="BEGIN_BUTTON" />reiniciar<ph name="END_BUTTON" /> o Chrome)</translation>
 <translation id="4328355335528187361">Google Chrome Dev (mDNS-In)</translation>
 <translation id="4331809312908958774">Chrome OS</translation>
 <translation id="4343195214584226067">A extensão <ph name="EXTENSION_NAME" /> foi adicionada ao Chrome</translation>
 <translation id="4407807842708586359">SO do Google Chrome</translation>
-<translation id="4458285410772214805">Termine sessão e volte a iniciar sessão para que esta alteração tenha efeito.</translation>
 <translation id="4458462641685292929">Está em curso outra operação no Google Chrome. Tente novamente mais tarde.</translation>
 <translation id="4480040274068703980">O Chrome OS não conseguiu sincronizar os dados devido a um erro no início de sessão.</translation>
 <translation id="4561051373932531560">O Google Chrome permite-lhe clicar num número de telefone na Web e fazer a chamada com o Skype!</translation>
@@ -152,10 +149,8 @@ Para obter mais instruções, verifique o seu email em <ph name="ACCOUNT_EMAIL" 
 <translation id="4921569541910214635">Partilha um computador? Agora pode configurar o Chrome exatamente como pretende.</translation>
 <translation id="4953650215774548573">Definir o Google Chrome como o navegador predefinido</translation>
 <translation id="495931528404527476">No Chrome</translation>
-<translation id="4965682129423310439">O Chrome encontrou software prejudicial no seu computador. O Chrome pode removê-lo e restaurar as suas definições para que o navegador volte a funcionar normalmente.</translation>
 <translation id="4990567037958725628">Google Chrome Canary</translation>
 <translation id="5028489144783860647">O Google Chrome não conseguiu sincronizar os dados. Atualize a frase de acesso da Sincronização.</translation>
-<translation id="5037239767309817516">Feche todas as janelas do Google Chrome e reinicie-o para que esta alteração tenha efeito.</translation>
 <translation id="5131923704757666404">{0,plural, =1{O Chrome será reiniciado dentro de uma hora}other{O Chrome será reiniciado dentro de # horas}}</translation>
 <translation id="5132929315877954718">Descubra fantásticas aplicações, jogos, extensões e temas para o Google Chrome.</translation>
 <translation id="5166975452760862670">O Google Chrome é apresentado neste idioma</translation>
@@ -179,7 +174,6 @@ Para obter mais instruções, verifique o seu email em <ph name="ACCOUNT_EMAIL" 
 <translation id="5877064549588274448">Canal alterado. Reinicie o dispositivo para aplicar as alterações.</translation>
 <translation id="5895138241574237353">Reiniciar</translation>
 <translation id="5906655207909574370">Quase atualizado! Reinicie o dispositivo para concluir a atualização.</translation>
-<translation id="5931853610562009806">No Mac, as palavras-passe podem ser guardadas no Porta-chaves e podem ser sincronizadas ou acedidas por outros utilizadores do Chrome que partilhem esta conta do OS X.</translation>
 <translation id="5940385492829620908">A sua Web, os seus marcadores e os seus outros itens do Chrome estão aqui.</translation>
 <translation id="5941830788786076944">Tornar o Google Chrome no browser padrão.</translation>
 <translation id="6014844626092547096">Tem agora sessão iniciada no Chrome! A sincronização foi desativada pelo seu gestor.</translation>
@@ -211,7 +205,6 @@ Para obter mais instruções, verifique o seu email em <ph name="ACCOUNT_EMAIL" 
 <translation id="6989339256997917931">O Google Chrome foi atualizado, mas já não o utiliza há, pelo menos, 30 dias.</translation>
 <translation id="7098166902387133879">O Google Chrome está a utilizar o microfone.</translation>
 <translation id="7106741999175697885">Gestor de tarefas - Google Chrome</translation>
-<translation id="7161904924553537242">Bem-vindo ao Google Chrome</translation>
 <translation id="7164397146364144019">Pode contribuir para tornar o Chrome mais seguro e fácil de utilizar ao comunicar automaticamente os detalhes de possíveis incidentes de segurança à Google.</translation>
 <translation id="7242029209006116544">Está a iniciar sessão com uma conta gerida e a permitir que o gestor controle o seu perfil do Google Chrome. Os seus dados do Chrome, como aplicações, marcadores, histórico, palavras-passe e outras definições, ficarão associados definitivamente a <ph name="USER_NAME" />. Poderá eliminar estes dados através do Painel de Controlo das Contas Google, mas não poderá associá-los a outra conta. Opcionalmente, pode criar um perfil novo para manter os seus dados atuais do Chrome em separado. <ph name="LEARN_MORE" /></translation>
 <translation id="7308322188646931570">O Chrome necessita de acesso ao armazenamento para transferir ficheiros.</translation>

@@ -576,23 +576,6 @@ class EndToEndTest : public QuicTestWithParam<TestParams> {
         *client_->client()->client_session(), n);
   }
 
-  void WaitForDelayedAcks() {
-    // kWaitDuration is a period of time that is long enough for all delayed
-    // acks to be sent and received on the other end.
-    const QuicTime::Delta kWaitDuration =
-        4 * QuicTime::Delta::FromMilliseconds(kDefaultDelayedAckTimeMs);
-
-    const QuicClock* clock =
-        client_->client()->client_session()->connection()->clock();
-
-    QuicTime wait_until = clock->ApproximateNow() + kWaitDuration;
-    while (clock->ApproximateNow() < wait_until) {
-      QUIC_LOG_EVERY_N_SEC(INFO, 0.01) << "Waiting for delayed acks...";
-      // This waits for up to 50 ms.
-      client_->client()->WaitForEvents();
-    }
-  }
-
   bool initialized_;
   QuicSocketAddress server_address_;
   QuicString server_hostname_;
@@ -617,6 +600,7 @@ class EndToEndTestWithTls : public EndToEndTest {
  protected:
   EndToEndTestWithTls() : EndToEndTest() {
     FLAGS_quic_reloadable_flag_delay_quic_server_handshaker_construction = true;
+    SetQuicReloadableFlag(quic_server_early_version_negotiation, true);
   }
 };
 
@@ -1642,6 +1626,26 @@ TEST_P(EndToEndTest, ConnectionMigrationClientPortChanged) {
   EXPECT_NE(old_address.port(), new_address.port());
 }
 
+TEST_P(EndToEndTest, NegotiatedInitialCongestionWindow) {
+  SetQuicReloadableFlag(quic_unified_iw_options, true);
+  client_extra_copts_.push_back(kIW03);
+
+  ASSERT_TRUE(Initialize());
+
+  // Values are exchanged during crypto handshake, so wait for that to finish.
+  EXPECT_TRUE(client_->client()->WaitForCryptoHandshakeConfirmed());
+  server_thread_->WaitForCryptoHandshakeConfirmed();
+  server_thread_->Pause();
+
+  QuicDispatcher* dispatcher =
+      QuicServerPeer::GetDispatcher(server_thread_->server());
+  QuicSession* session = dispatcher->session_map().begin()->second.get();
+  QuicConnection* server_connection = session->connection();
+  QuicPacketCount cwnd =
+      server_connection->sent_packet_manager().initial_congestion_window();
+  EXPECT_EQ(3u, cwnd);
+}
+
 TEST_P(EndToEndTest, DifferentFlowControlWindows) {
   // Client and server can set different initial flow control receive windows.
   // These are sent in CHLO/SHLO. Tests that these values are exchanged properly
@@ -2076,7 +2080,7 @@ TEST_P(EndToEndTestWithTls,
   QuicConnectionId incorrect_connection_id =
       client_->client()->client_session()->connection()->connection_id() + 1;
   std::unique_ptr<QuicEncryptedPacket> packet(
-      QuicFramer::BuildVersionNegotiationPacket(incorrect_connection_id,
+      QuicFramer::BuildVersionNegotiationPacket(incorrect_connection_id, false,
                                                 server_supported_versions_));
   testing::NiceMock<MockQuicConnectionDebugVisitor> visitor;
   client_->client()->client_session()->connection()->set_debug_visitor(
@@ -2194,7 +2198,7 @@ TEST_P(EndToEndTestWithTls, BadEncryptedData) {
   std::unique_ptr<QuicEncryptedPacket> packet(ConstructEncryptedPacket(
       client_->client()->client_session()->connection()->connection_id(), false,
       false, 1, "At least 20 characters.", PACKET_8BYTE_CONNECTION_ID,
-      PACKET_6BYTE_PACKET_NUMBER));
+      PACKET_4BYTE_PACKET_NUMBER));
   // Damage the encrypted data.
   QuicString damaged_packet(packet->data(), packet->length());
   damaged_packet[30] ^= 0x01;
@@ -2956,17 +2960,22 @@ TEST_P(EndToEndTest, WayTooLongRequestHeaders) {
 
 class WindowUpdateObserver : public QuicConnectionDebugVisitor {
  public:
-  WindowUpdateObserver() : num_window_update_frames_(0) {}
+  WindowUpdateObserver() : num_window_update_frames_(0), num_ping_frames_(0) {}
 
   size_t num_window_update_frames() const { return num_window_update_frames_; }
+
+  size_t num_ping_frames() const { return num_ping_frames_; }
 
   void OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame,
                            const QuicTime& receive_time) override {
     ++num_window_update_frames_;
   }
 
+  void OnPingFrame(const QuicPingFrame& frame) override { ++num_ping_frames_; }
+
  private:
   size_t num_window_update_frames_;
+  size_t num_ping_frames_;
 };
 
 TEST_P(EndToEndTest, WindowUpdateInAck) {
@@ -2990,6 +2999,13 @@ TEST_P(EndToEndTest, WindowUpdateInAck) {
   client_->Disconnect();
   if (version > QUIC_VERSION_38) {
     EXPECT_LT(0u, observer.num_window_update_frames());
+    if (GetQuicReloadableFlag(quic_remove_redundant_ping)) {
+      EXPECT_EQ(0u, observer.num_ping_frames());
+    } else {
+      // A redundant PING frame is bundled with each WINDOW_UPDATE frame.
+      EXPECT_EQ(observer.num_window_update_frames(),
+                observer.num_ping_frames());
+    }
   } else {
     EXPECT_EQ(0u, observer.num_window_update_frames());
   }
@@ -3033,7 +3049,7 @@ TEST_P(EndToEndTest, LastPacketSentIsConnectivityProbing) {
   EXPECT_EQ("200", client_->response_headers()->find(":status")->second);
 
   // Wait for the client's ACK (of the response) to be received by the server.
-  WaitForDelayedAcks();
+  client_->WaitForDelayedAcks();
 
   // We are sending a connectivity probing packet from an unchanged client
   // address, so the server will not respond to us with a connectivity probing
@@ -3041,7 +3057,7 @@ TEST_P(EndToEndTest, LastPacketSentIsConnectivityProbing) {
   client_->SendConnectivityProbing();
 
   // Wait for the server's last ACK to be received by the client.
-  WaitForDelayedAcks();
+  client_->WaitForDelayedAcks();
 }
 
 class EndToEndBufferedPacketsTest : public EndToEndTest {

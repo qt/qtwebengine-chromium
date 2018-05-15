@@ -5,13 +5,12 @@
 #include "net/socket/udp_server_socket.h"
 
 #include "net/base/net_errors.h"
-#include "net/base/rand_callback.h"
 
 namespace net {
 
 UDPServerSocket::UDPServerSocket(net::NetLog* net_log,
                                  const net::NetLogSource& source)
-    : socket_(DatagramSocket::DEFAULT_BIND, RandIntCallback(), net_log, source),
+    : socket_(DatagramSocket::DEFAULT_BIND, net_log, source),
       allow_address_reuse_(false),
       allow_broadcast_(false) {}
 
@@ -65,6 +64,10 @@ int UDPServerSocket::SetSendBufferSize(int32_t size) {
 
 int UDPServerSocket::SetDoNotFragment() {
   return socket_.SetDoNotFragment();
+}
+
+void UDPServerSocket::SetMsgConfirm(bool confirm) {
+  return socket_.SetMsgConfirm(confirm);
 }
 
 void UDPServerSocket::Close() {

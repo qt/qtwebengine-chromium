@@ -14,6 +14,7 @@
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
+#include "base/optional.h"
 #include "base/run_loop.h"
 #include "base/test/histogram_tester.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -56,6 +57,7 @@
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/mutator_host.h"
+#include "cc/trees/render_frame_metadata_observer.h"
 #include "cc/trees/scroll_node.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "cc/trees/transform_node.h"
@@ -176,7 +178,11 @@ class LayerTreeHostImplTest : public testing::Test,
     animation_task_ = task;
     requested_animation_delay_ = delay;
   }
-  void DidActivateSyncTree() override {}
+  void DidActivateSyncTree() override {
+    // Make sure the active tree always has a valid LocalSurfaceId.
+    host_impl_->active_tree()->set_local_surface_id(
+        viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)));
+  }
   void WillPrepareTiles() override {}
   void DidPrepareTiles() override {}
   void DidCompletePageScaleAnimationOnImplThread() override {
@@ -236,6 +242,8 @@ class LayerTreeHostImplTest : public testing::Test,
     bool init = host_impl_->InitializeRenderer(layer_tree_frame_sink_.get());
     host_impl_->SetViewportSize(gfx::Size(10, 10));
     host_impl_->active_tree()->PushPageScaleFromMainThread(1.f, 1.f, 1.f);
+    host_impl_->active_tree()->set_local_surface_id(
+        viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)));
     // Set the viz::BeginFrameArgs so that methods which use it are able to.
     host_impl_->WillBeginImplFrame(viz::CreateBeginFrameArgsForTesting(
         BEGINFRAME_FROM_HERE, 0, 1,
@@ -681,7 +689,8 @@ class LayerTreeHostImplTest : public testing::Test,
     SnapContainerData container_data(
         ScrollSnapType(false, SnapAxis::kBoth, SnapStrictness::kMandatory),
         gfx::ScrollOffset(300, 300));
-    SnapAreaData area_data(SnapAxis::kBoth, gfx::ScrollOffset(50, 50), false);
+    SnapAreaData area_data(SnapAxis::kBoth, gfx::ScrollOffset(50, 50),
+                           gfx::RectF(0, 0, 300, 300), false);
     container_data.AddSnapAreaData(area_data);
     overflow->test_properties()->snap_container_data.emplace(container_data);
     host_impl_->active_tree()->BuildPropertyTreesForTesting();
@@ -1613,6 +1622,34 @@ TEST_F(LayerTreeHostImplTest, ScrollSnapOnBoth) {
       begin_frame_args, start_time + base::TimeDelta::FromMilliseconds(1000));
 
   EXPECT_VECTOR_EQ(gfx::Vector2dF(50, 50), overflow->CurrentScrollOffset());
+}
+
+TEST_F(LayerTreeHostImplTest, GetSnapFlingInfoWhenZoomed) {
+  LayerImpl* overflow = CreateLayerForSnapping();
+  // Scales the page to its 1/5.
+  host_impl_->active_tree()->PushPageScaleFromMainThread(0.2f, 0.1f, 5.f);
+
+  // Should be (10, 10) in the scroller's coordinate.
+  gfx::Point scroll_position(2, 2);
+  EXPECT_EQ(
+      InputHandler::SCROLL_ON_IMPL_THREAD,
+      host_impl_
+          ->ScrollBegin(BeginState(scroll_position).get(), InputHandler::WHEEL)
+          .thread);
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(0, 0), overflow->CurrentScrollOffset());
+
+  // Should be (20, 20) in the scroller's coordinate.
+  gfx::Vector2dF delta(4, 4);
+  InputHandlerScrollResult result =
+      host_impl_->ScrollBy(UpdateState(scroll_position, delta).get());
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(20, 20), overflow->CurrentScrollOffset());
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(4, 4), result.current_offset);
+
+  gfx::Vector2dF initial_offset, target_offset;
+  EXPECT_TRUE(host_impl_->GetSnapFlingInfo(gfx::Vector2dF(10, 10),
+                                           &initial_offset, &target_offset));
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(4, 4), initial_offset);
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(10, 10), target_offset);
 }
 
 TEST_F(LayerTreeHostImplTest, OverscrollBehaviorPreventsPropagation) {
@@ -3495,6 +3532,8 @@ class LayerTreeHostImplTestScrollbarAnimation : public LayerTreeHostImplTest {
     host_impl_->active_tree()->BuildPropertyTreesForTesting();
     host_impl_->active_tree()->DidBecomeActive();
     host_impl_->active_tree()->HandleScrollbarShowRequestsFromMain();
+    host_impl_->active_tree()->set_local_surface_id(
+        viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)));
     DrawFrame();
 
     // SetScrollElementId will initialize the scrollbar which will cause it to
@@ -7785,6 +7824,76 @@ TEST_F(LayerTreeHostImplTest, NoOverscrollWhenNotAtEdge) {
   }
 }
 
+TEST_F(LayerTreeHostImplTest, NoOverscrollOnNonViewportLayers) {
+  const gfx::Size content_size(200, 200);
+  const gfx::Size viewport_size(100, 100);
+
+  LayerTreeImpl* layer_tree_impl = host_impl_->active_tree();
+
+  LayerImpl* content_layer =
+      CreateBasicVirtualViewportLayers(viewport_size, content_size);
+  LayerImpl* outer_scroll_layer = host_impl_->OuterViewportScrollLayer();
+  LayerImpl* scroll_layer = nullptr;
+
+  // Initialization: Add a nested scrolling layer, simulating a scrolling div.
+  {
+    std::unique_ptr<LayerImpl> scroll = LayerImpl::Create(layer_tree_impl, 11);
+    scroll->SetBounds(gfx::Size(400, 400));
+    scroll->SetScrollable(content_size);
+    scroll->SetElementId(LayerIdToElementIdForTesting(scroll->id()));
+    scroll->SetDrawsContent(true);
+
+    scroll_layer = scroll.get();
+
+    content_layer->test_properties()->AddChild(std::move(scroll));
+    layer_tree_impl->BuildPropertyTreesForTesting();
+  }
+
+  InputHandlerScrollResult scroll_result;
+  DrawFrame();
+
+  // Start a scroll gesture, ensure it's scrolling the subscroller.
+  {
+    host_impl_->ScrollBegin(BeginState(gfx::Point(0, 0)).get(),
+                            InputHandler::TOUCHSCREEN);
+    host_impl_->ScrollBy(
+        UpdateState(gfx::Point(0, 0), gfx::Vector2dF(100.f, 100.f)).get());
+
+    EXPECT_VECTOR_EQ(gfx::Vector2dF(100.f, 100.f),
+                     scroll_layer->CurrentScrollOffset());
+    EXPECT_VECTOR_EQ(gfx::Vector2dF(0.f, 0.f),
+                     outer_scroll_layer->CurrentScrollOffset());
+  }
+
+  // Continue the scroll. Ensure that scrolling beyond the child's extent
+  // doesn't consume the delta but it isn't counted as overscroll.
+  {
+    InputHandlerScrollResult result = host_impl_->ScrollBy(
+        UpdateState(gfx::Point(0, 0), gfx::Vector2dF(120.f, 140.f)).get());
+
+    EXPECT_VECTOR_EQ(gfx::Vector2dF(200.f, 200.f),
+                     scroll_layer->CurrentScrollOffset());
+    EXPECT_VECTOR_EQ(gfx::Vector2dF(0.f, 0.f),
+                     outer_scroll_layer->CurrentScrollOffset());
+    EXPECT_FALSE(result.did_overscroll_root);
+  }
+
+  // Continue the scroll. Ensure that scrolling beyond the child's extent
+  // doesn't consume the delta but it isn't counted as overscroll.
+  {
+    InputHandlerScrollResult result = host_impl_->ScrollBy(
+        UpdateState(gfx::Point(0, 0), gfx::Vector2dF(20.f, 40.f)).get());
+
+    EXPECT_VECTOR_EQ(gfx::Vector2dF(200.f, 200.f),
+                     scroll_layer->CurrentScrollOffset());
+    EXPECT_VECTOR_EQ(gfx::Vector2dF(0.f, 0.f),
+                     outer_scroll_layer->CurrentScrollOffset());
+    EXPECT_FALSE(result.did_overscroll_root);
+  }
+
+  host_impl_->ScrollEnd(EndState().get());
+}
+
 TEST_F(LayerTreeHostImplTest, OverscrollOnMainThread) {
   InputHandlerScrollResult scroll_result;
   LayerTreeSettings settings = DefaultSettings();
@@ -8260,8 +8369,8 @@ class BlendStateCheckLayer : public LayerImpl {
           gfx::Size(1, 1), viz::ResourceTextureHint::kDefault, viz::RGBA_8888,
           gfx::ColorSpace());
     } else {
-      resource_id_ = resource_provider->CreateBitmapResource(gfx::Size(1, 1),
-                                                             gfx::ColorSpace());
+      resource_id_ = resource_provider->CreateBitmapResource(
+          gfx::Size(1, 1), gfx::ColorSpace(), viz::RGBA_8888);
     }
     resource_provider->AllocateForTesting(resource_id_);
     SetBounds(gfx::Size(10, 10));
@@ -8289,7 +8398,7 @@ class BlendStateCheckLayer : public LayerImpl {
     test_blending_draw_quad->SetNew(
         shared_quad_state, quad_rect_, visible_quad_rect, needs_blending,
         resource_id_, gfx::RectF(0.f, 0.f, 1.f, 1.f), gfx::Size(1, 1), false,
-        false, false);
+        false, false, false);
 
     EXPECT_EQ(blend_, test_blending_draw_quad->ShouldDrawWithBlending());
     EXPECT_EQ(has_render_surface_,
@@ -8795,7 +8904,10 @@ class LayerTreeHostImplViewportCoveredTest : public LayerTreeHostImplTest {
     VerifyLayerIsLargerThanViewport(last_on_draw_render_passes_);
   }
 
-  void DidActivateSyncTree() override { did_activate_pending_tree_ = true; }
+  void DidActivateSyncTree() override {
+    LayerTreeHostImplTest::DidActivateSyncTree();
+    did_activate_pending_tree_ = true;
+  }
 
   void set_gutter_quad_material(viz::DrawQuad::Material material) {
     gutter_quad_material_ = material;
@@ -8978,6 +9090,8 @@ TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
   root->test_properties()->AddChild(std::move(child));
   layer_tree_host_impl->active_tree()->SetRootLayerForTesting(std::move(root));
   layer_tree_host_impl->active_tree()->BuildPropertyTreesForTesting();
+  layer_tree_host_impl->active_tree()->set_local_surface_id(
+      viz::LocalSurfaceId(1, base::UnguessableToken::Deserialize(2u, 3u)));
 
   TestFrameData frame;
 
@@ -13643,6 +13757,10 @@ TEST_F(LayerTreeHostImplTest, CheckerImagingTileInvalidation) {
   scoped_refptr<RasterSource> raster_source =
       recording_source->CreateRasterSource();
 
+  viz::BeginFrameArgs begin_frame_args =
+      viz::CreateBeginFrameArgsForTesting(BEGINFRAME_FROM_HERE, 0, 1);
+  host_impl_->WillBeginImplFrame(begin_frame_args);
+
   // Create the pending tree.
   host_impl_->BeginCommit();
   LayerTreeImpl* pending_tree = host_impl_->pending_tree();
@@ -13921,6 +14039,216 @@ TEST_F(LayerTreeHostImplTest, WhiteListedTouchActionTest3) {
 
 TEST_F(LayerTreeHostImplTest, WhiteListedTouchActionTest4) {
   WhiteListedTouchActionTestHelper(2.654f, 0.678f);
+}
+
+// Test implementation of a SwapPromise which will always attempt to increment
+// the frame token during WillSwap.
+class FrameTokenAdvancingSwapPromise : public SwapPromise {
+ public:
+  FrameTokenAdvancingSwapPromise() {}
+  ~FrameTokenAdvancingSwapPromise() override {}
+
+  void DidActivate() override {}
+  void WillSwap(viz::CompositorFrameMetadata* metadata,
+                FrameTokenAllocator* frame_token_allocator) override {
+    frame_token_allocator->GetOrAllocateFrameToken();
+  }
+  void DidSwap() override {}
+  DidNotSwapAction DidNotSwap(DidNotSwapReason reason) override {
+    return SwapPromise::DidNotSwapAction::BREAK_PROMISE;
+  }
+  int64_t TraceId() const override { return 42; }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(FrameTokenAdvancingSwapPromise);
+};
+
+// Test implementation of RenderFrameMetadataObserver which can optionally
+// increment the frame token during OnRenderFrameSubmission.
+class TestRenderFrameMetadataObserver : public RenderFrameMetadataObserver {
+ public:
+  explicit TestRenderFrameMetadataObserver(bool increment_counter)
+      : increment_counter_(increment_counter) {}
+  ~TestRenderFrameMetadataObserver() override {}
+
+  void BindToCurrentThread(
+      FrameTokenAllocator* frame_token_allocator) override {
+    frame_token_allocator_ = frame_token_allocator;
+  }
+  void OnRenderFrameSubmission(RenderFrameMetadata metadata) override {
+    if (increment_counter_)
+      frame_token_allocator_->GetOrAllocateFrameToken();
+    last_metadata_ = metadata;
+  }
+
+  const base::Optional<RenderFrameMetadata>& last_metadata() const {
+    return last_metadata_;
+  }
+
+ private:
+  FrameTokenAllocator* frame_token_allocator_;
+  bool increment_counter_;
+  base::Optional<RenderFrameMetadata> last_metadata_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestRenderFrameMetadataObserver);
+};
+
+// Tests that SwapPromises and RenderFrameMetadataObservers can increment the
+// frame token when frames are being drawn. Furthermore verifies that when there
+// are multiple attempts to increment the frame token during the same draw, that
+// the token only ever increments by one.
+TEST_F(LayerTreeHostImplTest, FrameTokenAllocation) {
+  SetupScrollAndContentsLayers(gfx::Size(100, 100));
+  host_impl_->active_tree()->BuildPropertyTreesForTesting();
+  host_impl_->SetViewportSize(gfx::Size(50, 50));
+
+  uint32_t expected_frame_token = 0u;
+  auto* fake_layer_tree_frame_sink =
+      static_cast<FakeLayerTreeFrameSink*>(host_impl_->layer_tree_frame_sink());
+
+  // No SwapPromise or RenderFrameMetadataObserver
+  {
+    DrawFrame();
+    const viz::CompositorFrameMetadata& metadata =
+        fake_layer_tree_frame_sink->last_sent_frame()->metadata;
+    // With no token advancing we should receive the default of 0.
+    EXPECT_EQ(expected_frame_token, metadata.frame_token);
+  }
+
+  // Just a SwapPromise no RenderFrameMetataObsever
+  {
+    std::vector<std::unique_ptr<SwapPromise>> promises;
+    promises.push_back(std::make_unique<FrameTokenAdvancingSwapPromise>());
+    host_impl_->active_tree()->PassSwapPromises(std::move(promises));
+
+    host_impl_->SetViewportDamage(gfx::Rect(10, 10));
+    DrawFrame();
+    const viz::CompositorFrameMetadata& metadata =
+        fake_layer_tree_frame_sink->last_sent_frame()->metadata;
+    // SwapPromise should advance the token count by one.
+    EXPECT_EQ(++expected_frame_token, metadata.frame_token);
+  }
+
+  // Just a RenderFrameMetadataObserver which does not advance the counter.
+  {
+    host_impl_->SetRenderFrameObserver(
+        std::make_unique<TestRenderFrameMetadataObserver>(false));
+    host_impl_->SetViewportDamage(gfx::Rect(10, 10));
+    DrawFrame();
+
+    const viz::CompositorFrameMetadata& metadata =
+        fake_layer_tree_frame_sink->last_sent_frame()->metadata;
+    // With no token advancing we should receive the default of 0.
+    EXPECT_EQ(0u, metadata.frame_token);
+  }
+
+  // A SwapPromise which advances, and a RenderFrameMetadataObserver which does
+  // not advance the counter.
+  {
+    std::vector<std::unique_ptr<SwapPromise>> promises;
+    promises.push_back(std::make_unique<FrameTokenAdvancingSwapPromise>());
+    host_impl_->active_tree()->PassSwapPromises(std::move(promises));
+
+    host_impl_->SetViewportDamage(gfx::Rect(10, 10));
+    DrawFrame();
+    const viz::CompositorFrameMetadata& metadata =
+        fake_layer_tree_frame_sink->last_sent_frame()->metadata;
+    // SwapPromise should advance the token count by one.
+    EXPECT_EQ(++expected_frame_token, metadata.frame_token);
+  }
+
+  // Both a SwapPromise and a RenderFrameMetadataObserver which try to advance
+  // the counter.
+  {
+    std::vector<std::unique_ptr<SwapPromise>> promises;
+    promises.push_back(std::make_unique<FrameTokenAdvancingSwapPromise>());
+    host_impl_->active_tree()->PassSwapPromises(std::move(promises));
+
+    host_impl_->SetRenderFrameObserver(
+        std::make_unique<TestRenderFrameMetadataObserver>(true));
+    host_impl_->SetViewportDamage(gfx::Rect(10, 10));
+    DrawFrame();
+    const viz::CompositorFrameMetadata& metadata =
+        fake_layer_tree_frame_sink->last_sent_frame()->metadata;
+    // Even with both sources trying to advance the frame token, it should
+    // only increment by one.
+    EXPECT_EQ(++expected_frame_token, metadata.frame_token);
+  }
+
+  // Just a RenderFrameMetadataObserver which advances the counter
+  {
+    host_impl_->SetViewportDamage(gfx::Rect(10, 10));
+    DrawFrame();
+    const viz::CompositorFrameMetadata& metadata =
+        fake_layer_tree_frame_sink->last_sent_frame()->metadata;
+    // The RenderFrameMetadataObserver should advance the counter by one.
+    EXPECT_EQ(++expected_frame_token, metadata.frame_token);
+  }
+}
+
+TEST_F(LayerTreeHostImplTest, SelectionBoundsPassedToRenderFrameMetadata) {
+  const int root_layer_id = 1;
+  std::unique_ptr<SolidColorLayerImpl> root =
+      SolidColorLayerImpl::Create(host_impl_->active_tree(), root_layer_id);
+  root->SetPosition(gfx::PointF());
+  root->SetBounds(gfx::Size(10, 10));
+  root->SetDrawsContent(true);
+  root->test_properties()->force_render_surface = true;
+
+  host_impl_->active_tree()->SetRootLayerForTesting(std::move(root));
+  host_impl_->active_tree()->BuildPropertyTreesForTesting();
+
+  auto observer = std::make_unique<TestRenderFrameMetadataObserver>(false);
+  auto* observer_ptr = observer.get();
+  host_impl_->SetRenderFrameObserver(std::move(observer));
+  EXPECT_FALSE(observer_ptr->last_metadata());
+
+  // Trigger a draw-swap sequence.
+  host_impl_->SetNeedsRedraw();
+  TestFrameData frame;
+  EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->DrawLayers(&frame));
+  host_impl_->DidDrawAllLayers(frame);
+
+  // Ensure the selection bounds propagated to the render frame metadata
+  // represent an empty selection.
+  ASSERT_TRUE(observer_ptr->last_metadata());
+  const viz::Selection<gfx::SelectionBound>& selection_1 =
+      observer_ptr->last_metadata()->selection;
+  EXPECT_EQ(gfx::SelectionBound::EMPTY, selection_1.start.type());
+  EXPECT_EQ(gfx::SelectionBound::EMPTY, selection_1.end.type());
+  EXPECT_EQ(gfx::PointF(), selection_1.start.edge_bottom());
+  EXPECT_EQ(gfx::PointF(), selection_1.start.edge_top());
+  EXPECT_FALSE(selection_1.start.visible());
+  EXPECT_FALSE(selection_1.end.visible());
+
+  // Plumb the layer-local selection bounds.
+  gfx::Point selection_top(5, 0);
+  gfx::Point selection_bottom(5, 5);
+  LayerSelection selection;
+  selection.start.type = gfx::SelectionBound::CENTER;
+  selection.start.layer_id = root_layer_id;
+  selection.start.edge_bottom = selection_bottom;
+  selection.start.edge_top = selection_top;
+  selection.end = selection.start;
+  host_impl_->active_tree()->RegisterSelection(selection);
+
+  // Trigger a draw-swap sequence.
+  host_impl_->SetNeedsRedraw();
+  EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
+  EXPECT_TRUE(host_impl_->DrawLayers(&frame));
+  host_impl_->DidDrawAllLayers(frame);
+
+  // Ensure the selection bounds have propagated to the render frame metadata.
+  ASSERT_TRUE(observer_ptr->last_metadata());
+  const viz::Selection<gfx::SelectionBound>& selection_2 =
+      observer_ptr->last_metadata()->selection;
+  EXPECT_EQ(selection.start.type, selection_2.start.type());
+  EXPECT_EQ(selection.end.type, selection_2.end.type());
+  EXPECT_EQ(gfx::PointF(selection_bottom), selection_2.start.edge_bottom());
+  EXPECT_EQ(gfx::PointF(selection_top), selection_2.start.edge_top());
+  EXPECT_TRUE(selection_2.start.visible());
+  EXPECT_TRUE(selection_2.end.visible());
 }
 
 }  // namespace

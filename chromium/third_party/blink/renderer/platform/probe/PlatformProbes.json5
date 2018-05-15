@@ -1,0 +1,19 @@
+{
+  settings: {
+    export_header: "platform/platform_export.h",
+    export_symbol: "PLATFORM_EXPORT",
+    include_path: "platform/probe",
+    includes: [
+      "platform/PlatformProbeSink.h",
+      "platform/probe/platform_probes.h",
+    ]
+  },
+  observers: {
+    PlatformTraceEvents: {
+      class: "PlatformTraceEventsAgent",
+      probes: [
+        "PlatformSendRequest",
+      ]
+    }
+  }
+}

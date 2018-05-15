@@ -38,10 +38,12 @@ std::string MojoAudioDecoder::GetDisplayName() const {
   return "MojoAudioDecoder";
 }
 
-void MojoAudioDecoder::Initialize(const AudioDecoderConfig& config,
-                                  CdmContext* cdm_context,
-                                  const InitCB& init_cb,
-                                  const OutputCB& output_cb) {
+void MojoAudioDecoder::Initialize(
+    const AudioDecoderConfig& config,
+    CdmContext* cdm_context,
+    const InitCB& init_cb,
+    const OutputCB& output_cb,
+    const WaitingForDecryptionKeyCB& /* waiting_for_decryption_key_cb */) {
   DVLOG(1) << __func__;
   DCHECK(task_runner_->BelongsToCurrentThread());
 
@@ -76,7 +78,7 @@ void MojoAudioDecoder::Initialize(const AudioDecoderConfig& config,
       base::Bind(&MojoAudioDecoder::OnInitialized, base::Unretained(this)));
 }
 
-void MojoAudioDecoder::Decode(const scoped_refptr<DecoderBuffer>& media_buffer,
+void MojoAudioDecoder::Decode(scoped_refptr<DecoderBuffer> media_buffer,
                               const DecodeCB& decode_cb) {
   DVLOG(3) << __func__;
   DCHECK(task_runner_->BelongsToCurrentThread());
@@ -88,7 +90,7 @@ void MojoAudioDecoder::Decode(const scoped_refptr<DecoderBuffer>& media_buffer,
   }
 
   mojom::DecoderBufferPtr buffer =
-      mojo_decoder_buffer_writer_->WriteDecoderBuffer(media_buffer);
+      mojo_decoder_buffer_writer_->WriteDecoderBuffer(std::move(media_buffer));
   if (!buffer) {
     task_runner_->PostTask(FROM_HERE,
                            base::Bind(decode_cb, DecodeStatus::DECODE_ERROR));

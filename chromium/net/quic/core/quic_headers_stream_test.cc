@@ -76,7 +76,8 @@ class MockVisitor : public SpdyFramerVisitorInterface {
   MOCK_METHOD2(OnRstStream,
                void(SpdyStreamId stream_id, SpdyErrorCode error_code));
   MOCK_METHOD0(OnSettings, void());
-  MOCK_METHOD2(OnSetting, void(SpdyKnownSettingsId id, uint32_t value));
+  MOCK_METHOD2(OnSettingOld, void(SpdyKnownSettingsId id, uint32_t value));
+  MOCK_METHOD2(OnSetting, void(SpdySettingsId id, uint32_t value));
   MOCK_METHOD0(OnSettingsAck, void());
   MOCK_METHOD0(OnSettingsEnd, void());
   MOCK_METHOD2(OnPing, void(SpdyPingId unique_id, bool is_ack));
@@ -167,10 +168,11 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParams> {
                                                        perspective(),
                                                        GetVersion())),
         session_(connection_),
-        headers_stream_(QuicSpdySessionPeer::GetHeadersStream(&session_)),
         body_("hello world"),
         stream_frame_(kHeadersStreamId, /*fin=*/false, /*offset=*/0, ""),
         next_promised_stream_id_(2) {
+    session_.Initialize();
+    headers_stream_ = QuicSpdySessionPeer::GetHeadersStream(&session_);
     headers_[":version"] = "HTTP/1.1";
     headers_[":status"] = "200 Ok";
     headers_["content-length"] = "11";

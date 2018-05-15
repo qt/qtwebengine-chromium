@@ -276,8 +276,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     // hierarchy this widget should be placed. (This is separate from |parent|;
     // if you pass a RootWindow to |parent|, your window will be parented to
     // |parent|. If you pass a RootWindow to |context|, we ask that RootWindow
-    // where it wants your window placed.) NULL is not allowed if you are using
-    // aura.
+    // where it wants your window placed.) Nullptr is not allowed on Windows and
+    // Linux. Nullptr is allowed on Chrome OS, which will place the window on
+    // the default desktop for new windows.
     gfx::NativeWindow context;
     // If true, forces the window to be shown in the taskbar, even for window
     // types that do not appear in the taskbar by default (popup and bubble).
@@ -789,7 +790,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   bool CanActivate() const override;
   bool IsAlwaysRenderAsActive() const override;
   void SetAlwaysRenderAsActive(bool always_render_as_active) override;
-  void OnNativeWidgetActivationChanged(bool active) override;
+  bool OnNativeWidgetActivationChanged(bool active) override;
   void OnNativeFocus() override;
   void OnNativeBlur() override;
   void OnNativeWidgetVisibilityChanging(bool visible) override;
@@ -858,6 +859,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   friend class ButtonTest;
   friend class TextfieldTest;
   friend class ViewAuraTest;
+  friend void DisableActivationChangeHandlingForTests();
 
   // Persists the window's restored position and "show" state using the
   // window delegate.
@@ -882,6 +884,8 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Returns the Views whose layers are parented directly to the Widget's
   // layer.
   const View::Views& GetViewsWithLayers();
+
+  static bool g_disable_activation_change_handling_;
 
   internal::NativeWidgetPrivate* native_widget_;
 

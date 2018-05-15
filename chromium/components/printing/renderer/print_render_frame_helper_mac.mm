@@ -12,11 +12,11 @@
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/metrics/histogram.h"
 #include "components/printing/common/print_messages.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 #include "printing/metafile_skia_wrapper.h"
 #include "printing/page_size_margins.h"
-#include "third_party/WebKit/public/platform/WebCanvas.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/blink/public/platform/web_canvas.h"
+#include "third_party/blink/public/web/web_local_frame.h"
 
 namespace printing {
 

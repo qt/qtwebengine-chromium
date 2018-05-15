@@ -67,10 +67,6 @@
 #ifndef API_PEERCONNECTIONINTERFACE_H_
 #define API_PEERCONNECTIONINTERFACE_H_
 
-// TODO(sakal): Remove this define after migration to virtual PeerConnection
-// observer is complete.
-#define VIRTUAL_PEERCONNECTION_OBSERVER_DESTRUCTOR
-
 #include <memory>
 #include <string>
 #include <utility>
@@ -489,9 +485,41 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     // re-determining was removed in ICEbis (ICE v2).
     bool redetermine_role_on_ice_restart = true;
 
-    // If set, the min interval (max rate) at which we will send ICE checks
-    // (STUN pings), in milliseconds.
+    // The following fields define intervals in milliseconds at which ICE
+    // connectivity checks are sent.
+    //
+    // We consider ICE is "strongly connected" for an agent when there is at
+    // least one candidate pair that currently succeeds in connectivity check
+    // from its direction i.e. sending a STUN ping and receives a STUN ping
+    // response, AND all candidate pairs have sent a minimum number of pings for
+    // connectivity (this number is implementation-specific). Otherwise, ICE is
+    // considered in "weak connectivity".
+    //
+    // Note that the above notion of strong and weak connectivity is not defined
+    // in RFC 5245, and they apply to our current ICE implementation only.
+    //
+    // 1) ice_check_interval_strong_connectivity defines the interval applied to
+    // ALL candidate pairs when ICE is strongly connected, and it overrides the
+    // default value of this interval in the ICE implementation;
+    // 2) ice_check_interval_weak_connectivity defines the counterpart for ALL
+    // pairs when ICE is weakly connected, and it overrides the default value of
+    // this interval in the ICE implementation;
+    // 3) ice_check_min_interval defines the minimal interval (equivalently the
+    // maximum rate) that overrides the above two intervals when either of them
+    // is less.
+    rtc::Optional<int> ice_check_interval_strong_connectivity;
+    rtc::Optional<int> ice_check_interval_weak_connectivity;
     rtc::Optional<int> ice_check_min_interval;
+
+    // The min time period for which a candidate pair must wait for response to
+    // connectivity checks before it becomes unwritable. This parameter
+    // overrides the default value in the ICE implementation if set.
+    rtc::Optional<int> ice_unwritable_timeout;
+
+    // The min number of connectivity checks that a candidate pair must sent
+    // without receiving response before it becomes unwritable. This parameter
+    // overrides the default value in the ICE implementation if set.
+    rtc::Optional<int> ice_unwritable_min_checks;
 
     // The interval in milliseconds at which STUN candidates will resend STUN
     // binding requests to keep NAT bindings open.
@@ -633,7 +661,7 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
 
   // Add a new MediaStreamTrack to be sent on this PeerConnection, and return
   // the newly created RtpSender. The RtpSender will be associated with the
-  // streams specified in the |stream_labels| list.
+  // streams specified in the |stream_ids| list.
   //
   // Errors:
   // - INVALID_PARAMETER: |track| is null, has a kind other than audio or video,
@@ -643,13 +671,13 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
   // implementations have been updated.
   virtual RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> AddTrack(
       rtc::scoped_refptr<MediaStreamTrackInterface> track,
-      const std::vector<std::string>& stream_labels) {
+      const std::vector<std::string>& stream_ids) {
     return RTCError(RTCErrorType::UNSUPPORTED_OPERATION, "Not implemented");
   }
-  // |streams| indicates which stream labels the track should be associated
+  // |streams| indicates which stream ids the track should be associated
   // with.
   // TODO(steveanton): Remove this overload once callers have moved to the
-  // signature with stream labels.
+  // signature with stream ids.
   virtual rtc::scoped_refptr<RtpSenderInterface> AddTrack(
       MediaStreamTrackInterface* track,
       std::vector<MediaStreamInterface*> streams) {
@@ -777,15 +805,46 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     return {};
   }
 
+  // The legacy non-compliant GetStats() API. This correspond to the
+  // callback-based version of getStats() in JavaScript. The returned metrics
+  // are UNDOCUMENTED and many of them rely on implementation-specific details.
+  // The goal is to DELETE THIS VERSION but we can't today because it is heavily
+  // relied upon by third parties. See https://crbug.com/822696.
+  //
+  // This version is wired up into Chrome. Any stats implemented are
+  // automatically exposed to the Web Platform. This has BYPASSED the Chrome
+  // release processes for years and lead to cross-browser incompatibility
+  // issues and web application reliance on Chrome-only behavior.
+  //
+  // This API is in "maintenance mode", serious regressions should be fixed but
+  // adding new stats is highly discouraged.
+  //
+  // TODO(hbos): Deprecate and remove this when third parties have migrated to
+  // the spec-compliant GetStats() API. https://crbug.com/822696
   virtual bool GetStats(StatsObserver* observer,
-                        MediaStreamTrackInterface* track,
+                        MediaStreamTrackInterface* track,  // Optional
                         StatsOutputLevel level) = 0;
-  // Gets stats using the new stats collection API, see webrtc/api/stats/. These
-  // will replace old stats collection API when the new API has matured enough.
-  // TODO(hbos): Default implementation that does nothing only exists as to not
-  // break third party projects. As soon as they have been updated this should
-  // be changed to "= 0;".
+  // The spec-compliant GetStats() API. This correspond to the promise-based
+  // version of getStats() in JavaScript. Implementation status is described in
+  // api/stats/rtcstats_objects.h. For more details on stats, see spec:
+  // https://w3c.github.io/webrtc-pc/#dom-rtcpeerconnection-getstats
+  // TODO(hbos): Takes shared ownership, use rtc::scoped_refptr<> instead. This
+  // requires stop overriding the current version in third party or making third
+  // party calls explicit to avoid ambiguity during switch. Make the future
+  // version abstract as soon as third party projects implement it.
   virtual void GetStats(RTCStatsCollectorCallback* callback) {}
+  // Spec-compliant getStats() performing the stats selection algorithm with the
+  // sender. https://w3c.github.io/webrtc-pc/#dom-rtcrtpsender-getstats
+  // TODO(hbos): Make abstract as soon as third party projects implement it.
+  virtual void GetStats(
+      rtc::scoped_refptr<RtpSenderInterface> selector,
+      rtc::scoped_refptr<RTCStatsCollectorCallback> callback) {}
+  // Spec-compliant getStats() performing the stats selection algorithm with the
+  // receiver. https://w3c.github.io/webrtc-pc/#dom-rtcrtpreceiver-getstats
+  // TODO(hbos): Make abstract as soon as third party projects implement it.
+  virtual void GetStats(
+      rtc::scoped_refptr<RtpReceiverInterface> selector,
+      rtc::scoped_refptr<RTCStatsCollectorCallback> callback) {}
   // Clear cached stats in the RTCStatsCollector.
   // Exposed for testing while waiting for automatic cache clear to work.
   // https://bugs.webrtc.org/8693
@@ -1093,13 +1152,6 @@ class PeerConnectionObserver {
   virtual void OnTrack(
       rtc::scoped_refptr<RtpTransceiverInterface> transceiver) {}
 
-  // TODO(hbos,deadbeef): Add |OnAssociatedStreamsUpdated| with |receiver| and
-  // |streams| as arguments. This should be called when an existing receiver its
-  // associated streams updated. https://crbug.com/webrtc/8315
-  // This may be blocked on supporting multiple streams per sender or else
-  // this may count as the removal and addition of a track?
-  // https://crbug.com/webrtc/7932
-
   // Called when a receiver is completely removed. This is current (Plan B SDP)
   // behavior that occurs when processing the removal of a remote track, and is
   // called when the receiver is removed and the track is muted. When Unified
@@ -1189,8 +1241,8 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
       std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
       PeerConnectionObserver* observer) = 0;
 
-  virtual rtc::scoped_refptr<MediaStreamInterface>
-      CreateLocalMediaStream(const std::string& label) = 0;
+  virtual rtc::scoped_refptr<MediaStreamInterface> CreateLocalMediaStream(
+      const std::string& stream_id) = 0;
 
   // Creates an AudioSourceInterface.
   // |options| decides audio processing settings.

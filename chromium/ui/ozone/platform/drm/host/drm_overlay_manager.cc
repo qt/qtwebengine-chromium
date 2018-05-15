@@ -9,7 +9,6 @@
 #include <algorithm>
 
 #include "base/command_line.h"
-#include "base/memory/ptr_util.h"
 #include "base/trace_event/trace_event.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/ozone/platform/drm/common/drm_util.h"
@@ -60,11 +59,6 @@ void DrmOverlayManager::CheckOverlaySupport(
       result_candidates.back().overlay_handled = false;
       continue;
     }
-
-    // Compositor doesn't have information about the total size of primary
-    // candidate. We get this information from display rect.
-    if (candidate.plane_z_order == 0)
-      candidate.buffer_size = gfx::ToNearestRect(candidate.display_rect).size();
 
     result_candidates.push_back(OverlaySurfaceCandidate(candidate));
     // Start out hoping that we can have an overlay.

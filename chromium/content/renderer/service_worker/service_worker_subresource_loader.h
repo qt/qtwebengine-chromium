@@ -14,16 +14,20 @@
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "content/renderer/service_worker/controller_service_worker_connector.h"
 #include "mojo/public/cpp/bindings/binding.h"
+#include "mojo/public/cpp/bindings/binding_set.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/redirect_info.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
-#include "third_party/WebKit/public/mojom/blob/blob.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_event_status.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_stream_handle.mojom.h"
+#include "third_party/blink/public/mojom/blob/blob.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_stream_handle.mojom.h"
+
+namespace network {
+class SharedURLLoaderFactory;
+}  // namespace network
 
 namespace content {
 
-class SharedURLLoaderFactory;
 class ControllerServiceWorkerConnector;
 
 // S13nServiceWorker:
@@ -47,7 +51,7 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoader
       network::mojom::URLLoaderClientPtr client,
       const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
       scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
-      scoped_refptr<SharedURLLoaderFactory> network_loader_factory);
+      scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory);
 
   ~ServiceWorkerSubresourceLoader() override;
 
@@ -57,7 +61,7 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoader
  private:
   class StreamWaiter;
 
-  void DeleteSoon();
+  void OnConnectionError();
 
   void StartRequest(const network::ResourceRequest& resource_request);
   void DispatchFetchEvent();
@@ -134,7 +138,7 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoader
   std::unique_ptr<StreamWaiter> stream_waiter_;
 
   // For network fallback.
-  scoped_refptr<SharedURLLoaderFactory> network_loader_factory_;
+  scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory_;
 
   enum class Status {
     kNotStarted,
@@ -152,6 +156,7 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoader
 // S13nServiceWorker:
 // A custom URLLoaderFactory implementation used by Service Worker controllees
 // for loading subresources via the controller Service Worker.
+// Self destroys when no more bindings exist.
 class CONTENT_EXPORT ServiceWorkerSubresourceLoaderFactory
     : public network::mojom::URLLoaderFactory {
  public:
@@ -161,9 +166,10 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoaderFactory
   // default URLLoaderFactory for network fallback. This should be the
   // URLLoaderFactory that directly goes to network without going through
   // any custom URLLoader factories.
-  ServiceWorkerSubresourceLoaderFactory(
+  static void Create(
       scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
-      scoped_refptr<SharedURLLoaderFactory> network_loader_factory);
+      scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory,
+      network::mojom::URLLoaderFactoryRequest request);
 
   ~ServiceWorkerSubresourceLoaderFactory() override;
 
@@ -179,11 +185,20 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoaderFactory
   void Clone(network::mojom::URLLoaderFactoryRequest request) override;
 
  private:
+  ServiceWorkerSubresourceLoaderFactory(
+      scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
+      scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory,
+      network::mojom::URLLoaderFactoryRequest request);
+
+  void OnConnectionError();
+
   scoped_refptr<ControllerServiceWorkerConnector> controller_connector_;
 
   // A URLLoaderFactory that directly goes to network, used when a request
   // falls back to network.
-  scoped_refptr<SharedURLLoaderFactory> network_loader_factory_;
+  scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory_;
+
+  mojo::BindingSet<network::mojom::URLLoaderFactory> bindings_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerSubresourceLoaderFactory);
 };

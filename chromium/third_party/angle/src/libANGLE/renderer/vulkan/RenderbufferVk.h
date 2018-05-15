@@ -12,12 +12,12 @@
 
 #include "libANGLE/renderer/RenderbufferImpl.h"
 #include "libANGLE/renderer/vulkan/RenderTargetVk.h"
-#include "libANGLE/renderer/vulkan/vk_utils.h"
+#include "libANGLE/renderer/vulkan/vk_helpers.h"
 
 namespace rx
 {
 
-class RenderbufferVk : public RenderbufferImpl, public ResourceVk
+class RenderbufferVk : public RenderbufferImpl, public vk::CommandGraphResource
 {
   public:
     RenderbufferVk(const gl::RenderbufferState &state);
@@ -45,10 +45,8 @@ class RenderbufferVk : public RenderbufferImpl, public ResourceVk
                                  const gl::ImageIndex &imageIndex) override;
 
   private:
-    vk::Image mImage;
-    vk::DeviceMemory mDeviceMemory;
+    vk::ImageHelper mImage;
     vk::ImageView mImageView;
-    size_t mRequiredSize;
     RenderTargetVk mRenderTarget;
 };
 

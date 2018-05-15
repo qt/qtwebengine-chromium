@@ -36,11 +36,11 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/input_event_ack_state.h"
 #include "content/public/common/screen_info.h"
-#include "third_party/WebKit/public/platform/WebDragOperation.h"
-#include "third_party/WebKit/public/platform/WebFocusType.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
-#include "third_party/WebKit/public/web/WebDragStatus.h"
-#include "third_party/WebKit/public/web/WebImeTextSpan.h"
+#include "third_party/blink/public/platform/web_drag_operation.h"
+#include "third_party/blink/public/platform/web_focus_type.h"
+#include "third_party/blink/public/platform/web_input_event.h"
+#include "third_party/blink/public/web/web_drag_status.h"
+#include "third_party/blink/public/web/web_ime_text_span.h"
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/gfx/geometry/rect.h"
@@ -71,6 +71,7 @@ class RenderWidgetHostView;
 class RenderWidgetHostViewBase;
 class SiteInstance;
 struct DropData;
+struct FrameResizeParams;
 struct ScreenInfo;
 struct TextInputState;
 
@@ -178,6 +179,8 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
 
   BrowserPluginGuestManager* GetBrowserPluginGuestManager() const;
 
+  void EnableAutoResize(const gfx::Size& min_size, const gfx::Size& max_size);
+  void DisableAutoResize();
   void ResizeDueToAutoResize(const gfx::Size& new_size,
                              uint64_t sequence_number);
 
@@ -318,7 +321,8 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   // fewer GPU and CPU resources.
   //
   // When every WebContents in a RenderProcessHost is hidden, it will lower
-  // the priority of the process (see RenderProcessHostImpl::WidgetHidden).
+  // the priority of the process (see
+  // RenderProcessHostImpl::UpdateClientPriority).
   //
   // It will also send a message to the guest renderer process to cleanup
   // resources such as dropping back buffers and adjusting memory limits (if in
@@ -331,10 +335,8 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   void OnUnlockMouse();
   void OnUnlockMouseAck(int instance_id);
   void OnUpdateResizeParams(int instance_id,
-                            const gfx::Rect& frame_rect,
-                            const ScreenInfo& screen_info,
-                            uint64_t sequence_number,
-                            const viz::LocalSurfaceId& local_surface_id);
+                            const viz::LocalSurfaceId& local_surface_id,
+                            const FrameResizeParams& resize_params);
 
   void OnTextInputStateChanged(const TextInputState& params);
   void OnImeSetComposition(

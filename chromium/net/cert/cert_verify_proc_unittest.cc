@@ -67,6 +67,8 @@ const char kTLSFeatureExtensionHistogram[] =
 const char kTLSFeatureExtensionOCSPHistogram[] =
     "Net.Certificate.TLSFeatureExtensionWithPrivateRootHasOCSP";
 const char kTrustAnchorVerifyHistogram[] = "Net.Certificate.TrustAnchor.Verify";
+const char kTrustAnchorVerifyOutOfDateHistogram[] =
+    "Net.Certificate.TrustAnchor.VerifyOutOfDate";
 
 // Mock CertVerifyProc that sets the CertVerifyResult to a given value for
 // all certificates that are Verify()'d
@@ -236,10 +238,12 @@ class CertVerifyProcInternalTest
 
   bool SupportsReturningVerifiedChain() const {
 #if defined(OS_ANDROID)
-    // Before API level 17, Android does not expose the APIs necessary to get at
-    // the verified certificate chain.
+    // Before API level 17 (SDK_VERSION_JELLY_BEAN_MR1), Android does
+    // not expose the APIs necessary to get at the verified
+    // certificate chain.
     if (verify_proc_type() == CERT_VERIFY_PROC_ANDROID &&
-        base::android::BuildInfo::GetInstance()->sdk_int() < 17)
+        base::android::BuildInfo::GetInstance()->sdk_int() <
+            base::android::SDK_VERSION_JELLY_BEAN_MR1)
       return false;
 #endif
     return true;
@@ -247,10 +251,12 @@ class CertVerifyProcInternalTest
 
   bool SupportsDetectingKnownRoots() const {
 #if defined(OS_ANDROID)
-    // Before API level 17, Android does not expose the APIs necessary to get at
-    // the verified certificate chain and detect known roots.
+    // Before API level 17 (SDK_VERSION_JELLY_BEAN_MR1), Android does not expose
+    // the APIs necessary to get at the verified certificate chain and detect
+    // known roots.
     if (verify_proc_type() == CERT_VERIFY_PROC_ANDROID)
-      return base::android::BuildInfo::GetInstance()->sdk_int() >= 17;
+      return base::android::BuildInfo::GetInstance()->sdk_int() >=
+             base::android::SDK_VERSION_JELLY_BEAN_MR1;
 #endif
 
     // iOS does not expose the APIs necessary to get the known system roots.
@@ -344,7 +350,7 @@ TEST_P(CertVerifyProcInternalTest, EVVerificationMultipleOID) {
       CRLSet::ForTesting(false, &spki_sha256, "", "", {}));
 
   CertVerifyResult verify_result;
-  int flags = CertVerifier::VERIFY_EV_CERT;
+  int flags = 0;
   int error = Verify(chain.get(), "trustcenter.websecurity.symantec.com", flags,
                      crl_set.get(), CertificateList(), &verify_result);
   EXPECT_THAT(error, IsOk());
@@ -366,7 +372,7 @@ TEST_P(CertVerifyProcInternalTest, TrustedTargetCertWithEVPolicy) {
   ScopedTestRoot scoped_test_root(cert.get());
 
   CertVerifyResult verify_result;
-  int flags = CertVerifier::VERIFY_EV_CERT;
+  int flags = 0;
   int error = Verify(cert.get(), "policy_test.example", flags,
                      nullptr /*crl_set*/, CertificateList(), &verify_result);
   if (ScopedTestRootCanTrustTargetCert(verify_proc_type())) {
@@ -403,7 +409,7 @@ TEST_P(CertVerifyProcInternalTest,
   ScopedTestRoot scoped_test_root(cert.get());
 
   CertVerifyResult verify_result;
-  int flags = CertVerifier::VERIFY_EV_CERT;
+  int flags = 0;
   int error = Verify(cert.get(), "policy_test.example", flags,
                      nullptr /*crl_set*/, CertificateList(), &verify_result);
   if (ScopedTestRootCanTrustTargetCert(verify_proc_type())) {
@@ -1237,6 +1243,7 @@ TEST(CertVerifyProcTest, TestHasTooLongValidity) {
       {"825_days_after_2018_03_01.pem", false},
       {"826_days_after_2018_03_01.pem", true},
       {"825_days_1_second_after_2018_03_01.pem", true},
+      {"39_months_based_on_last_day.pem", false},
   };
 
   base::FilePath certs_dir = GetTestCertsDirectory();
@@ -2659,7 +2666,6 @@ TEST(CertVerifyProcTest, HasTrustAnchorVerifyUMA) {
   int error = verify_proc->Verify(cert.get(), "127.0.0.1", std::string(), flags,
                                   NULL, CertificateList(), &verify_result);
   EXPECT_EQ(OK, error);
-  histograms.ExpectTotalCount(kTrustAnchorVerifyHistogram, 1);
   histograms.ExpectUniqueSample(kTrustAnchorVerifyHistogram,
                                 kGTSRootR4HistogramID, 1);
 }
@@ -2708,9 +2714,45 @@ TEST(CertVerifyProcTest, LogsOnlyMostSpecificTrustAnchorUMA) {
   EXPECT_EQ(OK, error);
 
   // Only GTS Root R3 should be recorded.
-  histograms.ExpectTotalCount(kTrustAnchorVerifyHistogram, 1);
   histograms.ExpectUniqueSample(kTrustAnchorVerifyHistogram,
                                 kGTSRootR3HistogramID, 1);
+}
+
+// Test that trust anchors histograms record whether or not
+// is_issued_by_known_root was derived from the OS.
+TEST(CertVerifyProcTest, HasTrustAnchorVerifyOutOfDateUMA) {
+  base::HistogramTester histograms;
+  scoped_refptr<X509Certificate> cert(ImportCertFromFile(
+      GetTestCertsDirectory(), "39_months_based_on_last_day.pem"));
+  ASSERT_TRUE(cert);
+
+  CertVerifyResult result;
+
+  // Simulate a certificate chain that is recognized as trusted (from a known
+  // root), but no certificates in the chain are tracked as known trust
+  // anchors.
+  SHA256HashValue leaf_hash = {{0}};
+  SHA256HashValue intermediate_hash = {{1}};
+  SHA256HashValue root_hash = {{2}};
+  result.public_key_hashes.push_back(HashValue(leaf_hash));
+  result.public_key_hashes.push_back(HashValue(intermediate_hash));
+  result.public_key_hashes.push_back(HashValue(root_hash));
+  result.is_issued_by_known_root = true;
+
+  scoped_refptr<CertVerifyProc> verify_proc = new MockCertVerifyProc(result);
+
+  histograms.ExpectTotalCount(kTrustAnchorVerifyHistogram, 0);
+  histograms.ExpectTotalCount(kTrustAnchorVerifyOutOfDateHistogram, 0);
+
+  int flags = 0;
+  CertVerifyResult verify_result;
+  int error = verify_proc->Verify(cert.get(), "127.0.0.1", std::string(), flags,
+                                  NULL, CertificateList(), &verify_result);
+  EXPECT_EQ(OK, error);
+  const base::HistogramBase::Sample kUnknownRootHistogramID = 0;
+  histograms.ExpectUniqueSample(kTrustAnchorVerifyHistogram,
+                                kUnknownRootHistogramID, 1);
+  histograms.ExpectUniqueSample(kTrustAnchorVerifyOutOfDateHistogram, true, 1);
 }
 
 }  // namespace net

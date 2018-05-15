@@ -34,7 +34,7 @@ class PingManagerTest : public testing::Test {
   ~PingManagerTest() override {}
 
   PingManager::Callback MakePingCallback();
-  std::unique_ptr<UpdateContext> MakeFakeUpdateContext() const;
+  scoped_refptr<UpdateContext> MakeMockUpdateContext() const;
 
   // Overrides from testing::Test.
   void SetUp() override;
@@ -96,8 +96,8 @@ void PingManagerTest::PingSentCallback(int error, const std::string& response) {
   Quit();
 }
 
-std::unique_ptr<UpdateContext> PingManagerTest::MakeFakeUpdateContext() const {
-  return std::make_unique<UpdateContext>(
+scoped_refptr<UpdateContext> PingManagerTest::MakeMockUpdateContext() const {
+  return base::MakeRefCounted<UpdateContext>(
       config_, false, std::vector<std::string>(),
       UpdateClient::CrxDataCallback(), UpdateEngine::NotifyObserversCallback(),
       UpdateEngine::Callback(), nullptr);
@@ -106,11 +106,11 @@ std::unique_ptr<UpdateContext> PingManagerTest::MakeFakeUpdateContext() const {
 TEST_F(PingManagerTest, SendPing) {
   auto interceptor_factory =
       std::make_unique<InterceptorFactory>(base::ThreadTaskRunnerHandle::Get());
-  auto* interceptor = interceptor_factory->CreateInterceptor();
+  auto interceptor = interceptor_factory->CreateInterceptor();
   EXPECT_TRUE(interceptor);
 
   // Test eventresult="1" is sent for successful updates.
-  const auto update_context = MakeFakeUpdateContext();
+  const auto update_context = MakeMockUpdateContext();
 
   {
     Component component(*update_context, "abc");
@@ -120,7 +120,7 @@ TEST_F(PingManagerTest, SendPing) {
     component.next_version_ = base::Version("2.0");
     component.AppendEvent(BuildUpdateCompleteEventElement(component));
 
-    EXPECT_TRUE(interceptor->ExpectRequest(new AnyMatch));
+    EXPECT_TRUE(interceptor->ExpectRequest(std::make_unique<AnyMatch>()));
     ping_manager_->SendPing(component, MakePingCallback());
     RunThreads();
 
@@ -135,11 +135,11 @@ TEST_F(PingManagerTest, SendPing) {
 
     // Check the ping request does not carry the specific extra request headers.
     EXPECT_FALSE(interceptor->GetRequests()[0].second.HasHeader(
-        "X-GoogleUpdate-Interactivity"));
+        "X-Goog-Update-Interactivity"));
     EXPECT_FALSE(interceptor->GetRequests()[0].second.HasHeader(
-        "X-GoogleUpdate-Updater"));
+        "X-Goog-Update-Updater"));
     EXPECT_FALSE(
-        interceptor->GetRequests()[0].second.HasHeader("X-GoogleUpdate-AppId"));
+        interceptor->GetRequests()[0].second.HasHeader("X-Goog-Update-AppId"));
 
     interceptor->Reset();
   }
@@ -153,7 +153,7 @@ TEST_F(PingManagerTest, SendPing) {
     component.next_version_ = base::Version("2.0");
     component.AppendEvent(BuildUpdateCompleteEventElement(component));
 
-    EXPECT_TRUE(interceptor->ExpectRequest(new AnyMatch));
+    EXPECT_TRUE(interceptor->ExpectRequest(std::make_unique<AnyMatch>()));
     ping_manager_->SendPing(component, MakePingCallback());
     RunThreads();
 
@@ -185,7 +185,7 @@ TEST_F(PingManagerTest, SendPing) {
     component.crx_diffurls_.push_back(GURL("http://host/path"));
     component.AppendEvent(BuildUpdateCompleteEventElement(component));
 
-    EXPECT_TRUE(interceptor->ExpectRequest(new AnyMatch));
+    EXPECT_TRUE(interceptor->ExpectRequest(std::make_unique<AnyMatch>()));
     ping_manager_->SendPing(component, MakePingCallback());
     RunThreads();
 
@@ -212,7 +212,7 @@ TEST_F(PingManagerTest, SendPing) {
 
     component.AppendEvent(BuildUpdateCompleteEventElement(component));
 
-    EXPECT_TRUE(interceptor->ExpectRequest(new AnyMatch));
+    EXPECT_TRUE(interceptor->ExpectRequest(std::make_unique<AnyMatch>()));
     ping_manager_->SendPing(component, MakePingCallback());
     RunThreads();
 
@@ -232,7 +232,7 @@ TEST_F(PingManagerTest, SendPing) {
     component.Uninstall(base::Version("1.2.3.4"), 0);
     component.AppendEvent(BuildUninstalledEventElement(component));
 
-    EXPECT_TRUE(interceptor->ExpectRequest(new AnyMatch));
+    EXPECT_TRUE(interceptor->ExpectRequest(std::make_unique<AnyMatch>()));
     ping_manager_->SendPing(component, MakePingCallback());
     RunThreads();
 
@@ -274,7 +274,7 @@ TEST_F(PingManagerTest, SendPing) {
     component.AppendEvent(
         BuildDownloadCompleteEventElement(component, download_metrics));
 
-    EXPECT_TRUE(interceptor->ExpectRequest(new AnyMatch));
+    EXPECT_TRUE(interceptor->ExpectRequest(std::make_unique<AnyMatch>()));
     ping_manager_->SendPing(component, MakePingCallback());
     RunThreads();
 
@@ -303,7 +303,7 @@ TEST_F(PingManagerTest, SendPing) {
 TEST_F(PingManagerTest, RequiresEncryption) {
   config_->SetPingUrl(GURL("http:\\foo\bar"));
 
-  const auto update_context = MakeFakeUpdateContext();
+  const auto update_context = MakeMockUpdateContext();
 
   Component component(*update_context, "abc");
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// ProxyScriptFetcher is an async interface for fetching a proxy auto config
+// PacFileFetcher is an async interface for fetching a proxy auto config
 // script. It is specific to fetching a PAC script; enforces timeout, max-size,
 // status code.
 
@@ -12,6 +12,7 @@
 #include "base/strings/string16.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
 
 class GURL;
 
@@ -21,10 +22,10 @@ class URLRequestContext;
 
 // Interface for downloading a PAC script. Implementations can enforce
 // timeouts, maximum size constraints, content encoding, etc..
-class NET_EXPORT_PRIVATE ProxyScriptFetcher {
+class NET_EXPORT_PRIVATE PacFileFetcher {
  public:
   // Destruction should cancel any outstanding requests.
-  virtual ~ProxyScriptFetcher() {}
+  virtual ~PacFileFetcher() {}
 
   // Downloads the given PAC URL, and invokes |callback| on completion.
   // Returns OK on success, otherwise the error code. If the return code is
@@ -46,7 +47,8 @@ class NET_EXPORT_PRIVATE ProxyScriptFetcher {
   // Only one fetch is allowed to be outstanding at a time.
   virtual int Fetch(const GURL& url,
                     base::string16* utf16_text,
-                    const CompletionCallback& callback) = 0;
+                    const CompletionCallback& callback,
+                    const NetworkTrafficAnnotationTag traffic_annotation) = 0;
 
   // Aborts the in-progress fetch (if any).
   virtual void Cancel() = 0;

@@ -114,7 +114,7 @@ bool SurfacelessSkiaRenderer::BufferWrapper::Initialize(
           ->GetSurfaceFactoryOzone()
           ->CreateNativePixmap(widget, size, format, gfx::BufferUsage::SCANOUT);
   scoped_refptr<gl::GLImageNativePixmap> image(
-      new gl::GLImageNativePixmap(size, GL_RGB));
+      new gl::GLImageNativePixmap(size, GL_BGRA_EXT));
   if (!image->Initialize(pixmap.get(), format)) {
     LOG(ERROR) << "Failed to create GLImage";
     return false;
@@ -130,12 +130,12 @@ bool SurfacelessSkiaRenderer::BufferWrapper::Initialize(
   GrGLTextureInfo texture_info;
   texture_info.fTarget = GL_TEXTURE_2D;
   texture_info.fID = gl_tex_;
-  texture_info.fFormat = GL_RGBA;
+  texture_info.fFormat = GL_BGRA8_EXT;
   GrBackendTexture backend_texture(size_.width(), size_.height(),
-                                   kRGBA_8888_GrPixelConfig, texture_info);
-  sk_surface_ = SkSurface::MakeFromBackendTextureAsRenderTarget(
-      gr_context, backend_texture, kTopLeft_GrSurfaceOrigin, 0, nullptr,
-      nullptr);
+                                   GrMipMapped::kNo, texture_info);
+  sk_surface_ = SkSurface::MakeFromBackendTexture(
+      gr_context, backend_texture, kTopLeft_GrSurfaceOrigin, 0,
+      kBGRA_8888_SkColorType, nullptr, nullptr);
   if (!sk_surface_) {
     LOG(ERROR) << "Failed to create skia surface";
     return false;
@@ -184,7 +184,7 @@ bool SurfacelessSkiaRenderer::Initialize() {
       overlay_buffer_[i]->Initialize(gr_context_.get(),
                                      gfx::kNullAcceleratedWidget, overlay_size);
       SkCanvas* sk_canvas = overlay_buffer_[i]->sk_surface()->getCanvas();
-      sk_canvas->clear(SkColorSetARGB(255, 255 * i, 255, 0));
+      sk_canvas->clear(SkColorSetARGB(96, 255 * i, 255, 0));
     }
   }
 
@@ -246,13 +246,13 @@ void SurfacelessSkiaRenderer::RenderFrame() {
     CHECK(overlay_list.front().overlay_handled);
     gl_surface_->ScheduleOverlayPlane(
         0, gfx::OVERLAY_TRANSFORM_NONE, buffers_[back_buffer_]->image(),
-        primary_plane_rect_, gfx::RectF(0, 0, 1, 1));
+        primary_plane_rect_, gfx::RectF(0, 0, 1, 1), /* enable_blend */ true);
   }
 
   if (overlay_buffer_[0] && overlay_list.back().overlay_handled) {
-    gl_surface_->ScheduleOverlayPlane(1, gfx::OVERLAY_TRANSFORM_NONE,
-                                      overlay_buffer_[back_buffer_]->image(),
-                                      overlay_rect, gfx::RectF(0, 0, 1, 1));
+    gl_surface_->ScheduleOverlayPlane(
+        1, gfx::OVERLAY_TRANSFORM_NONE, overlay_buffer_[back_buffer_]->image(),
+        overlay_rect, gfx::RectF(0, 0, 1, 1), /* enable_blend */ true);
   }
 
   back_buffer_ ^= 1;

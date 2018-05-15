@@ -105,7 +105,8 @@ class CC_EXPORT GpuImageDecodeCache
   explicit GpuImageDecodeCache(viz::RasterContextProvider* context,
                                bool use_transfer_cache,
                                SkColorType color_type,
-                               size_t max_working_set_bytes);
+                               size_t max_working_set_bytes,
+                               int max_texture_size);
   ~GpuImageDecodeCache() override;
 
   // ImageDecodeCache overrides.
@@ -143,6 +144,8 @@ class CC_EXPORT GpuImageDecodeCache
   void OnImageDecodeTaskCompleted(const DrawImage& image,
                                   DecodeTaskType task_type);
   void OnImageUploadTaskCompleted(const DrawImage& image);
+
+  bool SupportsColorSpaceConversion() const;
 
   // For testing only.
   void SetWorkingSetLimitForTesting(size_t limit) {
@@ -419,8 +422,6 @@ class CC_EXPORT GpuImageDecodeCache
   // were queued up during a time when the |context_| lock was unavailable.
   // These including deleting, unlocking, and locking textures.
   void RunPendingContextThreadOperations();
-
-  bool SupportsColorSpaces() const;
 
   void CheckContextLockAcquiredIfNecessary();
 

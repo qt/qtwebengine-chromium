@@ -44,17 +44,17 @@
 #include "media/base/ipc/media_param_traits.h"
 #include "media/capture/ipc/capture_param_traits.h"
 #include "net/base/network_change_notifier.h"
-#include "ppapi/features/features.h"
-#include "third_party/WebKit/public/platform/WebDisplayMode.h"
-#include "third_party/WebKit/public/platform/WebFloatPoint.h"
-#include "third_party/WebKit/public/platform/WebFloatRect.h"
-#include "third_party/WebKit/public/platform/WebIntrinsicSizingInfo.h"
-#include "third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationType.h"
-#include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
-#include "third_party/WebKit/public/web/WebMediaPlayerAction.h"
-#include "third_party/WebKit/public/web/WebPluginAction.h"
-#include "third_party/WebKit/public/web/WebPopupType.h"
-#include "third_party/WebKit/public/web/WebTextDirection.h"
+#include "ppapi/buildflags/buildflags.h"
+#include "third_party/blink/public/platform/modules/screen_orientation/web_screen_orientation_type.h"
+#include "third_party/blink/public/platform/web_display_mode.h"
+#include "third_party/blink/public/platform/web_float_point.h"
+#include "third_party/blink/public/platform/web_float_rect.h"
+#include "third_party/blink/public/platform/web_intrinsic_sizing_info.h"
+#include "third_party/blink/public/web/web_device_emulation_params.h"
+#include "third_party/blink/public/web/web_media_player_action.h"
+#include "third_party/blink/public/web/web_plugin_action.h"
+#include "third_party/blink/public/web/web_popup_type.h"
+#include "third_party/blink/public/web/web_text_direction.h"
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/ui_base_types.h"
@@ -69,8 +69,8 @@
 #include "ui/gfx/ipc/skia/gfx_skia_param_traits.h"
 
 #if defined(OS_MACOSX)
-#include "third_party/WebKit/public/platform/WebScrollbarButtonsPlacement.h"
-#include "third_party/WebKit/public/platform/mac/WebScrollbarTheme.h"
+#include "third_party/blink/public/platform/mac/web_scrollbar_theme.h"
+#include "third_party/blink/public/platform/web_scrollbar_buttons_placement.h"
 #endif
 
 #undef IPC_MESSAGE_EXPORT
@@ -162,6 +162,10 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::ResizeParams)
   IPC_STRUCT_TRAITS_MEMBER(screen_info)
+  IPC_STRUCT_TRAITS_MEMBER(auto_resize_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(min_size_for_auto_resize)
+  IPC_STRUCT_TRAITS_MEMBER(max_size_for_auto_resize)
+  IPC_STRUCT_TRAITS_MEMBER(auto_resize_sequence_number)
   IPC_STRUCT_TRAITS_MEMBER(new_size)
   IPC_STRUCT_TRAITS_MEMBER(compositor_viewport_pixel_size)
   IPC_STRUCT_TRAITS_MEMBER(browser_controls_shrink_blink_size)
@@ -343,19 +347,6 @@ IPC_MESSAGE_ROUTED0(ViewMsg_Close)
 // rect so that we don't have to fetch it every time WebKit asks for it.
 IPC_MESSAGE_ROUTED1(ViewMsg_Resize, content::ResizeParams /* params */)
 
-// Tells the widget to use the provided viz::LocalSurfaceId to submit
-// CompositorFrames for autosize.
-// TODO(fsamuel): Replace these parameters with ResizeParams eventually. After
-// surface sync is on by default everywhere, ResizeParams should be renamed to
-// SynchronizedVisualParams.
-IPC_MESSAGE_ROUTED(ViewMsg_SetLocalSurfaceIdForAutoResize,
-                   uint64_t /* sequence_number */,
-                   gfx::Size /* min_size */,
-                   gfx::Size /* max_size */,
-                   content::ScreenInfo /* screen_info */,
-                   uint32_t /* content_source_id */,
-                   viz::LocalSurfaceId /* local_surface_id */)
-
 // Enables device emulation. See WebDeviceEmulationParams for description.
 IPC_MESSAGE_ROUTED1(ViewMsg_EnableDeviceEmulation,
                     blink::WebDeviceEmulationParams /* params */)
@@ -445,16 +436,6 @@ IPC_MESSAGE_ROUTED0(ViewMsg_Move_ACK)
 // Used to instruct the RenderView to send back updates to the preferred size.
 IPC_MESSAGE_ROUTED0(ViewMsg_EnablePreferredSizeChangedMode)
 
-// Used to instruct the RenderView to automatically resize and send back
-// updates for the new size.
-IPC_MESSAGE_ROUTED2(ViewMsg_EnableAutoResize,
-                    gfx::Size /* min_size */,
-                    gfx::Size /* max_size */)
-
-// Used to instruct the RenderView to disalbe automatically resize.
-IPC_MESSAGE_ROUTED1(ViewMsg_DisableAutoResize,
-                    gfx::Size /* new_size */)
-
 // Changes the text direction of the currently selected input field (if any).
 IPC_MESSAGE_ROUTED1(ViewMsg_SetTextDirection,
                     blink::WebTextDirection /* direction */)
@@ -525,9 +506,6 @@ IPC_MESSAGE_ROUTED3(ViewMsg_ResolveTapDisambiguation,
                     gfx::Point /* tap_viewport_offset */,
                     bool /* is_long_press */)
 
-// Fetches complete rendered content of a web page as plain text.
-IPC_MESSAGE_ROUTED0(ViewMsg_GetRenderedText)
-
 IPC_MESSAGE_ROUTED0(ViewMsg_SelectWordAroundCaret)
 
 // Sent by the browser to ask the renderer to redraw. Robust to events that can
@@ -536,9 +514,11 @@ IPC_MESSAGE_ROUTED0(ViewMsg_SelectWordAroundCaret)
 IPC_MESSAGE_ROUTED1(ViewMsg_ForceRedraw,
                     ui::LatencyInfo /* latency_info */)
 
-// Sets the viewport intersection on the widget for an out-of-process iframe.
-IPC_MESSAGE_ROUTED1(ViewMsg_SetViewportIntersection,
-                    gfx::Rect /* viewport_intersection */)
+// Sets the viewport intersection and compositor raster area on the widget for
+// an out-of-process iframe.
+IPC_MESSAGE_ROUTED2(ViewMsg_SetViewportIntersection,
+                    gfx::Rect /* viewport_intersection */,
+                    gfx::Rect /* compositor_visible_rect */)
 
 // Sets the inert bit on an out-of-process iframe.
 IPC_MESSAGE_ROUTED1(ViewMsg_SetIsInert, bool /* inert */)
@@ -759,18 +739,6 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_SelectWordAroundCaretAck,
                     bool /* did_select */,
                     int /* start_adjust */,
                     int /* end_adjust */)
-
-#if defined(OS_ANDROID)
-// Notifies that an unhandled tap has occurred at the specified x,y position
-// and that the UI may need to be triggered.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_ShowUnhandledTapUIIfNeeded,
-                    int /* x */,
-                    int /* y */)
-
-#elif defined(OS_MACOSX)
-// Receives content of a web page as plain text.
-IPC_MESSAGE_ROUTED1(ViewMsg_GetRenderedTextCompleted, std::string)
-#endif
 
 // Adding a new message? Stick to the sort order above: first platform
 // independent ViewMsg, then ifdefs for platform specific ViewMsg, then platform

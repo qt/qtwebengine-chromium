@@ -35,6 +35,7 @@
         'proto_out_dir': 'include/power_manager/proto_bindings',
       },
       'sources': [
+        '<(proto_in_dir)/backlight.proto',
         '<(proto_in_dir)/idle.proto',
         '<(proto_in_dir)/input_event.proto',
         '<(proto_in_dir)/peripheral_battery_status.proto',
@@ -53,6 +54,7 @@
         'system_api-power_manager-protos-gen',
       ],
       'sources': [
+        '<(SHARED_INTERMEDIATE_DIR)/include/power_manager/proto_bindings/backlight.pb.cc',
         '<(SHARED_INTERMEDIATE_DIR)/include/power_manager/proto_bindings/idle.pb.cc',
         '<(SHARED_INTERMEDIATE_DIR)/include/power_manager/proto_bindings/input_event.pb.cc',
         '<(SHARED_INTERMEDIATE_DIR)/include/power_manager/proto_bindings/peripheral_battery_status.pb.cc',
@@ -225,6 +227,19 @@
       'includes': ['../../platform2/common-mk/protoc.gypi'],
     },
     {
+      'target_name': 'system_api-vm_concierge-goprotos-gen',
+      'type': 'none',
+      'variables': {
+        'gen_go': 1,
+        'proto_in_dir': 'dbus/vm_concierge',
+        'proto_out_dir': 'go/src/chromiumos/system_api/vm_concierge',
+      },
+      'sources': [
+        '<(proto_in_dir)/service.proto',
+      ],
+      'includes': ['../../platform2/common-mk/protoc.gypi'],
+    },
+    {
       'target_name': 'system_api-vm_concierge-protos',
       'type': 'static_library',
       'standalone_static_library': 1,
@@ -234,6 +249,87 @@
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/include/vm_concierge/proto_bindings/service.pb.cc',
       ]
+    },
+    {
+      'target_name': 'system_api-vm_applications-protos-gen',
+      'type': 'none',
+      'variables': {
+        'proto_in_dir': 'dbus/vm_applications',
+        'proto_out_dir': 'include/vm_applications/proto_bindings',
+      },
+      'sources': [
+        '<(proto_in_dir)/apps.proto',
+      ],
+      'includes': ['../../platform2/common-mk/protoc.gypi'],
+    },
+    {
+      'target_name': 'system_api-vm_applications-protos',
+      'type': 'static_library',
+      'standalone_static_library': 1,
+      'dependencies': [
+        'system_api-vm_applications-protos-gen',
+      ],
+      'sources': [
+        '<(SHARED_INTERMEDIATE_DIR)/include/vm_applications/proto_bindings/apps.pb.cc',
+      ]
+    },
+    {
+      'target_name': 'ml_service_mojo_bindings',
+      'type': 'none',
+      'variables': {
+        'mojo_output_dir': '<(SHARED_INTERMEDIATE_DIR)/include',
+        'mojo_binding_generator': '<(sysroot)/usr/src/libmojo-<(libbase_ver)/mojo/mojom_bindings_generator.py',
+        'mojo_template_dir': '<(SHARED_INTERMEDIATE_DIR)/templates',
+      },
+      'actions': [
+        {
+          'action_name': 'ml_service_mojom_templates_dir',
+          'inputs': [
+          ],
+          'outputs': [
+            '<(mojo_template_dir)',
+          ],
+          'message': 'Creating mojo C++ templates dir',
+          'action': [
+            'mkdir', '-p', '<(mojo_template_dir)',
+          ],
+        },
+        {
+          'action_name': 'ml_service_mojom_templates',
+          'inputs': [
+            '<(mojo_binding_generator)',
+            '<(mojo_template_dir)',
+          ],
+          'outputs': [
+            '<(mojo_template_dir)/cpp_templates.zip',
+          ],
+          'message': 'Generating mojo C++ templates',
+          'action': [
+            'python', '<(mojo_binding_generator)', '--use_bundled_pylibs',
+            'precompile', '-o', '<(mojo_template_dir)',
+          ],
+        },
+        {
+          'action_name': 'ml_service_mojom_bindings',
+          'inputs': [
+            '<(mojo_binding_generator)',
+            '<(mojo_template_dir)/cpp_templates.zip',
+            'mojo/ml_service/learning_example.mojom',
+          ],
+          'outputs': [
+            '<(mojo_output_dir)/mojo/ml_service/learning_example.mojom.h',
+            '<(mojo_output_dir)/mojo/ml_service/learning_example.mojom.cc',
+          ],
+          'message': 'Generating mojo C++ bindings for ML Service',
+          'action': [
+            'python', '<(mojo_binding_generator)',
+            '--use_bundled_pylibs', 'generate', 'mojo/ml_service/learning_example.mojom',
+            '-o', '<(mojo_output_dir)',
+            '--bytecode_path', '<(mojo_template_dir)',
+            '-g', 'c++',
+          ],
+        },
+      ],
     },
   ]
 }

@@ -15,11 +15,14 @@
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "content/browser/loader/cross_site_document_resource_handler.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/resource_type.h"
+#include "content/public/common/web_preferences.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
@@ -27,6 +30,7 @@
 #include "content/public/test/test_utils.h"
 #include "content/public/test/url_loader_interceptor.h"
 #include "content/shell/browser/shell.h"
+#include "content/test/test_content_browser_client.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "services/network/public/cpp/network_switches.h"
 #include "services/network/test/test_url_loader_client.h"
@@ -252,6 +256,23 @@ class RequestInterceptor {
   DISALLOW_COPY_AND_ASSIGN(RequestInterceptor);
 };
 
+// Custom ContentBrowserClient that disables web security in the renderer
+// process without actually using --disable-web-security (which disables CORB).
+// This disables the same origin policy to let the renderer see cross-origin
+// fetches if they are received.
+class DisableWebSecurityContentBrowserClient : public TestContentBrowserClient {
+ public:
+  DisableWebSecurityContentBrowserClient() : TestContentBrowserClient() {}
+
+  ~DisableWebSecurityContentBrowserClient() override {}
+
+  // ContentBrowserClient overrides:
+  void OverrideWebkitPrefs(RenderViewHost* render_view_host,
+                           WebPreferences* prefs) override {
+    prefs->web_security_enabled = false;
+  }
+};
+
 }  // namespace
 
 // These tests verify that the browser process blocks cross-site HTML, XML,
@@ -262,9 +283,9 @@ class RequestInterceptor {
 // including cases that may be mislabeled as blocked MIME type.
 //
 // Many of these tests work by turning off the Same Origin Policy in the
-// renderer process via --disable-web-security, and then trying to access the
-// resource via a cross-origin XHR.  If the response is blocked, the XHR should
-// see an empty response body.
+// renderer process via WebPreferences::web_security_enabled, and then trying to
+// access the resource via a cross-origin XHR.  If the response is blocked, the
+// XHR should see an empty response body.
 //
 // Note that this BaseTest class does not specify an isolation mode via
 // command-line flags.  Most of the tests are in the --site-per-process subclass
@@ -289,20 +310,25 @@ class CrossSiteDocumentBlockingBaseTest : public ContentBrowserTest {
         network::switches::kHostResolverRules,
         "MAP * " + embedded_test_server()->host_port_pair().ToString() +
             ",EXCLUDE localhost");
-
-    // To test that the renderer process does not receive blocked documents, we
-    // disable the same origin policy to let it see cross-origin fetches if they
-    // are received.
-    command_line->AppendSwitch(switches::kDisableWebSecurity);
   }
 
   void SetUpOnMainThread() override {
     // Complete the manual Start() after ContentBrowserTest's own
     // initialization, ref. comment on InitializeAndListen() above.
     embedded_test_server()->StartAcceptingConnections();
+
+    // Disable web security via the ContentBrowserClient and notify the current
+    // renderer process.
+    old_client = SetBrowserClientForTesting(&new_client);
+    shell()->web_contents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
   }
 
+  void TearDown() override { SetBrowserClientForTesting(old_client); }
+
  private:
+  DisableWebSecurityContentBrowserClient new_client;
+  ContentBrowserClient* old_client = nullptr;
+
   DISALLOW_COPY_AND_ASSIGN(CrossSiteDocumentBlockingBaseTest);
 };
 
@@ -391,11 +417,24 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockDocuments) {
   //   jsonp.* - JSONP (i.e., script) mislabeled as a document.
   //   img.*   - Contents that won't match the document label.
   //   valid.* - Correctly labeled responses of non-document types.
-  const char* sniff_allowed_resources[] = {
-      "js.html",   "comment_js.html", "js.xml",       "js.json",
-      "js.txt",    "jsonp.html",      "jsonp.xml",    "jsonp.json",
-      "jsonp.txt", "img.html",        "img.xml",      "img.json",
-      "img.txt",   "valid.js",        "json-list.js", "nosniff.json-list.js"};
+  const char* sniff_allowed_resources[] = {"js.html",
+                                           "comment_js.html",
+                                           "js.xml",
+                                           "js.json",
+                                           "js.txt",
+                                           "jsonp.html",
+                                           "jsonp.xml",
+                                           "jsonp.json",
+                                           "jsonp.txt",
+                                           "img.html",
+                                           "img.xml",
+                                           "img.json",
+                                           "img.txt",
+                                           "valid.js",
+                                           "json-list.js",
+                                           "nosniff.json-list.js",
+                                           "js-html-polyglot.html",
+                                           "js-html-polyglot2.html"};
   for (const char* resource : sniff_allowed_resources) {
     SCOPED_TRACE(base::StringPrintf("... while testing page: %s", resource));
     base::HistogramTester histograms;
@@ -595,12 +634,6 @@ class CrossSiteDocumentBlockingServiceWorkerTest : public ContentBrowserTest {
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
     IsolateAllSitesForTesting(command_line);
-
-    // To test that the renderer process does not receive blocked documents, we
-    // disable the same origin policy to let it see cross-origin fetches if they
-    // are received.
-    command_line->AppendSwitch(switches::kDisableWebSecurity);
-
     ContentBrowserTest::SetUpCommandLine(command_line);
   }
 
@@ -623,7 +656,14 @@ class CrossSiteDocumentBlockingServiceWorkerTest : public ContentBrowserTest {
     ASSERT_FALSE(SiteInstance::IsSameWebSite(
         shell()->web_contents()->GetBrowserContext(),
         GetURLOnServiceWorkerServer("/"), GetURLOnCrossOriginServer("/")));
+
+    // Disable web security via the ContentBrowserClient and notify the current
+    // renderer process.
+    old_client = SetBrowserClientForTesting(&new_client);
+    shell()->web_contents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
   }
+
+  void TearDown() override { SetBrowserClientForTesting(old_client); }
 
   GURL GetURLOnServiceWorkerServer(const std::string& path) {
     return service_worker_https_server_.GetURL(path);
@@ -676,6 +716,9 @@ class CrossSiteDocumentBlockingServiceWorkerTest : public ContentBrowserTest {
   //    be a https server to avoid hitting the mixed content error.
   net::EmbeddedTestServer service_worker_https_server_;
   net::EmbeddedTestServer cross_origin_https_server_;
+
+  DisableWebSecurityContentBrowserClient new_client;
+  ContentBrowserClient* old_client = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(CrossSiteDocumentBlockingServiceWorkerTest);
 };
@@ -780,6 +823,65 @@ class CrossSiteDocumentBlockingKillSwitchTest
 IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingKillSwitchTest,
                        NoBlockingWithKillSwitch) {
   // Load a page that issues illegal cross-site document requests to bar.com.
+  GURL foo_url("http://foo.com/cross_site_document_blocking/request.html");
+  EXPECT_TRUE(NavigateToURL(shell(), foo_url));
+
+  bool was_blocked;
+  ASSERT_TRUE(ExecuteScriptAndExtractBool(
+      shell(), "sendRequest(\"valid.html\");", &was_blocked));
+  EXPECT_FALSE(was_blocked);
+}
+
+// Test class to verify that --disable-web-security turns off CORB.  This
+// inherits from CrossSiteDocumentBlockingTest, so it runs in SitePerProcess.
+class CrossSiteDocumentBlockingDisableWebSecurityTest
+    : public CrossSiteDocumentBlockingTest {
+ public:
+  CrossSiteDocumentBlockingDisableWebSecurityTest() {}
+  ~CrossSiteDocumentBlockingDisableWebSecurityTest() override {}
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    command_line->AppendSwitch(switches::kDisableWebSecurity);
+    CrossSiteDocumentBlockingTest::SetUpCommandLine(command_line);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(CrossSiteDocumentBlockingDisableWebSecurityTest);
+};
+
+IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingDisableWebSecurityTest,
+                       DisableBlocking) {
+  // Load a page that issues illegal cross-site document requests.
+  GURL foo_url("http://foo.com/cross_site_document_blocking/request.html");
+  EXPECT_TRUE(NavigateToURL(shell(), foo_url));
+
+  bool was_blocked;
+  ASSERT_TRUE(ExecuteScriptAndExtractBool(
+      shell(), "sendRequest(\"valid.html\");", &was_blocked));
+  EXPECT_FALSE(was_blocked);
+}
+
+// Test class to verify that kCrossSiteDocumentBlockingAlways does not take
+// precedence over --disable-web-security.  This inherits from
+// CrossSiteDocumentBlockingTest, so it runs in SitePerProcess.
+class CrossSiteDocumentBlockingDisableVsFeatureTest
+    : public CrossSiteDocumentBlockingDisableWebSecurityTest {
+ public:
+  CrossSiteDocumentBlockingDisableVsFeatureTest() {
+    scoped_feature_list_.InitAndEnableFeature(
+        features::kCrossSiteDocumentBlockingAlways);
+  }
+  ~CrossSiteDocumentBlockingDisableVsFeatureTest() override {}
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+
+  DISALLOW_COPY_AND_ASSIGN(CrossSiteDocumentBlockingDisableVsFeatureTest);
+};
+
+IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingDisableVsFeatureTest,
+                       DisableBlocking) {
+  // Load a page that issues illegal cross-site document requests.
   GURL foo_url("http://foo.com/cross_site_document_blocking/request.html");
   EXPECT_TRUE(NavigateToURL(shell(), foo_url));
 

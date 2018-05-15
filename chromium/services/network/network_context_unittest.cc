@@ -8,13 +8,13 @@
 #include <utility>
 #include <vector>
 
+#include "base/barrier_closure.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial.h"
 #include "base/run_loop.h"
 #include "base/strings/string_split.h"
@@ -34,6 +34,8 @@
 #include "net/cookies/cookie_options.h"
 #include "net/cookies/cookie_store.h"
 #include "net/disk_cache/disk_cache.h"
+#include "net/http/http_auth_handler_factory.h"
+#include "net/http/http_auth_preferences.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_manager.h"
@@ -41,7 +43,10 @@
 #include "net/log/net_log_with_source.h"
 #include "net/proxy_resolution/proxy_config.h"
 #include "net/proxy_resolution/proxy_info.h"
-#include "net/proxy_resolution/proxy_service.h"
+#include "net/proxy_resolution/proxy_resolution_service.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
+#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+#include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_builder.h"
 #include "net/url_request/url_request_job_factory.h"
@@ -50,6 +55,7 @@
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "services/network/public/mojom/proxy_config.mojom.h"
+#include "services/network/test/test_url_loader_client.h"
 #include "services/network/udp_socket_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -64,7 +70,7 @@ mojom::NetworkContextParamsPtr CreateContextParams() {
   mojom::NetworkContextParamsPtr params = mojom::NetworkContextParams::New();
   // Use a fixed proxy config, to avoid dependencies on local network
   // configuration.
-  params->initial_proxy_config = net::ProxyConfig::CreateDirect();
+  params->initial_proxy_config = net::ProxyConfigWithAnnotation::CreateDirect();
   return params;
 }
 
@@ -118,6 +124,47 @@ class NetworkContextTest : public testing::Test {
   mojom::NetworkContextPtr network_context_ptr_;
 };
 
+TEST_F(NetworkContextTest, DestroyContextWithLiveRequest) {
+  net::EmbeddedTestServer test_server;
+  test_server.AddDefaultHandlers(
+      base::FilePath(FILE_PATH_LITERAL("services/test/data")));
+  ASSERT_TRUE(test_server.Start());
+
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+
+  ResourceRequest request;
+  request.url = test_server.GetURL("/hung-after-headers");
+
+  mojom::URLLoaderFactoryPtr loader_factory;
+  network_context->CreateURLLoaderFactory(mojo::MakeRequest(&loader_factory),
+                                          0);
+
+  mojom::URLLoaderPtr loader;
+  TestURLLoaderClient client;
+  loader_factory->CreateLoaderAndStart(
+      mojo::MakeRequest(&loader), 0 /* routing_id */, 0 /* request_id */,
+      0 /* options */, request, client.CreateInterfacePtr(),
+      net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
+
+  client.RunUntilResponseReceived();
+  EXPECT_TRUE(client.has_received_response());
+  EXPECT_FALSE(client.has_received_completion());
+
+  // Destroying the loader factory should not delete the URLLoader.
+  loader_factory.reset();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_FALSE(client.has_received_completion());
+
+  // Destroying the NetworkContext should result in destroying the loader and
+  // the client receiving a connection error.
+  network_context.reset();
+
+  client.RunUntilConnectionError();
+  EXPECT_FALSE(client.has_received_completion());
+  EXPECT_EQ(0u, client.download_data_length());
+}
+
 TEST_F(NetworkContextTest, DisableQuic) {
   base::CommandLine::ForCurrentProcess()->AppendSwitch(switches::kEnableQuic);
 
@@ -157,6 +204,44 @@ TEST_F(NetworkContextTest, DisableQuic) {
                    ->GetSession()
                    ->params()
                    .enable_quic);
+}
+
+TEST_F(NetworkContextTest, UserAgentAndLanguage) {
+  const char kUserAgent[] = "Chromium Unit Test";
+  const char kAcceptLanguage[] = "en-US,en;q=0.9,uk;q=0.8";
+  mojom::NetworkContextParamsPtr params = CreateContextParams();
+  params->user_agent = kUserAgent;
+  // Not setting accept_language, to test the default.
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(std::move(params));
+  EXPECT_EQ(kUserAgent, network_context->GetURLRequestContext()
+                            ->http_user_agent_settings()
+                            ->GetUserAgent());
+  EXPECT_EQ("en-us,en", network_context->GetURLRequestContext()
+                            ->http_user_agent_settings()
+                            ->GetAcceptLanguage());
+
+  // Change accept-language.
+  network_context->SetAcceptLanguage(kAcceptLanguage);
+  EXPECT_EQ(kUserAgent, network_context->GetURLRequestContext()
+                            ->http_user_agent_settings()
+                            ->GetUserAgent());
+  EXPECT_EQ(kAcceptLanguage, network_context->GetURLRequestContext()
+                                 ->http_user_agent_settings()
+                                 ->GetAcceptLanguage());
+
+  // Create with custom accept-language configured.
+  params = CreateContextParams();
+  params->user_agent = kUserAgent;
+  params->accept_language = kAcceptLanguage;
+  std::unique_ptr<NetworkContext> network_context2 =
+      CreateContextWithParams(std::move(params));
+  EXPECT_EQ(kUserAgent, network_context2->GetURLRequestContext()
+                            ->http_user_agent_settings()
+                            ->GetUserAgent());
+  EXPECT_EQ(kAcceptLanguage, network_context2->GetURLRequestContext()
+                                 ->http_user_agent_settings()
+                                 ->GetAcceptLanguage());
 }
 
 TEST_F(NetworkContextTest, EnableBrotli) {
@@ -536,6 +621,97 @@ TEST_F(NetworkContextTest, ClearHttpServerPropertiesInMemory) {
                    ->GetSupportsSpdy(kSchemeHostPort));
 }
 
+// Validates that clearing the HTTP cache when no cache exists does complete.
+TEST_F(NetworkContextTest, ClearHttpCacheWithNoCache) {
+  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
+  context_params->http_cache_enabled = false;
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(std::move(context_params));
+  net::HttpCache* cache = network_context->GetURLRequestContext()
+                              ->http_transaction_factory()
+                              ->GetCache();
+  ASSERT_EQ(nullptr, cache);
+  base::RunLoop run_loop;
+  network_context->ClearHttpCache(base::Time(), base::Time(),
+                                  /*filter=*/nullptr,
+                                  base::BindOnce(run_loop.QuitClosure()));
+  run_loop.Run();
+}
+
+TEST_F(NetworkContextTest, ClearHttpCache) {
+  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
+  context_params->http_cache_enabled = true;
+
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  context_params->http_cache_path = temp_dir.GetPath();
+
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(std::move(context_params));
+  net::HttpCache* cache = network_context->GetURLRequestContext()
+                              ->http_transaction_factory()
+                              ->GetCache();
+
+  std::vector<std::string> entry_urls = {
+      "http://www.google.com",    "https://www.google.com",
+      "http://www.wikipedia.com", "https://www.wikipedia.com",
+      "http://localhost:1234",    "https://localhost:1234",
+  };
+  ASSERT_TRUE(cache);
+  disk_cache::Backend* backend = nullptr;
+  net::TestCompletionCallback callback;
+  int rv = cache->GetBackend(&backend, callback.callback());
+  EXPECT_EQ(net::OK, callback.GetResult(rv));
+  ASSERT_TRUE(backend);
+
+  for (const auto& url : entry_urls) {
+    disk_cache::Entry* entry = nullptr;
+    base::RunLoop run_loop;
+    if (backend->CreateEntry(
+            url, &entry,
+            base::Bind([](base::OnceClosure quit_loop,
+                          int rv) { std::move(quit_loop).Run(); },
+                       run_loop.QuitClosure())) == net::ERR_IO_PENDING) {
+      run_loop.Run();
+    }
+    entry->Close();
+  }
+  EXPECT_EQ(entry_urls.size(), static_cast<size_t>(backend->GetEntryCount()));
+  base::RunLoop run_loop;
+  network_context->ClearHttpCache(base::Time(), base::Time(),
+                                  /*filter=*/nullptr,
+                                  base::BindOnce(run_loop.QuitClosure()));
+  run_loop.Run();
+  EXPECT_EQ(0U, static_cast<size_t>(backend->GetEntryCount()));
+}
+
+// Checks that when multiple calls are made to clear the HTTP cache, all
+// callbacks are invoked.
+TEST_F(NetworkContextTest, MultipleClearHttpCacheCalls) {
+  constexpr int kNumberOfClearCalls = 10;
+
+  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
+  context_params->http_cache_enabled = true;
+
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  context_params->http_cache_path = temp_dir.GetPath();
+
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(std::move(context_params));
+
+  base::RunLoop run_loop;
+  base::RepeatingClosure barrier_closure = base::BarrierClosure(
+      /*num_closures=*/kNumberOfClearCalls, run_loop.QuitClosure());
+  for (int i = 0; i < kNumberOfClearCalls; i++) {
+    network_context->ClearHttpCache(base::Time(), base::Time(),
+                                    /*filter=*/nullptr,
+                                    base::BindOnce(barrier_closure));
+  }
+  run_loop.Run();
+  // If all the callbacks were invoked, we should terminate.
+}
+
 void SetCookieCallback(base::RunLoop* run_loop, bool* result_out, bool result) {
   *result_out = result;
   run_loop->Quit();
@@ -603,7 +779,8 @@ TEST_F(NetworkContextTest, ProxyConfig) {
   // initial config works.
   for (const auto& initial_proxy_config : proxy_configs) {
     mojom::NetworkContextParamsPtr context_params = CreateContextParams();
-    context_params->initial_proxy_config = initial_proxy_config;
+    context_params->initial_proxy_config = net::ProxyConfigWithAnnotation(
+        initial_proxy_config, TRAFFIC_ANNOTATION_FOR_TESTS);
     mojom::ProxyConfigClientPtr config_client;
     context_params->proxy_config_client_request =
         mojo::MakeRequest(&config_client);
@@ -616,17 +793,19 @@ TEST_F(NetworkContextTest, ProxyConfig) {
     // its config until it's first used.
     proxy_resolution_service->ForceReloadProxyConfig();
     EXPECT_TRUE(proxy_resolution_service->config());
-    EXPECT_TRUE(
-        proxy_resolution_service->config()->Equals(initial_proxy_config));
+    EXPECT_TRUE(proxy_resolution_service->config()->value().Equals(
+        initial_proxy_config));
 
     // Always go through the other configs in the same order. This has the
     // advantage of testing the case where there's no change, for
     // proxy_config[0].
     for (const auto& proxy_config : proxy_configs) {
-      config_client->OnProxyConfigUpdated(proxy_config);
+      config_client->OnProxyConfigUpdated(net::ProxyConfigWithAnnotation(
+          proxy_config, TRAFFIC_ANNOTATION_FOR_TESTS));
       scoped_task_environment_.RunUntilIdle();
       EXPECT_TRUE(proxy_resolution_service->config());
-      EXPECT_TRUE(proxy_resolution_service->config()->Equals(proxy_config));
+      EXPECT_TRUE(
+          proxy_resolution_service->config()->value().Equals(proxy_config));
     }
   }
 }
@@ -637,7 +816,8 @@ TEST_F(NetworkContextTest, StaticProxyConfig) {
   proxy_config.proxy_rules().ParseFromString("http=foopy:80;ftp=foopy2");
 
   mojom::NetworkContextParamsPtr context_params = CreateContextParams();
-  context_params->initial_proxy_config = proxy_config;
+  context_params->initial_proxy_config = net::ProxyConfigWithAnnotation(
+      proxy_config, TRAFFIC_ANNOTATION_FOR_TESTS);
   std::unique_ptr<NetworkContext> network_context =
       CreateContextWithParams(std::move(context_params));
 
@@ -647,7 +827,7 @@ TEST_F(NetworkContextTest, StaticProxyConfig) {
   // its config until it's first used.
   proxy_resolution_service->ForceReloadProxyConfig();
   EXPECT_TRUE(proxy_resolution_service->config());
-  EXPECT_TRUE(proxy_resolution_service->config()->Equals(proxy_config));
+  EXPECT_TRUE(proxy_resolution_service->config()->value().Equals(proxy_config));
 }
 
 TEST_F(NetworkContextTest, NoInitialProxyConfig) {
@@ -679,7 +859,8 @@ TEST_F(NetworkContextTest, NoInitialProxyConfig) {
 
   net::ProxyConfig proxy_config;
   proxy_config.proxy_rules().ParseFromString("http=foopy:80");
-  config_client->OnProxyConfigUpdated(proxy_config);
+  config_client->OnProxyConfigUpdated(net::ProxyConfigWithAnnotation(
+      proxy_config, TRAFFIC_ANNOTATION_FOR_TESTS));
   ASSERT_EQ(net::OK, test_callback.WaitForResult());
 
   EXPECT_TRUE(proxy_info.is_http());
@@ -778,6 +959,51 @@ TEST_F(NetworkContextTest, CreateUDPSocket) {
     i++;
   }
 }
+
+#if defined(OS_CHROMEOS)
+TEST_F(NetworkContextTest, GssapiLibraryLoadDisallowedByDefault) {
+  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(std::move(context_params));
+  EXPECT_FALSE(network_context->GetURLRequestContext()
+                   ->http_auth_handler_factory()
+                   ->http_auth_preferences()
+                   ->AllowGssapiLibraryLoad());
+}
+
+TEST_F(NetworkContextTest, DisallowGssapiLibraryLoad) {
+  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
+  context_params->allow_gssapi_library_load = false;
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(std::move(context_params));
+  EXPECT_FALSE(network_context->GetURLRequestContext()
+                   ->http_auth_handler_factory()
+                   ->http_auth_preferences()
+                   ->AllowGssapiLibraryLoad());
+}
+
+TEST_F(NetworkContextTest, AllowGssapiLibraryLoad) {
+  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
+  context_params->allow_gssapi_library_load = true;
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(std::move(context_params));
+  EXPECT_TRUE(network_context->GetURLRequestContext()
+                  ->http_auth_handler_factory()
+                  ->http_auth_preferences()
+                  ->AllowGssapiLibraryLoad());
+}
+#elif defined(OS_POSIX) && !defined(OS_ANDROID)
+TEST_F(NetworkContextTest, GssapiLibraryName) {
+  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
+  context_params->gssapi_library_name = "gssapi_library";
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(std::move(context_params));
+  EXPECT_EQ("gssapi_library", network_context->GetURLRequestContext()
+                                  ->http_auth_handler_factory()
+                                  ->http_auth_preferences()
+                                  ->GssapiLibraryName());
+}
+#endif
 
 }  // namespace
 

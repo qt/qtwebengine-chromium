@@ -13,7 +13,6 @@
 #include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
@@ -23,7 +22,6 @@
 #include "base/task_scheduler/task_traits.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/download/download_resource_handler.h"
@@ -60,7 +58,7 @@
 #include "content/public/test/test_utils.h"
 #include "content/test/test_content_browser_client.h"
 #include "content/test/test_navigation_url_loader_delegate.h"
-#include "mojo/common/data_pipe_utils.h"
+#include "mojo/public/cpp/system/data_pipe_utils.h"
 #include "net/base/chunked_upload_data_stream.h"
 #include "net/base/elements_upload_data_stream.h"
 #include "net/base/load_flags.h"
@@ -83,7 +81,7 @@
 #include "services/network/test/test_url_loader_client.h"
 #include "storage/browser/blob/shareable_file_reference.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
+#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
 
 // TODO(eroman): Write unit tests for SafeBrowsing that exercise
 //               SafeBrowsingResourceHandler.
@@ -105,7 +103,6 @@ static network::ResourceRequest CreateResourceRequest(const char* method,
   request.load_flags = 0;
   request.plugin_child_id = -1;
   request.resource_type = type;
-  request.request_context = 0;
   request.appcache_host_id = kAppCacheNoHostId;
   request.download_to_file = false;
   request.should_reset_appcache = false;
@@ -815,12 +812,13 @@ class ResourceDispatcherHostTest : public testing::Test {
             false /* is_form_submission */, GURL() /* searchable_form_url */,
             std::string() /* searchable_form_encoding */,
             url::Origin::Create(url), GURL() /* client_side_redirect_url */,
-            nullptr /* devtools_initiator_info */);
+            base::nullopt /* devtools_initiator_info */);
     CommonNavigationParams common_params;
     common_params.url = url;
     std::unique_ptr<NavigationRequestInfo> request_info(
         new NavigationRequestInfo(common_params, std::move(begin_params), url,
-                                  true, false, false, -1, false, false, false));
+                                  true, false, false, -1, false, false, false,
+                                  nullptr));
     std::unique_ptr<NavigationURLLoader> test_loader =
         NavigationURLLoader::Create(
             browser_context_->GetResourceContext(),
@@ -964,7 +962,7 @@ void CheckSuccessfulRequest(network::TestURLLoaderClient* client,
     ASSERT_TRUE(body.is_valid());
 
     std::string actual;
-    EXPECT_TRUE(mojo::common::BlockingCopyToString(std::move(body), &actual));
+    EXPECT_TRUE(mojo::BlockingCopyToString(std::move(body), &actual));
     EXPECT_EQ(reference_data, actual);
   }
   client->RunUntilComplete();
@@ -1068,60 +1066,41 @@ TEST_F(ResourceDispatcherHostTest, DetachedResourceTimesOut) {
 
 // If the filter has disappeared then detachable resources should continue to
 // load.
-// RESOURCE_TYPE_PING requests Handling is affected by
-// "KeepAliveRendererForKeepaliveRequests" feature. We keep this test so that
-// we can unship the feature easily if needed.
-// TODO(yhirano): Add a corresponding test case with the feature.
 TEST_F(ResourceDispatcherHostTest, DeletedFilterDetached) {
-  network::mojom::URLLoaderPtr loader1, loader2;
-  network::TestURLLoaderClient client1, client2;
+  network::mojom::URLLoaderPtr loader1;
+  network::TestURLLoaderClient client1;
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndDisableFeature(
-      features::kKeepAliveRendererForKeepaliveRequests);
   // test_url_1's data is available synchronously, so use 2 and 3.
   network::ResourceRequest request_prefetch = CreateResourceRequest(
       "GET", RESOURCE_TYPE_PREFETCH, net::URLRequestTestJob::test_url_2());
-  network::ResourceRequest request_ping = CreateResourceRequest(
-      "GET", RESOURCE_TYPE_PING, net::URLRequestTestJob::test_url_3());
 
   filter_->CreateLoaderAndStart(
       mojo::MakeRequest(&loader1), 0, 1, network::mojom::kURLLoadOptionNone,
       request_prefetch, client1.CreateInterfacePtr(),
       net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
 
-  filter_->CreateLoaderAndStart(
-      mojo::MakeRequest(&loader2), 0, 2, network::mojom::kURLLoadOptionNone,
-      request_ping, client2.CreateInterfacePtr(),
-      net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
-
   // Remove the filter before processing the requests by simulating channel
   // closure.
   ResourceRequestInfoImpl* info_prefetch = ResourceRequestInfoImpl::ForRequest(
       host_.GetURLRequest(GlobalRequestID(filter_->child_id(), 1)));
-  ResourceRequestInfoImpl* info_ping = ResourceRequestInfoImpl::ForRequest(
-      host_.GetURLRequest(GlobalRequestID(filter_->child_id(), 2)));
   DCHECK_EQ(filter_.get(), info_prefetch->requester_info()->filter());
-  DCHECK_EQ(filter_.get(), info_ping->requester_info()->filter());
   filter_->OnChannelClosing();
 
   client1.RunUntilComplete();
-  client2.RunUntilComplete();
   EXPECT_EQ(net::ERR_ABORTED, client1.completion_status().error_code);
-  EXPECT_EQ(net::ERR_ABORTED, client2.completion_status().error_code);
 
   // But it continues detached.
-  EXPECT_EQ(2, host_.pending_requests());
+  EXPECT_EQ(1, host_.pending_requests());
   EXPECT_TRUE(info_prefetch->detachable_handler()->is_detached());
-  EXPECT_TRUE(info_ping->detachable_handler()->is_detached());
 
   // Make sure the requests weren't canceled early.
-  EXPECT_EQ(2, host_.pending_requests());
+  EXPECT_EQ(1, host_.pending_requests());
 
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
   content::RunAllTasksUntilIdle();
 
   EXPECT_EQ(0, host_.pending_requests());
-  EXPECT_EQ(2, network_delegate()->completed_requests());
+  EXPECT_EQ(1, network_delegate()->completed_requests());
   EXPECT_EQ(0, network_delegate()->canceled_requests());
   EXPECT_EQ(0, network_delegate()->error_count());
 }
@@ -1348,16 +1327,10 @@ TEST_F(ResourceDispatcherHostTest, CancelInDelegate) {
   EXPECT_EQ(net::ERR_ACCESS_DENIED, client.completion_status().error_code);
 }
 
-// RESOURCE_TYPE_PING requests Handling is affected by
-// "KeepAliveRendererForKeepaliveRequests" feature. We keep this test so that
-// we can unship the feature easily if needed.
-// TODO(yhirano): Add a corresponding test case with the feature.
 TEST_F(ResourceDispatcherHostTest, CancelRequestsForRoute) {
   network::mojom::URLLoaderPtr loader1, loader2, loader3, loader4;
   network::TestURLLoaderClient client1, client2, client3, client4;
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndDisableFeature(
-      features::kKeepAliveRendererForKeepaliveRequests);
   job_factory_->SetDelayedStartJobGeneration(true);
   MakeTestRequestWithRenderFrame(0, 11, 1, net::URLRequestTestJob::test_url_1(),
                                  RESOURCE_TYPE_XHR, mojo::MakeRequest(&loader1),
@@ -1370,12 +1343,12 @@ TEST_F(ResourceDispatcherHostTest, CancelRequestsForRoute) {
   EXPECT_EQ(2, host_.pending_requests());
 
   MakeTestRequestWithRenderFrame(
-      0, 11, 3, net::URLRequestTestJob::test_url_3(), RESOURCE_TYPE_PING,
+      0, 11, 3, net::URLRequestTestJob::test_url_3(), RESOURCE_TYPE_PREFETCH,
       mojo::MakeRequest(&loader3), client3.CreateInterfacePtr());
   EXPECT_EQ(3, host_.pending_requests());
 
   MakeTestRequestWithRenderFrame(
-      0, 12, 4, net::URLRequestTestJob::test_url_4(), RESOURCE_TYPE_PING,
+      0, 12, 4, net::URLRequestTestJob::test_url_4(), RESOURCE_TYPE_PREFETCH,
       mojo::MakeRequest(&loader4), client4.CreateInterfacePtr());
   EXPECT_EQ(4, host_.pending_requests());
 
@@ -2145,15 +2118,47 @@ TEST_F(ResourceDispatcherHostTest, CancelRequestsForContextDetached) {
   EXPECT_EQ(0, host_.pending_requests());
 }
 
+namespace {
+
+class ExternalProtocolBrowserClient : public TestContentBrowserClient {
+ public:
+  ExternalProtocolBrowserClient() {}
+
+  bool HandleExternalProtocol(
+      const GURL& url,
+      ResourceRequestInfo::WebContentsGetter web_contents_getter,
+      int child_id,
+      NavigationUIData* navigation_data,
+      bool is_main_frame,
+      ui::PageTransition page_transition,
+      bool has_user_gesture) override {
+    return false;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ExternalProtocolBrowserClient);
+};
+
+}  // namespace
+
+// Verifies that if the embedder says that it didn't handle an unkonown protocol
+// the request is cancelled and net::ERR_ABORTED is returned. Otherwise it is
+// not aborted and net/ layer cancels it with net::ERR_UNKNOWN_URL_SCHEME.
 TEST_F(ResourceDispatcherHostTest, UnknownURLScheme) {
   EXPECT_EQ(0, host_.pending_requests());
 
   HandleScheme("http");
 
-  const GURL invalid_sheme_url = GURL("foo://bar");
-  const int expected_error_code = net::ERR_UNKNOWN_URL_SCHEME;
+  ExternalProtocolBrowserClient test_client;
+  ContentBrowserClient* old_client = SetBrowserClientForTesting(&test_client);
 
-  CompleteFailingMainResourceRequest(invalid_sheme_url, expected_error_code);
+  const GURL invalid_scheme_url = GURL("foo://bar");
+  int expected_error_code = net::ERR_UNKNOWN_URL_SCHEME;
+  CompleteFailingMainResourceRequest(invalid_scheme_url, expected_error_code);
+  SetBrowserClientForTesting(old_client);
+
+  expected_error_code = net::ERR_ABORTED;
+  CompleteFailingMainResourceRequest(invalid_scheme_url, expected_error_code);
 }
 
 // Request a very large detachable resource and cancel part way. Some of the
@@ -2346,24 +2351,24 @@ TEST_F(ResourceDispatcherHostTest, LoadInfo) {
   info.web_contents_getter = base::Bind(WebContentsBinder, wc1);
   info.load_state = net::LoadStateWithParam(net::LOAD_STATE_SENDING_REQUEST,
                                             base::string16());
-  info.url = GURL("test://1/");
+  info.host = "a.com";
   info.upload_position = 0;
   info.upload_size = 0;
   infos->push_back(info);
 
-  info.url = GURL("test://2/");
+  info.host = "b.com";
   info.load_state = net::LoadStateWithParam(net::LOAD_STATE_READING_RESPONSE,
                                             base::string16());
   infos->push_back(info);
 
-  info.url = GURL("test://3/");
+  info.host = "c.com";
 
   std::unique_ptr<LoadInfoMap> load_info_map =
       ResourceDispatcherHostImpl::PickMoreInterestingLoadInfos(
           std::move(infos));
   ASSERT_EQ(1u, load_info_map->size());
   ASSERT_TRUE(load_info_map->find(wc1) != load_info_map->end());
-  EXPECT_EQ(GURL("test://2/"), (*load_info_map)[wc1].url);
+  EXPECT_EQ("b.com", (*load_info_map)[wc1].host);
   EXPECT_EQ(net::LOAD_STATE_READING_RESPONSE,
             (*load_info_map)[wc1].load_state.state);
   EXPECT_EQ(0u, (*load_info_map)[wc1].upload_position);
@@ -2379,12 +2384,12 @@ TEST_F(ResourceDispatcherHostTest, LoadInfoSamePriority) {
   info.web_contents_getter = base::Bind(WebContentsBinder, wc1);
   info.load_state = net::LoadStateWithParam(net::LOAD_STATE_IDLE,
                                             base::string16());
-  info.url = GURL("test://1/");
+  info.host = "a.com";
   info.upload_position = 0;
   info.upload_size = 0;
   infos->push_back(info);
 
-  info.url = GURL("test://2/");
+  info.host = "b.com";
   infos->push_back(info);
 
   std::unique_ptr<LoadInfoMap> load_info_map =
@@ -2392,7 +2397,7 @@ TEST_F(ResourceDispatcherHostTest, LoadInfoSamePriority) {
           std::move(infos));
   ASSERT_EQ(1u, load_info_map->size());
   ASSERT_TRUE(load_info_map->find(wc1) != load_info_map->end());
-  EXPECT_EQ(GURL("test://1/"), (*load_info_map)[wc1].url);
+  EXPECT_EQ("a.com", (*load_info_map)[wc1].host);
   EXPECT_EQ(net::LOAD_STATE_IDLE, (*load_info_map)[wc1].load_state.state);
   EXPECT_EQ(0u, (*load_info_map)[wc1].upload_position);
   EXPECT_EQ(0u, (*load_info_map)[wc1].upload_size);
@@ -2406,7 +2411,7 @@ TEST_F(ResourceDispatcherHostTest, LoadInfoUploadProgress) {
   info.web_contents_getter = base::Bind(WebContentsBinder, wc1);
   info.load_state = net::LoadStateWithParam(net::LOAD_STATE_READING_RESPONSE,
                                             base::string16());
-  info.url = GURL("test://1/");
+  info.host = "a.com";
   info.upload_position = 0;
   info.upload_size = 0;
   infos->push_back(info);
@@ -2415,21 +2420,21 @@ TEST_F(ResourceDispatcherHostTest, LoadInfoUploadProgress) {
   info.upload_size = 1000;
   infos->push_back(info);
 
-  info.url = GURL("test://2/");
+  info.host = "b.com";
   info.load_state = net::LoadStateWithParam(net::LOAD_STATE_SENDING_REQUEST,
                                             base::string16());
   info.upload_position = 50;
   info.upload_size = 100;
   infos->push_back(info);
 
-  info.url = GURL("test://1/");
+  info.host = "a.com";
   info.load_state = net::LoadStateWithParam(net::LOAD_STATE_READING_RESPONSE,
                                             base::string16());
   info.upload_position = 1000;
   info.upload_size = 1000;
   infos->push_back(info);
 
-  info.url = GURL("test://3/");
+  info.host = "c.com";
   info.upload_position = 0;
   info.upload_size = 0;
   infos->push_back(info);
@@ -2439,7 +2444,7 @@ TEST_F(ResourceDispatcherHostTest, LoadInfoUploadProgress) {
           std::move(infos));
   ASSERT_EQ(1u, load_info_map->size());
   ASSERT_TRUE(load_info_map->find(wc1) != load_info_map->end());
-  EXPECT_EQ(GURL("test://2/"), (*load_info_map)[wc1].url);
+  EXPECT_EQ("b.com", (*load_info_map)[wc1].host);
   EXPECT_EQ(net::LOAD_STATE_SENDING_REQUEST,
             (*load_info_map)[wc1].load_state.state);
   EXPECT_EQ(50u, (*load_info_map)[wc1].upload_position);
@@ -2456,7 +2461,7 @@ TEST_F(ResourceDispatcherHostTest, LoadInfoTwoRenderViews) {
   info.web_contents_getter = base::Bind(WebContentsBinder, wc1);
   info.load_state = net::LoadStateWithParam(net::LOAD_STATE_CONNECTING,
                                             base::string16());
-  info.url = GURL("test://1/");
+  info.host = "a.com";
   info.upload_position = 0;
   info.upload_size = 0;
   infos->push_back(info);
@@ -2465,17 +2470,17 @@ TEST_F(ResourceDispatcherHostTest, LoadInfoTwoRenderViews) {
   info.web_contents_getter = base::Bind(WebContentsBinder, wc2);
   info.load_state = net::LoadStateWithParam(net::LOAD_STATE_IDLE,
                                             base::string16());
-  info.url = GURL("test://2/");
+  info.host = "b.com";
   infos->push_back(info);
 
   info.web_contents_getter = base::Bind(WebContentsBinder, wc1);
-  info.url = GURL("test://3/");
+  info.host = "c.com";
   infos->push_back(info);
 
   info.web_contents_getter = base::Bind(WebContentsBinder, wc2);
   info.load_state = net::LoadStateWithParam(net::LOAD_STATE_CONNECTING,
                                             base::string16());
-  info.url = GURL("test://4/");
+  info.host = "d.com";
   infos->push_back(info);
 
   std::unique_ptr<LoadInfoMap> load_info_map =
@@ -2484,14 +2489,14 @@ TEST_F(ResourceDispatcherHostTest, LoadInfoTwoRenderViews) {
   ASSERT_EQ(2u, load_info_map->size());
 
   ASSERT_TRUE(load_info_map->find(wc1) != load_info_map->end());
-  EXPECT_EQ(GURL("test://1/"), (*load_info_map)[wc1].url);
+  EXPECT_EQ("a.com", (*load_info_map)[wc1].host);
   EXPECT_EQ(net::LOAD_STATE_CONNECTING,
             (*load_info_map)[wc1].load_state.state);
   EXPECT_EQ(0u, (*load_info_map)[wc1].upload_position);
   EXPECT_EQ(0u, (*load_info_map)[wc1].upload_size);
 
   ASSERT_TRUE(load_info_map->find(wc2) != load_info_map->end());
-  EXPECT_EQ(GURL("test://4/"), (*load_info_map)[wc2].url);
+  EXPECT_EQ("d.com", (*load_info_map)[wc2].host);
   EXPECT_EQ(net::LOAD_STATE_CONNECTING,
             (*load_info_map)[wc2].load_state.state);
   EXPECT_EQ(0u, (*load_info_map)[wc2].upload_position);

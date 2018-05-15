@@ -75,6 +75,7 @@ class TestAutofillClient : public AutofillClient {
   bool IsContextSecure() override;
   bool ShouldShowSigninPromo() override;
   bool IsAutofillSupported() override;
+  bool AreServerCardsSupported() override;
   void ExecuteCommand(int id) override;
 
   void SetPrefs(std::unique_ptr<PrefService> prefs) {
@@ -83,8 +84,13 @@ class TestAutofillClient : public AutofillClient {
 
   void set_form_origin(const GURL& url) { form_origin_ = url; }
 
+  void set_sync_service(syncer::SyncService* test_sync_service) {
+    test_sync_service_ = test_sync_service;
+  }
+
  private:
   identity::IdentityTestEnvironment identity_test_env_;
+  syncer::SyncService* test_sync_service_ = nullptr;
 
   // NULL by default.
   std::unique_ptr<PrefService> prefs_;

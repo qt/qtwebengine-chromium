@@ -46,7 +46,6 @@
 #include "ppapi/c/ppp_graphics_3d.h"
 #include "ppapi/c/ppp_input_event.h"
 #include "ppapi/c/ppp_mouse_lock.h"
-#include "ppapi/c/private/ppb_content_decryptor_private.h"
 #include "ppapi/c/private/ppp_find_private.h"
 #include "ppapi/c/private/ppp_instance_private.h"
 #include "ppapi/c/private/ppp_pdf.h"
@@ -56,12 +55,12 @@
 #include "ppapi/shared_impl/tracked_callback.h"
 #include "ppapi/thunk/ppb_gamepad_api.h"
 #include "ppapi/thunk/resource_creation_api.h"
-#include "third_party/WebKit/public/platform/WebCanvas.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebURLResponse.h"
-#include "third_party/WebKit/public/web/WebAssociatedURLLoaderClient.h"
-#include "third_party/WebKit/public/web/WebPlugin.h"
-#include "third_party/WebKit/public/web/WebUserGestureToken.h"
+#include "third_party/blink/public/platform/web_canvas.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_url_response.h"
+#include "third_party/blink/public/web/web_associated_url_loader_client.h"
+#include "third_party/blink/public/web/web_plugin.h"
+#include "third_party/blink/public/web/web_user_gesture_token.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/gfx/geometry/rect.h"
 #include "url/gurl.h"
@@ -107,7 +106,6 @@ class PdfMetafileSkia;
 
 namespace content {
 
-class ContentDecryptorDelegate;
 class FullscreenContainer;
 class MessageChannel;
 class PepperAudioController;
@@ -383,8 +381,6 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
     document_loader_ = loader;
   }
 
-  ContentDecryptorDelegate* GetContentDecryptorDelegate();
-
   void SetGraphics2DTransform(const float& scale,
                               const gfx::PointF& translation);
 
@@ -490,59 +486,6 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   PP_Var GetPluginReferrerURL(PP_Instance instance,
                               PP_URLComponents_Dev* components) override;
 
-  // PPB_ContentDecryptor_Private implementation.
-  void PromiseResolved(PP_Instance instance, uint32_t promise_id) override;
-  void PromiseResolvedWithKeyStatus(PP_Instance instance,
-                                    uint32_t promise_id,
-                                    PP_CdmKeyStatus key_status) override;
-  void PromiseResolvedWithSession(PP_Instance instance,
-                                  uint32_t promise_id,
-                                  PP_Var session_id_var) override;
-  void PromiseRejected(PP_Instance instance,
-                       uint32_t promise_id,
-                       PP_CdmExceptionCode exception_code,
-                       uint32_t system_code,
-                       PP_Var error_description_var) override;
-  void SessionMessage(PP_Instance instance,
-                      PP_Var session_id_var,
-                      PP_CdmMessageType message_type,
-                      PP_Var message_var,
-                      PP_Var legacy_destination_url) override;
-  void SessionKeysChange(
-      PP_Instance instance,
-      PP_Var session_id_var,
-      PP_Bool has_additional_usable_key,
-      uint32_t key_count,
-      const struct PP_KeyInformation key_information[]) override;
-  void SessionExpirationChange(PP_Instance instance,
-                               PP_Var session_id_var,
-                               PP_Time new_expiry_time) override;
-  void SessionClosed(PP_Instance instance, PP_Var session_id_var) override;
-  void LegacySessionError(PP_Instance instance,
-                          PP_Var session_id_var,
-                          PP_CdmExceptionCode exception_code,
-                          uint32_t system_code,
-                          PP_Var error_description_var) override;
-  void DeliverBlock(PP_Instance instance,
-                    PP_Resource decrypted_block,
-                    const PP_DecryptedBlockInfo* block_info) override;
-  void DecoderInitializeDone(PP_Instance instance,
-                             PP_DecryptorStreamType decoder_type,
-                             uint32_t request_id,
-                             PP_Bool success) override;
-  void DecoderDeinitializeDone(PP_Instance instance,
-                               PP_DecryptorStreamType decoder_type,
-                               uint32_t request_id) override;
-  void DecoderResetDone(PP_Instance instance,
-                        PP_DecryptorStreamType decoder_type,
-                        uint32_t request_id) override;
-  void DeliverFrame(PP_Instance instance,
-                    PP_Resource decrypted_frame,
-                    const PP_DecryptedFrameInfo* frame_info) override;
-  void DeliverSamples(PP_Instance instance,
-                      PP_Resource audio_frames,
-                      const PP_DecryptedSampleInfo* sample_info) override;
-
   // Reset this instance as proxied. Assigns the instance a new module, resets
   // cached interfaces to point to the out-of-process proxy and re-sends
   // DidCreate, DidChangeView, and HandleDocumentLoad (if necessary).
@@ -559,6 +502,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   // cc::TextureLayerClient implementation.
   bool PrepareTransferableResource(
+      cc::SharedBitmapIdRegistrar* bitmap_registrar,
       viz::TransferableResource* transferable_resource,
       std::unique_ptr<viz::SingleReleaseCallback>* release_callback) override;
 
@@ -941,10 +885,6 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   blink::WebURLResponse external_document_response_;
   std::unique_ptr<ExternalDocumentLoader> external_document_loader_;
   bool external_document_load_;
-
-  // The ContentDecryptorDelegate forwards PPP_ContentDecryptor_Private
-  // calls and handles PPB_ContentDecryptor_Private calls.
-  std::unique_ptr<ContentDecryptorDelegate> content_decryptor_delegate_;
 
   // The link currently under the cursor.
   base::string16 link_under_cursor_;

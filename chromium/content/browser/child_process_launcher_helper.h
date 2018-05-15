@@ -14,7 +14,7 @@
 #include "build/build_config.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/result_codes.h"
-#include "content/public/common/zygote_features.h"
+#include "content/public/common/zygote_buildflags.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/embedder/outgoing_broker_client_invitation.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
@@ -156,10 +156,8 @@ class ChildProcessLauncherHelper :
   // Terminates |process|.
   // Returns true if the process was stopped, false if the process had not been
   // started yet or could not be stopped.
-  // Note that |exit_code| and |wait| are not used on Android.
-  static bool TerminateProcess(const base::Process& process,
-                               int exit_code,
-                               bool wait);
+  // Note that |exit_code| is not used on Android.
+  static bool TerminateProcess(const base::Process& process, int exit_code);
 
   // Terminates the process with the normal exit code and ensures it has been
   // stopped. By returning a normal exit code this ensures UMA won't treat this

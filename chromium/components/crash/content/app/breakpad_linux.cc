@@ -559,10 +559,6 @@ void CrashReporterWriter::AddFileContents(const char* filename_msg,
 // $FIREBASE_APP_ID v$VERSION_CODE ($VERSION_NAME)
 void WriteAndroidPackage(MimeWriter& writer,
                          base::android::BuildInfo* android_build_info) {
-  // Don't write the field if no Firebase ID is set.
-  if (android_build_info->firebase_app_id()[0] == '\0') {
-    return;
-  }
   // The actual size limits on packageId and versionName are quite generous.
   // Limit to a reasonable size rather than allocating theoretical limits.
   const int kMaxSize = 1024;
@@ -626,7 +622,8 @@ bool FinalizeCrashDoneAndroid(bool is_browser_process) {
   AndroidLogWriteHorizontalRule();
 
   if (!is_browser_process &&
-      android_build_info->sdk_int() >= 18 &&
+      android_build_info->sdk_int() >=
+          base::android::SDK_VERSION_JELLY_BEAN_MR2 &&
       my_strcmp(android_build_info->build_type(), "eng") != 0 &&
       my_strcmp(android_build_info->build_type(), "userdebug") != 0) {
     // On JB MR2 and later, the system crash handler displays a dialog. For
@@ -1710,7 +1707,10 @@ void HandleCrashDump(const BreakpadInfo& info) {
     static const char abi_name[] = "abi_name";
     static const char model[] = "model";
     static const char brand[] = "brand";
+    static const char board[] = "board";
     static const char exception_info[] = "exception_info";
+    static const char custom_themes[] = "custom_themes";
+    static const char resources_version[] = "resources_version";
 
     base::android::BuildInfo* android_build_info =
         base::android::BuildInfo::GetInstance();
@@ -1726,6 +1726,8 @@ void HandleCrashDump(const BreakpadInfo& info) {
     writer.AddBoundary();
     writer.AddPairString(brand, android_build_info->brand());
     writer.AddBoundary();
+    writer.AddPairString(board, android_build_info->board());
+    writer.AddBoundary();
     writer.AddPairString(gms_core_version,
         android_build_info->gms_version_code());
     writer.AddBoundary();
@@ -1734,8 +1736,16 @@ void HandleCrashDump(const BreakpadInfo& info) {
     writer.AddBoundary();
     writer.AddPairString(abi_name, android_build_info->abi_name());
     writer.AddBoundary();
-    WriteAndroidPackage(writer, android_build_info);
+    writer.AddPairString(custom_themes, android_build_info->custom_themes());
     writer.AddBoundary();
+    writer.AddPairString(resources_version,
+                         android_build_info->resources_version());
+    writer.AddBoundary();
+    // Don't write the field if no Firebase ID is set.
+    if (android_build_info->firebase_app_id()[0] != '\0') {
+      WriteAndroidPackage(writer, android_build_info);
+      writer.AddBoundary();
+    }
     if (android_build_info->java_exception_info() != nullptr) {
       writer.AddPairString(exception_info,
                            android_build_info->java_exception_info());

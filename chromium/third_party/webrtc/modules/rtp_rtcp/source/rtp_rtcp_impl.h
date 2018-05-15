@@ -13,6 +13,7 @@
 
 #include <memory>
 #include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -52,8 +53,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
 
   int32_t RegisterSendPayload(const CodecInst& voice_codec) override;
 
-  int32_t RegisterSendPayload(const VideoCodec& video_codec) override;
-
   void RegisterVideoSendPayload(int payload_type,
                                 const char* payload_name) override;
 
@@ -87,6 +86,8 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
 
   // Configure SSRC, default is a random number.
   void SetSSRC(uint32_t ssrc) override;
+
+  void SetMid(const std::string& mid) override;
 
   void SetCsrcs(const std::vector<uint32_t>& csrcs) override;
 
@@ -342,7 +343,7 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
 
   RemoteBitrateEstimator* remote_bitrate_;
 
-  RtcpRttStats* rtt_stats_;
+  RtcpRttStats* const rtt_stats_;
 
   PacketLossStats send_loss_stats_;
   PacketLossStats receive_loss_stats_;

@@ -16,6 +16,7 @@
 #include "base/time/time.h"
 #include "base/trace_event/trace_log.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/tracing/public/mojom/constants.mojom.h"
 
@@ -35,11 +36,16 @@ ChromeTraceEventAgent* ChromeTraceEventAgent::GetInstance() {
 }
 
 ChromeTraceEventAgent::ChromeTraceEventAgent(
-    service_manager::Connector* connector)
+    service_manager::Connector* connector,
+    bool request_clock_sync_marker_on_android)
     : BaseAgent(connector,
                 kChromeTraceEventLabel,
                 mojom::TraceDataType::ARRAY,
-                false /* supports_explicit_clock_sync */),
+#if defined(OS_ANDROID)
+                request_clock_sync_marker_on_android),
+#else
+                false),
+#endif
       enabled_tracing_modes_(0) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DCHECK(!g_chrome_trace_event_agent);
@@ -65,7 +71,7 @@ void ChromeTraceEventAgent::StartTracing(const std::string& config,
   // NaCl and system times are offset by a bit, so subtract some time from
   // the captured timestamps. The value might be off by a bit due to messaging
   // latency.
-  base::TimeDelta time_offset = base::TimeTicks::Now() - coordinator_time;
+  base::TimeDelta time_offset = TRACE_TIME_TICKS_NOW() - coordinator_time;
   TraceLog::GetInstance()->SetTimeOffset(time_offset);
 #endif
   enabled_tracing_modes_ = base::trace_event::TraceLog::RECORDING_MODE;
@@ -91,6 +97,17 @@ void ChromeTraceEventAgent::StopAndFlush(mojom::RecorderPtr recorder) {
   trace_log_needs_me_ = true;
   base::trace_event::TraceLog::GetInstance()->Flush(base::Bind(
       &ChromeTraceEventAgent::OnTraceLogFlush, base::Unretained(this)));
+}
+
+void ChromeTraceEventAgent::RequestClockSyncMarker(
+    const std::string& sync_id,
+    const Agent::RequestClockSyncMarkerCallback& callback) {
+#if defined(OS_ANDROID)
+  base::trace_event::TraceLog::GetInstance()->AddClockSyncMetadataEvent();
+  callback.Run(base::TimeTicks(), base::TimeTicks());
+#else
+  NOTREACHED();
+#endif
 }
 
 void ChromeTraceEventAgent::RequestBufferStatus(

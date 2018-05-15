@@ -9,6 +9,7 @@
 #include "cc/output/overlay_candidate.h"
 #include "cc/resources/resource_provider.h"
 #include "components/viz/common/resources/resource_fence.h"
+#include "components/viz/common/resources/resource_metadata.h"
 
 namespace viz {
 class SharedBitmapManager;
@@ -74,8 +75,8 @@ class CC_EXPORT DisplayResourceProvider : public ResourceProvider {
     DisplayResourceProvider* const resource_provider_;
     const viz::ResourceId resource_id_;
 
-    GLuint texture_id_;
-    GLenum target_;
+    GLuint texture_id_ = 0;
+    GLenum target_ = GL_TEXTURE_2D;
     gfx::Size size_;
     gfx::ColorSpace color_space_;
 
@@ -144,6 +145,27 @@ class CC_EXPORT DisplayResourceProvider : public ResourceProvider {
     SkBitmap sk_bitmap_;
 
     DISALLOW_COPY_AND_ASSIGN(ScopedReadLockSoftware);
+  };
+
+  // Maintains set of lock for external use.
+  class CC_EXPORT LockSetForExternalUse {
+   public:
+    explicit LockSetForExternalUse(DisplayResourceProvider* resource_provider);
+    ~LockSetForExternalUse();
+
+    // Lock a resource for external use.
+    viz::ResourceMetadata LockResource(viz::ResourceId resource_id);
+
+    // Unlock all locked resources with a |sync_token|.
+    // See UnlockForExternalUse for the detail. All resources must be unlocked
+    // before destroying this class.
+    void UnlockResources(const gpu::SyncToken& sync_token);
+
+   private:
+    DisplayResourceProvider* const resource_provider_;
+    std::vector<viz::ResourceId> resources_;
+
+    DISALLOW_COPY_AND_ASSIGN(LockSetForExternalUse);
   };
 
   // All resources that are returned to children while an instance of this
@@ -224,10 +246,20 @@ class CC_EXPORT DisplayResourceProvider : public ResourceProvider {
       const viz::ResourceIdSet& resources_from_child);
 
  private:
-  friend class ScopedBatchReturnResources;
-
   const viz::internal::Resource* LockForRead(viz::ResourceId id);
   void UnlockForRead(viz::ResourceId id);
+
+  // Lock a resource for external use.
+  viz::ResourceMetadata LockForExternalUse(viz::ResourceId id);
+
+  // Unlock a resource which locked by LockForExternalUse.
+  // The |sync_token| should be waited on before reusing the resouce's backing
+  // to ensure that any external use of it is completed. This |sync_token|
+  // should have been verified.
+  void UnlockForExternalUse(viz::ResourceId id,
+                            const gpu::SyncToken& sync_token);
+
+  void TryReleaseResource(ResourceMap::iterator it);
   // Binds the given GL resource to a texture target for sampling using the
   // specified filter for both minification and magnification. Returns the
   // texture target used. The resource must be locked for reading.

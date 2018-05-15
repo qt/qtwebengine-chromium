@@ -313,11 +313,20 @@ static unsigned short x87_get_control_word(void) {
 
 static INLINE unsigned int x87_set_double_precision(void) {
   unsigned int mode = x87_get_control_word();
+  // Intel 64 and IA-32 Architectures Developer's Manual: Vol. 1
+  // https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-vol-1-manual.pdf
+  // 8.1.5.2 Precision Control Field
+  // Bits 8 and 9 (0x300) of the x87 FPU Control Word ("Precision Control")
+  // determine the number of bits used in floating point calculations. To match
+  // later SSE instructions restrict x87 operations to Double Precision (0x200).
+  // Precision                     PC Field
+  // Single Precision (24-Bits)    00B
+  // Reserved                      01B
+  // Double Precision (53-Bits)    10B
+  // Extended Precision (64-Bits)  11B
   x87_set_control_word((mode & ~0x300) | 0x200);
   return mode;
 }
-
-extern void vpx_reset_mmx_state(void);
 
 #ifdef __cplusplus
 }  // extern "C"

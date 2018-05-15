@@ -37,9 +37,9 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebURLError.h"
-#include "third_party/WebKit/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/blink/public/platform/web_url_error.h"
+#include "third_party/blink/public/platform/web_url_request.h"
+#include "third_party/blink/public/web/web_frame.h"
 
 namespace content {
 
@@ -129,7 +129,7 @@ void ClearCache(net::URLRequestContextGetter* getter,
   // of scope.
   if (net::OK == cache->GetBackend(backend_ptr, backend_callback)) {
     // The call completed synchronously, so GetBackend didn't run the callback.
-    backend_callback.Run(net::OK);
+    std::move(backend_callback).Run(net::OK);
   }
 }
 

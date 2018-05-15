@@ -6,16 +6,16 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/test/render_view_test.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebElementCollection.h"
-#include "third_party/WebKit/public/web/WebFormControlElement.h"
-#include "third_party/WebKit/public/web/WebFormElement.h"
-#include "third_party/WebKit/public/web/WebInputElement.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebSelectElement.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_vector.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_element.h"
+#include "third_party/blink/public/web/web_element_collection.h"
+#include "third_party/blink/public/web/web_form_control_element.h"
+#include "third_party/blink/public/web/web_form_element.h"
+#include "third_party/blink/public/web/web_input_element.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_select_element.h"
 
 using autofill::FormFieldData;
 using blink::WebDocument;
@@ -229,6 +229,8 @@ TEST_F(FormAutofillUtilsTest, InferLabelSourceTest) {
        FormFieldData::LabelSource::P_TAG},
       {"PLACE_HOLDER", "<input id='target' placeholder='label'/>",
        FormFieldData::LabelSource::PLACE_HOLDER},
+      {"ARIA_LABEL", "<input id='target' aria-label='label'/>",
+       FormFieldData::LabelSource::ARIA_LABEL},
       {"VALUE", "<input id='target' value='label'/>",
        FormFieldData::LabelSource::VALUE},
       {"LI_TAG", "<li>label<div><input id='target'/></div></li>",

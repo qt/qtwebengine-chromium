@@ -11,7 +11,6 @@
 
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
-#include "base/memory/ptr_util.h"
 #include "base/time/default_tick_clock.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
@@ -132,12 +131,6 @@ void DelegatedFrameHost::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& output_size,
     base::OnceCallback<void(const SkBitmap&)> callback) {
-  if (!CanCopyFromCompositingSurface() ||
-      current_frame_size_in_dip_.IsEmpty()) {
-    std::move(callback).Run(SkBitmap());
-    return;
-  }
-
   std::unique_ptr<viz::CopyOutputRequest> request =
       std::make_unique<viz::CopyOutputRequest>(
           viz::CopyOutputRequest::ResultFormat::RGBA_BITMAP,
@@ -148,32 +141,41 @@ void DelegatedFrameHost::CopyFromCompositingSurface(
               },
               std::move(callback)));
 
-  if (src_subrect.IsEmpty()) {
-    request->set_area(gfx::Rect(current_frame_size_in_dip_));
-  } else {
+  if (!src_subrect.IsEmpty())
     request->set_area(src_subrect);
-  }
-
-  // If VIZ display compositing is disabled, the request will be issued directly
-  // to CompositorFrameSinkSupport, which requires Surface pixel coordinates.
-  if (!enable_viz_) {
-    request->set_area(
-        gfx::ScaleToRoundedRect(request->area(), active_device_scale_factor_));
-  }
-
-  if (!output_size.IsEmpty()) {
+  if (!output_size.IsEmpty())
     request->set_result_selection(gfx::Rect(output_size));
+
+  // If there is enough information to populate the copy output request fields,
+  // then process it now. Otherwise, wait until the information becomes
+  // available.
+  if (CanCopyFromCompositingSurface())
+    ProcessCopyOutputRequest(std::move(request));
+  else
+    pending_first_frame_requests_.push_back(std::move(request));
+}
+
+void DelegatedFrameHost::ProcessCopyOutputRequest(
+    std::unique_ptr<viz::CopyOutputRequest> request) {
+  if (!request->has_area())
+    request->set_area(gfx::Rect(pending_surface_dip_size_));
+
+  // TODO(vmpstr): Should use pending device scale factor. We need to plumb
+  // it here.
+  request->set_area(
+      gfx::ScaleToRoundedRect(request->area(), active_device_scale_factor_));
+
+  if (request->has_result_selection()) {
+    const gfx::Rect& area = request->area();
+    const gfx::Rect& result_selection = request->result_selection();
     request->SetScaleRatio(
-        gfx::Vector2d(request->area().width(), request->area().height()),
-        gfx::Vector2d(output_size.width(), output_size.height()));
+        gfx::Vector2d(area.width(), area.height()),
+        gfx::Vector2d(result_selection.width(), result_selection.height()));
   }
 
-  if (enable_viz_) {
-    client_->DelegatedFrameHostGetLayer()->RequestCopyOfOutput(
-        std::move(request));
-  } else {
-    support_->RequestCopyOfSurface(std::move(request));
-  }
+  GetHostFrameSinkManager()->RequestCopyOfOutput(
+      viz::SurfaceId(frame_sink_id_, pending_local_surface_id_),
+      std::move(request));
 }
 
 bool DelegatedFrameHost::CanCopyFromCompositingSurface() const {
@@ -292,19 +294,25 @@ void DelegatedFrameHost::WasResized(
 
     if (!primary_surface_id ||
         primary_surface_id->local_surface_id() != pending_local_surface_id_) {
-      current_frame_size_in_dip_ = pending_surface_dip_size_;
-
       viz::SurfaceId surface_id(frame_sink_id_, pending_local_surface_id_);
 #if defined(OS_WIN) || defined(USE_X11)
       // On Windows and Linux, we would like to produce new content as soon as
       // possible or the OS will create an additional black gutter. Until we can
       // block resize on surface synchronization on these platforms, we will not
-      // block UI on the top-level renderer.
-      deadline_policy = cc::DeadlinePolicy::UseSpecifiedDeadline(0u);
+      // block UI on the top-level renderer. The exception to this is if we're
+      // using an infinite deadline, in which case we should respect the
+      // specified deadline and block UI since that's what was requested.
+      if (deadline_policy.policy_type() !=
+              cc::DeadlinePolicy::kUseInfiniteDeadline &&
+          !current_frame_size_in_dip_.IsEmpty() &&
+          current_frame_size_in_dip_ != pending_surface_dip_size_) {
+        deadline_policy = cc::DeadlinePolicy::UseSpecifiedDeadline(0u);
+      }
 #endif
+      current_frame_size_in_dip_ = pending_surface_dip_size_;
       client_->DelegatedFrameHostGetLayer()->SetShowPrimarySurface(
           surface_id, current_frame_size_in_dip_, GetGutterColor(),
-          deadline_policy);
+          deadline_policy, false /* stretch_content_to_fill_bounds */);
       if (compositor_ && !base::CommandLine::ForCurrentProcess()->HasSwitch(
                              switches::kDisableResizeLock)) {
         compositor_->OnChildResizing();
@@ -537,7 +545,8 @@ void DelegatedFrameHost::OnFirstSurfaceActivation(
   } else {
     client_->DelegatedFrameHostGetLayer()->SetShowPrimarySurface(
         surface_info.id(), frame_size_in_dip, GetGutterColor(),
-        cc::DeadlinePolicy::UseDefaultDeadline());
+        cc::DeadlinePolicy::UseDefaultDeadline(),
+        false /* stretch_content_to_fill_bounds */);
   }
 
   client_->DelegatedFrameHostGetLayer()->SetFallbackSurfaceId(
@@ -559,6 +568,13 @@ void DelegatedFrameHost::OnFirstSurfaceActivation(
 
   frame_evictor_->SwappedFrame(client_->DelegatedFrameHostIsVisible());
   // Note: the frame may have been evicted immediately.
+
+  if (!pending_first_frame_requests_.empty()) {
+    DCHECK(CanCopyFromCompositingSurface());
+    for (auto& request : pending_first_frame_requests_)
+      ProcessCopyOutputRequest(std::move(request));
+    pending_first_frame_requests_.clear();
+  }
 }
 
 void DelegatedFrameHost::OnFrameTokenChanged(uint32_t frame_token) {
@@ -572,13 +588,9 @@ void DelegatedFrameHost::OnBeginFrame(const viz::BeginFrameArgs& args) {
 }
 
 void DelegatedFrameHost::EvictDelegatedFrame() {
-  if (!HasSavedFrame())
-    return;
-
-  std::vector<viz::SurfaceId> surface_ids = {GetCurrentSurfaceId()};
-
-  GetHostFrameSinkManager()->EvictSurfaces(surface_ids);
-
+  // It is possible that we are embedding the contents of previous
+  // DelegatedFrameHost. In this case, HasSavedFrame() will return false but we
+  // still need to clear the layer.
   if (enable_surface_synchronization_) {
     if (HasFallbackSurface()) {
       client_->DelegatedFrameHostGetLayer()->SetFallbackSurfaceId(
@@ -590,6 +602,10 @@ void DelegatedFrameHost::EvictDelegatedFrame() {
     UpdateGutters();
   }
 
+  if (!HasSavedFrame())
+    return;
+  std::vector<viz::SurfaceId> surface_ids = {GetCurrentSurfaceId()};
+  GetHostFrameSinkManager()->EvictSurfaces(surface_ids);
   frame_evictor_->DiscardedFrame();
 }
 
@@ -724,6 +740,33 @@ void DelegatedFrameHost::DidNavigate() {
 bool DelegatedFrameHost::IsPrimarySurfaceEvicted() const {
   return active_local_surface_id_ == pending_local_surface_id_ &&
          !HasSavedFrame();
+}
+
+void DelegatedFrameHost::WindowTitleChanged(const std::string& title) {
+  auto* host_frame_sink_manager = GetHostFrameSinkManager();
+  if (host_frame_sink_manager)
+    host_frame_sink_manager->SetFrameSinkDebugLabel(frame_sink_id_, title);
+}
+
+void DelegatedFrameHost::TakeFallbackContentFrom(DelegatedFrameHost* other) {
+  if (!other->HasFallbackSurface())
+    return;
+  if (HasFallbackSurface())
+    return;
+  if (!HasPrimarySurface()) {
+    client_->DelegatedFrameHostGetLayer()->SetShowPrimarySurface(
+        *other->client_->DelegatedFrameHostGetLayer()->GetFallbackSurfaceId(),
+        other->client_->DelegatedFrameHostGetLayer()->size(),
+        other->client_->DelegatedFrameHostGetLayer()->background_color(),
+        cc::DeadlinePolicy::UseDefaultDeadline(),
+        false /* stretch_content_to_fill_bounds */);
+  }
+  client_->DelegatedFrameHostGetLayer()->SetFallbackSurfaceId(
+      *other->client_->DelegatedFrameHostGetLayer()->GetFallbackSurfaceId());
+  if (!enable_surface_synchronization_) {
+    current_frame_size_in_dip_ = other->current_frame_size_in_dip_;
+    UpdateGutters();
+  }
 }
 
 }  // namespace content

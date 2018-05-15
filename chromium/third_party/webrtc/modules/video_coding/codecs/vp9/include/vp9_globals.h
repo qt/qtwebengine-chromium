@@ -14,6 +14,8 @@
 #ifndef MODULES_VIDEO_CODING_CODECS_VP9_INCLUDE_VP9_GLOBALS_H_
 #define MODULES_VIDEO_CODING_CODECS_VP9_INCLUDE_VP9_GLOBALS_H_
 
+#include <assert.h>
+
 #include "modules/video_coding/codecs/interface/common_constants.h"
 
 namespace webrtc {
@@ -26,6 +28,9 @@ const uint8_t kNumVp9Buffers = 8;
 const size_t kMaxVp9RefPics = 3;
 const size_t kMaxVp9FramesInGof = 0xFF;  // 8 bits
 const size_t kMaxVp9NumberOfSpatialLayers = 8;
+
+const size_t kMinVp9SpatialLayerWidth = 320;
+const size_t kMinVp9SpatialLayerHeight = 180;
 
 enum TemporalStructureMode {
   kTemporalStructureMode1,  // 1 temporal layer structure - i.e., IPPP...
@@ -167,6 +172,7 @@ struct RTPVideoHeaderVP9 {
     gof_idx = kNoGofIdx;
     num_ref_pics = 0;
     num_spatial_layers = 1;
+    end_of_superframe = true;
   }
 
   bool inter_pic_predicted;  // This layer frame is dependent on previously
@@ -203,6 +209,8 @@ struct RTPVideoHeaderVP9 {
   uint16_t width[kMaxVp9NumberOfSpatialLayers];
   uint16_t height[kMaxVp9NumberOfSpatialLayers];
   GofInfoVP9 gof;
+
+  bool end_of_superframe;  // This frame is last frame in superframe.
 };
 
 }  // namespace webrtc

@@ -20,6 +20,8 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "services/network/public/cpp/simple_url_loader.h"
 
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(safe_browsing::AdSamplerTrigger);
 
@@ -29,8 +31,11 @@ namespace safe_browsing {
 const char kAdSamplerFrequencyDenominatorParam[] =
     "safe_browsing_ad_sampler_frequency_denominator";
 
+// Default frequency denominator for the ad sampler.
+const size_t kAdSamplerDefaultFrequency = 1000;
+
 // A frequency denominator with this value indicates sampling is disabled.
-const size_t kSamplerFrequencyDisabled = 0;
+const size_t kAdSamplerFrequencyDisabled = 0;
 
 // Number of milliseconds to wait after a page finished loading before starting
 // a report. Allows ads which load in the background to finish loading.
@@ -48,14 +53,14 @@ namespace {
 
 size_t GetSamplerFrequencyDenominator() {
   if (!base::FeatureList::IsEnabled(kAdSamplerTriggerFeature))
-    return kSamplerFrequencyDisabled;
+    return kAdSamplerDefaultFrequency;
 
   const std::string sampler_frequency_denominator =
       base::GetFieldTrialParamValueByFeature(
           kAdSamplerTriggerFeature, kAdSamplerFrequencyDenominatorParam);
   int result;
   if (!base::StringToInt(sampler_frequency_denominator, &result))
-    return kSamplerFrequencyDisabled;
+    return kAdSamplerDefaultFrequency;
 
   return result;
 }
@@ -89,7 +94,7 @@ bool DetectGoogleAd(content::RenderFrameHost* render_frame_host,
 }
 
 bool ShouldSampleAd(const size_t frequency_denominator) {
-  return frequency_denominator != kSamplerFrequencyDisabled &&
+  return frequency_denominator != kAdSamplerFrequencyDisabled &&
          (base::RandUint64() % frequency_denominator) == 0;
 }
 
@@ -99,7 +104,7 @@ AdSamplerTrigger::AdSamplerTrigger(
     content::WebContents* web_contents,
     TriggerManager* trigger_manager,
     PrefService* prefs,
-    net::URLRequestContextGetter* request_context,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     history::HistoryService* history_service)
     : content::WebContentsObserver(web_contents),
       sampler_frequency_denominator_(GetSamplerFrequencyDenominator()),
@@ -107,7 +112,7 @@ AdSamplerTrigger::AdSamplerTrigger(
       finish_report_delay_ms_(kAdSampleCollectionPeriodMilliseconds),
       trigger_manager_(trigger_manager),
       prefs_(prefs),
-      request_context_(request_context),
+      url_loader_factory_(url_loader_factory),
       history_service_(history_service),
       task_runner_(content::BrowserThread::GetTaskRunnerForThread(
           content::BrowserThread::UI)),
@@ -120,14 +125,14 @@ void AdSamplerTrigger::CreateForWebContents(
     content::WebContents* web_contents,
     TriggerManager* trigger_manager,
     PrefService* prefs,
-    net::URLRequestContextGetter* request_context,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     history::HistoryService* history_service) {
   DCHECK(web_contents);
   if (!FromWebContents(web_contents)) {
     web_contents->SetUserData(UserDataKey(),
                               base::WrapUnique(new AdSamplerTrigger(
                                   web_contents, trigger_manager, prefs,
-                                  request_context, history_service)));
+                                  url_loader_factory, history_service)));
   }
 }
 
@@ -170,7 +175,7 @@ void AdSamplerTrigger::CreateAdSampleReport() {
       web_contents()->GetMainFrame()->GetRoutingID());
 
   if (!trigger_manager_->StartCollectingThreatDetails(
-          TriggerType::AD_SAMPLE, web_contents(), resource, request_context_,
+          TriggerType::AD_SAMPLE, web_contents(), resource, url_loader_factory_,
           history_service_, error_options)) {
     UMA_HISTOGRAM_ENUMERATION(kAdSamplerTriggerActionMetricName,
                               NO_SAMPLE_COULD_NOT_START_REPORT, MAX_ACTIONS);

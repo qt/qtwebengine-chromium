@@ -25,18 +25,18 @@
 #include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_widget.h"
-#include "third_party/WebKit/public/platform/WebFloatPoint.h"
-#include "third_party/WebKit/public/platform/WebFloatSize.h"
-#include "third_party/WebKit/public/platform/WebGestureEvent.h"
-#include "third_party/WebKit/public/platform/WebKeyboardEvent.h"
-#include "third_party/WebKit/public/platform/WebMouseWheelEvent.h"
-#include "third_party/WebKit/public/platform/WebPointerEvent.h"
-#include "third_party/WebKit/public/platform/WebTouchEvent.h"
-#include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebFrameWidget.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebNode.h"
+#include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
+#include "third_party/blink/public/platform/web_float_point.h"
+#include "third_party/blink/public/platform/web_float_size.h"
+#include "third_party/blink/public/platform/web_gesture_event.h"
+#include "third_party/blink/public/platform/web_keyboard_event.h"
+#include "third_party/blink/public/platform/web_mouse_wheel_event.h"
+#include "third_party/blink/public/platform/web_pointer_event.h"
+#include "third_party/blink/public/platform/web_touch_event.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_frame_widget.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_node.h"
 #include "ui/events/blink/web_input_event_traits.h"
 #include "ui/gfx/geometry/dip_util.h"
 #include "ui/gfx/geometry/point_conversions.h"
@@ -320,7 +320,7 @@ void RenderWidgetInputHandler::HandleInputEvent(
   if (RenderThreadImpl::current()) {
     swap_latency_info.set_expected_queueing_time_on_dispatch(
         RenderThreadImpl::current()
-            ->GetRendererScheduler()
+            ->GetWebMainThreadScheduler()
             ->MostRecentExpectedQueueingTime());
   }
 
@@ -415,7 +415,7 @@ void RenderWidgetInputHandler::HandleInputEvent(
       input_event.GetType() == WebInputEvent::kGestureScrollUpdate) {
     const WebGestureEvent& gesture_event =
         static_cast<const WebGestureEvent&>(input_event);
-    if (gesture_event.source_device == blink::kWebGestureDeviceTouchpad) {
+    if (gesture_event.SourceDevice() == blink::kWebGestureDeviceTouchpad) {
       gfx::Vector2dF latest_overscroll_delta =
           event_overscroll ? event_overscroll->latest_overscroll_delta
                            : gfx::Vector2dF();

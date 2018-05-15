@@ -12,7 +12,6 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
@@ -30,7 +29,7 @@
 #include "content/public/common/console_message_level.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/push_messaging_status.mojom.h"
-#include "third_party/WebKit/public/platform/modules/permissions/permission_status.mojom.h"
+#include "third_party/blink/public/platform/modules/permissions/permission_status.mojom.h"
 
 namespace content {
 
@@ -55,22 +54,16 @@ const char kIncognitoPushUnsupportedMessage[] =
 void RecordRegistrationStatus(mojom::PushRegistrationStatus status) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
-  UMA_HISTOGRAM_ENUMERATION(
-      "PushMessaging.RegistrationStatus", status,
-      static_cast<int>(mojom::PushRegistrationStatus::LAST) + 1);
+  UMA_HISTOGRAM_ENUMERATION("PushMessaging.RegistrationStatus", status);
 }
 void RecordUnregistrationStatus(mojom::PushUnregistrationStatus status) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  UMA_HISTOGRAM_ENUMERATION(
-      "PushMessaging.UnregistrationStatus", status,
-      static_cast<int>(mojom::PushUnregistrationStatus::LAST) + 1);
+  UMA_HISTOGRAM_ENUMERATION("PushMessaging.UnregistrationStatus", status);
 }
 void RecordGetRegistrationStatus(mojom::PushGetRegistrationStatus status) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
-  UMA_HISTOGRAM_ENUMERATION(
-      "PushMessaging.GetRegistrationStatus", status,
-      static_cast<int>(mojom::PushGetRegistrationStatus::LAST) + 1);
+  UMA_HISTOGRAM_ENUMERATION("PushMessaging.GetRegistrationStatus", status);
 }
 
 const char* PushUnregistrationStatusToString(
@@ -336,7 +329,7 @@ void PushMessagingManager::Subscribe(int32_t render_frame_id,
       registration_id,
       {kPushRegistrationIdServiceWorkerKey, kPushSenderIdServiceWorkerKey},
       base::BindOnce(&PushMessagingManager::DidCheckForExistingRegistration,
-                     weak_factory_io_to_io_.GetWeakPtr(), base::Passed(&data)));
+                     weak_factory_io_to_io_.GetWeakPtr(), std::move(data)));
 }
 
 void PushMessagingManager::DidCheckForExistingRegistration(
@@ -385,8 +378,7 @@ void PushMessagingManager::DidCheckForExistingRegistration(
     service_worker_context_->GetRegistrationUserData(
         registration_id, {kPushSenderIdServiceWorkerKey},
         base::BindOnce(&PushMessagingManager::DidGetSenderIdFromStorage,
-                       weak_factory_io_to_io_.GetWeakPtr(),
-                       base::Passed(&data)));
+                       weak_factory_io_to_io_.GetWeakPtr(), std::move(data)));
   }
 }
 
@@ -560,9 +552,9 @@ void PushMessagingManager::PersistRegistrationOnIO(
       registration_id, requesting_origin,
       {{kPushRegistrationIdServiceWorkerKey, push_subscription_id},
        {kPushSenderIdServiceWorkerKey, sender_info}},
-      base::Bind(&PushMessagingManager::DidPersistRegistrationOnIO,
-                 weak_factory_io_to_io_.GetWeakPtr(), base::Passed(&data),
-                 push_subscription_id, p256dh, auth, status));
+      base::BindOnce(&PushMessagingManager::DidPersistRegistrationOnIO,
+                     weak_factory_io_to_io_.GetWeakPtr(), std::move(data),
+                     push_subscription_id, p256dh, auth, status));
 }
 
 void PushMessagingManager::DidPersistRegistrationOnIO(
@@ -636,8 +628,8 @@ void PushMessagingManager::Unsubscribe(int64_t service_worker_registration_id,
   service_worker_context_->GetRegistrationUserData(
       service_worker_registration_id, {kPushSenderIdServiceWorkerKey},
       base::BindOnce(&PushMessagingManager::UnsubscribeHavingGottenSenderId,
-                     weak_factory_io_to_io_.GetWeakPtr(),
-                     base::Passed(&callback), service_worker_registration_id,
+                     weak_factory_io_to_io_.GetWeakPtr(), std::move(callback),
+                     service_worker_registration_id,
                      service_worker_registration->pattern().GetOrigin()));
 }
 
@@ -746,8 +738,8 @@ void PushMessagingManager::GetSubscription(
       service_worker_registration_id,
       {kPushRegistrationIdServiceWorkerKey, kPushSenderIdServiceWorkerKey},
       base::BindOnce(&PushMessagingManager::DidGetSubscription,
-                     weak_factory_io_to_io_.GetWeakPtr(),
-                     base::Passed(&callback), service_worker_registration_id));
+                     weak_factory_io_to_io_.GetWeakPtr(), std::move(callback),
+                     service_worker_registration_id));
 }
 
 void PushMessagingManager::DidGetSubscription(

@@ -15,6 +15,7 @@
 
 #include "base/atomicops.h"
 #include "base/compiler_specific.h"
+#include "base/containers/flat_set.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
@@ -23,7 +24,7 @@
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
-#include "services/ui/public/interfaces/remote_event_dispatcher.mojom.h"
+#include "services/ui/public/interfaces/event_injector.mojom.h"
 #include "services/ui/public/interfaces/window_tree.mojom.h"
 #include "ui/aura/aura_export.h"
 #include "ui/aura/client/transient_window_client_observer.h"
@@ -64,12 +65,15 @@ struct PropertyData;
 namespace aura {
 class CaptureSynchronizer;
 class DragDropControllerMus;
+class EmbedRoot;
+class EmbedRootDelegate;
 class FocusSynchronizer;
 class InFlightBoundsChange;
 class InFlightChange;
 class InFlightFocusChange;
 class InFlightPropertyChange;
 class InFlightVisibleChange;
+class PlatformEventSourceMus;
 class MusContextFactory;
 class WindowMus;
 class WindowPortMus;
@@ -79,13 +83,15 @@ class WindowTreeClientObserver;
 class WindowTreeClientTestObserver;
 class WindowTreeHostMus;
 
-using EventResultCallback = base::Callback<void(ui::mojom::EventResult)>;
+using EventResultCallback = base::OnceCallback<void(ui::mojom::EventResult)>;
 
-// Manages the connection with mus.
+// Used to enable Aura to act as the client-library for the Window Service.
 //
-// WindowTreeClient is owned by the creator. Generally when the delegate gets
-// one of OnEmbedRootDestroyed() or OnLostConnection() it should delete the
-// WindowTreeClient.
+// WindowTreeClient is created in a handful of distinct ways. See the various
+// Create functions for details.
+//
+// Generally when the delegate gets one of OnEmbedRootDestroyed() or
+// OnLostConnection() it should delete the WindowTreeClient.
 //
 // When WindowTreeClient is deleted all windows are deleted (and observers
 // notified).
@@ -99,31 +105,38 @@ class AURA_EXPORT WindowTreeClient
       public WindowTreeHostMusDelegate,
       public client::TransientWindowClientObserver {
  public:
-  // |create_discardable_memory| If it is true, WindowTreeClient will setup the
-  // dicardable shared memory manager for this process. In some test, more than
-  // one WindowTreeClient will be created, so we need pass false to avoid
-  // setup the discardable shared memory manager more than once.
-  WindowTreeClient(
+  // Creates a WindowTreeClient to act as the window manager. See mojom for
+  // details on |automatically_create_display_roots|.
+  // TODO(sky): move |create_discardable_memory| out of this class.
+  static std::unique_ptr<WindowTreeClient> CreateForWindowManager(
       service_manager::Connector* connector,
       WindowTreeClientDelegate* delegate,
-      WindowManagerDelegate* window_manager_delegate = nullptr,
-      ui::mojom::WindowTreeClientRequest request = nullptr,
-      scoped_refptr<base::SingleThreadTaskRunner> io_task_runner = nullptr,
+      WindowManagerDelegate* window_manager_delegate,
+      bool automatically_create_display_roots = true,
       bool create_discardable_memory = true);
+
+  // Creates a WindowTreeClient for use in embedding.
+  static std::unique_ptr<WindowTreeClient> CreateForEmbedding(
+      service_manager::Connector* connector,
+      WindowTreeClientDelegate* delegate,
+      ui::mojom::WindowTreeClientRequest request,
+      bool create_discardable_memory = true);
+
+  // Creates a WindowTreeClient useful for creating top-level windows.
+  static std::unique_ptr<WindowTreeClient> CreateForWindowTreeFactory(
+      service_manager::Connector* connector,
+      WindowTreeClientDelegate* delegate,
+      bool create_discardable_memory = true,
+      scoped_refptr<base::SingleThreadTaskRunner> io_task_runner = nullptr);
+
+  // Creates a WindowTreeClient such that the Window Service creates a single
+  // WindowTreeHost. This is useful for testing and examples.
+  static std::unique_ptr<WindowTreeClient> CreateForWindowTreeHostFactory(
+      service_manager::Connector* connector,
+      WindowTreeClientDelegate* delegate,
+      bool create_discardable_memory = true);
+
   ~WindowTreeClient() override;
-
-  // Establishes the connection by way of the WindowTreeFactory.
-  void ConnectViaWindowTreeFactory();
-
-  // Establishes the connection by way of WindowManagerWindowTreeFactory.
-  // See mojom for details on |automatically_create_display_roots|.
-  void ConnectAsWindowManager(bool automatically_create_display_roots = true);
-
-  // Connects to mus such that a single WindowTreeHost is created. This blocks
-  // until the WindowTreeHost is obtained and calls
-  // WindowTreeClientDelegate::OnEmbed() with the WindowTreeHost. This entry
-  // point is mostly useful for testing and examples.
-  void ConnectViaWindowTreeHostFactory();
 
   void DisableDragDropClient() { install_drag_drop_client_ = false; }
 
@@ -156,13 +169,20 @@ class AURA_EXPORT WindowTreeClient
   void Embed(Window* window,
              ui::mojom::WindowTreeClientPtr client,
              uint32_t flags,
-             const ui::mojom::WindowTree::EmbedCallback& callback);
+             ui::mojom::WindowTree::EmbedCallback callback);
+  void EmbedUsingToken(Window* window,
+                       const base::UnguessableToken& token,
+                       uint32_t flags,
+                       ui::mojom::WindowTree::EmbedCallback callback);
 
   // Schedules an embed of a client. See
   // mojom::WindowTreeClient::ScheduleEmbed() for details.
   void ScheduleEmbed(
       ui::mojom::WindowTreeClientPtr client,
       base::OnceCallback<void(const base::UnguessableToken&)> callback);
+
+  // Creates a new EmbedRoot. See EmbedRoot for details.
+  std::unique_ptr<EmbedRoot> CreateEmbedRoot(EmbedRootDelegate* delegate);
 
   void AttachCompositorFrameSink(
       ui::Id window_id,
@@ -194,6 +214,7 @@ class AURA_EXPORT WindowTreeClient
   void RemoveTestObserver(WindowTreeClientTestObserver* observer);
 
  private:
+  friend class EmbedRoot;
   friend class InFlightBoundsChange;
   friend class InFlightFocusChange;
   friend class InFlightPropertyChange;
@@ -211,6 +232,21 @@ class AURA_EXPORT WindowTreeClient
 
   // TODO(sky): this assumes change_ids never wrap, which is a bad assumption.
   using InFlightMap = std::map<uint32_t, std::unique_ptr<InFlightChange>>;
+
+  // |create_discardable_memory| specifies whether WindowTreeClient will setup
+  // the dicardable shared memory manager for this process. In some tests, more
+  // than one WindowTreeClient will be created, so we need to pass false to
+  // avoid setting up the discardable shared memory manager more than once.
+  WindowTreeClient(
+      service_manager::Connector* connector,
+      WindowTreeClientDelegate* delegate,
+      WindowManagerDelegate* window_manager_delegate = nullptr,
+      ui::mojom::WindowTreeClientRequest request = nullptr,
+      scoped_refptr<base::SingleThreadTaskRunner> io_task_runner = nullptr,
+      bool create_discardable_memory = true);
+
+  // Creates a PlatformEventSourceMus if not created yet.
+  void CreatePlatformEventSourceIfNecessary();
 
   void RegisterWindowMus(WindowMus* window);
 
@@ -300,6 +336,12 @@ class AURA_EXPORT WindowTreeClient
                    bool drawn,
                    const base::Optional<viz::LocalSurfaceId>& local_surface_id);
 
+  // Returns the EmbedRoot whose root is |window|, or null if there isn't one.
+  EmbedRoot* GetEmbedRootWithRootWindow(aura::Window* window);
+
+  // Called from EmbedRoot's destructor.
+  void OnEmbedRootDestroyed(EmbedRoot* embed_root);
+
   // Called by WmNewDisplayAdded().
   WindowTreeHostMus* WmNewDisplayAddedImpl(
       const display::Display& display,
@@ -307,8 +349,7 @@ class AURA_EXPORT WindowTreeClient
       bool parent_drawn,
       const base::Optional<viz::LocalSurfaceId>& local_surface_id);
 
-  std::unique_ptr<EventResultCallback> CreateEventResultCallback(
-      int32_t event_id);
+  EventResultCallback CreateEventResultCallback(int32_t event_id);
 
   void OnReceivedCursorLocationMemory(mojo::ScopedSharedBufferHandle handle);
 
@@ -363,6 +404,11 @@ class AURA_EXPORT WindowTreeClient
       int64_t display_id,
       ui::Id focused_window_id,
       bool drawn,
+      const base::Optional<viz::LocalSurfaceId>& local_surface_id) override;
+  void OnEmbedFromToken(
+      const base::UnguessableToken& token,
+      ui::mojom::WindowDataPtr root,
+      int64_t display_id,
       const base::Optional<viz::LocalSurfaceId>& local_surface_id) override;
   void OnEmbeddedAppDisconnected(ui::Id window_id) override;
   void OnUnembed(ui::Id window_id) override;
@@ -432,18 +478,18 @@ class AURA_EXPORT WindowTreeClient
                    uint32_t event_flags,
                    const gfx::Point& position,
                    uint32_t effect_bitmask,
-                   const OnDragEnterCallback& callback) override;
+                   OnDragEnterCallback callback) override;
   void OnDragOver(ui::Id window_id,
                   uint32_t event_flags,
                   const gfx::Point& position,
                   uint32_t effect_bitmask,
-                  const OnDragOverCallback& callback) override;
+                  OnDragOverCallback callback) override;
   void OnDragLeave(ui::Id window_id) override;
   void OnCompleteDrop(ui::Id window_id,
                       uint32_t event_flags,
                       const gfx::Point& position,
                       uint32_t effect_bitmask,
-                      const OnCompleteDropCallback& callback) override;
+                      OnCompleteDropCallback callback) override;
   void OnPerformDragDropCompleted(uint32_t change_id,
                                   bool success,
                                   uint32_t action_taken) override;
@@ -489,7 +535,7 @@ class AURA_EXPORT WindowTreeClient
                         const gfx::Vector2d& drag_image_offset,
                         ui::mojom::PointerKind source) override;
   void WmMoveDragImage(const gfx::Point& screen_location,
-                       const WmMoveDragImageCallback& callback) override;
+                       WmMoveDragImageCallback callback) override;
   void WmDestroyDragImage() override;
   void WmPerformMoveLoop(uint32_t change_id,
                          ui::Id window_id,
@@ -616,6 +662,8 @@ class AURA_EXPORT WindowTreeClient
 
   std::set<WindowMus*> roots_;
 
+  base::flat_set<EmbedRoot*> embed_roots_;
+
   IdToWindowMap windows_;
   std::map<ui::ClientSpecificId, std::set<Window*>> embedded_windows_;
 
@@ -649,7 +697,7 @@ class AURA_EXPORT WindowTreeClient
   // WindowManagerClient set this, but not |window_manager_internal_client_|.
   ui::mojom::WindowManagerClient* window_manager_client_ = nullptr;
 
-  ui::mojom::RemoteEventDispatcherPtr event_injector_;
+  ui::mojom::EventInjectorPtr event_injector_;
 
   bool has_pointer_watcher_ = false;
 
@@ -691,6 +739,10 @@ class AURA_EXPORT WindowTreeClient
   // Temporary while we have mushrome, once we switch to mash this can be
   // removed.
   bool install_drag_drop_client_ = true;
+
+#if defined(USE_OZONE)
+  std::unique_ptr<PlatformEventSourceMus> platform_event_source_;
+#endif
 
   base::WeakPtrFactory<WindowTreeClient> weak_factory_;
 

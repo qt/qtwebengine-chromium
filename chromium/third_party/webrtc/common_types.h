@@ -397,7 +397,6 @@ enum class VideoType {
 };
 
 // Video codec
-enum { kPayloadNameSize = 32 };
 enum { kMaxSimulcastStreams = 4 };
 enum { kMaxSpatialLayers = 5 };
 enum { kMaxTemporalStreams = 4 };
@@ -423,6 +422,10 @@ enum VP8ResilienceMode {
 class TemporalLayersFactory;
 // VP8 specific
 struct VideoCodecVP8 {
+  bool operator==(const VideoCodecVP8& other) const;
+  bool operator!=(const VideoCodecVP8& other) const {
+    return !(*this == other);
+  }
   VideoCodecComplexity complexity;
   VP8ResilienceMode resilience;
   unsigned char numberOfTemporalLayers;
@@ -435,6 +438,10 @@ struct VideoCodecVP8 {
 
 // VP9 specific.
 struct VideoCodecVP9 {
+  bool operator==(const VideoCodecVP9& other) const;
+  bool operator!=(const VideoCodecVP9& other) const {
+    return !(*this == other);
+  }
   VideoCodecComplexity complexity;
   bool resilienceOn;
   unsigned char numberOfTemporalLayers;
@@ -462,6 +469,10 @@ enum Profile {
 
 // H264 specific.
 struct VideoCodecH264 {
+  bool operator==(const VideoCodecH264& other) const;
+  bool operator!=(const VideoCodecH264& other) const {
+    return !(*this == other);
+  }
   bool frameDroppingOn;
   int keyFrameInterval;
   // These are NULL/0 if not externally negotiated.
@@ -496,9 +507,10 @@ union VideoCodecUnion {
   VideoCodecH264 H264;
 };
 
-// Simulcast is when the same stream is encoded multiple times with different
-// settings such as resolution.
-struct SimulcastStream {
+struct SpatialLayer {
+  bool operator==(const SpatialLayer& other) const;
+  bool operator!=(const SpatialLayer& other) const { return !(*this == other); }
+
   unsigned short width;
   unsigned short height;
   unsigned char numberOfTemporalLayers;
@@ -509,12 +521,9 @@ struct SimulcastStream {
   bool active;                 // encoded and sent.
 };
 
-struct SpatialLayer {
-  int scaling_factor_num;
-  int scaling_factor_den;
-  int target_bitrate_bps;
-  // TODO(ivica): Add max_quantizer and min_quantizer?
-};
+// Simulcast is when the same stream is encoded multiple times with different
+// settings such as resolution.
+typedef SpatialLayer SimulcastStream;
 
 enum VideoCodecMode { kRealtimeVideo, kScreensharing };
 
@@ -525,7 +534,6 @@ class VideoCodec {
 
   // Public variables. TODO(hta): Make them private with accessors.
   VideoCodecType codecType;
-  char plName[kPayloadNameSize];
   unsigned char plType;
 
   unsigned short width;
@@ -603,6 +611,17 @@ class BitrateAllocation {
   // Get the sum of all the temporal layer for a specific spatial layer.
   uint32_t GetSpatialLayerSum(size_t spatial_index) const;
 
+  // Sum of bitrates of temporal layers, from layer 0 to |temporal_index|
+  // inclusive, of specified spatial layer |spatial_index|. Bitrates of lower
+  // spatial layers are not included.
+  uint32_t GetTemporalLayerSum(size_t spatial_index,
+                               size_t temporal_index) const;
+
+  // Returns a vector of the temporal layer bitrates for the specific spatial
+  // layer. Length of the returned vector is cropped to the highest temporal
+  // layer with a defined bitrate.
+  std::vector<uint32_t> GetTemporalLayerAllocation(size_t spatial_index) const;
+
   uint32_t get_sum_bps() const { return sum_; }  // Sum of all bitrates.
   uint32_t get_sum_kbps() const { return (sum_ + 500) / 1000; }
 
@@ -615,7 +634,6 @@ class BitrateAllocation {
 
   // Expensive, please use only in tests.
   std::string ToString() const;
-  std::ostream& operator<<(std::ostream& os) const;
 
  private:
   uint32_t sum_;

@@ -8,7 +8,6 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
@@ -25,7 +24,7 @@
 #include "gin/arguments.h"
 #include "gin/handle.h"
 #include "gin/per_context_data.h"
-#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
+#include "third_party/blink/public/web/web_user_gesture_indicator.h"
 
 namespace extensions {
 

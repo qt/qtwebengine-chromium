@@ -11,6 +11,7 @@
 #include "ui/base/cursor/cursor.h"
 
 namespace gfx {
+class Point;
 class Rect;
 }
 
@@ -44,6 +45,7 @@ class PlatformWindow {
 
   virtual void SetCapture() = 0;
   virtual void ReleaseCapture() = 0;
+  virtual bool HasCapture() const = 0;
 
   virtual void ToggleFullscreen() = 0;
   virtual void Maximize() = 0;

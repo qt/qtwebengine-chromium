@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
-#include "printing/features/features.h"
-#include "third_party/WebKit/public/web/WebContextMenuData.h"
+#include "printing/buildflags/buildflags.h"
+#include "third_party/blink/public/web/web_context_menu_data.h"
 
 using blink::WebContextMenuData;
 using content::WebContents;

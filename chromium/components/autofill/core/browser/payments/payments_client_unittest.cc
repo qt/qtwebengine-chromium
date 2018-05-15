@@ -69,9 +69,9 @@ class PaymentsClientTest : public testing::Test,
 
   void TearDown() override { client_.reset(); }
 
-  void DisableAutofillSendBillingCustomerNumberExperiment() {
+  void DisableAutofillUpstreamSendDetectedValuesExperiment() {
     scoped_feature_list_.InitAndDisableFeature(
-        kAutofillSendBillingCustomerNumber);
+        kAutofillUpstreamSendDetectedValues);
   }
 
   void EnableAutofillUpstreamSendDetectedValuesExperiment() {
@@ -227,25 +227,13 @@ TEST_F(PaymentsClientTest, OAuthError) {
 }
 
 TEST_F(PaymentsClientTest,
-       UnmaskRequestIncludesBillingCustomerNumberInRequestIfExperimentOn) {
+       UnmaskRequestIncludesBillingCustomerNumberInRequest) {
   StartUnmasking();
 
   // Verify that the billing customer number is included in the request.
   EXPECT_TRUE(
       GetUploadData().find("%22external_customer_id%22:%22111222333444%22") !=
       std::string::npos);
-}
-
-TEST_F(
-    PaymentsClientTest,
-    UnmaskRequestDoesNotIncludeBillingCustomerNumberInRequestIfExperimentOff) {
-  DisableAutofillSendBillingCustomerNumberExperiment();
-
-  StartUnmasking();
-
-  // Verify that the billing customer number is not included in the request.
-  EXPECT_TRUE(GetUploadData().find("external_customer_id") ==
-              std::string::npos);
 }
 
 TEST_F(PaymentsClientTest, UnmaskSuccess) {
@@ -303,6 +291,8 @@ TEST_F(PaymentsClientTest,
 
 TEST_F(PaymentsClientTest,
        GetDetailsDoesNotIncludeDetectedValuesInRequestIfExperimentOff) {
+  DisableAutofillUpstreamSendDetectedValuesExperiment();
+
   StartGettingUploadDetails();
 
   // Verify that the detected values were left out of the request.
@@ -372,25 +362,13 @@ TEST_F(PaymentsClientTest, UploadIncludesNonLocationData) {
 }
 
 TEST_F(PaymentsClientTest,
-       UploadRequestIncludesBillingCustomerNumberInRequestIfExperimentOn) {
+       UploadRequestIncludesBillingCustomerNumberInRequest) {
   StartUploading(/*include_cvc=*/true);
 
   // Verify that the billing customer number is included in the request.
   EXPECT_TRUE(
       GetUploadData().find("%22external_customer_id%22:%22111222333444%22") !=
       std::string::npos);
-}
-
-TEST_F(
-    PaymentsClientTest,
-    UploadRequestDoesNotIncludeBillingCustomerNumberInRequestIfExperimentOff) {
-  DisableAutofillSendBillingCustomerNumberExperiment();
-
-  StartUploading(/*include_cvc=*/true);
-
-  // Verify that the billing customer number is not included in the request.
-  EXPECT_TRUE(GetUploadData().find("external_customer_id") ==
-              std::string::npos);
 }
 
 TEST_F(PaymentsClientTest, UploadIncludesCvcInRequestIfProvided) {

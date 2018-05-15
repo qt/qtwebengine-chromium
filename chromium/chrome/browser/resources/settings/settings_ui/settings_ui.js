@@ -59,7 +59,7 @@ Polymer({
     lastSearchQuery_: {
       type: String,
       value: '',
-    }
+    },
   },
 
   listeners: {
@@ -89,6 +89,8 @@ Polymer({
     CrPolicyStrings = {
       controlledSettingExtension:
           loadTimeData.getString('controlledSettingExtension'),
+      controlledSettingExtensionWithoutName:
+          loadTimeData.getString('controlledSettingExtensionWithoutName'),
       controlledSettingPolicy:
           loadTimeData.getString('controlledSettingPolicy'),
       controlledSettingRecommendedMatches:

@@ -5,12 +5,13 @@
 module viz.mojom;
 
 import "gpu/ipc/common/surface_handle.mojom";
-import "mojo/common/time.mojom";
+import "mojo/public/mojom/base/time.mojom";
 import "services/viz/privileged/interfaces/compositing/display_private.mojom";
 import "services/viz/privileged/interfaces/compositing/external_begin_frame_controller.mojom";
 import "services/viz/privileged/interfaces/compositing/frame_sink_video_capture.mojom";
 import "services/viz/privileged/interfaces/compositing/renderer_settings.mojom";
 import "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom";
+import "services/viz/public/interfaces/compositing/copy_output_request.mojom";
 import "services/viz/public/interfaces/compositing/frame_sink_id.mojom";
 import "services/viz/public/interfaces/compositing/local_surface_id.mojom";
 import "services/viz/public/interfaces/compositing/surface_id.mojom";
@@ -22,7 +23,7 @@ import "services/viz/public/interfaces/compositing/video_detector_observer.mojom
 struct RootCompositorFrameSinkParams {
   FrameSinkId frame_sink_id;
   gpu.mojom.SurfaceHandle widget;
-  bool force_software_compositing = false;
+  bool gpu_compositing = true;
   RendererSettings renderer_settings;
 
   associated CompositorFrameSink& compositor_frame_sink;
@@ -127,6 +128,11 @@ interface FrameSinkManager {
 
   // Marks the given SurfaceIds for destruction.
   EvictSurfaces(array<SurfaceId> surface_ids);
+
+  // Takes a snapshot of |surface_id| or a newer surface with the same
+  // FrameSinkId. The request will be queued up until such surface exists and is
+  // reachable from the root surface.
+  RequestCopyOfOutput(SurfaceId surface_id, CopyOutputRequest request);
 };
 
 // The FrameSinkManagerClient interface is implemented by the Display
@@ -140,10 +146,6 @@ interface FrameSinkManagerClient {
   // Called by the frame sink manager when a CompositorFrame with a new
   // SurfaceId activates for the first time.
   OnFirstSurfaceActivation(SurfaceInfo surface_info);
-
-  // The CompositorFrameSink pipe for |frame_sink_id| was closed. The client
-  // cannot submit any CompositorFrames to viz after this occurs.
-  OnClientConnectionClosed(FrameSinkId frame_sink_id);
 
   // Sends |active_handle| and |idle_handle| along with their sizes to the
   // client when they are allocated or resized.

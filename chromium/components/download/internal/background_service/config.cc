@@ -6,7 +6,6 @@
 
 #include <string>
 
-#include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/strings/string_number_conversions.h"
 #include "components/download/public/background_service/features.h"
@@ -75,6 +74,10 @@ const base::TimeDelta kDefaultNavigationCompletionDelay =
 // The default timeout for a navigation.
 const base::TimeDelta kDefaultNavigationTimeoutDelay =
     base::TimeDelta::FromSeconds(300);
+
+// The default timeout for a pending upload.
+const base::TimeDelta kDefaultPendingUploadTimeoutDelay =
+    base::TimeDelta::FromSeconds(30);
 
 // The default value of download retry delay when the download is failed.
 const base::TimeDelta kDefaultDownloadRetryDelay =
@@ -146,6 +149,11 @@ std::unique_ptr<Configuration> Configuration::CreateFromFinch() {
       base::TimeDelta::FromSeconds(base::saturated_cast<int>(
           GetFinchConfigUInt(kNavigationTimeoutDelaySecondsConfig,
                              kDefaultNavigationTimeoutDelay.InSeconds())));
+  config->pending_upload_timeout_delay =
+      base::TimeDelta::FromSeconds(base::saturated_cast<int>(
+          GetFinchConfigUInt(kPendingUploadTimeoutDelaySecondsConfig,
+                             kDefaultPendingUploadTimeoutDelay.InSeconds())));
+
   config->download_retry_delay =
       base::TimeDelta::FromMilliseconds(base::saturated_cast<int>(
           GetFinchConfigUInt(kDownloadRetryDelayMsConfig,
@@ -170,6 +178,7 @@ Configuration::Configuration()
       network_change_delay(kDefaultNetworkChangeDelay),
       navigation_completion_delay(kDefaultNavigationCompletionDelay),
       navigation_timeout_delay(kDefaultNavigationTimeoutDelay),
+      pending_upload_timeout_delay(kDefaultPendingUploadTimeoutDelay),
       download_retry_delay(kDefaultDownloadRetryDelay) {}
 
 }  // namespace download

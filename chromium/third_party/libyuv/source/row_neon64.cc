@@ -463,6 +463,58 @@ void NV21ToARGBRow_NEON(const uint8_t* src_y,
   );
 }
 
+void NV12ToRGB24Row_NEON(const uint8_t* src_y,
+                         const uint8_t* src_uv,
+                         uint8_t* dst_rgb24,
+                         const struct YuvConstants* yuvconstants,
+                         int width) {
+  asm volatile (
+    YUVTORGB_SETUP
+  "1:                                          \n"
+    READNV12
+    YUVTORGB(v22, v21, v20)
+    "subs       %w3, %w3, #8                   \n"
+    "st3        {v20.8b,v21.8b,v22.8b}, [%2], #24     \n"
+    "b.gt       1b                             \n"
+    : "+r"(src_y),     // %0
+      "+r"(src_uv),    // %1
+      "+r"(dst_rgb24),  // %2
+      "+r"(width)      // %3
+    : [kUVToRB]"r"(&yuvconstants->kUVToRB),
+      [kUVToG]"r"(&yuvconstants->kUVToG),
+      [kUVBiasBGR]"r"(&yuvconstants->kUVBiasBGR),
+      [kYToRgb]"r"(&yuvconstants->kYToRgb)
+    : "cc", "memory", "v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v20",
+      "v21", "v22", "v23", "v24", "v25", "v26", "v27", "v28", "v29", "v30"
+  );
+}
+
+void NV21ToRGB24Row_NEON(const uint8_t* src_y,
+                         const uint8_t* src_vu,
+                         uint8_t* dst_rgb24,
+                         const struct YuvConstants* yuvconstants,
+                         int width) {
+  asm volatile (
+    YUVTORGB_SETUP
+  "1:                                          \n"
+    READNV21
+    YUVTORGB(v22, v21, v20)
+    "subs       %w3, %w3, #8                   \n"
+    "st3        {v20.8b,v21.8b,v22.8b}, [%2], #24     \n"
+    "b.gt       1b                             \n"
+    : "+r"(src_y),     // %0
+      "+r"(src_vu),    // %1
+      "+r"(dst_rgb24),  // %2
+      "+r"(width)      // %3
+    : [kUVToRB]"r"(&yuvconstants->kUVToRB),
+      [kUVToG]"r"(&yuvconstants->kUVToG),
+      [kUVBiasBGR]"r"(&yuvconstants->kUVBiasBGR),
+      [kYToRgb]"r"(&yuvconstants->kYToRgb)
+    : "cc", "memory", "v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v20",
+      "v21", "v22", "v23", "v24", "v25", "v26", "v27", "v28", "v29", "v30"
+  );
+}
+
 void NV12ToRGB565Row_NEON(const uint8_t* src_y,
                           const uint8_t* src_uv,
                           uint8_t* dst_rgb565,
@@ -2645,6 +2697,30 @@ void HalfFloatRow_NEON(const uint16_t* src,
         "+r"(dst),                      // %1
         "+r"(width)                     // %2
       : "w"(scale * 1.9259299444e-34f)  // %3
+      : "cc", "memory", "v1", "v2", "v3");
+}
+
+void ByteToFloatRow_NEON(const uint8_t* src,
+                         float* dst,
+                         float scale,
+                         int width) {
+  asm volatile(
+      "1:                                        \n"
+      "ld1        {v1.8b}, [%0], #8              \n"  // load 8 bytes
+      "subs       %w2, %w2, #8                   \n"  // 8 pixels per loop
+      "uxtl       v1.8h, v1.8b                   \n"  // 8 shorts
+      "uxtl       v2.4s, v1.4h                   \n"  // 8 ints
+      "uxtl2      v3.4s, v1.8h                   \n"
+      "scvtf      v2.4s, v2.4s                   \n"  // 8 floats
+      "scvtf      v3.4s, v3.4s                   \n"
+      "fmul       v2.4s, v2.4s, %3.s[0]          \n"  // scale
+      "fmul       v3.4s, v3.4s, %3.s[0]          \n"
+      "st1        {v2.16b, v3.16b}, [%1], #32    \n"  // store 8 floats
+      "b.gt       1b                             \n"
+      : "+r"(src),   // %0
+        "+r"(dst),   // %1
+        "+r"(width)  // %2
+      : "w"(scale)   // %3
       : "cc", "memory", "v1", "v2", "v3");
 }
 

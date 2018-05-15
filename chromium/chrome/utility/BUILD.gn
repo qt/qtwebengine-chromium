@@ -6,8 +6,8 @@ import("//build/config/crypto.gni")
 import("//build/config/features.gni")
 import("//build/config/sysroot.gni")
 import("//chrome/common/features.gni")
-import("//extensions/features/features.gni")
-import("//printing/features/features.gni")
+import("//extensions/buildflags/buildflags.gni")
+import("//printing/buildflags/buildflags.gni")
 import("//services/service_manager/public/service_manifest.gni")
 
 static_library("utility") {
@@ -29,21 +29,21 @@ static_library("utility") {
     "//chrome:strings",
     "//chrome/common",
     "//chrome/common:mojo_bindings",
-    "//chrome/common/profiling",
-    "//chrome/profiling",
-    "//components/patch_service:lib",
     "//components/search_engines",
+    "//components/services/heap_profiling",
+    "//components/services/heap_profiling/public/cpp",
+    "//components/services/patch:lib",
+    "//components/services/unzip:lib",
     "//components/strings",
-    "//components/unzip_service:lib",
     "//components/url_formatter",
     "//content/public/child",
     "//content/public/common",
     "//content/public/utility",
-    "//extensions/features",
+    "//extensions/buildflags",
     "//ipc",
     "//media",
     "//net:net_with_v8",
-    "//printing/features",
+    "//printing/buildflags",
     "//services/network:network_service",
     "//services/service_manager/public/cpp",
     "//skia",
@@ -99,8 +99,6 @@ static_library("utility") {
 
   if (enable_extensions) {
     sources += [
-      "extensions/extensions_handler.cc",
-      "extensions/extensions_handler.h",
       "image_writer/disk_unmounter_mac.cc",
       "image_writer/disk_unmounter_mac.h",
       "image_writer/error_messages.cc",
@@ -116,7 +114,6 @@ static_library("utility") {
       "//chrome/common/extensions/api",
       "//chrome/services/media_gallery_util:lib",
       "//chrome/services/removable_storage_writer:lib",
-      "//extensions/utility",
     ]
 
     public_deps += [ "//chrome/common/extensions/api" ]
@@ -154,8 +151,8 @@ static_library("utility") {
       "//ash/components/quick_launch/public/mojom",
       "//ash/components/touch_hud:lib",
       "//chrome/services/file_util:lib",
-      "//components/font_service:lib",
-      "//components/font_service/public/interfaces",
+      "//components/services/font:lib",
+      "//components/services/font/public/interfaces",
       "//services/ui:lib",
       "//services/ui/public/interfaces",
     ]

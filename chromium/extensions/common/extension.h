@@ -11,18 +11,19 @@
 #include <string>
 #include <vector>
 
+#include "base/auto_reset.h"
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/threading/thread_checker.h"
 #include "base/version.h"
+#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_id.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/hashed_extension_id.h"
 #include "extensions/common/install_warning.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/url_pattern_set.h"
-#include "extensions/features/features.h"
 #include "url/gurl.h"
 
 #if !BUILDFLAG(ENABLE_EXTENSIONS)
@@ -318,6 +319,9 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   void AddWebExtentPattern(const URLPattern& pattern);
   const URLPatternSet& web_extent() const { return extent_; }
 
+  using ScopedAllowLegacyExtensions = std::unique_ptr<base::AutoReset<bool>>;
+  static ScopedAllowLegacyExtensions allow_legacy_extensions_for_testing();
+
  private:
   friend class base::RefCountedThreadSafe<Extension>;
 
@@ -466,7 +470,10 @@ struct ExtensionInfo {
                 Manifest::Location location);
   ~ExtensionInfo();
 
+  // Note: This may be null (e.g. for unpacked extensions retrieved from the
+  // Preferences file).
   std::unique_ptr<base::DictionaryValue> extension_manifest;
+
   ExtensionId extension_id;
   base::FilePath extension_path;
   Manifest::Location extension_location;

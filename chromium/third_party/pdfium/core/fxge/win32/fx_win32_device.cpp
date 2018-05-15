@@ -23,7 +23,7 @@
 #include "core/fxge/dib/cstretchengine.h"
 #include "core/fxge/fx_font.h"
 #include "core/fxge/fx_freetype.h"
-#include "core/fxge/ifx_systemfontinfo.h"
+#include "core/fxge/systemfontinfo_iface.h"
 #include "core/fxge/win32/cfx_windowsdib.h"
 #include "core/fxge/win32/dwrite_int.h"
 #include "core/fxge/win32/win32_int.h"
@@ -38,9 +38,9 @@ namespace {
 
 const struct {
   const char* m_pFaceName;
-  const char* m_pVariantName;
+  const char* m_pVariantName;  // Note: UTF16-LE terminator required.
 } g_VariantNames[] = {
-    {"DFKai-SB", "\x19\x6A\x77\x69\xD4\x9A"},
+    {"DFKai-SB", "\x19\x6A\x77\x69\xD4\x9A\x00\x00"},
 };
 
 const struct {
@@ -132,11 +132,9 @@ HPEN CreateExtPen(const CFX_GraphStateData* pGraphState,
       break;
   }
 
-  int a;
-  FX_COLORREF rgb;
-  std::tie(a, rgb) = ArgbToColorRef(argb);
+  FX_COLORREF colorref = ArgbToColorRef(argb);
   LOGBRUSH lb;
-  lb.lbColor = rgb;
+  lb.lbColor = colorref;
   lb.lbStyle = BS_SOLID;
   lb.lbHatch = 0;
   std::vector<uint32_t> dashes;
@@ -155,10 +153,7 @@ HPEN CreateExtPen(const CFX_GraphStateData* pGraphState,
 }
 
 HBRUSH CreateBrush(uint32_t argb) {
-  int a;
-  FX_COLORREF rgb;
-  std::tie(a, rgb) = ArgbToColorRef(argb);
-  return CreateSolidBrush(rgb);
+  return CreateSolidBrush(ArgbToColorRef(argb));
 }
 
 void SetPathToDC(HDC hDC,
@@ -326,12 +321,12 @@ class CFX_Win32FallbackFontInfo final : public CFX_FolderFontInfo {
                 const char* family) override;
 };
 
-class CFX_Win32FontInfo final : public IFX_SystemFontInfo {
+class CFX_Win32FontInfo final : public SystemFontInfoIface {
  public:
   CFX_Win32FontInfo();
   ~CFX_Win32FontInfo() override;
 
-  // IFX_SystemFontInfo
+  // SystemFontInfoIface
   bool EnumFontList(CFX_FontMapper* pMapper) override;
   void* MapFont(int weight,
                 bool bItalic,
@@ -679,10 +674,10 @@ bool CFX_Win32FontInfo::GetFontCharset(void* hFont, int* charset) {
 
 int g_pdfium_print_mode = WindowsPrintMode::kModeEmf;
 
-std::unique_ptr<IFX_SystemFontInfo> IFX_SystemFontInfo::CreateDefault(
+std::unique_ptr<SystemFontInfoIface> SystemFontInfoIface::CreateDefault(
     const char** pUnused) {
   if (IsGDIEnabled())
-    return std::unique_ptr<IFX_SystemFontInfo>(new CFX_Win32FontInfo);
+    return std::unique_ptr<SystemFontInfoIface>(new CFX_Win32FontInfo);
 
   // Select the fallback font information class if GDI is disabled.
   CFX_Win32FallbackFontInfo* pInfoFallback = new CFX_Win32FallbackFontInfo;
@@ -695,7 +690,7 @@ std::unique_ptr<IFX_SystemFontInfo> IFX_SystemFontInfo::CreateDefault(
     fonts_path += "\\Fonts";
     pInfoFallback->AddPath(fonts_path);
   }
-  return std::unique_ptr<IFX_SystemFontInfo>(pInfoFallback);
+  return std::unique_ptr<SystemFontInfoIface>(pInfoFallback);
 }
 
 void CFX_GEModule::InitPlatform() {
@@ -707,7 +702,7 @@ void CFX_GEModule::InitPlatform() {
   if (IsGDIEnabled())
     pPlatformData->m_GdiplusExt.Load();
   m_pPlatformData = pPlatformData;
-  m_pFontMgr->SetSystemFontInfo(IFX_SystemFontInfo::CreateDefault(nullptr));
+  m_pFontMgr->SetSystemFontInfo(SystemFontInfoIface::CreateDefault(nullptr));
 }
 
 void CFX_GEModule::DestroyPlatform() {
@@ -882,7 +877,7 @@ bool CGdiDeviceDriver::GDI_StretchBitMask(
   bmi.bmiColors[0] = 0xffffff;
   bmi.bmiColors[1] = 0;
 
-  HBRUSH hPattern = CreateSolidBrush(bitmap_color & 0xffffff);
+  HBRUSH hPattern = CreateBrush(bitmap_color);
   HBRUSH hOld = (HBRUSH)SelectObject(m_hDC, hPattern);
 
   // In PDF, when image mask is 1, use device bitmap; when mask is 0, use brush
@@ -1066,23 +1061,24 @@ bool CGdiDeviceDriver::DrawPath(const CFX_PathData* pPathData,
   return true;
 }
 
-bool CGdiDeviceDriver::FillRectWithBlend(const FX_RECT* pRect,
+bool CGdiDeviceDriver::FillRectWithBlend(const FX_RECT& rect,
                                          uint32_t fill_color,
                                          int blend_type) {
   if (blend_type != FXDIB_BLEND_NORMAL)
     return false;
 
   int alpha;
-  FX_COLORREF rgb;
-  std::tie(alpha, rgb) = ArgbToColorRef(fill_color);
+  FX_COLORREF colorref;
+  std::tie(alpha, colorref) = ArgbToAlphaAndColorRef(fill_color);
   if (alpha == 0)
     return true;
 
   if (alpha < 255)
     return false;
 
-  HBRUSH hBrush = CreateSolidBrush(rgb);
-  ::FillRect(m_hDC, (RECT*)pRect, hBrush);
+  HBRUSH hBrush = CreateSolidBrush(colorref);
+  const RECT* pRect = reinterpret_cast<const RECT*>(&rect);
+  ::FillRect(m_hDC, pRect, hBrush);
   DeleteObject(hBrush);
   return true;
 }
@@ -1126,13 +1122,13 @@ bool CGdiDeviceDriver::DrawCosmeticLine(const CFX_PointF& ptMoveTo,
   if (blend_type != FXDIB_BLEND_NORMAL)
     return false;
 
-  int a;
-  FX_COLORREF rgb;
-  std::tie(a, rgb) = ArgbToColorRef(color);
-  if (a == 0)
+  int alpha;
+  FX_COLORREF colorref;
+  std::tie(alpha, colorref) = ArgbToAlphaAndColorRef(color);
+  if (alpha == 0)
     return true;
 
-  HPEN hPen = CreatePen(PS_SOLID, 1, rgb);
+  HPEN hPen = CreatePen(PS_SOLID, 1, colorref);
   hPen = (HPEN)SelectObject(m_hDC, hPen);
   MoveToEx(m_hDC, FXSYS_round(ptMoveTo.x), FXSYS_round(ptMoveTo.y), nullptr);
   LineTo(m_hDC, FXSYS_round(ptLineTo.x), FXSYS_round(ptLineTo.y));
@@ -1350,7 +1346,7 @@ CFX_WindowsRenderDevice::CFX_WindowsRenderDevice(HDC hDC) {
 CFX_WindowsRenderDevice::~CFX_WindowsRenderDevice() {}
 
 // static
-IFX_RenderDeviceDriver* CFX_WindowsRenderDevice::CreateDriver(HDC hDC) {
+RenderDeviceDriverIface* CFX_WindowsRenderDevice::CreateDriver(HDC hDC) {
   int device_type = ::GetDeviceCaps(hDC, TECHNOLOGY);
   int obj_type = ::GetObjectType(hDC);
   bool use_printer = device_type == DT_RASPRINTER ||

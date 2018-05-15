@@ -25,7 +25,6 @@ class ImageFactory;
 }  // namespace gpu
 
 namespace viz {
-class CompositingModeReporterImpl;
 class Display;
 class ExternalBeginFrameControllerImpl;
 class OutputDeviceBacking;
@@ -38,14 +37,15 @@ class VIZ_SERVICE_EXPORT GpuDisplayProvider : public DisplayProvider {
       uint32_t restart_id,
       scoped_refptr<gpu::InProcessCommandBuffer::Service> gpu_service,
       gpu::GpuChannelManager* gpu_channel_manager,
-      CompositingModeReporterImpl* compositing_mode_reporter);
+      bool headless,
+      bool wait_for_all_pipeline_stages_before_draw);
   ~GpuDisplayProvider() override;
 
   // DisplayProvider implementation.
   std::unique_ptr<Display> CreateDisplay(
       const FrameSinkId& frame_sink_id,
       gpu::SurfaceHandle surface_handle,
-      bool force_software_compositing,
+      bool gpu_compositing,
       ExternalBeginFrameControllerImpl* external_begin_frame_controller,
       const RendererSettings& renderer_settings,
       std::unique_ptr<SyntheticBeginFrameSource>* out_begin_frame_source)
@@ -53,14 +53,13 @@ class VIZ_SERVICE_EXPORT GpuDisplayProvider : public DisplayProvider {
 
  private:
   std::unique_ptr<SoftwareOutputDevice> CreateSoftwareOutputDeviceForPlatform(
-      gfx::AcceleratedWidget widget);
+      gpu::SurfaceHandle surface_handle);
 
   const uint32_t restart_id_;
   scoped_refptr<gpu::InProcessCommandBuffer::Service> gpu_service_;
   gpu::GpuChannelManagerDelegate* const gpu_channel_manager_delegate_;
   std::unique_ptr<gpu::GpuMemoryBufferManager> gpu_memory_buffer_manager_;
   gpu::ImageFactory* const image_factory_;
-  CompositingModeReporterImpl* const compositing_mode_reporter_;
 
 #if defined(OS_WIN)
   // Used for software compositing output on Windows.
@@ -68,6 +67,9 @@ class VIZ_SERVICE_EXPORT GpuDisplayProvider : public DisplayProvider {
 #endif
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+
+  const bool headless_;
+  const bool wait_for_all_pipeline_stages_before_draw_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuDisplayProvider);
 };

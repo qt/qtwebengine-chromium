@@ -86,7 +86,8 @@ class CC_EXPORT LayerImpl {
 
   int id() const { return layer_id_; }
 
-  // Interactions with attached animations.
+  // Whether this layer is on the active tree, return false if it's on the
+  // pending tree.
   bool IsActive() const;
 
   void SetHasTransformNode(bool val) { has_transform_node_ = val; }
@@ -122,8 +123,6 @@ class CC_EXPORT LayerImpl {
   }
 
   bool is_clipped() const { return draw_properties_.is_clipped; }
-
-  void UpdatePropertyTreeScrollOffset();
 
   LayerTreeImpl* layer_tree_impl() const { return layer_tree_impl_; }
 
@@ -196,7 +195,6 @@ class CC_EXPORT LayerImpl {
   bool contents_opaque() const { return contents_opaque_; }
 
   float Opacity() const;
-  const gfx::Transform& Transform() const;
 
   // Stable identifier for clients. See comment in cc/trees/element_id.h.
   void SetElementId(ElementId element_id);
@@ -419,8 +417,6 @@ class CC_EXPORT LayerImpl {
 
   virtual gfx::Rect GetEnclosingRectInTargetSpace() const;
 
-  bool has_copy_requests_in_target_subtree();
-
   void UpdatePropertyTreeForAnimationIfNeeded(ElementId element_id);
 
   float GetIdealContentsScale() const;
@@ -449,6 +445,9 @@ class CC_EXPORT LayerImpl {
   bool raster_even_if_not_drawn() const { return raster_even_if_not_drawn_; }
 
   void EnsureValidPropertyTreeIndices() const;
+
+  // TODO(sunxd): Remove this function and replace it with visitor pattern.
+  virtual bool is_surface_layer() const;
 
  protected:
   LayerImpl(LayerTreeImpl* layer_impl,
@@ -533,7 +532,6 @@ class CC_EXPORT LayerImpl {
 
   gfx::PointF position_;
 
-  gfx::Rect clip_rect_in_target_space_;
   int transform_tree_index_;
   int effect_tree_index_;
   int clip_tree_index_;

@@ -51,7 +51,7 @@
 #include "storage/browser/fileapi/local_file_stream_writer.h"
 #include "storage/common/database/database_identifier.h"
 #include "storage/common/fileapi/file_system_mount_option.h"
-#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBTypes.h"
+#include "third_party/blink/public/platform/modules/indexeddb/web_idb_types.h"
 #include "third_party/leveldatabase/env_chromium.h"
 
 using base::FilePath;
@@ -728,7 +728,8 @@ WARN_UNUSED_RESULT Status IndexedDBBackingStore::SetUpMetadata() {
           DatabaseNameKey::EncodeMinKeyForOrigin(origin_identifier_);
       const std::string stop_key =
           DatabaseNameKey::EncodeStopKeyForOrigin(origin_identifier_);
-      std::unique_ptr<LevelDBIterator> it = db_->CreateIterator();
+      std::unique_ptr<LevelDBIterator> it =
+          db_->CreateIterator(db_->DefaultReadOptions());
       for (s = it->Seek(start_key);
            s.ok() && it->IsValid() && CompareKeys(it->Key(), stop_key) < 0;
            s = it->Next()) {
@@ -1160,7 +1161,9 @@ Status IndexedDBBackingStore::DeleteDatabase(const base::string16& name) {
       DatabaseMetaDataKey::Encode(id + 1, DatabaseMetaDataKey::ORIGIN_NAME);
   {
     IDB_TRACE("IndexedDBBackingStore::DeleteDatabase.DeleteEntries");
-    std::unique_ptr<LevelDBIterator> it = db_->CreateIterator();
+    leveldb::ReadOptions options = db_->DefaultReadOptions();
+    options.fill_cache = false;
+    std::unique_ptr<LevelDBIterator> it = db_->CreateIterator(options);
     for (s = it->Seek(start_key);
          s.ok() && it->IsValid() && CompareKeys(it->Key(), stop_key) < 0;
          s = it->Next())

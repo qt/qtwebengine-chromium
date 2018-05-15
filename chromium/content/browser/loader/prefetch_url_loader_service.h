@@ -12,16 +12,19 @@
 #include "content/public/browser/browser_thread.h"
 #include "mojo/public/cpp/bindings/strong_binding_set.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
-#include "third_party/WebKit/public/mojom/loader/prefetch_url_loader_service.mojom.h"
+#include "third_party/blink/public/mojom/loader/prefetch_url_loader_service.mojom.h"
 
 namespace net {
 class URLRequestContextGetter;
 }
 
+namespace network {
+class SharedURLLoaderFactory;
+}
+
 namespace content {
 
 class ResourceContext;
-class SharedURLLoaderFactory;
 class URLLoaderFactoryGetter;
 class URLLoaderThrottle;
 
@@ -59,7 +62,7 @@ class CONTENT_EXPORT PrefetchURLLoaderService final
       const network::ResourceRequest& resource_request,
       network::mojom::URLLoaderClientPtr client,
       const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
-      scoped_refptr<SharedURLLoaderFactory> network_loader_factory,
+      scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory,
       int frame_tree_node_id = -1);
 
   // Register a callback that is fired right before a prefetch load is started
@@ -101,7 +104,6 @@ class CONTENT_EXPORT PrefetchURLLoaderService final
   ResourceContext* resource_context_ = nullptr;
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
 
-  network::mojom::URLLoaderFactoryPtr network_loader_factory_;
   mojo::BindingSet<network::mojom::URLLoaderFactory,
                    int /* frame_tree_node_id */>
       loader_factory_bindings_;

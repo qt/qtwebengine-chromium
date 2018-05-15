@@ -10,39 +10,61 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/macros.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/values.h"
+#include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_app_manager.h"
+#include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_service_factory.h"
+#include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_service_regular.h"
+#include "chrome/browser/extensions/api/easy_unlock_private/easy_unlock_private_connection_manager.h"
 #include "chrome/browser/extensions/extension_api_unittest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/easy_unlock_app_manager.h"
-#include "chrome/browser/signin/easy_unlock_service_factory.h"
-#include "chrome/browser/signin/easy_unlock_service_regular.h"
 #include "chrome/common/extensions/api/easy_unlock_private.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/test/base/testing_profile.h"
+#include "chromeos/components/proximity_auth/switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/fake_easy_unlock_client.h"
+#include "components/cryptauth/cryptauth_test_util.h"
+#include "components/cryptauth/fake_connection.h"
 #include "components/cryptauth/proto/cryptauth_api.pb.h"
-#include "components/proximity_auth/switches.h"
 #include "device/bluetooth/dbus/bluez_dbus_manager.h"
 #include "extensions/browser/api_test_utils.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/test_event_router.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_builder.h"
+#include "extensions/common/value_builder.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/aura/env.h"
 
+// TODO(jhawkins): Wrap in extensions namespace.
 namespace {
 
 namespace api = extensions::api::easy_unlock_private;
 
+using cryptauth::FakeConnection;
+using cryptauth::CreateLERemoteDeviceForTest;
+
+using extensions::BrowserContextKeyedAPIFactory;
+using extensions::DictionaryBuilder;
+using extensions::EasyUnlockPrivateAPI;
+using extensions::EasyUnlockPrivateCreateSecureMessageFunction;
+using extensions::EasyUnlockPrivateConnectionManager;
 using extensions::EasyUnlockPrivateGenerateEcP256KeyPairFunction;
 using extensions::EasyUnlockPrivatePerformECDHKeyAgreementFunction;
-using extensions::EasyUnlockPrivateCreateSecureMessageFunction;
 using extensions::EasyUnlockPrivateUnwrapSecureMessageFunction;
-using extensions::EasyUnlockPrivateSetAutoPairingResultFunction;
+using extensions::Extension;
+using extensions::ExtensionBuilder;
+using extensions::ListBuilder;
 
 class TestableGetRemoteDevicesFunction
     : public extensions::EasyUnlockPrivateGetRemoteDevicesFunction {
@@ -119,6 +141,25 @@ void CopyData(std::string* data_target, const std::string& data_source) {
   *data_target = data_source;
 }
 
+EasyUnlockPrivateConnectionManager* GetConnectionManager(
+    content::BrowserContext* context) {
+  return BrowserContextKeyedAPIFactory<EasyUnlockPrivateAPI>::Get(context)
+      ->get_connection_manager();
+}
+
+scoped_refptr<const Extension> CreateTestExtension() {
+  return ExtensionBuilder()
+      .SetManifest(
+          DictionaryBuilder()
+              .Set("name", "Extension")
+              .Set("version", "1.0")
+              .Set("manifest_version", 2)
+              .Set("permissions", ListBuilder().Append("<all_urls>").Build())
+              .Build())
+      .SetID("test")
+      .Build();
+}
+
 class EasyUnlockPrivateApiTest : public extensions::ExtensionApiUnittest {
  public:
   EasyUnlockPrivateApiTest() {}
@@ -126,9 +167,6 @@ class EasyUnlockPrivateApiTest : public extensions::ExtensionApiUnittest {
 
  protected:
   void SetUp() override {
-    base::CommandLine::ForCurrentProcess()->AppendSwitch(
-        proximity_auth::switches::kDisableBluetoothLowEnergyDiscovery);
-
     chromeos::DBusThreadManager::Initialize();
     if (aura::Env::GetInstance()->mode() == aura::Env::Mode::LOCAL) {
       bluez::BluezDBusManager::Initialize(
@@ -464,85 +502,23 @@ struct AutoPairingResult {
   std::string error;
 };
 
-// Test factory to register EasyUnlockService.
-std::unique_ptr<KeyedService> BuildTestEasyUnlockService(
-    content::BrowserContext* context) {
-  std::unique_ptr<EasyUnlockServiceRegular> service(
-      new EasyUnlockServiceRegular(Profile::FromBrowserContext(context)));
-  service->Initialize(
-      EasyUnlockAppManager::Create(extensions::ExtensionSystem::Get(context),
-                                   -1 /* manifest id */, base::FilePath()));
-  return std::move(service);
-}
+// Tests that no BrowserContext dependencies of EasyUnlockPrivateApi (and its
+// dependencies) are referenced after the BrowserContext is torn down. The test
+// fails with a crash if such a condition exists.
+TEST_F(EasyUnlockPrivateApiTest, BrowserContextTearDown) {
+  EasyUnlockPrivateConnectionManager* manager = GetConnectionManager(profile());
+  ASSERT_TRUE(!!manager);
 
-TEST_F(EasyUnlockPrivateApiTest, AutoPairing) {
-  extensions::TestEventRouter* event_router =
-      extensions::CreateAndUseTestEventRouter(profile());
-  event_router->set_expected_extension_id(extension_misc::kEasyUnlockAppId);
+  // Add a Connection. The shutdown path for EasyUnlockPrivateConnectionManager,
+  // a dependency of EasyUnlockPrivateApi, only references BrowserContext
+  // dependencies if it has a Connection to shutdown.
+  auto extension = CreateTestExtension();
+  auto connection =
+      std::make_unique<FakeConnection>(CreateLERemoteDeviceForTest());
+  manager->AddConnection(extension.get(), std::move(connection), true);
 
-  EasyUnlockServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-      profile(), &BuildTestEasyUnlockService);
-
-  AutoPairingResult result;
-
-  // Dispatch OnStartAutoPairing event on EasyUnlockService::StartAutoPairing.
-  EasyUnlockService* service = EasyUnlockService::Get(profile());
-  service->StartAutoPairing(base::Bind(&AutoPairingResult::SetResult,
-                                       base::Unretained(&result)));
-  EXPECT_EQ(1,
-            event_router->GetEventCount(extensions::api::easy_unlock_private::
-                                            OnStartAutoPairing::kEventName));
-
-  // Test SetAutoPairingResult call with failure.
-  scoped_refptr<EasyUnlockPrivateSetAutoPairingResultFunction> function(
-      new EasyUnlockPrivateSetAutoPairingResultFunction());
-  ASSERT_TRUE(extension_function_test_utils::RunFunction(
-      function.get(), "[{\"success\":false, \"errorMessage\":\"fake_error\"}]",
-      browser(), extensions::api_test_utils::NONE));
-  EXPECT_FALSE(result.success);
-  EXPECT_EQ("fake_error", result.error);
-
-  // Test SetAutoPairingResult call with success.
-  service->StartAutoPairing(base::Bind(&AutoPairingResult::SetResult,
-                                       base::Unretained(&result)));
-  function = new EasyUnlockPrivateSetAutoPairingResultFunction();
-  ASSERT_TRUE(extension_function_test_utils::RunFunction(
-      function.get(), "[{\"success\":true}]", browser(),
-      extensions::api_test_utils::NONE));
-  EXPECT_TRUE(result.success);
-  EXPECT_TRUE(result.error.empty());
-}
-
-// Checks that the chrome.easyUnlockPrivate.getRemoteDevices API returns the
-// stored value if the kEnableBluetoothLowEnergyDiscovery switch is not set.
-TEST_F(EasyUnlockPrivateApiTest, GetRemoteDevicesNonExperimental) {
-  EasyUnlockServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-      profile(), &BuildTestEasyUnlockService);
-
-  scoped_refptr<TestableGetRemoteDevicesFunction> function(
-      new TestableGetRemoteDevicesFunction());
-  std::unique_ptr<base::Value> value(
-      extensions::api_test_utils::RunFunctionAndReturnSingleResult(
-          function.get(), "[]", profile()));
-  ASSERT_TRUE(value.get());
-  ASSERT_EQ(base::Value::Type::LIST, value->type());
-
-  base::ListValue* list_value = static_cast<base::ListValue*>(value.get());
-  EXPECT_EQ(0u, list_value->GetSize());
-}
-
-// Checks that the chrome.easyUnlockPrivate.getPermitAccess API returns the
-// stored value if the kEnableBluetoothLowEnergyDiscovery switch is not set.
-TEST_F(EasyUnlockPrivateApiTest, GetPermitAccessNonExperimental) {
-  EasyUnlockServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-      profile(), &BuildTestEasyUnlockService);
-
-  scoped_refptr<TestableGetPermitAccessFunction> function(
-      new TestableGetPermitAccessFunction());
-  std::unique_ptr<base::Value> value(
-      extensions::api_test_utils::RunFunctionAndReturnSingleResult(
-          function.get(), "[]", profile()));
-  EXPECT_FALSE(value);
+  // The Profile is cleaned up at the end of this scope, and BrowserContext
+  // shutdown logic asserts no browser dependencies are referenced afterward.
 }
 
 }  // namespace

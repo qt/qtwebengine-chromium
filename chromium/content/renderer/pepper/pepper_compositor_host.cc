@@ -320,13 +320,14 @@ void PepperCompositorHost::UpdateLayer(
               ->GetBitmapForSharedMemory(image_shm.get());
 
       auto resource = viz::TransferableResource::MakeSoftware(
-          bitmap->id(), bitmap->sequence_number(), PP_ToGfxSize(desc.size));
+          bitmap->id(), bitmap->sequence_number(), PP_ToGfxSize(desc.size),
+          viz::RGBA_8888);
       image_layer->SetTransferableResource(
           resource,
           viz::SingleReleaseCallback::Create(base::BindOnce(
               &PepperCompositorHost::ImageReleased, weak_factory_.GetWeakPtr(),
-              new_layer->common.resource_id, base::Passed(&image_shm),
-              base::Passed(&bitmap))));
+              new_layer->common.resource_id, std::move(image_shm),
+              std::move(bitmap))));
       // TODO(penghuang): get a damage region from the application and
       // pass it to SetNeedsDisplayRect().
       image_layer->SetNeedsDisplay();

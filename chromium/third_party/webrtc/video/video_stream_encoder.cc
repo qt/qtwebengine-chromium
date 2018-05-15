@@ -94,79 +94,26 @@ bool IsFramerateScalingEnabled(
              VideoSendStream::DegradationPreference::kBalanced;
 }
 
+// TODO(pbos): Lower these thresholds (to closer to 100%) when we handle
+// pipelining encoders better (multiple input frames before something comes
+// out). This should effectively turn off CPU adaptations for systems that
+// remotely cope with the load right now.
+CpuOveruseOptions GetCpuOveruseOptions(
+    const VideoSendStream::Config::EncoderSettings& settings) {
+  CpuOveruseOptions options;
+
+  if (settings.full_overuse_time) {
+    options.low_encode_usage_threshold_percent = 150;
+    options.high_encode_usage_threshold_percent = 200;
+  }
+  if (settings.experiment_cpu_load_estimator) {
+    options.filter_time_ms = 5 * rtc::kNumMillisecsPerSec;
+  }
+
+  return options;
+}
+
 }  //  namespace
-
-class VideoStreamEncoder::ConfigureEncoderTask : public rtc::QueuedTask {
- public:
-  ConfigureEncoderTask(VideoStreamEncoder* video_stream_encoder,
-                       VideoEncoderConfig config,
-                       size_t max_data_payload_length,
-                       bool nack_enabled)
-      : video_stream_encoder_(video_stream_encoder),
-        config_(std::move(config)),
-        max_data_payload_length_(max_data_payload_length),
-        nack_enabled_(nack_enabled) {}
-
- private:
-  bool Run() override {
-    video_stream_encoder_->ConfigureEncoderOnTaskQueue(
-        std::move(config_), max_data_payload_length_, nack_enabled_);
-    return true;
-  }
-
-  VideoStreamEncoder* const video_stream_encoder_;
-  VideoEncoderConfig config_;
-  size_t max_data_payload_length_;
-  bool nack_enabled_;
-};
-
-class VideoStreamEncoder::EncodeTask : public rtc::QueuedTask {
- public:
-  EncodeTask(const VideoFrame& frame,
-             VideoStreamEncoder* video_stream_encoder,
-             int64_t time_when_posted_us,
-             bool log_stats)
-      : frame_(frame),
-        video_stream_encoder_(video_stream_encoder),
-        time_when_posted_us_(time_when_posted_us),
-        log_stats_(log_stats) {
-    ++video_stream_encoder_->posted_frames_waiting_for_encode_;
-  }
-
- private:
-  bool Run() override {
-    RTC_DCHECK_RUN_ON(&video_stream_encoder_->encoder_queue_);
-    video_stream_encoder_->stats_proxy_->OnIncomingFrame(frame_.width(),
-                                                         frame_.height());
-    ++video_stream_encoder_->captured_frame_count_;
-    const int posted_frames_waiting_for_encode =
-        video_stream_encoder_->posted_frames_waiting_for_encode_.fetch_sub(1);
-    RTC_DCHECK_GT(posted_frames_waiting_for_encode, 0);
-    if (posted_frames_waiting_for_encode == 1) {
-      video_stream_encoder_->EncodeVideoFrame(frame_, time_when_posted_us_);
-    } else {
-      // There is a newer frame in flight. Do not encode this frame.
-      RTC_LOG(LS_VERBOSE)
-          << "Incoming frame dropped due to that the encoder is blocked.";
-      ++video_stream_encoder_->dropped_frame_count_;
-      video_stream_encoder_->stats_proxy_->OnFrameDroppedInEncoderQueue();
-    }
-    if (log_stats_) {
-      RTC_LOG(LS_INFO) << "Number of frames: captured "
-                       << video_stream_encoder_->captured_frame_count_
-                       << ", dropped (due to encoder blocked) "
-                       << video_stream_encoder_->dropped_frame_count_
-                       << ", interval_ms " << kFrameLogIntervalMs;
-      video_stream_encoder_->captured_frame_count_ = 0;
-      video_stream_encoder_->dropped_frame_count_ = 0;
-    }
-    return true;
-  }
-  VideoFrame frame_;
-  VideoStreamEncoder* const video_stream_encoder_;
-  const int64_t time_when_posted_us_;
-  const bool log_stats_;
-};
 
 // VideoSourceProxy is responsible ensuring thread safety between calls to
 // VideoStreamEncoder::SetSource that will happen on libjingle's worker thread
@@ -420,9 +367,10 @@ VideoStreamEncoder::VideoStreamEncoder(
   RTC_DCHECK(overuse_detector_);
   encoder_queue_.PostTask([this] {
     RTC_DCHECK_RUN_ON(&encoder_queue_);
-    overuse_detector_->StartCheckForOveruse(this);
+    overuse_detector_->StartCheckForOveruse(GetCpuOveruseOptions(settings_),
+                                            this);
     video_sender_.RegisterExternalEncoder(
-        settings_.encoder, settings_.payload_type, settings_.internal_source);
+        settings_.encoder, settings_.internal_source);
   });
 }
 
@@ -440,8 +388,7 @@ void VideoStreamEncoder::Stop() {
     overuse_detector_->StopCheckForOveruse();
     rate_allocator_.reset();
     bitrate_observer_ = nullptr;
-    video_sender_.RegisterExternalEncoder(nullptr, settings_.payload_type,
-                                          false);
+    video_sender_.RegisterExternalEncoder(nullptr, false);
     quality_scaler_ = nullptr;
     shutdown_event_.Set();
   });
@@ -511,9 +458,20 @@ void VideoStreamEncoder::SetStartBitrate(int start_bitrate_bps) {
 void VideoStreamEncoder::ConfigureEncoder(VideoEncoderConfig config,
                                           size_t max_data_payload_length,
                                           bool nack_enabled) {
-  encoder_queue_.PostTask(
-      std::unique_ptr<rtc::QueuedTask>(new ConfigureEncoderTask(
-          this, std::move(config), max_data_payload_length, nack_enabled)));
+  // TODO(srte): This struct should be replaced by a lambda with move capture
+  // when C++14 lambda is allowed.
+  struct ConfigureEncoderTask {
+    void operator()() {
+      encoder->ConfigureEncoderOnTaskQueue(
+          std::move(config), max_data_payload_length, nack_enabled);
+    }
+    VideoStreamEncoder* encoder;
+    VideoEncoderConfig config;
+    size_t max_data_payload_length;
+    bool nack_enabled;
+  };
+  encoder_queue_.PostTask(ConfigureEncoderTask{
+      this, std::move(config), max_data_payload_length, nack_enabled});
 }
 
 void VideoStreamEncoder::ConfigureEncoderOnTaskQueue(
@@ -566,9 +524,8 @@ void VideoStreamEncoder::ReconfigureEncoder() {
   crop_height_ = last_frame_info_->height - highest_stream_height;
 
   VideoCodec codec;
-  if (!VideoCodecInitializer::SetupCodec(encoder_config_, settings_, streams,
-                                         nack_enabled_, &codec,
-                                         &rate_allocator_)) {
+  if (!VideoCodecInitializer::SetupCodec(
+          encoder_config_, streams, nack_enabled_, &codec, &rate_allocator_)) {
     RTC_LOG(LS_ERROR) << "Failed to create encoder configuration.";
   }
 
@@ -690,8 +647,38 @@ void VideoStreamEncoder::OnFrame(const VideoFrame& video_frame) {
   }
 
   last_captured_timestamp_ = incoming_frame.ntp_time_ms();
-  encoder_queue_.PostTask(std::unique_ptr<rtc::QueuedTask>(new EncodeTask(
-      incoming_frame, this, rtc::TimeMicros(), log_stats)));
+
+  int64_t post_time_us = rtc::TimeMicros();
+  ++posted_frames_waiting_for_encode_;
+
+  encoder_queue_.PostTask(
+      [this, incoming_frame, post_time_us, log_stats]() {
+        RTC_DCHECK_RUN_ON(&encoder_queue_);
+        stats_proxy_->OnIncomingFrame(incoming_frame.width(),
+                                      incoming_frame.height());
+        ++captured_frame_count_;
+        const int posted_frames_waiting_for_encode =
+            posted_frames_waiting_for_encode_.fetch_sub(1);
+        RTC_DCHECK_GT(posted_frames_waiting_for_encode, 0);
+        if (posted_frames_waiting_for_encode == 1) {
+          EncodeVideoFrame(incoming_frame, post_time_us);
+        } else {
+          // There is a newer frame in flight. Do not encode this frame.
+          RTC_LOG(LS_VERBOSE)
+              << "Incoming frame dropped due to that the encoder is blocked.";
+          ++dropped_frame_count_;
+          stats_proxy_->OnFrameDroppedInEncoderQueue();
+        }
+        if (log_stats) {
+          RTC_LOG(LS_INFO) << "Number of frames: captured "
+                           << captured_frame_count_
+                           << ", dropped (due to encoder blocked) "
+                           << dropped_frame_count_ << ", interval_ms "
+                           << kFrameLogIntervalMs;
+          captured_frame_count_ = 0;
+          dropped_frame_count_ = 0;
+        }
+      });
 }
 
 void VideoStreamEncoder::OnDiscardedFrame() {

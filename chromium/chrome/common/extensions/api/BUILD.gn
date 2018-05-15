@@ -5,7 +5,7 @@
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//chrome/common/features.gni")
-import("//extensions/features/features.gni")
+import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
 import("//tools/json_schema_compiler/json_features.gni")
 import("//tools/json_schema_compiler/json_schema_api.gni")
@@ -36,10 +36,8 @@ schema_sources = [
   "debugger.json",
   "desktop_capture.json",
   "developer_private.idl",
-  "dial.idl",
   "downloads.idl",
   "downloads_internal.idl",
-  "easy_unlock_private.idl",
   "font_settings.json",
   "gcm.json",
   "history.json",
@@ -92,6 +90,7 @@ if (is_chromeos) {
   schema_sources += [
     "certificate_provider.idl",
     "certificate_provider_internal.idl",
+    "easy_unlock_private.idl",
     "echo_private.json",
     "enterprise_device_attributes.idl",
     "enterprise_platform_keys.idl",
@@ -117,6 +116,10 @@ if (is_chromeos) {
   ]
 } else if (is_linux || is_win) {
   schema_sources += [ "input_ime.json" ]
+}
+
+if (!is_chromeos) {
+  schema_sources += [ "enterprise_reporting_private.idl" ]
 }
 
 if (enable_print_preview && !is_chromeos) {

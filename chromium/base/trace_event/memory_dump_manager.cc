@@ -17,6 +17,7 @@
 #include "base/debug/alias.h"
 #include "base/debug/stack_trace.h"
 #include "base/debug/thread_heap_usage_tracker.h"
+#include "base/memory/ptr_util.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
@@ -40,7 +41,12 @@
 
 #if defined(OS_ANDROID)
 #include "base/trace_event/java_heap_dump_provider_android.h"
+
+#if BUILDFLAG(CAN_UNWIND_WITH_CFI_TABLE)
+#include "base/trace_event/cfi_backtrace_android.h"
 #endif
+
+#endif  // defined(OS_ANDROID)
 
 namespace base {
 namespace trace_event {
@@ -272,8 +278,15 @@ bool MemoryDumpManager::EnableHeapProfiling(HeapProfilingMode profiling_mode) {
       break;
 
     case kHeapProfilingModeNative:
-      // If we don't have frame pointers then native tracing falls-back to
-      // using base::debug::StackTrace, which may be slow.
+#if defined(OS_ANDROID) && BUILDFLAG(CAN_UNWIND_WITH_CFI_TABLE)
+    {
+      bool can_unwind = CFIBacktraceAndroid::GetInitializedInstance()
+                            ->can_unwind_stack_frames();
+      DCHECK(can_unwind);
+    }
+#endif
+      // If we don't have frame pointers and unwind tables then native tracing
+      // falls-back to using base::debug::StackTrace, which may be slow.
       AllocationContextTracker::SetCaptureMode(
           AllocationContextTracker::CaptureMode::NATIVE_STACK);
       break;
@@ -384,18 +397,15 @@ void MemoryDumpManager::RegisterDumpProviderInternal(
   if (dumper_registrations_ignored_for_testing_)
     return;
 
-  // A handful of MDPs are required to compute the summary struct these are
-  // 'whitelisted for summary mode'. These MDPs are a subset of those which
+  // Only a handful of MDPs are required to compute the memory metrics. These
   // have small enough performance overhead that it is resonable to run them
   // in the background while the user is doing other things. Those MDPs are
   // 'whitelisted for background mode'.
   bool whitelisted_for_background_mode = IsMemoryDumpProviderWhitelisted(name);
-  bool whitelisted_for_summary_mode =
-      IsMemoryDumpProviderWhitelistedForSummary(name);
 
-  scoped_refptr<MemoryDumpProviderInfo> mdpinfo = new MemoryDumpProviderInfo(
-      mdp, name, std::move(task_runner), options,
-      whitelisted_for_background_mode, whitelisted_for_summary_mode);
+  scoped_refptr<MemoryDumpProviderInfo> mdpinfo =
+      new MemoryDumpProviderInfo(mdp, name, std::move(task_runner), options,
+                                 whitelisted_for_background_mode);
 
   if (options.is_fast_polling_supported) {
     DCHECK(!mdpinfo->task_runner) << "MemoryDumpProviders capable of fast "
@@ -596,7 +606,11 @@ void MemoryDumpManager::ContinueAsyncProcessDump(
     MemoryDumpProviderInfo* mdpinfo =
         pmd_async_state->pending_dump_providers.back().get();
 
-    if (!IsDumpProviderAllowedToDump(pmd_async_state->req_args, *mdpinfo)) {
+    // If we are in background mode, we should invoke only the whitelisted
+    // providers. Ignore other providers and continue.
+    if (pmd_async_state->req_args.level_of_detail ==
+            MemoryDumpLevelOfDetail::BACKGROUND &&
+        !mdpinfo->whitelisted_for_background_mode) {
       pmd_async_state->pending_dump_providers.pop_back();
       continue;
     }
@@ -644,26 +658,6 @@ void MemoryDumpManager::ContinueAsyncProcessDump(
   }
 
   FinishAsyncProcessDump(std::move(pmd_async_state));
-}
-
-bool MemoryDumpManager::IsDumpProviderAllowedToDump(
-    const MemoryDumpRequestArgs& req_args,
-    const MemoryDumpProviderInfo& mdpinfo) const {
-  // If we are in background tracing, we should invoke only the whitelisted
-  // providers. Ignore other providers and continue.
-  if (req_args.level_of_detail == MemoryDumpLevelOfDetail::BACKGROUND &&
-      !mdpinfo.whitelisted_for_background_mode) {
-    return false;
-  }
-
-  // If we are in summary mode, we only need to invoke the providers
-  // whitelisted for summary mode.
-  if (req_args.dump_type == MemoryDumpType::SUMMARY_ONLY &&
-      !mdpinfo.whitelisted_for_summary_mode) {
-    return false;
-  }
-
-  return true;
 }
 
 // This function is called on the right task runner for current MDP. It is

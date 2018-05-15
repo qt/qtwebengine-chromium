@@ -272,30 +272,8 @@ chromium_strings.grd. -->
         Make Google Chrome the default browser
       </message>
       <if expr="chromeos">
-        <message name="IDS_NEW_TAB_CHROME_WELCOME_PAGE_TITLE"
-                 desc="Title for the hard-coded thumbnail that represents the Google Chrome Welcome page.  This is used on the NTP when there aren't enough thumbnails to show.">
-          Get Started with Chrome OS
-        </message>
-      </if>
-      <if expr="not chromeos">
-        <message name="IDS_NEW_TAB_CHROME_WELCOME_PAGE_TITLE"
-                 desc="Title for the hard-coded thumbnail that represents the Google Chrome OS Welcome page. This is used on the NTP when there aren't enough thumbnails to show.">
-          Welcome to Google Chrome
-        </message>
-      </if>
-      <if expr="chromeos">
         <message name="IDS_EXTERNAL_PROTOCOL_TITLE" desc="External Protocol Dialog Title">
           Google Chrome OS can't open this page.
-        </message>
-      </if>
-      <if expr="not chromeos">
-        <message name="IDS_OPTIONS_RELAUNCH_REQUIRED" desc="The message displayed for an option that requires a relaunch to take effect. This appears in a message box if an option is changed that requires a relaunch.">
-          Please close all Google Chrome windows and relaunch it for this change to take effect.
-        </message>
-      </if>
-      <if expr="chromeos">
-        <message name="IDS_OPTIONS_RELAUNCH_REQUIRED" desc="The message displayed for an option that requires a relaunch to take effect. This appears in a message box if an option is changed that requires a relaunch.">
-          Please sign out and sign in again for this change to take effect.
         </message>
       </if>
       <if expr="use_titlecase">
@@ -308,15 +286,6 @@ chromium_strings.grd. -->
           Let Google Chrome run in the background
         </message>
       </if>
-      <message name="IDS_OPTIONS_SYSTEM_ENABLE_BACKGROUND_MODE" desc="The label of the check-box that enables background mode">
-        Continue running background apps when Google Chrome is closed
-      </message>
-      <message name="IDS_OPTIONS_SYSTEM_ENABLE_HARDWARE_ACCELERATION_MODE" desc="The label of the check-box that enables hardware acceleration mode">
-        Use hardware acceleration when available
-      </message>
-      <message name="IDS_OPTIONS_SYSTEM_ENABLE_HARDWARE_ACCELERATION_MODE_RESTART" desc="The restart string after changing hardware acceleration mode">
-        (requires Chrome <ph name="BEGIN_BUTTON">&lt;a is="action-link" role="button" id="gpu-mode-reset-restart-button" class="standalone-action-link"&gt;</ph>restart<ph name="END_BUTTON">&lt;/a&gt;</ph>)
-      </message>
       <message name="IDS_CANT_WRITE_USER_DIRECTORY_SUMMARY" desc="Summary of problem displayed in dialog when we can't create a directory for this user.">
 Google Chrome cannot read and write to its data directory:
 
@@ -754,8 +723,8 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
 
       <!-- Chrome Cleanup prompt -->
       <if expr="is_win">
-        <message name="IDS_CHROME_CLEANUP_PROMPT_EXPLANATION" desc="Description in the Chrome Cleanup dialog that Chrome browser shows when unwanted software, like ad injectors or software that changes the user's settings without their knowledge, is found on the user's computer. Appears under the title asking 'Remove harmful software?' Actor is Chrome; we are asking, Do you want Chrome to remove harmful software? 'it' is harmful software. User has the option of clicking 'Remove' to proceed with a cleanup, or 'Details' to see more details. Preferrably, the translation for this string should match IDS_SETTINGS_RESET_CLEANUP_EXPLANATION_REMOVE.">
-          Chrome found harmful software on your computer. Chrome can remove it and restore your settings to make your browser work normally again.
+        <message name="IDS_CHROME_CLEANUP_PROMPT_EXPLANATION" desc="Description in the Chrome Cleanup dialog that Chrome browser shows when unwanted software, like ad injectors or software that changes the user's settings without their knowledge, is found on the user's computer. Appears under the title asking 'Remove harmful software?' Actor is Chrome; we are asking, Do you want Chrome to remove harmful software? 'it' is harmful software. User has the option of clicking 'Remove' to proceed with a cleanup, or 'Details' to see more details. The description is also shown on the Chrome Cleanup section of the Settings page, under 'Remove harmful software' title. Preferrably, the translation for this string should parallel IDS_SETTINGS_RESET_CLEANUP_EXPLANATION_CURRENTLY_REMOVING.">
+          There's harmful software on your computer. Chrome can remove it and restore your settings to make your browser work normally again.
         </message>
       </if>
 
@@ -786,12 +755,6 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
         </message>
         <message name="IDS_SYNC_OTHER_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error notification when there's an error signing in.">
           Chrome OS could not sync your data due to an error signing in.
-        </message>
-      </if>
-
-      <if expr="is_macosx">
-        <message name="IDS_OPTIONS_PASSWORDS_MAC_WARNING" desc="The warning for OS X that passwords are shared across profiles in the keychain.">
-          On Mac, passwords may be saved to your Keychain and accessed or synced by other Chrome users sharing this OS X account.
         </message>
       </if>
 

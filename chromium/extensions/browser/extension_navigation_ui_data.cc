@@ -4,7 +4,9 @@
 
 #include "extensions/browser/extension_navigation_ui_data.h"
 
+#include "base/memory/ptr_util.h"
 #include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/web_contents.h"
 #include "extensions/browser/guest_view/web_view/web_view_guest.h"
 
 namespace extensions {
@@ -49,8 +51,7 @@ ExtensionNavigationUIData::CreateForMainFrameNavigation(
 
 std::unique_ptr<ExtensionNavigationUIData> ExtensionNavigationUIData::DeepCopy()
     const {
-  std::unique_ptr<ExtensionNavigationUIData> copy(
-      new ExtensionNavigationUIData());
+  auto copy = std::make_unique<ExtensionNavigationUIData>();
   copy->frame_data_ = frame_data_;
   copy->is_web_view_ = is_web_view_;
   copy->web_view_instance_id_ = web_view_instance_id_;
@@ -63,12 +64,14 @@ ExtensionNavigationUIData::ExtensionNavigationUIData(
     int tab_id,
     int window_id,
     int frame_id,
-    int parent_frame_id) {
-  frame_data_.window_id = window_id;
-  frame_data_.tab_id = tab_id;
-  frame_data_.frame_id = frame_id;
-  frame_data_.parent_frame_id = parent_frame_id;
-
+    int parent_frame_id)
+    : frame_data_(frame_id,
+                  parent_frame_id,
+                  tab_id,
+                  window_id,
+                  // The RenderFrameHost may not have an associated WebContents
+                  // in cases such as interstitial pages.
+                  web_contents ? web_contents->GetLastCommittedURL() : GURL()) {
   WebViewGuest* web_view = WebViewGuest::FromWebContents(web_contents);
   if (web_view) {
     is_web_view_ = true;

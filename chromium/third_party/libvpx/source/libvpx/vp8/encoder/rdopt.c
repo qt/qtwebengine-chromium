@@ -1779,6 +1779,10 @@ void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset,
                best_rd_sse = UINT_MAX;
 #endif
 
+  // _uv variables are not set consistantly before calling update_best_mode.
+  rd.rate_uv = 0;
+  rd.distortion_uv = 0;
+
   mode_mv = mode_mv_sb[sign_bias];
   best_ref_mv.as_int = 0;
   best_mode.rd = INT_MAX;
@@ -2131,6 +2135,7 @@ void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset,
         rd.rate2 +=
             vp8_mv_bit_cost(&mode_mv[NEWMV], &best_ref_mv, x->mvcost, 96);
       }
+        // fall through
 
       case NEARESTMV:
       case NEARMV:
@@ -2147,6 +2152,7 @@ void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset,
             (mode_mv[this_mode].as_int == 0)) {
           continue;
         }
+        // fall through
 
       case ZEROMV:
 

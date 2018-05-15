@@ -24,10 +24,11 @@ class CC_EXPORT GpuRasterBufferProvider : public RasterBufferProvider {
   GpuRasterBufferProvider(viz::ContextProvider* compositor_context_provider,
                           viz::RasterContextProvider* worker_context_provider,
                           LayerTreeResourceProvider* resource_provider,
-                          bool use_distance_field_text,
                           bool use_gpu_memory_buffer_resources,
                           int gpu_rasterization_msaa_sample_count,
                           viz::ResourceFormat preferred_tile_format,
+                          const gfx::Size& max_tile_size,
+                          bool unpremultiply_and_dither_low_bit_depth_tiles,
                           bool enable_oop_rasterization);
   ~GpuRasterBufferProvider() override;
 
@@ -39,6 +40,7 @@ class CC_EXPORT GpuRasterBufferProvider : public RasterBufferProvider {
   void Flush() override;
   viz::ResourceFormat GetResourceFormat(bool must_support_alpha) const override;
   bool IsResourceSwizzleRequired(bool must_support_alpha) const override;
+  bool IsResourcePremultiplied(bool must_support_alpha) const override;
   bool CanPartialRasterIntoProvidedResource() const override;
   bool IsResourceReadyToDraw(
       const ResourcePool::InUsePoolResource& resource) const override;
@@ -73,7 +75,6 @@ class CC_EXPORT GpuRasterBufferProvider : public RasterBufferProvider {
     RasterBufferImpl(GpuRasterBufferProvider* client,
                      const ResourcePool::InUsePoolResource& in_use_resource,
                      GpuRasterBacking* backing,
-                     const gpu::SyncToken& before_raster_sync_token,
                      bool resource_has_previous_content);
     ~RasterBufferImpl() override;
 
@@ -109,13 +110,16 @@ class CC_EXPORT GpuRasterBufferProvider : public RasterBufferProvider {
     DISALLOW_COPY_AND_ASSIGN(RasterBufferImpl);
   };
 
+  bool ShouldUnpremultiplyAndDitherResource(viz::ResourceFormat format) const;
+
   viz::ContextProvider* const compositor_context_provider_;
   viz::RasterContextProvider* const worker_context_provider_;
   LayerTreeResourceProvider* const resource_provider_;
-  const bool use_distance_field_text_;
   const bool use_gpu_memory_buffer_resources_;
   const int msaa_sample_count_;
   const viz::ResourceFormat preferred_tile_format_;
+  const gfx::Size max_tile_size_;
+  const bool unpremultiply_and_dither_low_bit_depth_tiles_;
   const bool enable_oop_rasterization_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuRasterBufferProvider);

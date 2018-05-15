@@ -12,7 +12,6 @@
 #include "base/containers/adapters.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
@@ -437,9 +436,7 @@ void View::SetPreferredSize(const gfx::Size& size) {
 }
 
 void View::SizeToPreferredSize() {
-  gfx::Size pref_size = GetPreferredSize();
-  if ((pref_size.width() != width()) || (pref_size.height() != height()))
-    SetBounds(x(), y(), pref_size.width(), pref_size.height());
+  SetSize(GetPreferredSize());
 }
 
 gfx::Size View::GetMinimumSize() const {

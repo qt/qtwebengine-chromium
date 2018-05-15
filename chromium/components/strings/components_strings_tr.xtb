@@ -1,6 +1,7 @@
 <?xml version="1.0" ?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="tr">
+<translation id="1005145902654145231">Oturum yeniden adlandırılamadı.</translation>
 <translation id="1008557486741366299">Şimdi Değil</translation>
 <translation id="1015730422737071372">Diğer ayrıntıları sağlayın</translation>
 <translation id="1021110881106174305">Kabul edilen kartlar</translation>
@@ -21,13 +22,13 @@
 <translation id="1113869188872983271">Sıralama değişikliğini &amp;geri al</translation>
 <translation id="1126551341858583091">Yerel depolama alanındaki boyut <ph name="CRASH_SIZE" />.</translation>
 <translation id="112840717907525620">Politika önbelleği uygun</translation>
-<translation id="1132774398110320017">Chrome Otomatik Doldurma ayarları...</translation>
 <translation id="1150979032973867961">Bu sunucu <ph name="DOMAIN" /> olduğunu kanıtlayamadı. Bilgisayarınızın işletim sistemi, sunucunun güvenlik sertifikasına güvenmiyor. Bu durum, bir yanlış yapılandırmadan veya bağlantıya müdahale eden bir saldırgandan kaynaklanıyor olabilir.</translation>
 <translation id="1151972924205500581">Şifre gerekiyor</translation>
 <translation id="1152921474424827756"><ph name="URL" /> sitesinin <ph name="BEGIN_LINK" />önbelleğe alınmış bir kopyasına<ph name="END_LINK" /> erişin</translation>
 <translation id="1158211211994409885"><ph name="HOST_NAME" /> bağlantıyı beklenmedik şekilde kapattı.</translation>
 <translation id="1161325031994447685">Kablosuz ağa yeniden bağlanma</translation>
 <translation id="1165039591588034296">Hata</translation>
+<translation id="1173894706177603556">Yeniden adlandır</translation>
 <translation id="1175364870820465910">Ya&amp;zdır...</translation>
 <translation id="1181037720776840403">Kaldır</translation>
 <translation id="1184214524891303587">Olası güvenlik olaylarının ayrıntılarını Google'a <ph name="BEGIN_WHITEPAPER_LINK" />otomatik olarak bildir<ph name="END_WHITEPAPER_LINK" />. <ph name="PRIVACY_PAGE_LINK" /></translation>
@@ -42,13 +43,22 @@
 <translation id="1228893227497259893">Yanlış varlık tanımlayıcı</translation>
 <translation id="1232569758102978740">Adsız</translation>
 <translation id="1253921432148366685"><ph name="TYPE_1" />, <ph name="TYPE_2" /> (senkronize edildi)</translation>
+<translation id="1256368399071562588">&lt;p&gt;Bir web sitesini ziyaret etmeye çalıştığınızda site açılmıyorsa sorunu düzeltmek için ilk olarak aşağıdaki sorun giderme adımlarını deneyin:&lt;/p&gt;
+    &lt;ol&gt;
+    &lt;li&gt;Web adresinde yazım hatası olup olmadığını kontrol edin.&lt;/li&gt;
+    &lt;li&gt;İnternet bağlantınızın normal bir şekilde çalıştığından emin olun.&lt;/li&gt;
+    &lt;li&gt;Web sitesinin sahibiyle iletişim kurun.&lt;/li&gt;
+    &lt;/ol&gt;</translation>
 <translation id="1263231323834454256">Okuma listesi</translation>
 <translation id="1264126396475825575">Kilitlenme raporu yakalanma zamanı: <ph name="CRASH_TIME" /> (henüz yüklenmedi veya yoksayıldı)</translation>
 <translation id="1270502636509132238">Alma Yöntemi</translation>
 <translation id="1285320974508926690">Bu siteyi hiçbir zaman çevirme</translation>
+<translation id="1292701964462482250">"Bilgisayarınızdaki yazılım, Chrome'un web'e güvenli bir şekilde bağlanmasını engelliyor" (yalnızca Windows bilgisayarlar)</translation>
 <translation id="1294154142200295408">Komut satırı varyasyonları</translation>
 <translation id="129553762522093515">Son kapatılan</translation>
 <translation id="129863573139666797"><ph name="BEGIN_LINK" />Çerezlerinizi temizlemeyi deneyin<ph name="END_LINK" /></translation>
+<translation id="1314614906530272393">Seçilen oturum mevcut değil.</translation>
+<translation id="1323433172918577554">Daha Fazla Göster</translation>
 <translation id="1333989956347591814">Etkinliğiniz şunlar tarafından <ph name="BEGIN_EMPHASIS" />yine de görülebilir<ph name="END_EMPHASIS" />:
         <ph name="BEGIN_LIST" />
           <ph name="LIST_ITEM" />Ziyaret ettiğiniz web siteleri
@@ -57,10 +67,10 @@
         <ph name="END_LIST" /></translation>
 <translation id="1339601241726513588">Kayıt alan adı:</translation>
 <translation id="1340482604681802745">Alınacağı adres</translation>
-<translation id="1344588688991793829">Chromium Otomatik Doldurma ayarları...</translation>
 <translation id="1348198688976932919">Girmekte olduğunuz site tehlikeli uygulamalar içeriyor</translation>
 <translation id="1374468813861204354">öneriler</translation>
 <translation id="1375198122581997741">Sürüm Hakkında</translation>
+<translation id="1376836354785490390">Daha Az Göster</translation>
 <translation id="1377321085342047638">Kart Numarası</translation>
 <translation id="139305205187523129"><ph name="HOST_NAME" /> hiç veri göndermedi.</translation>
 <translation id="1407135791313364759">Tümünü aç</translation>
@@ -70,6 +80,8 @@
 <translation id="1430915738399379752">Yazdır</translation>
 <translation id="1484290072879560759">Gönderim Adresi Seç</translation>
 <translation id="1506687042165942984">Bu sayfanın kaydedilmiş (eski olduğu bilinen) bir kopyasını gösterin.</translation>
+<translation id="1507202001669085618">&lt;p&gt;İnternete girmek için oturum açmanızı gerektiren bir kablosuz portal kullanıyorsanız bu hatayı görürsünüz.&lt;/p&gt;
+    &lt;p&gt;Hatayı gidermek için, açmaya çalıştığınız sayfada &lt;strong&gt;Bağlan&lt;/strong&gt;'ı tıklayın.&lt;/p&gt;</translation>
 <translation id="1517433312004943670">Telefon numarası gerekli</translation>
 <translation id="1517500485252541695">Kabul edilen kredi ve banka kartları</translation>
 <translation id="1519264250979466059">Oluşturma Tarihi</translation>
@@ -133,15 +145,18 @@
 <translation id="1898423065542865115">Filtreleme</translation>
 <translation id="1916770123977586577">Güncellenen ayarlarınızı bu siteye uygulamak için sayfayı yeniden yükleyin</translation>
 <translation id="1919345977826869612">Reklamlar</translation>
+<translation id="1919367280705858090">Belirli bir hata mesajıyla ilgili yardım alma</translation>
 <translation id="192020519938775529">{COUNT,plural, =0{Yok}=1{1 site}other{# site}}</translation>
 <translation id="1927235823738766038">Kabul Edilen Kredi ve Banka Kartları</translation>
 <translation id="194030505837763158"><ph name="LINK" /> adresine git</translation>
+<translation id="1945968466830820669">Kuruluşunuzun hesabına erişimi kaybedebilir veya kimlik hırsızlığına maruz kalabilirsiniz. Chromium, şifrenizi hemen değiştirmenizi önerir.</translation>
 <translation id="1948773908305951926">Kabul edilen ön ödemeli kartlar</translation>
 <translation id="1962204205936693436"><ph name="DOMAIN" /> Yer İşaretleri</translation>
 <translation id="1973335181906896915">Serileştirme hatası</translation>
 <translation id="1974060860693918893">Gelişmiş</translation>
 <translation id="1978555033938440688">Donanım Yazılımı Sürümü</translation>
 <translation id="2001146170449793414">{COUNT,plural, =1{ve 1 uygulama daha}other{ve # uygulama daha}}</translation>
+<translation id="2003709556000175978">Şifrenizi şimdi sıfırlayın</translation>
 <translation id="2025186561304664664">Proxy, otomatik yapılandırıldı değerine ayarlandı.</translation>
 <translation id="2030481566774242610">Şunu mu demek istediniz?: <ph name="LINK" /></translation>
 <translation id="2032962459168915086"><ph name="BEGIN_LINK" />Proxy'yi ve güvenlik duvarını kontrol etme<ph name="END_LINK" /></translation>
@@ -149,6 +164,7 @@
 <translation id="2064691555167957331">{COUNT,plural, =1{1 öneri}other{# öneri}}</translation>
 <translation id="2079545284768500474">Geri al</translation>
 <translation id="20817612488360358">Sistem proxy ayarları kullanılmak üzere ayarlandı, ancak açık bir proxy yapılandırması da belirtildi.</translation>
+<translation id="2084558088529668945">Şifrenizi <ph name="ORG_NAME" /> tarafından yönetilmeyen bir sitede girdiniz. Hesabınızı korumak için şifrenizi diğer uygulama ve sitelerde tekrar kullanmayın.</translation>
 <translation id="2091887806945687916">Ses</translation>
 <translation id="2094505752054353250">Alan adı uyuşmazlığı</translation>
 <translation id="2096368010154057602">Bölüm</translation>
@@ -283,7 +299,6 @@
 <translation id="301521992641321250">Otomatik olarak engellendi</translation>
 <translation id="3024663005179499861">Yanlış politika türü</translation>
 <translation id="3037605927509011580">Hay aksi!</translation>
-<translation id="3039538478787849737">Kart Google'a kaydedilsin mi?</translation>
 <translation id="3041612393474885105">Sertifika Bilgileri</translation>
 <translation id="3063697135517575841">Chrome şu anda kartınızı onaylayamıyor. Lütfen daha sonra tekrar deneyin.</translation>
 <translation id="3064966200440839136">Harici bir uygulama üzerinden ödeme gerçekleştirmek için gizli moddan çıkılacak. Devam edilsin mi?</translation>
@@ -370,51 +385,6 @@
 <translation id="3583757800736429874">Taşımayı &amp;Yeniden Yap</translation>
 <translation id="3586931643579894722">Ayrıntıları gizle</translation>
 <translation id="3600246354004376029"><ph name="TITLE" />, <ph name="DOMAIN" />, <ph name="TIME" /></translation>
-<translation id="3602137825010714926">&lt;h1&gt;Bağlantı hatalarını düzeltme&lt;/h1&gt;
-    &lt;p&gt;Bir web sitesini ziyaret etmeye çalıştığınızda hata mesajı alıyorsanız burada belirtilen düzeltmeleri deneyin.&lt;/p&gt;
-    &lt;h2&gt;Bağlantı hatalarının çoğunu düzeltme&lt;/h2&gt;
-    &lt;p&gt;Bir web sitesini ziyaret etmeye çalıştığınızda site açılmıyorsa, sorunu düzeltmek için ilk olarak aşağıdaki sorun giderme adımlarını deneyin:&lt;/p&gt;
-    &lt;ol&gt;
-    &lt;li&gt;Web adresinde yazım hatası olup olmadığını kontrol edin.&lt;/li&gt;
-    &lt;li&gt;İnternet bağlantınızın normal bir şekilde çalıştığından emin olun.&lt;/li&gt;
-    &lt;li&gt;Web sitesinin sahibiyle iletişim kurun.&lt;/li&gt;
-    &lt;/ol&gt;
-    &lt;h2&gt;Belirli bir hata mesajıyla ilgili yardım alma&lt;/h2&gt;
-    &lt;h3&gt;"Bağlantınız gizli değil", "NET::ERR_CERT_AUTHORITY_INVALID", "ERR_CERT_COMMON_NAME_INVALID", "NET::ERR_CERT_WEAK_SIGNATURE_ALGORITHM" veya "SSL sertifikası hatası"&lt;/h3&gt;
-    &lt;h4&gt;1. Adım: Portalda oturum açın&lt;/h4&gt;
-    &lt;p&gt;Kafe veya havaalanı gibi yerlerdeki kablosuz ağlar sizden oturum açmanızı ister. Oturum açma sayfasını görmek için &lt;code&gt;http://&lt;/code&gt; kullanan bir sayfayı ziyaret edin.&lt;/p&gt;
-    &lt;ol&gt;
-    &lt;li&gt;&lt;code&gt;http://&lt;/code&gt; ile başlayan herhangi bir web sitesine (örneğin, &lt;a href="http://example.com" target="_blank"&gt;http://example.com&lt;/a&gt;) gidin.&lt;/li&gt;
-    &lt;li&gt;Karşınıza gelen oturum açma sayfasında oturum açarak interneti kullanmaya başlayın.&lt;/li&gt;
-    &lt;/ol&gt;
-    &lt;h4&gt;2. Adım: Sayfayı Gizli modda açın (sadece bilgisayar)&lt;/h4&gt;
-    &lt;p&gt;Ziyaret etmekte olduğunuz sayfayı Gizli pencerede açın.&lt;/p&gt;
-    &lt;p&gt;Sayfa açılırsa bir Chrome uzantısı düzgün çalışmıyor demektir. Hatayı düzeltmek için uzantıyı kapatın.&lt;/p&gt;
-    &lt;h4&gt;3. Adım: İşletim sisteminizi güncelleyin&lt;/h4&gt;
-    &lt;p&gt;Cihazınızın güncel olduğundan emin olun.&lt;/p&gt;
-    &lt;h4&gt;4. Adım: Virüsten koruma yazılımınızı geçici olarak kapatın&lt;/h4&gt;
-    &lt;p&gt;"HTTPS koruması" veya "HTTPS taraması" sağlayan bir virüsten koruma yazılımı kullanıyorsanız bu hatayı görürsünüz. Virüsten koruma yazılımı, Chrome'un güvenlik işlevini engeller.&lt;/p&gt;
-    &lt;p&gt;Sorunu çözmek için virüsten koruma yazılımınızı kapatın. Yazılım kapandıktan sonra sayfa çalışıyorsa, güvenli siteleri kullanacağınız zaman bu yazılımı kapatın.&lt;/p&gt;
-    &lt;p&gt;İşiniz bittiğinde virüsten koruma programınızı tekrar açmayı unutmayın.&lt;/p&gt;
-    &lt;h4&gt;5. Adım: Daha fazla yardım alın&lt;/h4&gt;
-    &lt;p&gt;Hatayı görmeye devam ederseniz web sitesi sahibiyle iletişime geçin.&lt;/p&gt;
-    &lt;h3&gt;"Ağa bağlanın"&lt;/h3&gt;
-    &lt;p&gt;İnternete girmek için oturum açmanızı gerektiren bir kablosuz portal kullanıyorsanız bu hatayı görürsünüz.&lt;/p&gt;
-    &lt;p&gt;Hatayı gidermek için, açmaya çalıştığınız sayfada &lt;strong&gt;Bağlan&lt;/strong&gt;'ı tıklayın.&lt;/p&gt;
-    &lt;h3&gt;"Saatiniz geri", "Saatiniz ileri" veya Net::ERR_CERT_DATE_INVALID&lt;/h3&gt;
-    &lt;p&gt;Bilgisayarınızın veya mobil cihazınızın tarihi ve saati doğru değilse bu hatayı görürsünüz.&lt;/p&gt;
-    &lt;p&gt;Hatayı gidermek için cihazınızın saatini açın. Saat ve tarih ayarının doğru olduğundan emin olun.&lt;/p&gt;
-    &lt;h3&gt;"Bilgisayarınızdaki yazılım, Chrome'un web'e güvenli bir şekilde bağlanmasını engelliyor" (yalnızca Windows bilgisayarlar)&lt;/h3&gt;
-    &lt;p&gt;Windows bilgisayarınızda Superfish yazılımı varsa bu hatayı görürsünüz.&lt;/p&gt;
-    &lt;p&gt;Web'e ulaşabilmeniz amacıyla yazılımı geçici olarak devre dışı bırakmak için bu adımları uygulayın. Bu adımları gerçekleştirmek için yönetici ayrıcalıklarınızın olması gerekir.&lt;/p&gt;
-    &lt;ol&gt;
-    &lt;li&gt;&lt;strong&gt;Başlat&lt;/strong&gt;'ı tıklayın, ardından &lt;strong&gt;"Yerel hizmetleri görüntüle"&lt;/strong&gt;yi arayın ve seçin
-    &lt;li&gt;&lt;strong&gt;VisualDiscovery&lt;/strong&gt;'yi seçin
-    &lt;li&gt;&lt;strong&gt;Başlatma türü&lt;/strong&gt;'nün altında &lt;strong&gt;Devre dışı&lt;/strong&gt;'nı seçin
-    &lt;li&gt;&lt;strong&gt;Hizmet durumu&lt;/strong&gt;'nun altında &lt;strong&gt;Durdur&lt;/strong&gt;'u seçin
-    &lt;li&gt;&lt;strong&gt;Uygula&lt;/strong&gt;'yı, ardından &lt;strong&gt;Tamam&lt;/strong&gt;'ı tıklayın
-    &lt;li&gt;Yazılımı bilgisayarınızdan kalıcı olarak nasıl kaldıracağınızı öğrenmek için &lt;a href="https://support.google.com/chrome/answer/6098869"&gt;Chrome yardım merkezini&lt;/a&gt; ziyaret edin
-    &lt;/ol&gt;</translation>
 <translation id="3615877443314183785">Geçerli bir son kullanma tarihi girin</translation>
 <translation id="36224234498066874">Göz Atma Verilerini Temizle...</translation>
 <translation id="362276910939193118">Tam Geçmişi Göster</translation>
@@ -458,6 +428,7 @@
 <translation id="3901925938762663762">Kartın kullanım süresi doldu</translation>
 <translation id="3909695131102177774"><ph name="LABEL" /> <ph name="ERROR" /></translation>
 <translation id="3945915738023014686">Kilitlenme Raporu Kimliği <ph name="CRASH_ID" /> Yüklendi (Yerel Kilitlenme Kimliği: <ph name="CRASH_LOCAL_ID" />)</translation>
+<translation id="3946209740501886391">Bu sitede her zaman sor</translation>
 <translation id="3949571496842715403">Bu sunucu <ph name="DOMAIN" /> olduğunu kanıtlayamadı. Güvenlik sertifikasında Konu Diğer Adları belirtilmiyor. Bu durum, bir yanlış yapılandırmadan veya bağlantınıza müdahale eden bir saldırgandan kaynaklanıyor olabilir.</translation>
 <translation id="3949601375789751990">Göz atma geçmişiniz burada görünür</translation>
 <translation id="3950820424414687140">Oturum açın</translation>
@@ -465,6 +436,7 @@
 <translation id="3964661563329879394">{COUNT,plural, =0{Yok}=1{1 siteden }other{# siteden }}</translation>
 <translation id="397105322502079400">Hesaplanııyor...</translation>
 <translation id="3973234410852337861"><ph name="HOST_NAME" /> engellendi</translation>
+<translation id="3984550557525787191">Bu oturum adı zaten var.</translation>
 <translation id="3987940399970879459">1 MB'tan az</translation>
 <translation id="40103911065039147">{URL_count,plural, =1{Yakındaki 1 web sayfası}other{Yakındaki # web sayfası}}</translation>
 <translation id="4030383055268325496">Eklemeyi &amp;geri al</translation>
@@ -490,10 +462,28 @@
 <translation id="4171400957073367226">Geçersiz doğrulama imzası</translation>
 <translation id="4173827307318847180">{MORE_ITEMS,plural, =1{<ph name="ITEM_COUNT" /> öğe daha}other{<ph name="ITEM_COUNT" /> öğe daha}}</translation>
 <translation id="4179515394835346607"><ph name="ROW_NAME" /> <ph name="ROW_CONTENT" /></translation>
+<translation id="4192549185358213268">Chrome, <ph name="ORG_NAME" /> şifrenizi başka sitelerde kullandıysanız sıfırlamanızı önerir.</translation>
 <translation id="4196861286325780578">Taşımayı &amp;yeniden yap</translation>
 <translation id="4203896806696719780"><ph name="BEGIN_LINK" />Güvenlik duvarı ve virüsten korunma yapılandırmalarını kontrol etme<ph name="END_LINK" /></translation>
 <translation id="4220128509585149162">Kilitlenmeler</translation>
 <translation id="422022731706691852"><ph name="BEGIN_BOLD" /><ph name="SITE" /><ph name="END_BOLD" /> sitesine saldıranlar sizi yanıltarak göz atma deneyiminize zarar verecek (örneğin, ana sayfanızı değiştirecek veya ziyaret ettiğiniz sitelerde ek reklamlar gösterecek) programlar yüklemenizi sağlayabilirler. <ph name="BEGIN_LEARN_MORE_LINK" />Daha fazla bilgi<ph name="END_LEARN_MORE_LINK" /></translation>
+<translation id="4221630205957821124">&lt;h4&gt;1. Adım: Portalda oturum açın&lt;/h4&gt;
+    &lt;p&gt;Kafe veya havaalanı gibi yerlerdeki kablosuz ağlar sizden oturum açmanızı ister. Oturum açma sayfasını görmek için &lt;code&gt;http://&lt;/code&gt; kullanan bir sayfayı ziyaret edin.&lt;/p&gt;
+    &lt;ol&gt;
+    &lt;li&gt;&lt;code&gt;http://&lt;/code&gt; ile başlayan herhangi bir web sitesine (örneğin, &lt;a href="http://example.com" target="_blank"&gt;http://example.com&lt;/a&gt;) gidin.&lt;/li&gt;
+    &lt;li&gt;Karşınıza gelen oturum açma sayfasında oturum açarak interneti kullanmaya başlayın.&lt;/li&gt;
+    &lt;/ol&gt;
+    &lt;h4&gt;2. Adım: Sayfayı Gizli modda açın (sadece bilgisayar)&lt;/h4&gt;
+    &lt;p&gt;Ziyaret etmekte olduğunuz sayfayı Gizli pencerede açın.&lt;/p&gt;
+    &lt;p&gt;Sayfa açılırsa Chrome uzantılarından biri düzgün çalışmıyor demektir. Hatayı düzeltmek için uzantıyı kapatın.&lt;/p&gt;
+    &lt;h4&gt;3. Adım: İşletim sisteminizi güncelleyin&lt;/h4&gt;
+    &lt;p&gt;Cihazınızın güncel olduğundan emin olun.&lt;/p&gt;
+    &lt;h4&gt;4. Adım: Virüsten koruma yazılımınızı geçici olarak kapatın&lt;/h4&gt;
+    &lt;p&gt;"HTTPS koruması" veya "HTTPS taraması" sağlayan bir virüsten koruma yazılımı kullanıyorsanız bu hatayı görürsünüz. Virüsten koruma yazılımı, Chrome'un güvenlik işlevini engeller.&lt;/p&gt;
+    &lt;p&gt;Sorunu çözmek için virüsten koruma yazılımınızı kapatın. Yazılım kapandıktan sonra sayfa çalışıyorsa, güvenli siteleri kullanacağınız zaman bu yazılımı kapatın.&lt;/p&gt;
+    &lt;p&gt;İşiniz bittiğinde virüsten koruma programınızı tekrar açmayı unutmayın.&lt;/p&gt;
+    &lt;h4&gt;5. Adım: Daha fazla yardım alın&lt;/h4&gt;
+    &lt;p&gt;Hatayı görmeye devam ederseniz web sitesinin sahibiyle iletişime geçin.&lt;/p&gt;</translation>
 <translation id="4226937834893929579"><ph name="BEGIN_LINK" />Ağ Teşhislerini çalıştırmayı deneyin<ph name="END_LINK" />.</translation>
 <translation id="4235360514405112390">Geçerli</translation>
 <translation id="4250431568374086873">Bu siteye bağlantınız tam olarak güvenli değil</translation>
@@ -503,11 +493,13 @@
 <translation id="4265872034478892965">Yöneticiniz tarafından izin verildi</translation>
 <translation id="4269787794583293679">(Kullanıcı adı yok)</translation>
 <translation id="4275830172053184480">Cihazınızı yeniden başlatın</translation>
+<translation id="4277028893293644418">Şifreyi sıfırla</translation>
 <translation id="4280429058323657511">, son kullanma tarihi <ph name="EXPIRATION_DATE_ABBR" /></translation>
 <translation id="4312866146174492540">Engelle (varsayılan)</translation>
 <translation id="4325863107915753736">Makale bulunamadı</translation>
 <translation id="4326324639298822553">Son kullanma tarihini kontrol edip tekrar deneyin</translation>
 <translation id="4331708818696583467">Güvenli Değil</translation>
+<translation id="4340982228985273705">Bu bilgisayarın kurumsal olarak yönetilmediği algılandığı için politika yalnızca Chrome Web Mağazası'nda barındırılan uzantıları otomatik olarak yükleyebilir. Chrome Web Mağazası'nın güncelleme URL'si "<ph name="CWS_UPDATE_URL" />" şeklindedir.</translation>
 <translation id="4346197816712207223">Kabul Edilen Kredi Kartları</translation>
 <translation id="4356973930735388585">Bu sitedeki saldırganlar, bilgilerinizi (örneğin fotoğraflar, şifreler, mesajlar ve kredi kartları) çalacak veya silecek tehlikeli programları bilgisayarınıza yüklemeyi deneyebilir.</translation>
 <translation id="4372948949327679948">Beklenen <ph name="VALUE_TYPE" /> değeri.</translation>
@@ -600,6 +592,7 @@
 <translation id="5141240743006678641">Senkronize edilen şifreleri Google kimlik bilgilerinizle şifreleyin</translation>
 <translation id="5145883236150621069">Politika yanıtında hata kodu var</translation>
 <translation id="5159010409087891077">Sayfayı yeni Gizli pencerede açın (⇧⌘N)</translation>
+<translation id="5169827969064885044">Kuruluşunuzun hesabına erişimi kaybedebilir veya kimlik hırsızlığına maruz kalabilirsiniz. Chrome, şifrenizi hemen değiştirmenizi önerir.</translation>
 <translation id="5171045022955879922">Arayın veya URL'yi yazın</translation>
 <translation id="5172758083709347301">Makine</translation>
 <translation id="5179510805599951267"><ph name="ORIGINAL_LANGUAGE" /> dilinde değil mi? Bu hatayı bildirin</translation>
@@ -609,6 +602,7 @@
 <translation id="5222812217790122047">E-posta gerekli</translation>
 <translation id="522700295135997067">Bu site az önce şifrenizi çalmış olabilir</translation>
 <translation id="5230733896359313003">Gönderim Adresi</translation>
+<translation id="5250209940322997802">"Ağa bağlanın"</translation>
 <translation id="5251803541071282808">Bulut</translation>
 <translation id="5281113152797308730"><ph name="BEGIN_PARAGRAPH" />Web'e ulaşabilmeniz amacıyla yazılımı geçici olarak devre dışı bırakmak için bu adımları uygulayın. Bu adımları gerçekleştirmek için yönetici ayrıcalıklarınızın olması gerekir.<ph name="END_PARAGRAPH" />
 
@@ -632,6 +626,7 @@
 <translation id="5332219387342487447">Gönderim Yöntemi</translation>
 <translation id="5355557959165512791">Sertifikası iptal edildiği için <ph name="SITE" /> sitesini şu anda ziyaret edemezsiniz. Ağ hataları ve saldırılar genellikle geçici olduğundan, bu sayfa muhtemelen daha sonra çalışacaktır.</translation>
 <translation id="536296301121032821">Politika ayarları saklanamadı</translation>
+<translation id="5377026284221673050">"Saatiniz geri", "Saatiniz ileri" veya "&lt;span class="error-code"&gt;NET::ERR_CERT_DATE_INVALID&lt;/span&gt;"</translation>
 <translation id="5386426401304769735">Bu sitenin sertifika zinciri, SHA-1 kullanılarak imzalanmış bir sertifika içeriyor.</translation>
 <translation id="5402410679244714488">Son kullanım tarihi: <ph name="EXPIRATION_DATE_ABBR" />, en son bir yıldan uzun bir süre önce kullanıldı</translation>
 <translation id="540969355065856584">Bu sunucu <ph name="DOMAIN" /> olduğunu kanıtlayamadı. Güvenlik sertifikası şu anda geçerli değil. Bu durum, bir yanlış yapılandırmadan veya bağlantıya müdahale eden bir saldırgandan kaynaklanıyor olabilir.</translation>
@@ -699,6 +694,7 @@
 <translation id="5869405914158311789">Bu siteye ulaşılamıyor</translation>
 <translation id="5869522115854928033">Kayıtlı şifreler</translation>
 <translation id="5893752035575986141">Kredi kartları kabul edilir.</translation>
+<translation id="5898382028489516745">Chromium, <ph name="ORG_NAME" /> şifrenizi başka sitelerde kullandıysanız sıfırlamanızı önerir.</translation>
 <translation id="5908541034548427511"><ph name="TYPE_1" /> (senkronize edildi)</translation>
 <translation id="5920262536204764679">{NUM_COOKIES,plural, =1{1 çerez kullanımda}other{# çerez kullanımda}}</translation>
 <translation id="5939518447894949180">Sıfırla</translation>
@@ -712,6 +708,7 @@
 <translation id="5989320800837274978">Sabit proxy sunucular veya bir .pac komut dosyası URL'si belirtilmedi.</translation>
 <translation id="5990559369517809815">Sunucuya gönderilen istekler bir uzantı tarafından engellendi.</translation>
 <translation id="6008256403891681546">JCB</translation>
+<translation id="6015796118275082299">Yıl</translation>
 <translation id="6016158022840135739">{COUNT,plural, =1{1. sayfa}other{#. sayfa}}</translation>
 <translation id="6017850046339264347"><ph name="BEGIN_BOLD" /><ph name="SITE" /><ph name="END_BOLD" /> öğesini kullanan saldırganlar başka bir şeyi taklit eden aldatıcı uygulamalar yükleyebilir veya sizi izlemek için kullanılabilecek veriler toplayabilirler. <ph name="BEGIN_LEARN_MORE_LINK" />Daha fazla bilgi<ph name="END_LEARN_MORE_LINK" /></translation>
 <translation id="6025416945513303461"><ph name="TYPE_1" />, <ph name="TYPE_2" />, <ph name="TYPE_3" /> (senkronize edildi)</translation>
@@ -721,6 +718,7 @@
 <translation id="6047233362582046994">Güvenliğinize ilişkin riskleri anladıysanız zararlı programlar kaldırılmadan önce <ph name="BEGIN_LINK" />bu siteyi ziyaret edebilirsiniz<ph name="END_LINK" />.</translation>
 <translation id="6047927260846328439">Bu içerik sizi kandırarak yazılım yüklemenizi veya kişisel bilgilerinizi ifşa etmenizi sağlamaya çalışabilir. <ph name="BEGIN_LINK" />Yine de göster<ph name="END_LINK" /></translation>
 <translation id="6051221802930200923"><ph name="SITE" /> sitesi sertifika sabitleme yöntemi kullandığından siteyi şu anda ziyaret edemezsiniz. Ağ hataları ve saldırılar genellikle geçici olduğundan bu sayfa muhtemelen daha sonra çalışacaktır.</translation>
+<translation id="6059925163896151826">USB cihazları</translation>
 <translation id="6080696365213338172">Yönetici tarafından sağlanmış bir sertifika kullanan içeriğe eriştiniz. <ph name="DOMAIN" /> alan adına sağladığınız verileri yöneticiniz görebilir ve bunlara müdahale edebilir.</translation>
 <translation id="610911394827799129">Google Hesabınızın <ph name="BEGIN_LINK" />myactivity.google.com<ph name="END_LINK" /> adresinde başka biçimlerde tarama geçmişi olabilir</translation>
 <translation id="6144381551823904650">{COUNT,plural, =0{Yok}=1{1 şifre (senkronize edildi)}other{# şifre (senkronize edildi)}}</translation>
@@ -742,6 +740,7 @@
 <translation id="6263376278284652872"><ph name="DOMAIN" /> yer işaretleri</translation>
 <translation id="6264485186158353794">Güvenliğe geri dön</translation>
 <translation id="6276112860590028508">Okuma listenize ait sayfalar burada görünür</translation>
+<translation id="627746635834430766">Bir dahaki sefere daha hızlı ödeme yapmak için kartınızı ve fatura adresinizi Google Hesabınıza kaydedin.</translation>
 <translation id="6280223929691119688">Bu adrese teslimat yapılamıyor. Farklı bir adres seçin.</translation>
 <translation id="6282194474023008486">Posta kodu</translation>
 <translation id="6290238015253830360">Önerilen makaleler burada görünür</translation>
@@ -756,6 +755,7 @@
 <translation id="6355080345576803305">Herkese açık oturumu geçersiz kılma</translation>
 <translation id="6358450015545214790">Bunlar ne anlama geliyor?</translation>
 <translation id="6386120369904791316">{COUNT,plural, =1{1 öneri daha}other{# öneri daha}}</translation>
+<translation id="6387754724289022810">Bir dahaki sefere daha hızlı ödeme yapmak için kartınızı ve fatura adresinizi Google Hesabınıza ve bu cihaza kaydedin.</translation>
 <translation id="6397451950548600259">Bilgisayarınızdaki yazılım, Chrome'un web'e güvenli bir şekilde bağlanmasını engelliyor</translation>
 <translation id="6404511346730675251">Yer işaretini düzenle</translation>
 <translation id="6410264514553301377"><ph name="CREDIT_CARD" /> numaralı kartın son kullanma tarihini ve CVC kodunu girin</translation>
@@ -769,6 +769,7 @@
 <translation id="647261751007945333">Cihaz politikaları</translation>
 <translation id="6477321094435799029">Chrome, bu sayfada olağan dışı kod tespit etti ve kişisel bilgilerinizi (örneğin, şifreler, telefon numaraları ve kredi kartları) korumak için sayfayı engelledi.</translation>
 <translation id="6489534406876378309">Kilitlenmeleri yüklemeye başla</translation>
+<translation id="6499038740797743453">Şifre sıfırlansın mı?</translation>
 <translation id="6507833130742554667">Kredi ve banka kartları kabul edilir.</translation>
 <translation id="6508722015517270189">Chrome'u yeniden başlatın</translation>
 <translation id="6529602333819889595">Silmeyi &amp;Yeniden Yap</translation>
@@ -854,12 +855,23 @@
 <translation id="7334320624316649418">Sıralama değişikliğini &amp;yeniden yap</translation>
 <translation id="733923710415886693">Sunucunun sertifikası, Sertifika Şeffaflığı aracılığıyla açıklanmadı.</translation>
 <translation id="7353601530677266744">Komut Satırı</translation>
+<translation id="7365061714576910172">Linux Biçiminde Dışa Aktar</translation>
 <translation id="7372973238305370288">arama sonucu</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE" /> - <ph name="FULL_DATE" /></translation>
 <translation id="7378627244592794276">Hayır</translation>
 <translation id="7378810950367401542">/</translation>
 <translation id="7390545607259442187">Kartı Onayla</translation>
 <translation id="7400418766976504921">URL</translation>
+<translation id="7407424307057130981">&lt;p&gt;Windows bilgisayarınızda Superfish yazılımı varsa bu hatayı görürsünüz.&lt;/p&gt;
+      &lt;p&gt;Web'e ulaşabilmeniz amacıyla yazılımı geçici olarak devre dışı bırakmak için bu adımları uygulayın. Bu adımları gerçekleştirmek için yönetici ayrıcalıklarınızın olması gerekir.&lt;/p&gt;
+      &lt;ol&gt;
+      &lt;li&gt;&lt;strong&gt;Başlat&lt;/strong&gt;'ı tıklayın, ardından &lt;strong&gt;"Yerel hizmetleri görüntüle"&lt;/strong&gt;yi arayın ve seçin
+      &lt;li&gt;&lt;strong&gt;VisualDiscovery&lt;/strong&gt;'yi seçin
+      &lt;li&gt;&lt;strong&gt;Başlatma türü&lt;/strong&gt;'nün altında &lt;strong&gt;Devre dışı&lt;/strong&gt;'yı seçin
+      &lt;li&gt;&lt;strong&gt;Hizmet durumu&lt;/strong&gt;'nun altında &lt;strong&gt;Durdur&lt;/strong&gt;'u seçin
+      &lt;li&gt;&lt;strong&gt;Uygula&lt;/strong&gt;'yı, ardından &lt;strong&gt;Tamam&lt;/strong&gt;'ı tıklayın
+      &lt;li&gt;Yazılımı bilgisayarınızdan kalıcı olarak nasıl kaldıracağınızı öğrenmek için &lt;a href="https://support.google.com/chrome/answer/6098869"&gt;Chrome yardım merkezini&lt;/a&gt; ziyaret edin
+      &lt;/ol&gt;</translation>
 <translation id="7419106976560586862">Profil Yolu</translation>
 <translation id="7437289804838430631">İletişim Bilgisi Ekle</translation>
 <translation id="7441627299479586546">Politika konusu yanlış</translation>
@@ -881,12 +893,15 @@
 <translation id="7542403920425041731">Onayladığınızda kart ayrıntılarınız bu siteyle paylaşılacaktır.</translation>
 <translation id="7542995811387359312">Bu form güvenli bağlantı kullanmadığından kredi kartı bilgilerini otomatik doldurma özelliği devre dışı bırakıldı.</translation>
 <translation id="7543525346216957623">Ebeveyninize sorun</translation>
+<translation id="7548892272833184391">Bağlantı hatalarını düzeltme</translation>
 <translation id="7549584377607005141">Bu Web sayfasının düzgün şekilde görüntülenmesi için, önceden girdiğiniz veriler gerekiyor. Bu verileri tekrar gönderebilirsiniz, ancak bunu yaptığınızda bu sayfanın daha önce gerçekleştirdiği işlemler de tekrar edilir.</translation>
 <translation id="7552846755917812628">Aşağıdaki ipuçlarını deneyin:</translation>
 <translation id="7554791636758816595">Yeni Sekme</translation>
+<translation id="7564049878696755256"><ph name="ORG_NAME" /> hesabınıza erişimi kaybedebilir veya kimlik hırsızlığına maruz kalabilirsiniz. Chrome, şifrenizi hemen değiştirmenizi önerir.</translation>
 <translation id="7567204685887185387">Bu sunucu <ph name="DOMAIN" /> olduğunu kanıtlayamadı. Güvenlik sertifikası hileli bir şekilde yayınlanmış olabilir. Bu durum, bir yanlış yapılandırmadan veya bağlantıya müdahale eden bir saldırgandan kaynaklanıyor olabilir.</translation>
 <translation id="7568593326407688803">Bu sayfanın dili<ph name="ORIGINAL_LANGUAGE" />Çevrilmesini istiyor musunuz?</translation>
 <translation id="7569952961197462199">Kredi kartı Chrome'dan kaldırılsın mı?</translation>
+<translation id="7575800019233204241">"Bağlantınız gizli değil", "&lt;span class="error-code"&gt;NET::ERR_CERT_AUTHORITY_INVALID&lt;/span&gt;", "&lt;span class="error-code"&gt;ERR_CERT_COMMON_NAME_INVALID&lt;/span&gt;", "&lt;span class="error-code"&gt;NET::ERR_CERT_WEAK_SIGNATURE_ALGORITHM&lt;/span&gt;" veya "SSL sertifika hatası"</translation>
 <translation id="7578104083680115302">Google'a kaydettiğiniz kartları kullanarak farklı cihazlardan sitelerde ve uygulamalarda ödemelerinizi hızla yapabilirsiniz.</translation>
 <translation id="7588950540487816470">Fiziksel Web</translation>
 <translation id="7592362899630581445">Sunucunun sertifikası ad sınırlamasını ihlal ediyor.</translation>
@@ -1040,6 +1055,7 @@
 <translation id="8761567432415473239">Google Güvenli Tarama, yakın zamanda <ph name="SITE" /> sitesinde <ph name="BEGIN_LINK" />zararlı programlar buldu<ph name="END_LINK" />.</translation>
 <translation id="8763927697961133303">USB cihaz</translation>
 <translation id="8790007591277257123">Silmeyi &amp;yeniden yap</translation>
+<translation id="8792621596287649091"><ph name="ORG_NAME" /> hesabınıza erişimi kaybedebilir veya kimlik hırsızlığına maruz kalabilirsiniz. Chromium, şifrenizi hemen değiştirmenizi önerir.</translation>
 <translation id="8800988563907321413">Yakın çevrenizle ilgili öneriler burada görünür</translation>
 <translation id="8820817407110198400">Favoriler</translation>
 <translation id="883848425547221593">Diğer Yer İşaretleri</translation>
@@ -1060,6 +1076,7 @@
 <translation id="8957210676456822347">Giriş Portalı Yetkilendirmesi</translation>
 <translation id="8971063699422889582">Sunucu sertifikasının süresi doldu.</translation>
 <translation id="8978053250194585037">Google Güvenli Tarama yakın bir zamanda <ph name="SITE" /> sitesinde <ph name="BEGIN_LINK" />kimlik avı yapıldığını tespit etti<ph name="END_LINK" />. Kimlik avı siteleri sizi aldatmak için başka web siteleri gibi görünür.</translation>
+<translation id="8987927404178983737">Ay</translation>
 <translation id="8989148748219918422"><ph name="ORGANIZATION" /> [<ph name="COUNTRY" />]</translation>
 <translation id="8996941253935762404">Girmekte olduğunuz site zararlı programlar içermektedir</translation>
 <translation id="8997023839087525404">Sunucu, Sertifika Şeffaflığı politikası kullanılarak herkese açık bir şekilde açıklanmayan bir sertifika sundu. Güvenilir olduklarından emin olmak ve saldırganlara karşı koruma sağlamak için bazı sertifikalarda bu zorunludur.</translation>
@@ -1107,6 +1124,8 @@
 <translation id="973773823069644502">Teslimat Adresi Ekle</translation>
 <translation id="975560348586398090">{COUNT,plural, =0{Yok}=1{1 öğe}other{# öğe}}</translation>
 <translation id="981121421437150478">Çevrimdışı</translation>
+<translation id="985199708454569384">&lt;p&gt;Bilgisayarınızın veya mobil cihazınızın tarihi ve saati doğru değilse bu hatayı görürsünüz.&lt;/p&gt;
+    &lt;p&gt;Hatayı gidermek için cihazınızın saatini açın. Saat ve tarih ayarının doğru olduğundan emin olun.&lt;/p&gt;</translation>
 <translation id="988159990683914416">Geliştirici Derlemesi</translation>
 <translation id="989988560359834682">Adresi Düzenle</translation>
 <translation id="992115559265932548"><ph name="MICROSOFT_ACTIVE_DIRECTORY" /></translation>

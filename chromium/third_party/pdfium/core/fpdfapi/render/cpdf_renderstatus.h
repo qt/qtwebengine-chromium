@@ -61,7 +61,7 @@ class CPDF_RenderStatus {
   void RenderSingleObject(CPDF_PageObject* pObj, const CFX_Matrix* pObj2Device);
   bool ContinueSingleObject(CPDF_PageObject* pObj,
                             const CFX_Matrix* pObj2Device,
-                            IFX_PauseIndicator* pPause);
+                            PauseIndicatorIface* pPause);
   void ProcessClipPath(const CPDF_ClipPath& ClipPath,
                        const CFX_Matrix* pObj2Device);
 
@@ -123,7 +123,7 @@ class CPDF_RenderStatus {
                       const CFX_Matrix* pObj2Device);
   void DrawShading(const CPDF_ShadingPattern* pPattern,
                    CFX_Matrix* pMatrix,
-                   FX_RECT& clip_rect,
+                   const FX_RECT& clip_rect,
                    int alpha,
                    bool bAlphaMode);
   bool ProcessType3Text(CPDF_TextObject* textobj,
@@ -153,11 +153,8 @@ class CPDF_RenderStatus {
       const CPDF_GraphicStates* pPathObj,
       bool bStroke);
   FX_ARGB GetStrokeArgb(CPDF_PageObject* pObj) const;
-  bool GetObjectClippedRect(const CPDF_PageObject* pObj,
-                            const CFX_Matrix* pObj2Device,
-                            bool bLogical,
-                            FX_RECT& rect) const;
-  void GetScaledMatrix(CFX_Matrix& matrix) const;
+  FX_RECT GetObjectClippedRect(const CPDF_PageObject* pObj,
+                               const CFX_Matrix* pObj2Device) const;
 
   static const int kRenderMaxRecursionDepth = 64;
   static int s_CurrentRecursionDepth;

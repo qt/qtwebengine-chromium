@@ -95,7 +95,9 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
                          const base::TimeTicks& proceed_time) override;
   void OnBeginNavigation(FrameTreeNode* frame_tree_node,
                          const CommonNavigationParams& common_params,
-                         mojom::BeginNavigationParamsPtr begin_params) override;
+                         mojom::BeginNavigationParamsPtr begin_params,
+                         scoped_refptr<network::SharedURLLoaderFactory>
+                             blob_url_loader_factory) override;
   void RestartNavigationAsCrossDocument(
       std::unique_ptr<NavigationRequest> navigation_request) override;
   void OnAbortNavigation(FrameTreeNode* frame_tree_node) override;
@@ -106,7 +108,8 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
       const base::TimeTicks& renderer_before_unload_end_time) override;
   void CancelNavigation(FrameTreeNode* frame_tree_node,
                         bool inform_renderer) override;
-  void DiscardPendingEntryIfNeeded(int expected_pending_entry_id) override;
+  void DiscardPendingEntryIfNeeded(int expected_pending_entry_id,
+                                   bool is_download) override;
 
  private:
   // Holds data used to track browser side navigation metrics.

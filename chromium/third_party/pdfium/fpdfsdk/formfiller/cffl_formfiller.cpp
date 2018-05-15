@@ -10,11 +10,11 @@
 
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fxge/cfx_renderdevice.h"
+#include "fpdfsdk/cpdfsdk_common.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
 #include "fpdfsdk/cpdfsdk_widget.h"
 #include "fpdfsdk/formfiller/cba_fontmap.h"
-#include "fpdfsdk/fsdk_common.h"
 
 namespace {
 
@@ -416,8 +416,8 @@ CFX_Matrix CFFL_FormFiller::GetCurMatrix() {
 CFX_FloatRect CFFL_FormFiller::GetPDFWindowRect() const {
   CFX_FloatRect rectAnnot = m_pWidget->GetPDFAnnot()->GetRect();
 
-  float fWidth = rectAnnot.right - rectAnnot.left;
-  float fHeight = rectAnnot.top - rectAnnot.bottom;
+  float fWidth = rectAnnot.Width();
+  float fHeight = rectAnnot.Height();
   if ((m_pWidget->GetRotate() / 90) & 0x01)
     std::swap(fWidth, fHeight);
   return CFX_FloatRect(0, 0, fWidth, fHeight);
@@ -524,17 +524,17 @@ void CFFL_FormFiller::SetChangeMark() {
 
 void CFFL_FormFiller::GetActionData(CPDFSDK_PageView* pPageView,
                                     CPDF_AAction::AActionType type,
-                                    PDFSDK_FieldAction& fa) {
+                                    CPDFSDK_FieldAction& fa) {
   fa.sValue = m_pWidget->GetValue();
 }
 
 void CFFL_FormFiller::SetActionData(CPDFSDK_PageView* pPageView,
                                     CPDF_AAction::AActionType type,
-                                    const PDFSDK_FieldAction& fa) {}
+                                    const CPDFSDK_FieldAction& fa) {}
 
 bool CFFL_FormFiller::IsActionDataChanged(CPDF_AAction::AActionType type,
-                                          const PDFSDK_FieldAction& faOld,
-                                          const PDFSDK_FieldAction& faNew) {
+                                          const CPDFSDK_FieldAction& faOld,
+                                          const CPDFSDK_FieldAction& faNew) {
   return false;
 }
 

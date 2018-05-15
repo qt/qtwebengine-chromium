@@ -11,7 +11,6 @@
           "chrome::mojom::NetBenchmarking",
           "extensions::StashService",
           "metrics::mojom::CallStackProfileCollector",
-          "metrics::mojom::LeakDetector",
           "mojom::ModuleEventSink",
           "rappor::mojom::RapporRecorder",
           "safe_browsing::mojom::SafeBrowsing",
@@ -22,7 +21,7 @@
         ],
         "ime:ime_driver": [],
         "profiling_client": [
-          "profiling::mojom::ProfilingClient"
+          "heap_profiling::mojom::ProfilingClient"
         ]
       },
       "requires": {
@@ -30,6 +29,7 @@
         "ash": [ "system_ui", "test", "display" ],
         // Only used in classic ash case.
         "ash_pref_connector": [ "pref_connector" ],
+        "assistant": [ "assistant" ],
         // Only used in classic ash case.
         "chrome": [ "input_device_controller" ],
         "chrome_printing": [ "converter" ],
@@ -45,12 +45,13 @@
         // Only used in classic ash case.
         "local_state": [ "pref_client" ],
         "media_gallery_util": [ "parse_media" ],
+        "multidevice_setup": [ "multidevice_setup" ],
         "nacl_broker": [ "browser" ],
         "nacl_loader": [ "browser" ],
         "patch": [ "patch_file" ],
         "pdf_compositor": [ "compositor" ],
         "profile_import": [ "import" ],
-        "profiling": [ "profiling", "heap_profiler" ],
+        "heap_profiling": [ "profiling", "heap_profiler" ],
         "proxy_resolver": [ "factory" ],
         "preferences": [ "pref_client", "pref_control" ],
         "removable_storage_writer": [ "removable_storage_writer" ],
@@ -98,6 +99,9 @@
           "mojom::PluginsPageHandler",
           "mojom::SiteEngagementDetailsProvider",
           "mojom::UsbInternalsPageHandler"
+        ],
+        "multidevice_setup" : [
+          "chromeos::multidevice_setup::mojom::MultiDeviceSetup"
         ]
       }
     },

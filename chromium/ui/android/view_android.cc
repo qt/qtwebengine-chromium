@@ -13,7 +13,7 @@
 #include "base/stl_util.h"
 #include "cc/layers/layer.h"
 #include "jni/ViewAndroidDelegate_jni.h"
-#include "third_party/WebKit/public/platform/WebCursorInfo.h"
+#include "third_party/blink/public/platform/web_cursor_info.h"
 #include "ui/android/event_forwarder.h"
 #include "ui/android/view_client.h"
 #include "ui/android/window_android.h"
@@ -275,6 +275,23 @@ void ViewAndroid::AddObserver(ViewAndroidObserver* observer) {
 
 void ViewAndroid::RemoveObserver(ViewAndroidObserver* observer) {
   observer_list_.RemoveObserver(observer);
+}
+
+void ViewAndroid::RequestDisallowInterceptTouchEvent() {
+  ScopedJavaLocalRef<jobject> delegate(GetViewAndroidDelegate());
+  if (delegate.is_null())
+    return;
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_ViewAndroidDelegate_requestDisallowInterceptTouchEvent(env, delegate);
+}
+
+void ViewAndroid::RequestUnbufferedDispatch(const MotionEventAndroid& event) {
+  ScopedJavaLocalRef<jobject> delegate(GetViewAndroidDelegate());
+  if (delegate.is_null())
+    return;
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_ViewAndroidDelegate_requestUnbufferedDispatch(env, delegate,
+                                                     event.GetJavaObject());
 }
 
 void ViewAndroid::OnAttachedToWindow() {

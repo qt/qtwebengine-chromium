@@ -20,6 +20,7 @@
 #ifndef P2P_BASE_P2PTRANSPORTCHANNEL_H_
 #define P2P_BASE_P2PTRANSPORTCHANNEL_H_
 
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <set>
@@ -27,10 +28,12 @@
 #include <vector>
 
 #include "api/candidate.h"
+#include "api/rtcerror.h"
 #include "logging/rtc_event_log/events/rtc_event_ice_candidate_pair_config.h"
 #include "logging/rtc_event_log/icelogger.h"
 #include "p2p/base/candidatepairinterface.h"
 #include "p2p/base/icetransportinternal.h"
+#include "p2p/base/p2pconstants.h"
 #include "p2p/base/portallocator.h"
 #include "p2p/base/portinterface.h"
 #include "rtc_base/asyncpacketsocket.h"
@@ -48,10 +51,6 @@ namespace cricket {
 // connected/connecting/disconnected when ICE restart happens.
 enum class IceRestartState { CONNECTING, CONNECTED, DISCONNECTED, MAX_VALUE };
 
-extern const int WEAK_PING_INTERVAL;
-extern const int STRONG_PING_INTERVAL;
-extern const int WEAK_OR_STABILIZING_WRITABLE_CONNECTION_PING_INTERVAL;
-extern const int STRONG_AND_STABLE_WRITABLE_CONNECTION_PING_INTERVAL;
 static const int MIN_PINGS_AT_WEAK_PING_INTERVAL = 3;
 
 bool IceCredentialsChanged(const std::string& old_ufrag,
@@ -108,6 +107,7 @@ class P2PTransportChannel : public IceTransportInternal,
   // TODO(deadbeef): Use rtc::Optional instead of negative values.
   void SetIceConfig(const IceConfig& config) override;
   const IceConfig& config() const;
+  static webrtc::RTCError ValidateIceConfig(const IceConfig& config);
   void SetMetricsObserver(webrtc::MetricsObserverInterface* observer) override;
 
   // From TransportChannel:
@@ -137,9 +137,7 @@ class P2PTransportChannel : public IceTransportInternal,
   IceMode remote_ice_mode() const { return remote_ice_mode_; }
 
   void PruneAllPorts();
-  int receiving_timeout() const { return config_.receiving_timeout; }
-  int check_receiving_interval() const { return check_receiving_interval_; }
-
+  int check_receiving_interval() const;
   rtc::Optional<rtc::NetworkRoute> network_route() const override;
 
   // Helper method used only in unittest.
@@ -180,19 +178,13 @@ class P2PTransportChannel : public IceTransportInternal,
   bool weak() const;
 
   int weak_ping_interval() const {
-    if (config_.ice_check_min_interval &&
-        weak_ping_interval_ < *config_.ice_check_min_interval) {
-      return *config_.ice_check_min_interval;
-    }
-    return weak_ping_interval_;
+    return std::max(config_.ice_check_interval_weak_connectivity_or_default(),
+                    config_.ice_check_min_interval_or_default());
   }
 
   int strong_ping_interval() const {
-    if (config_.ice_check_min_interval &&
-        STRONG_PING_INTERVAL < *config_.ice_check_min_interval) {
-      return *config_.ice_check_min_interval;
-    }
-    return STRONG_PING_INTERVAL;
+    return std::max(config_.ice_check_interval_strong_connectivity_or_default(),
+                    config_.ice_check_min_interval_or_default());
   }
 
   // Returns true if it's possible to send packets on |connection|.
@@ -408,7 +400,6 @@ class P2PTransportChannel : public IceTransportInternal,
   // Used to generate random intervals for regather_all_networks_interval_range.
   webrtc::Random rand_;
 
-  int check_receiving_interval_;
   int64_t last_ping_sent_ms_ = 0;
   int weak_ping_interval_ = WEAK_PING_INTERVAL;
   IceTransportState state_ = IceTransportState::STATE_INIT;

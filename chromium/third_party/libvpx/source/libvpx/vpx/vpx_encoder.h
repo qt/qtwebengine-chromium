@@ -63,7 +63,7 @@ extern "C" {
  * fields to structures
  */
 #define VPX_ENCODER_ABI_VERSION \
-  (8 + VPX_CODEC_ABI_VERSION) /**<\hideinitializer*/
+  (11 + VPX_CODEC_ABI_VERSION) /**<\hideinitializer*/
 
 /*! \brief Encoder capabilities bitfield
  *
@@ -150,15 +150,10 @@ typedef uint32_t vpx_codec_er_flags_t;
  * extend this list to provide additional functionality.
  */
 enum vpx_codec_cx_pkt_kind {
-  VPX_CODEC_CX_FRAME_PKT,   /**< Compressed video frame */
-  VPX_CODEC_STATS_PKT,      /**< Two-pass statistics for this frame */
-  VPX_CODEC_FPMB_STATS_PKT, /**< first pass mb statistics for this frame */
-  VPX_CODEC_PSNR_PKT,       /**< PSNR statistics for this frame */
-// Spatial SVC is still experimental and may be removed.
-#if defined(VPX_TEST_SPATIAL_SVC)
-  VPX_CODEC_SPATIAL_SVC_LAYER_SIZES, /**< Sizes for each layer in this frame*/
-  VPX_CODEC_SPATIAL_SVC_LAYER_PSNR,  /**< PSNR for each layer in this frame*/
-#endif
+  VPX_CODEC_CX_FRAME_PKT,    /**< Compressed video frame */
+  VPX_CODEC_STATS_PKT,       /**< Two-pass statistics for this frame */
+  VPX_CODEC_FPMB_STATS_PKT,  /**< first pass mb statistics for this frame */
+  VPX_CODEC_PSNR_PKT,        /**< PSNR statistics for this frame */
   VPX_CODEC_CUSTOM_PKT = 256 /**< Algorithm extensions  */
 };
 
@@ -186,6 +181,9 @@ typedef struct vpx_codec_cx_pkt {
        * first one.*/
       unsigned int width[VPX_SS_MAX_LAYERS];  /**< frame width */
       unsigned int height[VPX_SS_MAX_LAYERS]; /**< frame height */
+      /*!\brief Flag to indicate if spatial layer frame in this packet is
+       * encoded or dropped. VP8 will always be set to 1.*/
+      uint8_t spatial_layer_encoded[VPX_SS_MAX_LAYERS];
     } frame;                            /**< data for compressed frame packet */
     vpx_fixed_buf_t twopass_stats;      /**< data for two-pass packet */
     vpx_fixed_buf_t firstpass_mb_stats; /**< first pass mb packet */
@@ -195,11 +193,6 @@ typedef struct vpx_codec_cx_pkt {
       double psnr[4];          /**< PSNR, total/y/u/v */
     } psnr;                    /**< data for PSNR packet */
     vpx_fixed_buf_t raw;       /**< data for arbitrary packets */
-// Spatial SVC is still experimental and may be removed.
-#if defined(VPX_TEST_SPATIAL_SVC)
-    size_t layer_sizes[VPX_SS_MAX_LAYERS];
-    struct vpx_psnr_pkt layer_psnr[VPX_SS_MAX_LAYERS];
-#endif
 
     /* This packet size is fixed to allow codecs to extend this
      * interface without having to manage storage for raw packets,

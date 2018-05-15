@@ -18,6 +18,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -393,10 +394,11 @@ void FormStructure::DetermineHeuristicTypes(ukm::UkmRecorder* ukm_recorder) {
         1 << AutofillMetrics::FORM_CONTAINS_UPI_VPA_HINT;
   }
 
-  if (developer_engagement_metrics)
-    AutofillMetrics::LogDeveloperEngagementUkm(ukm_recorder,
-                                               main_frame_origin().GetURL(),
-                                               developer_engagement_metrics);
+  if (developer_engagement_metrics) {
+    AutofillMetrics::LogDeveloperEngagementUkm(
+        ukm_recorder, main_frame_origin().GetURL(), IsCompleteCreditCardForm(),
+        GetFormTypes(), developer_engagement_metrics);
+  }
 
   if (base::FeatureList::IsEnabled(kAutofillRationalizeFieldTypePredictions))
     RationalizeFieldTypePredictions();
@@ -746,6 +748,7 @@ void FormStructure::LogQualityMetrics(
   size_t num_edited_autofilled_fields = 0;
   bool did_autofill_all_possible_fields = true;
   bool did_autofill_some_possible_fields = false;
+  bool is_for_credit_card = IsCompleteCreditCardForm();
 
   // Determine the correct suffix for the metric, depending on whether or
   // not a submission was observed.
@@ -841,7 +844,8 @@ void FormStructure::LogQualityMetrics(
       form_interactions_ukm_logger->UpdateSourceURL(
           main_frame_origin().GetURL());
     AutofillMetrics::LogAutofillFormSubmittedState(
-        state, form_parsed_timestamp_, form_interactions_ukm_logger);
+        state, is_for_credit_card, GetFormTypes(), form_parsed_timestamp_,
+        form_interactions_ukm_logger);
   }
 }
 
@@ -867,7 +871,7 @@ void FormStructure::ParseFieldTypesFromAutocompleteAttributes() {
   has_author_specified_types_ = false;
   has_author_specified_sections_ = false;
   has_author_specified_upi_vpa_hint_ = false;
-  for (const auto& field : fields_) {
+  for (const std::unique_ptr<AutofillField>& field : fields_) {
     // To prevent potential section name collisions, add a default suffix for
     // other fields.  Without this, 'autocomplete' attribute values
     // "section--shipping street-address" and "shipping street-address" would be
@@ -896,24 +900,25 @@ void FormStructure::ParseFieldTypesFromAutocompleteAttributes() {
     // the form.
     has_author_specified_types_ = true;
 
-    // The final token must be the field type.
-    // If it is not one of the known types, abort.
-    DCHECK(!tokens.empty());
+    // Per the spec, the tokens are parsed in reverse order. The expected
+    // pattern is:
+    // [section-*] [shipping|billing] [type_hint] field_type
 
-    // Per the spec, the tokens are parsed in reverse order.
+    // (1) The final token must be the field type. If it is not one of the known
+    // types, abort.
     std::string field_type_token = tokens.back();
     tokens.pop_back();
     HtmlFieldType field_type =
         FieldTypeFromAutocompleteAttributeValue(field_type_token, *field);
     if (field_type == HTML_TYPE_UPI_VPA) {
       has_author_specified_upi_vpa_hint_ = true;
-      // TODO(crbug/702223): Flesh out support for UPI-VPA.
+      // TODO(crbug.com/702223): Flesh out support for UPI-VPA.
       field_type = HTML_TYPE_UNRECOGNIZED;
     }
     if (field_type == HTML_TYPE_UNSPECIFIED)
       continue;
 
-    // The preceding token, if any, may be a type hint.
+    // (2) The preceding token, if any, may be a type hint.
     if (!tokens.empty() && IsContactTypeHint(tokens.back())) {
       // If it is, it must match the field type; otherwise, abort.
       // Note that an invalid token invalidates the entire attribute value, even
@@ -925,26 +930,27 @@ void FormStructure::ParseFieldTypesFromAutocompleteAttributes() {
       tokens.pop_back();
     }
 
-    // The preceding token, if any, may be a fixed string that is either
-    // "shipping" or "billing".  Chrome Autofill treats these as implicit
-    // section name suffixes.
     DCHECK_EQ(kDefaultSection, field->section());
     std::string section = field->section();
     HtmlFieldMode mode = HTML_MODE_NONE;
+
+    // (3) The preceding token, if any, may be a fixed string that is either
+    // "shipping" or "billing".  Chrome Autofill treats these as implicit
+    // section name suffixes.
     if (!tokens.empty()) {
       if (tokens.back() == kShippingMode)
         mode = HTML_MODE_SHIPPING;
       else if (tokens.back() == kBillingMode)
         mode = HTML_MODE_BILLING;
+
+      if (mode != HTML_MODE_NONE) {
+        section = "-" + tokens.back();
+        tokens.pop_back();
+      }
     }
 
-    if (mode != HTML_MODE_NONE) {
-      section = "-" + tokens.back();
-      tokens.pop_back();
-    }
-
-    // The preceding token, if any, may be a named section.
-    const std::string kSectionPrefix = "section-";
+    // (4) The preceding token, if any, may be a named section.
+    const base::StringPiece kSectionPrefix = "section-";
     if (!tokens.empty() && base::StartsWith(tokens.back(), kSectionPrefix,
                                             base::CompareCase::SENSITIVE)) {
       // Prepend this section name to the suffix set in the preceding block.
@@ -952,7 +958,7 @@ void FormStructure::ParseFieldTypesFromAutocompleteAttributes() {
       tokens.pop_back();
     }
 
-    // No other tokens are allowed.  If there are any remaining, abort.
+    // (5) No other tokens are allowed.  If there are any remaining, abort.
     if (!tokens.empty())
       continue;
 
@@ -1285,6 +1291,9 @@ void FormStructure::EncodeFormForUpload(AutofillUploadContents* upload) const {
 
       added_field->set_signature(field->GetFieldSignature());
 
+      if (field->properties_mask)
+        added_field->set_properties_mask(field->properties_mask);
+
       if (IsAutofillFieldMetadataEnabled()) {
         added_field->set_type(field->form_control_type);
 
@@ -1299,9 +1308,6 @@ void FormStructure::EncodeFormForUpload(AutofillUploadContents* upload) const {
 
         if (!field->css_classes.empty())
           added_field->set_css_classes(base::UTF16ToUTF8(field->css_classes));
-
-        if (field->properties_mask)
-          added_field->set_properties_mask(field->properties_mask);
       }
     }
   }

@@ -21,6 +21,7 @@
 #include "components/sync/model/string_ordinal.h"
 #include "extensions/browser/blacklist_state.h"
 #include "extensions/browser/disable_reason.h"
+#include "extensions/browser/extension_prefs_scope.h"
 #include "extensions/browser/install_flag.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -159,7 +160,7 @@ class ExtensionPrefs : public KeyedService {
       ExtensionPrefValueMap* extension_pref_value_map,
       bool extensions_disabled,
       const std::vector<ExtensionPrefsObserver*>& early_observers,
-      std::unique_ptr<base::Clock> clock);
+      base::Clock* clock);
 
   ~ExtensionPrefs() override;
 
@@ -555,6 +556,13 @@ class ExtensionPrefs : public KeyedService {
   bool GetDNRRulesetChecksum(const ExtensionId& extension_id,
                              int* dnr_ruleset_checksum) const;
 
+  // Sets the set of whitelisted pages for the given |extension_id|.
+  void SetDNRWhitelistedPages(const ExtensionId& extension_id,
+                              URLPatternSet set);
+
+  // Returns the set of whitelisted pages for the given |extension_id|.
+  URLPatternSet GetDNRWhitelistedPages(const ExtensionId& extension_id) const;
+
   // When called before the ExtensionService is created, alerts that are
   // normally suppressed in first run will still trigger.
   static void SetRunAlertsInFirstRunForTest();
@@ -578,7 +586,7 @@ class ExtensionPrefs : public KeyedService {
                  PrefService* prefs,
                  const base::FilePath& root_dir,
                  ExtensionPrefValueMap* extension_pref_value_map,
-                 std::unique_ptr<base::Clock> clock,
+                 base::Clock* clock,
                  bool extensions_disabled,
                  const std::vector<ExtensionPrefsObserver*>& early_observers);
 
@@ -683,7 +691,11 @@ class ExtensionPrefs : public KeyedService {
       const base::Optional<int>& dnr_ruleset_checksum,
       prefs::DictionaryValueUpdate* extension_dict) const;
 
-  void InitExtensionControlledPrefs(ExtensionPrefValueMap* value_map);
+  void InitExtensionControlledPrefs(const ExtensionsInfo& extensions_info);
+
+  // Loads preferences for the given |extension_id| into the pref value map.
+  void LoadExtensionControlledPrefs(const ExtensionId& extension_id,
+                                    ExtensionPrefsScope scope);
 
   // Helper function to complete initialization of the values in
   // |extension_dict| for an extension install. Also see
@@ -707,7 +719,7 @@ class ExtensionPrefs : public KeyedService {
   // Weak pointer, owned by BrowserContext.
   ExtensionPrefValueMap* extension_pref_value_map_;
 
-  std::unique_ptr<base::Clock> clock_;
+  base::Clock* clock_;
 
   bool extensions_disabled_;
 

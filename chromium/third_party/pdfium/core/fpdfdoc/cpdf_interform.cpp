@@ -101,7 +101,7 @@ void InitDict(CPDF_Dictionary*& pFormDict, CPDF_Document* pDocument) {
 CPDF_Font* GetFont(CPDF_Dictionary* pFormDict,
                    CPDF_Document* pDocument,
                    const ByteString& csNameTag) {
-  ByteString csAlias = PDF_NameDecode(csNameTag);
+  ByteString csAlias = PDF_NameDecode(csNameTag.AsStringView());
   if (!pFormDict || csAlias.IsEmpty())
     return nullptr;
 
@@ -898,12 +898,9 @@ int CPDF_InterForm::GetFormAlignment() const {
   return m_pFormDict ? m_pFormDict->GetIntegerFor("Q", 0) : 0;
 }
 
-bool CPDF_InterForm::ResetForm(const std::vector<CPDF_FormField*>& fields,
+void CPDF_InterForm::ResetForm(const std::vector<CPDF_FormField*>& fields,
                                bool bIncludeOrExclude,
                                bool bNotify) {
-  if (bNotify && m_pFormNotify && m_pFormNotify->BeforeFormReset(this) < 0)
-    return false;
-
   size_t nCount = m_pFieldTree->m_Root.CountFields();
   for (size_t i = 0; i < nCount; ++i) {
     CPDF_FormField* pField = m_pFieldTree->m_Root.GetFieldAtIndex(i);
@@ -915,13 +912,9 @@ bool CPDF_InterForm::ResetForm(const std::vector<CPDF_FormField*>& fields,
   }
   if (bNotify && m_pFormNotify)
     m_pFormNotify->AfterFormReset(this);
-  return true;
 }
 
-bool CPDF_InterForm::ResetForm(bool bNotify) {
-  if (bNotify && m_pFormNotify && m_pFormNotify->BeforeFormReset(this) < 0)
-    return false;
-
+void CPDF_InterForm::ResetForm(bool bNotify) {
   size_t nCount = m_pFieldTree->m_Root.CountFields();
   for (size_t i = 0; i < nCount; ++i) {
     CPDF_FormField* pField = m_pFieldTree->m_Root.GetFieldAtIndex(i);
@@ -932,7 +925,6 @@ bool CPDF_InterForm::ResetForm(bool bNotify) {
   }
   if (bNotify && m_pFormNotify)
     m_pFormNotify->AfterFormReset(this);
-  return true;
 }
 
 void CPDF_InterForm::LoadField(CPDF_Dictionary* pFieldDict, int nLevel) {
@@ -1209,11 +1201,11 @@ void CPDF_InterForm::FDF_ImportField(CPDF_Dictionary* pFieldDict,
   FormFieldType fieldType = pField->GetFieldType();
   if (bNotify && m_pFormNotify) {
     if (fieldType == FormFieldType::kListBox) {
-      if (m_pFormNotify->BeforeSelectionChange(pField, csWValue) < 0)
+      if (!m_pFormNotify->BeforeSelectionChange(pField, csWValue))
         return;
     } else if (fieldType == FormFieldType::kComboBox ||
                fieldType == FormFieldType::kTextField) {
-      if (m_pFormNotify->BeforeValueChange(pField, csWValue) < 0)
+      if (!m_pFormNotify->BeforeValueChange(pField, csWValue))
         return;
     }
   }

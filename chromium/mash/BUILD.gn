@@ -14,7 +14,7 @@ group("all") {
 
   deps = [
     ":mash_catalog",
-    "//components/leveldb",
+    "//components/services/leveldb",
     "//mash/catalog_viewer",
     "//mash/example",
     "//mash/runner",
@@ -41,7 +41,7 @@ catalog("catalog") {
   testonly = true
 
   standalone_services = [
-    "//components/leveldb:manifest",
+    "//components/services/leveldb:manifest",
     "//mash/catalog_viewer:manifest",
     "//mash/session:manifest",
     "//mash/task_viewer:manifest",
@@ -64,7 +64,7 @@ catalog("catalog") {
   }
 
   if (is_linux && !is_android) {
-    standalone_services += [ "//components/font_service:manifest" ]
+    standalone_services += [ "//components/services/font:manifest" ]
   }
 
   if (enable_nacl) {
@@ -104,7 +104,7 @@ if (is_chromeos) {
       "//cc",
       "//cc:test_support",
       "//components/viz/service",
-      "//mojo/edk/system",
+      "//mojo/edk",
       "//services/catalog:lib",
       "//ui/aura",
       "//ui/base",

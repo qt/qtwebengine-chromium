@@ -81,7 +81,6 @@ DesktopWindowTreeHostWin::DesktopWindowTreeHostWin(
     : message_handler_(new HWNDMessageHandler(this)),
       native_widget_delegate_(native_widget_delegate),
       desktop_native_widget_aura_(desktop_native_widget_aura),
-      content_window_(NULL),
       drag_drop_client_(NULL),
       should_animate_window_close_(false),
       pending_close_(false),
@@ -90,7 +89,6 @@ DesktopWindowTreeHostWin::DesktopWindowTreeHostWin(
 }
 
 DesktopWindowTreeHostWin::~DesktopWindowTreeHostWin() {
-  // WARNING: |content_window_| has been destroyed by the time we get here.
   desktop_native_widget_aura_->OnDesktopWindowTreeHostDestroyed(this);
   DestroyDispatcher();
 }
@@ -108,16 +106,13 @@ aura::Window* DesktopWindowTreeHostWin::GetContentWindowForHWND(HWND hwnd) {
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopWindowTreeHostWin, DesktopWindowTreeHost implementation:
 
-void DesktopWindowTreeHostWin::Init(aura::Window* content_window,
-                                    const Widget::InitParams& params) {
-  // TODO(beng): SetInitParams().
-  content_window_ = content_window;
+void DesktopWindowTreeHostWin::Init(const Widget::InitParams& params) {
   wants_mouse_events_when_inactive_ = params.wants_mouse_events_when_inactive;
 
-  wm::SetAnimationHost(content_window_, this);
+  wm::SetAnimationHost(content_window(), this);
   if (params.type == Widget::InitParams::TYPE_WINDOW &&
       !params.remove_standard_frame)
-    content_window_->SetProperty(aura::client::kAnimationsDisabledKey, true);
+    content_window()->SetProperty(aura::client::kAnimationsDisabledKey, true);
 
   ConfigureWindowStyles(message_handler_.get(), params,
                         GetWidget()->widget_delegate(),
@@ -148,12 +143,12 @@ void DesktopWindowTreeHostWin::OnNativeWidgetCreated(
   if (cursor_client)
     is_cursor_visible_ = cursor_client->IsCursorVisible();
 
-  window()->SetProperty(kContentWindowForRootWindow, content_window_);
+  window()->SetProperty(kContentWindowForRootWindow, content_window());
   window()->SetProperty(kDesktopWindowTreeHostKey, this);
 
   should_animate_window_close_ =
-      content_window_->type() != aura::client::WINDOW_TYPE_NORMAL &&
-      !wm::WindowAnimationsDisabled(content_window_);
+      content_window()->type() != aura::client::WINDOW_TYPE_NORMAL &&
+      !wm::WindowAnimationsDisabled(content_window());
 
   // TODO this is not invoked *after* Init(), but should be ok.
   SetWindowTransparency();
@@ -181,7 +176,7 @@ void DesktopWindowTreeHostWin::Close() {
   if (should_animate_window_close_) {
     pending_close_ = true;
     const bool is_animating =
-        content_window_->layer()->GetAnimator()->IsAnimatingProperty(
+        content_window()->layer()->GetAnimator()->IsAnimatingProperty(
             ui::LayerAnimationElement::VISIBILITY);
     // Animation may not start for a number of reasons.
     if (!is_animating)
@@ -401,7 +396,7 @@ void DesktopWindowTreeHostWin::EndMoveLoop() {
 void DesktopWindowTreeHostWin::SetVisibilityChangedAnimationsEnabled(
     bool value) {
   message_handler_->SetVisibilityChangedAnimationsEnabled(value);
-  content_window_->SetProperty(aura::client::kAnimationsDisabledKey, !value);
+  content_window()->SetProperty(aura::client::kAnimationsDisabledKey, !value);
 }
 
 NonClientFrameView* DesktopWindowTreeHostWin::CreateNonClientFrameView() {
@@ -434,10 +429,10 @@ void DesktopWindowTreeHostWin::SetFullscreen(bool fullscreen) {
   // TODO(sky): workaround for ScopedFullscreenVisibility showing window
   // directly. Instead of this should listen for visibility changes and then
   // update window.
-  if (message_handler_->IsVisible() && !content_window_->TargetVisibility()) {
+  if (message_handler_->IsVisible() && !content_window()->TargetVisibility()) {
     if (compositor())
       compositor()->SetVisible(true);
-    content_window_->Show();
+    content_window()->Show();
   }
   SetWindowTransparency();
 }
@@ -447,7 +442,7 @@ bool DesktopWindowTreeHostWin::IsFullscreen() const {
 }
 
 void DesktopWindowTreeHostWin::SetOpacity(float opacity) {
-  content_window_->layer()->SetOpacity(opacity);
+  content_window()->layer()->SetOpacity(opacity);
 }
 
 void DesktopWindowTreeHostWin::SetWindowIcons(
@@ -575,6 +570,10 @@ bool DesktopWindowTreeHostWin::CaptureSystemKeyEventsImpl(
 
 void DesktopWindowTreeHostWin::ReleaseSystemKeyEventCapture() {
   keyboard_hook_.reset();
+}
+
+bool DesktopWindowTreeHostWin::IsKeyLocked(int native_key_code) {
+  return keyboard_hook_ && keyboard_hook_->IsKeyLocked(native_key_code);
 }
 
 void DesktopWindowTreeHostWin::SetCursorNative(gfx::NativeCursor cursor) {
@@ -727,7 +726,8 @@ gfx::Size DesktopWindowTreeHostWin::DIPToScreenSize(
 }
 
 void DesktopWindowTreeHostWin::ResetWindowControls() {
-  GetWidget()->non_client_view()->ResetWindowControls();
+  if (GetWidget()->non_client_view())
+    GetWidget()->non_client_view()->ResetWindowControls();
 }
 
 gfx::NativeViewAccessible DesktopWindowTreeHostWin::GetNativeViewAccessible() {
@@ -845,7 +845,8 @@ void DesktopWindowTreeHostWin::HandleFrameChanged() {
   CheckForMonitorChange();
   SetWindowTransparency();
   // Replace the frame and layout the contents.
-  GetWidget()->non_client_view()->UpdateFrame();
+  if (GetWidget()->non_client_view())
+    GetWidget()->non_client_view()->UpdateFrame();
 }
 
 void DesktopWindowTreeHostWin::HandleNativeFocus(HWND last_focused_window) {
@@ -856,9 +857,9 @@ void DesktopWindowTreeHostWin::HandleNativeBlur(HWND focused_window) {
   // TODO(beng): inform the native_widget_delegate_.
 }
 
-bool DesktopWindowTreeHostWin::HandleMouseEvent(const ui::MouseEvent& event) {
-  SendEventToSink(const_cast<ui::MouseEvent*>(&event));
-  return event.handled();
+bool DesktopWindowTreeHostWin::HandleMouseEvent(ui::MouseEvent* event) {
+  SendEventToSink(event);
+  return event->handled();
 }
 
 bool DesktopWindowTreeHostWin::HandlePointerEvent(ui::PointerEvent* event) {
@@ -870,8 +871,7 @@ void DesktopWindowTreeHostWin::HandleKeyEvent(ui::KeyEvent* event) {
   SendEventToSink(event);
 }
 
-void DesktopWindowTreeHostWin::HandleTouchEvent(
-    const ui::TouchEvent& event) {
+void DesktopWindowTreeHostWin::HandleTouchEvent(ui::TouchEvent* event) {
   // HWNDMessageHandler asynchronously processes touch events. Because of this
   // it's possible for the aura::WindowEventDispatcher to have been destroyed
   // by the time we attempt to process them.
@@ -885,10 +885,10 @@ void DesktopWindowTreeHostWin::HandleTouchEvent(
     DesktopWindowTreeHostWin* target =
         host->window()->GetProperty(kDesktopWindowTreeHostKey);
     if (target && target->HasCapture() && target != this) {
-      POINT target_location(event.location().ToPOINT());
+      POINT target_location(event->location().ToPOINT());
       ClientToScreen(GetHWND(), &target_location);
       ScreenToClient(target->GetHWND(), &target_location);
-      ui::TouchEvent target_event(event, static_cast<View*>(NULL),
+      ui::TouchEvent target_event(*event, static_cast<View*>(NULL),
                                   static_cast<View*>(NULL));
       target_event.set_location(gfx::Point(target_location));
       target_event.set_root_location(target_event.location());
@@ -896,7 +896,7 @@ void DesktopWindowTreeHostWin::HandleTouchEvent(
       return;
     }
   }
-  SendEventToSink(const_cast<ui::TouchEvent*>(&event));
+  SendEventToSink(event);
 }
 
 bool DesktopWindowTreeHostWin::HandleIMEMessage(UINT message,
@@ -949,10 +949,14 @@ void DesktopWindowTreeHostWin::PostHandleMSG(UINT message,
                                              LPARAM l_param) {
 }
 
-bool DesktopWindowTreeHostWin::HandleScrollEvent(
-    const ui::ScrollEvent& event) {
-  SendEventToSink(const_cast<ui::ScrollEvent*>(&event));
-  return event.handled();
+bool DesktopWindowTreeHostWin::HandleScrollEvent(ui::ScrollEvent* event) {
+  SendEventToSink(event);
+  return event->handled();
+}
+
+bool DesktopWindowTreeHostWin::HandleGestureEvent(ui::GestureEvent* event) {
+  SendEventToSink(event);
+  return event->handled();
 }
 
 void DesktopWindowTreeHostWin::HandleWindowSizeChanging() {
@@ -965,16 +969,18 @@ void DesktopWindowTreeHostWin::HandleWindowSizeUnchanged() {
   // changed (can occur on Windows 10 when snapping a window to the side of
   // the screen). In that case do a resize to the current size to reenable
   // swaps.
-  if (compositor()) {
-    compositor()->SetScaleAndSize(
-        compositor()->device_scale_factor(),
-        message_handler_->GetClientAreaBounds().size(),
-        window()->GetLocalSurfaceId());
-  }
+  if (compositor())
+    compositor()->ReenableSwap();
 }
 
 void DesktopWindowTreeHostWin::HandleWindowScaleFactorChanged(
     float window_scale_factor) {
+  // TODO(ccameron): This will violate surface invariants, and is insane.
+  // Shouldn't the scale factor and window pixel size changes be sent
+  // atomically? And how does this interact with updates to display::Display?
+  // Should we expect the display::Display to be updated before this? If so,
+  // why can't we use the DisplayObserver that the base WindowTreeHost is
+  // using?
   if (compositor()) {
     compositor()->SetScaleAndSize(
         window_scale_factor, message_handler_->GetClientAreaBounds().size(),
@@ -1002,7 +1008,7 @@ void DesktopWindowTreeHostWin::SetWindowTransparency() {
   compositor()->SetBackgroundColor(transparent ? SK_ColorTRANSPARENT
                                                : SK_ColorWHITE);
   window()->SetTransparent(transparent);
-  content_window_->SetTransparent(transparent);
+  content_window()->SetTransparent(transparent);
 }
 
 bool DesktopWindowTreeHostWin::IsModalWindowActive() const {
@@ -1029,6 +1035,10 @@ void DesktopWindowTreeHostWin::CheckForMonitorChange() {
     return;
   last_monitor_from_window_ = monitor_from_window;
   OnHostDisplayChanged();
+}
+
+aura::Window* DesktopWindowTreeHostWin::content_window() {
+  return desktop_native_widget_aura_->content_window();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -5,6 +5,7 @@
 #include "headless/public/util/virtual_time_controller.h"
 
 #include <memory>
+#include <tuple>
 
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
@@ -132,8 +133,9 @@ TEST_F(VirtualTimeControllerTest, MaxVirtualTimeTaskStarvationCount) {
 
   GrantVirtualTimeBudget(5000);
 
-  client_.DispatchProtocolMessage(
-      mock_host_.get(), "{\"id\":0,\"result\":{\"virtualTimeBase\":1.0}}");
+  client_.DispatchProtocolMessage(mock_host_.get(),
+                                  "{\"id\":0,\"result\":{\"virtualTimeBase\":1."
+                                  "0,\"virtualTimeTicksBase\":1.0}}");
 
   EXPECT_TRUE(set_up_complete_);
   EXPECT_FALSE(budget_expired_);
@@ -195,7 +197,7 @@ class MockObserver : public VirtualTimeController::Observer {
 ACTION_TEMPLATE(RunClosure,
                 HAS_1_TEMPLATE_PARAMS(int, k),
                 AND_0_VALUE_PARAMS()) {
-  ::std::tr1::get<k>(args).Run();
+  std::get<k>(args).Run();
 }
 
 ACTION_P(RunClosure, closure) {
@@ -227,8 +229,9 @@ TEST_F(VirtualTimeControllerTest, InterleavesTasksWithVirtualTime) {
   EXPECT_FALSE(set_up_complete_);
   EXPECT_FALSE(budget_expired_);
 
-  client_.DispatchProtocolMessage(
-      mock_host_.get(), "{\"id\":0,\"result\":{\"virtualTimeBase\":1.0}}");
+  client_.DispatchProtocolMessage(mock_host_.get(),
+                                  "{\"id\":0,\"result\":{\"virtualTimeBase\":1."
+                                  "0,\"virtualTimeTicksBase\":1.0}}");
 
   EXPECT_TRUE(set_up_complete_);
   EXPECT_FALSE(budget_expired_);
@@ -261,7 +264,8 @@ TEST_F(VirtualTimeControllerTest, InterleavesTasksWithVirtualTime) {
 
     client_.DispatchProtocolMessage(
         mock_host_.get(),
-        base::StringPrintf("{\"id\":%d,\"result\":{\"virtualTimeBase\":1.0}}",
+        base::StringPrintf("{\"id\":%d,\"result\":{\"virtualTimeBase\":1.0,"
+                           "\"virtualTimeTicksBase\":1.0}}",
                            i * 2));
 
     EXPECT_FALSE(set_up_complete_);
@@ -299,8 +303,9 @@ TEST_F(VirtualTimeControllerTest, CanceledTask) {
   EXPECT_FALSE(set_up_complete_);
   EXPECT_FALSE(budget_expired_);
 
-  client_.DispatchProtocolMessage(
-      mock_host_.get(), "{\"id\":0,\"result\":{\"virtualTimeBase\":1.0}}");
+  client_.DispatchProtocolMessage(mock_host_.get(),
+                                  "{\"id\":0,\"result\":{\"virtualTimeBase\":1."
+                                  "0,\"virtualTimeTicksBase\":1.0}}");
 
   EXPECT_TRUE(set_up_complete_);
   EXPECT_FALSE(budget_expired_);
@@ -329,7 +334,8 @@ TEST_F(VirtualTimeControllerTest, CanceledTask) {
 
   client_.DispatchProtocolMessage(
       mock_host_.get(),
-      base::StringPrintf("{\"id\":2,\"result\":{\"virtualTimeBase\":1.0}}"));
+      base::StringPrintf("{\"id\":2,\"result\":{\"virtualTimeBase\":1.0,"
+                         "\"virtualTimeTicksBase\":1.0}}"));
 
   EXPECT_FALSE(set_up_complete_);
   EXPECT_FALSE(budget_expired_);
@@ -353,7 +359,8 @@ TEST_F(VirtualTimeControllerTest, CanceledTask) {
 
   client_.DispatchProtocolMessage(
       mock_host_.get(),
-      base::StringPrintf("{\"id\":4,\"result\":{\"virtualTimeBase\":1.0}}"));
+      base::StringPrintf("{\"id\":4,\"result\":{\"virtualTimeBase\":1.0,"
+                         "\"virtualTimeTicksBase\":1.0}}"));
 
   EXPECT_FALSE(set_up_complete_);
   EXPECT_FALSE(budget_expired_);
@@ -390,7 +397,8 @@ TEST_F(VirtualTimeControllerTest, MultipleTasks) {
 
   client_.DispatchProtocolMessage(
       mock_host_.get(),
-      base::StringPrintf("{\"id\":0,\"result\":{\"virtualTimeBase\":1.0}}"));
+      base::StringPrintf("{\"id\":0,\"result\":{\"virtualTimeBase\":1.0,"
+                         "\"virtualTimeTicksBase\":1.0}}"));
 
   EXPECT_TRUE(set_up_complete_);
   EXPECT_FALSE(budget_expired_);
@@ -449,8 +457,9 @@ TEST_F(VirtualTimeControllerTest, DeferStartAndResume) {
 
   std::move(deferrer.continue_callback_).Run();
 
-  client_.DispatchProtocolMessage(
-      mock_host_.get(), "{\"id\":0,\"result\":{\"virtualTimeBase\":1.0}}");
+  client_.DispatchProtocolMessage(mock_host_.get(),
+                                  "{\"id\":0,\"result\":{\"virtualTimeBase\":1."
+                                  "0,\"virtualTimeTicksBase\":1.0}}");
   EXPECT_FALSE(deferrer.continue_callback_);
 
   task1.ExpectCallOnceWithOffsetAndReturn(
@@ -590,7 +599,8 @@ TEST_F(VirtualTimeControllerTest, ReentrantTask) {
   GrantVirtualTimeBudget(6000);
   client_.DispatchProtocolMessage(
       mock_host_.get(),
-      base::StringPrintf("{\"id\":0,\"result\":{\"virtualTimeBase\":1.0}}"));
+      base::StringPrintf("{\"id\":0,\"result\":{\"virtualTimeBase\":1.0,"
+                         "\"virtualTimeTicksBase\":1.0}}"));
 
   Mock::VerifyAndClearExpectations(&mock_host_);
 
@@ -607,7 +617,8 @@ TEST_F(VirtualTimeControllerTest, ReentrantTask) {
   SendVirtualTimeBudgetExpiredEvent();
   client_.DispatchProtocolMessage(
       mock_host_.get(),
-      base::StringPrintf("{\"id\":2,\"result\":{\"virtualTimeBase\":1.0}}"));
+      base::StringPrintf("{\"id\":2,\"result\":{\"virtualTimeBase\":1.0,"
+                         "\"virtualTimeTicksBase\":1.0}}"));
   Mock::VerifyAndClearExpectations(&mock_host_);
 
   EXPECT_CALL(*mock_host_,
@@ -622,7 +633,8 @@ TEST_F(VirtualTimeControllerTest, ReentrantTask) {
   SendVirtualTimeBudgetExpiredEvent();
   client_.DispatchProtocolMessage(
       mock_host_.get(),
-      base::StringPrintf("{\"id\":4,\"result\":{\"virtualTimeBase\":1.0}}"));
+      base::StringPrintf("{\"id\":4,\"result\":{\"virtualTimeBase\":1.0,"
+                         "\"virtualTimeTicksBase\":1.0}}"));
 
   EXPECT_THAT(
       log, ElementsAre("Virtual time started @ 0", "A: interval elapsed @ 1000",
@@ -690,7 +702,8 @@ TEST_F(VirtualTimeControllerTest, Priority) {
   GrantVirtualTimeBudget(2000);
   client_.DispatchProtocolMessage(
       mock_host_.get(),
-      base::StringPrintf("{\"id\":0,\"result\":{\"virtualTimeBase\":1.0}}"));
+      base::StringPrintf("{\"id\":0,\"result\":{\"virtualTimeBase\":1.0,"
+                         "\"virtualTimeTicksBase\":1.0}}"));
 
   EXPECT_CALL(*mock_host_,
               DispatchProtocolMessage(
@@ -731,8 +744,9 @@ TEST_F(VirtualTimeControllerTest, ContinuePolicyContinueMoreTimeNeeded) {
 
   controller_->StartVirtualTime();
 
-  client_.DispatchProtocolMessage(
-      mock_host_.get(), "{\"id\":0,\"result\":{\"virtualTimeBase\":1.0}}");
+  client_.DispatchProtocolMessage(mock_host_.get(),
+                                  "{\"id\":0,\"result\":{\"virtualTimeBase\":1."
+                                  "0,\"virtualTimeTicksBase\":1.0}}");
 
   for (int i = 1; i < 4; i++) {
     task.ExpectCallOnceWithOffsetAndReturn(
@@ -756,7 +770,8 @@ TEST_F(VirtualTimeControllerTest, ContinuePolicyContinueMoreTimeNeeded) {
 
     client_.DispatchProtocolMessage(
         mock_host_.get(),
-        base::StringPrintf("{\"id\":%d,\"result\":{\"virtualTimeBase\":1.0}}",
+        base::StringPrintf("{\"id\":%d,\"result\":{\"virtualTimeBase\":1.0,"
+                           "\"virtualTimeTicksBase\":1.0}}",
                            i * 2));
   }
 
@@ -798,8 +813,9 @@ TEST_F(VirtualTimeControllerTest, ContinuePolicyStopAndRestart) {
 
   controller_->StartVirtualTime();
 
-  client_.DispatchProtocolMessage(
-      mock_host_.get(), "{\"id\":0,\"result\":{\"virtualTimeBase\":1.0}}");
+  client_.DispatchProtocolMessage(mock_host_.get(),
+                                  "{\"id\":0,\"result\":{\"virtualTimeBase\":1."
+                                  "0,\"virtualTimeTicksBase\":1.0}}");
 
   for (int i = 1; i < 4; i++) {
     task1.ExpectCallOnceWithOffsetAndReturn(
@@ -826,7 +842,8 @@ TEST_F(VirtualTimeControllerTest, ContinuePolicyStopAndRestart) {
 
     client_.DispatchProtocolMessage(
         mock_host_.get(),
-        base::StringPrintf("{\"id\":%d,\"result\":{\"virtualTimeBase\":1.0}}",
+        base::StringPrintf("{\"id\":%d,\"result\":{\"virtualTimeBase\":1.0,"
+                           "\"virtualTimeTicksBase\":1.0}}",
                            i * 2));
   }
 
@@ -861,8 +878,9 @@ TEST_F(VirtualTimeControllerTest, ContinuePolicyStopAndRestart) {
 
   controller_->StartVirtualTime();
 
-  client_.DispatchProtocolMessage(
-      mock_host_.get(), "{\"id\":8,\"result\":{\"virtualTimeBase\":1.0}}");
+  client_.DispatchProtocolMessage(mock_host_.get(),
+                                  "{\"id\":8,\"result\":{\"virtualTimeBase\":1."
+                                  "0,\"virtualTimeTicksBase\":1.0}}");
 
   task1.ExpectCallOnceWithOffsetAndReturn(
       base::TimeDelta::FromMilliseconds(5000),

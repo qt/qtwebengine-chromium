@@ -531,6 +531,9 @@ static void set_rt_speed_feature_framesize_independent(
       sf->limit_newmv_early_exit = 1;
       if (!cpi->use_svc) sf->bias_golden = 1;
     }
+    // Keep nonrd_keyframe = 1 for non-base spatial layers to prevent
+    // increase in encoding time.
+    if (cpi->use_svc && cpi->svc.spatial_layer_id > 0) sf->nonrd_keyframe = 1;
   }
 
   if (speed >= 6) {
@@ -596,7 +599,8 @@ static void set_rt_speed_feature_framesize_independent(
     if (!cpi->last_frame_dropped && cpi->resize_state == ORIG &&
         !cpi->external_resize &&
         (!cpi->use_svc ||
-         cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 1)) {
+         (cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 1 &&
+          !cpi->svc.last_layer_dropped[cpi->svc.number_spatial_layers - 1]))) {
       sf->copy_partition_flag = 1;
       cpi->max_copied_frame = 2;
       // The top temporal enhancement layer (for number of temporal layers > 1)
@@ -608,8 +612,8 @@ static void set_rt_speed_feature_framesize_independent(
     // For SVC: enable use of lower resolution partition for higher resolution,
     // only for 3 spatial layers and when config/top resolution is above VGA.
     // Enable only for non-base temporal layer frames.
-    if (cpi->use_svc && cpi->svc.number_spatial_layers == 3 &&
-        cpi->svc.temporal_layer_id > 0 &&
+    if (cpi->use_svc && cpi->svc.use_partition_reuse &&
+        cpi->svc.number_spatial_layers == 3 && cpi->svc.temporal_layer_id > 0 &&
         cpi->oxcf.width * cpi->oxcf.height > 640 * 480)
       sf->svc_use_lowres_part = 1;
   }

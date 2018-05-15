@@ -5,7 +5,6 @@
 <link rel="import" href="chrome://resources/html/cr/ui/focus_without_ink.html">
 <link rel="import" href="chrome://resources/html/i18n_behavior.html">
 <link rel="import" href="chrome://resources/html/web_ui_listener_behavior.html">
-<link rel="import" href="chrome://resources/polymer/v1_0/paper-icon-button/paper-icon-button-light.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-radio-group/paper-radio-group.html">
 <link rel="import" href="../controls/settings_toggle_button.html">
 <link rel="import" href="easy_unlock_browser_proxy.html">
@@ -77,8 +76,9 @@
     </style>
 
     <div>
-      <settings-toggle-button id="screenLockDiv" class="first"
+      <settings-toggle-button id="enableLockScreen" class="first"
           pref="{{prefs.settings.enable_screen_lock}}"
+          on-settings-boolean-control-change="onScreenLockChange_" no-set-pref
           label="$i18n{enableScreenlock}">
       </settings-toggle-button>
 
@@ -199,7 +199,8 @@
 
       <template is="dom-if" if="[[showPasswordPromptDialog_]]" restamp>
         <settings-password-prompt-dialog id="passwordPrompt"
-            on-close="onPasswordPromptDialogClose_" set-modes="{{setModes_}}">
+            on-close="onPasswordPromptDialogClose_" set-modes="{{setModes_}}"
+            auth-token="{{authToken_}}">
         </settings-password-prompt-dialog>
       </template>
 

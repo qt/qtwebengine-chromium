@@ -29,9 +29,9 @@
 #include "content/public/browser/render_process_host_observer.h"
 #include "content/public/browser/render_view_host.h"
 #include "net/base/load_states.h"
-#include "third_party/WebKit/public/web/WebAXEnums.h"
-#include "third_party/WebKit/public/web/WebConsoleMessage.h"
-#include "third_party/WebKit/public/web/WebPopupType.h"
+#include "third_party/blink/public/web/web_ax_enums.h"
+#include "third_party/blink/public/web/web_console_message.h"
+#include "third_party/blink/public/web/web_popup_type.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/mojo/window_open_disposition.mojom.h"
 
@@ -92,9 +92,6 @@ class CONTENT_EXPORT RenderViewHostImpl : public RenderViewHost,
       int request_id,
       const std::vector<base::FilePath>& files) override;
   void DisableScrollbarsForThreshold(const gfx::Size& size) override;
-  void EnableAutoResize(const gfx::Size& min_size,
-                        const gfx::Size& max_size) override;
-  void DisableAutoResize(const gfx::Size& new_size) override;
   void EnablePreferredSizeMode() override;
   void ExecuteMediaPlayerActionAtLocation(
       const gfx::Point& location,
@@ -151,7 +148,7 @@ class CONTENT_EXPORT RenderViewHostImpl : public RenderViewHost,
   // pending swap out or swapped out), according to its main frame
   // RenderFrameHost.
   bool is_active() const { return is_active_; }
-  void set_is_active(bool is_active) { is_active_ = is_active; }
+  void SetIsActive(bool is_active);
 
   // Tracks whether this RenderViewHost is swapped out, according to its main
   // frame RenderFrameHost.
@@ -241,6 +238,7 @@ class CONTENT_EXPORT RenderViewHostImpl : public RenderViewHost,
       const blink::WebMouseEvent& mouse_event) override;
   bool MayRenderWidgetForwardKeyboardEvent(
       const NativeWebKeyboardEvent& key_event) override;
+  bool ShouldContributePriorityToProcess() override;
 
   // IPC message handlers.
   void OnShowView(int route_id,

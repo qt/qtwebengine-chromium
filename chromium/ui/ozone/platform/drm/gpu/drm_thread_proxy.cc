@@ -5,7 +5,6 @@
 #include "ui/ozone/platform/drm/gpu/drm_thread_proxy.h"
 
 #include "base/bind.h"
-#include "base/memory/ptr_util.h"
 #include "ui/ozone/platform/drm/gpu/drm_thread_message_proxy.h"
 #include "ui/ozone/platform/drm/gpu/drm_window_proxy.h"
 #include "ui/ozone/platform/drm/gpu/gbm_buffer.h"
@@ -76,8 +75,8 @@ void DrmThreadProxy::AddBindingCursorDevice(
     ozone::mojom::DeviceCursorRequest request) {
   drm_thread_.task_runner()->PostTask(
       FROM_HERE,
-      base::Bind(&DrmThread::AddBindingCursorDevice,
-                 base::Unretained(&drm_thread_), base::Passed(&request)));
+      base::BindOnce(&DrmThread::AddBindingCursorDevice,
+                     base::Unretained(&drm_thread_), std::move(request)));
 }
 
 void DrmThreadProxy::AddBindingDrmDevice(
@@ -87,8 +86,8 @@ void DrmThreadProxy::AddBindingDrmDevice(
 
   drm_thread_.task_runner()->PostTask(
       FROM_HERE,
-      base::Bind(&DrmThread::AddBindingDrmDevice,
-                 base::Unretained(&drm_thread_), base::Passed(&request)));
+      base::BindOnce(&DrmThread::AddBindingDrmDevice,
+                     base::Unretained(&drm_thread_), std::move(request)));
 }
 
 }  // namespace ui

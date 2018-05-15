@@ -74,11 +74,6 @@ void GpuDataManagerImpl::RemoveObserver(
   private_->RemoveObserver(observer);
 }
 
-void GpuDataManagerImpl::UnblockDomainFrom3DAPIs(const GURL& url) {
-  base::AutoLock auto_lock(lock_);
-  private_->UnblockDomainFrom3DAPIs(url);
-}
-
 void GpuDataManagerImpl::DisableHardwareAcceleration() {
   base::AutoLock auto_lock(lock_);
   private_->DisableHardwareAcceleration();
@@ -87,6 +82,11 @@ void GpuDataManagerImpl::DisableHardwareAcceleration() {
 void GpuDataManagerImpl::BlockSwiftShader() {
   base::AutoLock auto_lock(lock_);
   private_->BlockSwiftShader();
+}
+
+bool GpuDataManagerImpl::SwiftShaderAllowed() const {
+  base::AutoLock auto_lock(lock_);
+  return private_->SwiftShaderAllowed();
 }
 
 bool GpuDataManagerImpl::HardwareAccelerationEnabled() const {
@@ -98,6 +98,16 @@ void GpuDataManagerImpl::GetDisabledExtensions(
     std::string* disabled_extensions) const {
   base::AutoLock auto_lock(lock_);
   private_->GetDisabledExtensions(disabled_extensions);
+}
+
+void GpuDataManagerImpl::RequestGpuSupportedRuntimeVersion() const {
+  base::AutoLock auto_lock(lock_);
+  private_->RequestGpuSupportedRuntimeVersion();
+}
+
+bool GpuDataManagerImpl::GpuProcessStartAllowed() const {
+  base::AutoLock auto_lock(lock_);
+  return private_->GpuProcessStartAllowed();
 }
 
 void GpuDataManagerImpl::GetDisabledWebGLExtensions(
@@ -182,6 +192,11 @@ bool GpuDataManagerImpl::Are3DAPIsBlocked(const GURL& top_origin_url,
       top_origin_url, render_process_id, render_frame_id, requester);
 }
 
+void GpuDataManagerImpl::UnblockDomainFrom3DAPIs(const GURL& url) {
+  base::AutoLock auto_lock(lock_);
+  private_->UnblockDomainFrom3DAPIs(url);
+}
+
 void GpuDataManagerImpl::DisableDomainBlockingFor3DAPIsForTesting() {
   base::AutoLock auto_lock(lock_);
   private_->DisableDomainBlockingFor3DAPIsForTesting();
@@ -193,13 +208,9 @@ bool GpuDataManagerImpl::UpdateActiveGpu(uint32_t vendor_id,
   return private_->UpdateActiveGpu(vendor_id, device_id);
 }
 
-void GpuDataManagerImpl::Notify3DAPIBlocked(const GURL& top_origin_url,
-                                            int render_process_id,
-                                            int render_frame_id,
-                                            ThreeDAPIType requester) {
+void GpuDataManagerImpl::NotifyGpuInfoUpdate() {
   base::AutoLock auto_lock(lock_);
-  private_->Notify3DAPIBlocked(
-      top_origin_url, render_process_id, render_frame_id, requester);
+  private_->NotifyGpuInfoUpdate();
 }
 
 void GpuDataManagerImpl::OnGpuProcessInitFailure() {

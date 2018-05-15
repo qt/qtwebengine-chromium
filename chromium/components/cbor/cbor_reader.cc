@@ -40,10 +40,9 @@ const char kIncorrectMapKeyType[] =
 const char kTooMuchNesting[] = "Too much nesting.";
 const char kInvalidUTF8[] = "String encoding other than utf8 are not allowed.";
 const char kExtraneousData[] = "Trailing data bytes are not allowed.";
-const char kDuplicateKey[] = "Duplicate map keys are not allowed.";
 const char kMapKeyOutOfOrder[] =
-    "Map keys must be sorted by byte length and then by byte-wise lexical "
-    "order.";
+    "Map keys must be strictly monotonically increasing based on byte length "
+    "and then by byte-wise lexical order.";
 const char kNonMinimalCBOREncoding[] =
     "Unsigned integers must be encoded with minimum number of bytes.";
 const char kUnsupportedSimpleValue[] =
@@ -52,6 +51,7 @@ const char kUnsupportedFloatingPointValue[] =
     "Floating point numbers are not supported.";
 const char kOutOfRangeIntegerValue[] =
     "Integer values must be between INT64_MIN and INT64_MAX.";
+const char kUnknownError[] = "An unknown error occured.";
 
 }  // namespace
 
@@ -67,17 +67,16 @@ CBORReader::~CBORReader() {}
 base::Optional<CBORValue> CBORReader::Read(base::span<uint8_t const> data,
                                            DecoderError* error_code_out,
                                            int max_nesting_level) {
-  CBORReader reader(data.cbegin(), data.cend());
-  base::Optional<CBORValue> decoded_cbor =
-      reader.DecodeCompleteDataItem(max_nesting_level);
+  size_t num_bytes_consumed;
+  auto decoded_cbor =
+      Read(data, &num_bytes_consumed, error_code_out, max_nesting_level);
 
-  if (decoded_cbor)
-    reader.CheckExtraneousData();
-  if (error_code_out)
-    *error_code_out = reader.GetErrorCode();
-
-  if (reader.GetErrorCode() != DecoderError::CBOR_NO_ERROR)
+  if (decoded_cbor && num_bytes_consumed != data.size()) {
+    if (error_code_out)
+      *error_code_out = DecoderError::EXTRANEOUS_DATA;
     return base::nullopt;
+  }
+
   return decoded_cbor;
 }
 
@@ -90,15 +89,16 @@ base::Optional<CBORValue> CBORReader::Read(base::span<uint8_t const> data,
   base::Optional<CBORValue> decoded_cbor =
       reader.DecodeCompleteDataItem(max_nesting_level);
 
+  auto error_code = reader.GetErrorCode();
+  const bool failed = !decoded_cbor.has_value();
+
+  // An error code must be set iff parsing failed.
+  DCHECK_EQ(failed, error_code != DecoderError::CBOR_NO_ERROR);
+
   if (error_code_out)
-    *error_code_out = reader.GetErrorCode();
+    *error_code_out = error_code;
 
-  if (reader.GetErrorCode() != DecoderError::CBOR_NO_ERROR) {
-    *num_bytes_consumed = 0;
-    return base::nullopt;
-  }
-
-  *num_bytes_consumed = reader.num_bytes_consumed();
+  *num_bytes_consumed = failed ? 0 : reader.num_bytes_consumed();
   return decoded_cbor;
 }
 
@@ -158,7 +158,6 @@ base::Optional<CBORValue> CBORReader::DecodeCompleteDataItem(
 
 base::Optional<CBORReader::DataItemHeader> CBORReader::DecodeDataItemHeader() {
   if (!CanConsume(1)) {
-    error_code_ = DecoderError::INCOMPLETE_CBOR_DATA;
     return base::nullopt;
   }
 
@@ -193,7 +192,6 @@ bool CBORReader::ReadVariadicLengthInteger(uint8_t additional_info,
   }
 
   if (!CanConsume(additional_bytes)) {
-    error_code_ = DecoderError::INCOMPLETE_CBOR_DATA;
     return false;
   }
 
@@ -227,13 +225,19 @@ base::Optional<CBORValue> CBORReader::DecodeValueToUnsigned(uint64_t value) {
 
 base::Optional<CBORValue> CBORReader::DecodeToSimpleValue(
     const DataItemHeader& header) {
+  // ReadVariadicLengthInteger provides this bound.
+  CHECK_LE(header.additional_info, 27);
   // Floating point numbers are not supported.
-  if (header.additional_info > 24 && header.additional_info < 28) {
+  if (header.additional_info > 24) {
     error_code_ = DecoderError::UNSUPPORTED_FLOATING_POINT_VALUE;
     return base::nullopt;
   }
 
+  // Since |header.additional_info| <= 24, ReadVariadicLengthInteger also
+  // provides this bound for |header.value|.
   CHECK_LE(header.value, 255u);
+  // |SimpleValue| is an enum class and so the underlying type is specified to
+  // be |int|. So this cast is safe.
   CBORValue::SimpleValue possibly_unsupported_simple_value =
       static_cast<CBORValue::SimpleValue>(static_cast<int>(header.value));
   switch (possibly_unsupported_simple_value) {
@@ -252,7 +256,6 @@ base::Optional<CBORValue> CBORReader::ReadStringContent(
     const CBORReader::DataItemHeader& header) {
   uint64_t num_bytes = header.value;
   if (!CanConsume(num_bytes)) {
-    error_code_ = DecoderError::INCOMPLETE_CBOR_DATA;
     return base::nullopt;
   }
 
@@ -268,7 +271,6 @@ base::Optional<CBORValue> CBORReader::ReadByteStringContent(
     const CBORReader::DataItemHeader& header) {
   uint64_t num_bytes = header.value;
   if (!CanConsume(num_bytes)) {
-    error_code_ = DecoderError::INCOMPLETE_CBOR_DATA;
     return base::nullopt;
   }
 
@@ -318,8 +320,7 @@ base::Optional<CBORValue> CBORReader::ReadMapContent(
         error_code_ = DecoderError::INCORRECT_MAP_KEY_TYPE;
         return base::nullopt;
     }
-    if (!CheckDuplicateKey(key.value(), &cbor_map) ||
-        !CheckOutOfOrderKey(key.value(), &cbor_map)) {
+    if (!CheckOutOfOrderKey(key.value(), &cbor_map)) {
       return base::nullopt;
     }
 
@@ -346,20 +347,6 @@ bool CBORReader::CheckMinimalEncoding(uint8_t additional_bytes,
   return true;
 }
 
-void CBORReader::CheckExtraneousData() {
-  if (it_ != end_)
-    error_code_ = DecoderError::EXTRANEOUS_DATA;
-}
-
-bool CBORReader::CheckDuplicateKey(const CBORValue& new_key,
-                                   CBORValue::MapValue* map) {
-  if (base::ContainsKey(*map, new_key)) {
-    error_code_ = DecoderError::DUPLICATE_KEY;
-    return false;
-  }
-  return true;
-}
-
 bool CBORReader::HasValidUTF8Format(const std::string& string_data) {
   if (!base::IsStringUTF8(string_data)) {
     error_code_ = DecoderError::INVALID_UTF8;
@@ -370,8 +357,13 @@ bool CBORReader::HasValidUTF8Format(const std::string& string_data) {
 
 bool CBORReader::CheckOutOfOrderKey(const CBORValue& new_key,
                                     CBORValue::MapValue* map) {
-  auto comparator = map->key_comp();
-  if (!map->empty() && comparator(new_key, map->rbegin()->first)) {
+  if (map->empty()) {
+    return true;
+  }
+
+  const auto& max_current_key = map->rbegin()->first;
+  const auto less = map->key_comp();
+  if (!less(max_current_key, new_key)) {
     error_code_ = DecoderError::OUT_OF_ORDER_KEY;
     return false;
   }
@@ -401,8 +393,6 @@ const char* CBORReader::ErrorCodeToString(DecoderError error) {
       return kInvalidUTF8;
     case DecoderError::EXTRANEOUS_DATA:
       return kExtraneousData;
-    case DecoderError::DUPLICATE_KEY:
-      return kDuplicateKey;
     case DecoderError::OUT_OF_ORDER_KEY:
       return kMapKeyOutOfOrder;
     case DecoderError::NON_MINIMAL_CBOR_ENCODING:
@@ -413,6 +403,8 @@ const char* CBORReader::ErrorCodeToString(DecoderError error) {
       return kUnsupportedFloatingPointValue;
     case DecoderError::OUT_OF_RANGE_INTEGER_VALUE:
       return kOutOfRangeIntegerValue;
+    case DecoderError::UNKNOWN_ERROR:
+      return kUnknownError;
     default:
       NOTREACHED();
       return "Unknown error code.";

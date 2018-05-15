@@ -12,10 +12,10 @@
 #include "media/base/media.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebThread.h"
-#include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
-#include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
-#include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
+#include "third_party/blink/public/platform/web_thread.h"
+#include "third_party/blink/public/web/blink.h"
 
 #if defined(OS_ANDROID)
 #include "media/base/android/media_codec_util.h"
@@ -44,9 +44,9 @@ constexpr gin::V8Initializer::V8SnapshotFileType kSnapshotType =
 class TestBlinkPlatformSupport : public blink::Platform {
  public:
   TestBlinkPlatformSupport()
-      : renderer_scheduler_(
-            blink::scheduler::CreateRendererSchedulerForTests()),
-        main_thread_(renderer_scheduler_->CreateMainThread()) {}
+      : main_thread_scheduler_(
+            blink::scheduler::CreateWebMainThreadSchedulerForTests()),
+        main_thread_(main_thread_scheduler_->CreateMainThread()) {}
   ~TestBlinkPlatformSupport() override;
 
   blink::WebThread* CurrentThread() override {
@@ -55,12 +55,13 @@ class TestBlinkPlatformSupport : public blink::Platform {
   }
 
  private:
-  std::unique_ptr<blink::scheduler::RendererScheduler> renderer_scheduler_;
+  std::unique_ptr<blink::scheduler::WebMainThreadScheduler>
+      main_thread_scheduler_;
   std::unique_ptr<blink::WebThread> main_thread_;
 };
 
 TestBlinkPlatformSupport::~TestBlinkPlatformSupport() {
-  renderer_scheduler_->Shutdown();
+  main_thread_scheduler_->Shutdown();
 }
 
 class BlinkMediaTestSuite : public base::TestSuite {

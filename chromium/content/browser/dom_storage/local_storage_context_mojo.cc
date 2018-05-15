@@ -5,9 +5,14 @@
 #include "content/browser/dom_storage/local_storage_context_mojo.h"
 
 #include <inttypes.h>
+
+#include <algorithm>
 #include <cctype>  // for std::isalnum
+#include <set>
+#include <string>
+#include <utility>
+
 #include "base/barrier_closure.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
@@ -16,8 +21,8 @@
 #include "base/sys_info.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "build/build_config.h"
-#include "components/leveldb/public/cpp/util.h"
-#include "components/leveldb/public/interfaces/leveldb.mojom.h"
+#include "components/services/leveldb/public/cpp/util.h"
+#include "components/services/leveldb/public/interfaces/leveldb.mojom.h"
 #include "content/browser/dom_storage/dom_storage_area.h"
 #include "content/browser/dom_storage/dom_storage_database.h"
 #include "content/browser/dom_storage/dom_storage_task_runner.h"
@@ -103,8 +108,8 @@ void MigrateStorageHelper(
     (*values)[LocalStorageContextMojo::MigrateString(it.first)] =
         LocalStorageContextMojo::MigrateString(it.second.string());
   }
-  reply_task_runner->PostTask(FROM_HERE,
-                              base::BindOnce(callback, std::move(values)));
+  reply_task_runner->PostTask(
+      FROM_HERE, base::BindOnce(std::move(callback), std::move(values)));
 }
 
 // Helper to convert from OnceCallback to Callback.
@@ -564,7 +569,7 @@ bool LocalStorageContextMojo::OnMemoryDump(
     return true;
 
   std::string context_name =
-      base::StringPrintf("site_storage/localstorage_0x%" PRIXPTR,
+      base::StringPrintf("site_storage/localstorage/0x%" PRIXPTR,
                          reinterpret_cast<uintptr_t>(this));
 
   // Account for leveldb memory usage, which actually lives in the file service.
@@ -680,13 +685,11 @@ void LocalStorageContextMojo::InitiateConnection(bool in_memory_only) {
   }
 }
 
-void LocalStorageContextMojo::OnDirectoryOpened(
-    filesystem::mojom::FileError err) {
-  if (err != filesystem::mojom::FileError::OK) {
+void LocalStorageContextMojo::OnDirectoryOpened(base::File::Error err) {
+  if (err != base::File::Error::FILE_OK) {
     // We failed to open the directory; continue with startup so that we create
     // the |level_db_wrappers_|.
-    UMA_HISTOGRAM_ENUMERATION("LocalStorageContext.DirectoryOpenError",
-                              -static_cast<base::File::Error>(err),
+    UMA_HISTOGRAM_ENUMERATION("LocalStorageContext.DirectoryOpenError", -err,
                               -base::File::FILE_ERROR_MAX);
     LogDatabaseOpenResult(OpenResult::DIRECTORY_OPEN_FAILED);
     OnDatabaseOpened(false, leveldb::mojom::DatabaseError::OK);

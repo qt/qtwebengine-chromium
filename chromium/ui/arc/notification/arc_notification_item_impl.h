@@ -32,24 +32,24 @@ class ArcNotificationItemImpl : public ArcNotificationItem {
 
   // ArcNotificationItem overrides:
   void OnClosedFromAndroid() override;
-  void OnUpdatedFromAndroid(mojom::ArcNotificationDataPtr data) override;
+  void OnUpdatedFromAndroid(mojom::ArcNotificationDataPtr data,
+                            const std::string& app_id) override;
   void Close(bool by_user) override;
   void Click() override;
   void OpenSettings() override;
-  bool IsOpeningSettingsSupported() const override;
   void ToggleExpansion() override;
   void AddObserver(Observer* observer) override;
   void RemoveObserver(Observer* observer) override;
   void IncrementWindowRefCount() override;
   void DecrementWindowRefCount() override;
   const gfx::ImageSkia& GetSnapshot() const override;
+  mojom::ArcNotificationType GetNotificationType() const override;
   mojom::ArcNotificationExpandState GetExpandState() const override;
   bool IsManuallyExpandedOrCollapsed() const override;
   mojom::ArcNotificationShownContents GetShownContents() const override;
   gfx::Rect GetSwipeInputRect() const override;
   const std::string& GetNotificationKey() const override;
   const std::string& GetNotificationId() const override;
-  const base::string16& GetAccessibleName() const override;
 
  private:
   // Return true if it's on the thread this instance is created on.
@@ -60,6 +60,8 @@ class ArcNotificationItemImpl : public ArcNotificationItem {
 
   // The snapshot of the latest notification.
   gfx::ImageSkia snapshot_;
+  // The type of the latest notification.
+  mojom::ArcNotificationType type_ = mojom::ArcNotificationType::SIMPLE;
   // The expand state of the latest notification.
   mojom::ArcNotificationExpandState expand_state_ =
       mojom::ArcNotificationExpandState::FIXED_SIZE;
@@ -70,8 +72,6 @@ class ArcNotificationItemImpl : public ArcNotificationItem {
   gfx::Rect swipe_input_rect_ = gfx::Rect();
   // The reference counter of the window.
   int window_ref_count_ = 0;
-  // The accessible name of the latest notification.
-  base::string16 accessible_name_;
 
   base::ObserverList<Observer> observers_;
 

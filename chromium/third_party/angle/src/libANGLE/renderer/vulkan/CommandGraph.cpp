@@ -12,6 +12,7 @@
 #include "libANGLE/renderer/vulkan/RenderTargetVk.h"
 #include "libANGLE/renderer/vulkan/RendererVk.h"
 #include "libANGLE/renderer/vulkan/vk_format_utils.h"
+#include "libANGLE/renderer/vulkan/vk_helpers.h"
 
 namespace rx
 {
@@ -50,6 +51,110 @@ Error InitAndBeginCommandBuffer(VkDevice device,
 }
 
 }  // anonymous namespace
+
+// CommandGraphResource implementation.
+CommandGraphResource::CommandGraphResource() : mCurrentWritingNode(nullptr)
+{
+}
+
+CommandGraphResource::~CommandGraphResource()
+{
+}
+
+void CommandGraphResource::updateQueueSerial(Serial queueSerial)
+{
+    ASSERT(queueSerial >= mStoredQueueSerial);
+
+    if (queueSerial > mStoredQueueSerial)
+    {
+        mCurrentWritingNode = nullptr;
+        mCurrentReadingNodes.clear();
+        mStoredQueueSerial = queueSerial;
+    }
+}
+
+Serial CommandGraphResource::getQueueSerial() const
+{
+    return mStoredQueueSerial;
+}
+
+bool CommandGraphResource::hasChildlessWritingNode() const
+{
+    return (mCurrentWritingNode != nullptr && !mCurrentWritingNode->hasChildren());
+}
+
+CommandGraphNode *CommandGraphResource::getCurrentWritingNode()
+{
+    return mCurrentWritingNode;
+}
+
+CommandGraphNode *CommandGraphResource::getNewWritingNode(RendererVk *renderer)
+{
+    CommandGraphNode *newCommands = renderer->allocateCommandNode();
+    onWriteResource(newCommands, renderer->getCurrentQueueSerial());
+    return newCommands;
+}
+
+Error CommandGraphResource::beginWriteResource(RendererVk *renderer,
+                                               CommandBuffer **commandBufferOut)
+{
+    CommandGraphNode *commands = getNewWritingNode(renderer);
+
+    VkDevice device = renderer->getDevice();
+    ANGLE_TRY(commands->beginOutsideRenderPassRecording(device, renderer->getCommandPool(),
+                                                        commandBufferOut));
+    return NoError();
+}
+
+void CommandGraphResource::onWriteResource(CommandGraphNode *writingNode, Serial serial)
+{
+    updateQueueSerial(serial);
+
+    // Make sure any open reads and writes finish before we execute 'writingNode'.
+    if (!mCurrentReadingNodes.empty())
+    {
+        CommandGraphNode::SetHappensBeforeDependencies(mCurrentReadingNodes, writingNode);
+        mCurrentReadingNodes.clear();
+    }
+
+    if (mCurrentWritingNode && mCurrentWritingNode != writingNode)
+    {
+        CommandGraphNode::SetHappensBeforeDependency(mCurrentWritingNode, writingNode);
+    }
+
+    mCurrentWritingNode = writingNode;
+}
+
+void CommandGraphResource::onReadResource(CommandGraphNode *readingNode, Serial serial)
+{
+    updateQueueSerial(serial);
+
+    if (hasChildlessWritingNode())
+    {
+        ASSERT(mStoredQueueSerial == serial);
+
+        // Ensure 'readingNode' happens after the current writing node.
+        CommandGraphNode::SetHappensBeforeDependency(mCurrentWritingNode, readingNode);
+    }
+
+    // Add the read node to the list of nodes currently reading this resource.
+    mCurrentReadingNodes.push_back(readingNode);
+}
+
+bool CommandGraphResource::checkResourceInUseAndRefreshDeps(RendererVk *renderer)
+{
+    if (!renderer->isResourceInUse(*this) ||
+        (renderer->getCurrentQueueSerial() > mStoredQueueSerial))
+    {
+        mCurrentReadingNodes.clear();
+        mCurrentWritingNode = nullptr;
+        return false;
+    }
+    else
+    {
+        return true;
+    }
+}
 
 // CommandGraphNode implementation.
 
@@ -140,17 +245,35 @@ void CommandGraphNode::storeRenderPassInfo(const Framebuffer &framebuffer,
 
 void CommandGraphNode::appendColorRenderTarget(Serial serial, RenderTargetVk *colorRenderTarget)
 {
-    // TODO(jmadill): Layout transition?
-    mRenderPassDesc.packColorAttachment(*colorRenderTarget->format, colorRenderTarget->samples);
+    ASSERT(mOutsideRenderPassCommands.valid());
+
+    // TODO(jmadill): Use automatic layout transition. http://anglebug.com/2361
+    colorRenderTarget->image->changeLayoutWithStages(
+        VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        &mOutsideRenderPassCommands);
+
+    mRenderPassDesc.packColorAttachment(*colorRenderTarget->image);
     colorRenderTarget->resource->onWriteResource(this, serial);
 }
 
 void CommandGraphNode::appendDepthStencilRenderTarget(Serial serial,
                                                       RenderTargetVk *depthStencilRenderTarget)
 {
-    // TODO(jmadill): Layout transition?
-    mRenderPassDesc.packDepthStencilAttachment(*depthStencilRenderTarget->format,
-                                               depthStencilRenderTarget->samples);
+    ASSERT(mOutsideRenderPassCommands.valid());
+    ASSERT(depthStencilRenderTarget->image->getFormat().textureFormat().hasDepthOrStencilBits());
+
+    // TODO(jmadill): Use automatic layout transition. http://anglebug.com/2361
+    const angle::Format &format    = depthStencilRenderTarget->image->getFormat().textureFormat();
+    VkImageAspectFlags aspectFlags = (format.depthBits > 0 ? VK_IMAGE_ASPECT_DEPTH_BIT : 0) |
+                                     (format.stencilBits > 0 ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
+
+    depthStencilRenderTarget->image->changeLayoutWithStages(
+        aspectFlags, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        &mOutsideRenderPassCommands);
+
+    mRenderPassDesc.packDepthStencilAttachment(*depthStencilRenderTarget->image);
     depthStencilRenderTarget->resource->onWriteResource(this, serial);
 }
 
@@ -158,9 +281,9 @@ void CommandGraphNode::appendDepthStencilRenderTarget(Serial serial,
 void CommandGraphNode::SetHappensBeforeDependency(CommandGraphNode *beforeNode,
                                                   CommandGraphNode *afterNode)
 {
+    ASSERT(beforeNode != afterNode && !beforeNode->isChildOf(afterNode));
     afterNode->mParents.emplace_back(beforeNode);
     beforeNode->setHasChildren();
-    ASSERT(beforeNode != afterNode && !beforeNode->isChildOf(afterNode));
 }
 
 // static
@@ -273,6 +396,11 @@ Error CommandGraphNode::visitAndExecute(VkDevice device,
     return NoError();
 }
 
+const gl::Rectangle &CommandGraphNode::getRenderPassRenderArea() const
+{
+    return mRenderPassRenderArea;
+}
+
 // CommandGraph implementation.
 CommandGraph::CommandGraph()
 {
@@ -357,7 +485,7 @@ Error CommandGraph::submitCommands(VkDevice device,
     ANGLE_TRY(primaryCommandBufferOut->end());
 
     // TODO(jmadill): Use pool allocation so we don't need to deallocate command graph.
-    for (vk::CommandGraphNode *node : mNodes)
+    for (CommandGraphNode *node : mNodes)
     {
         delete node;
     }

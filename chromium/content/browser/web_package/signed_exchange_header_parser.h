@@ -8,15 +8,20 @@
 #include <stdint.h>
 #include <string>
 #include <vector>
+
+#include "base/callback_forward.h"
 #include "base/macros.h"
 #include "base/optional.h"
 #include "base/strings/string_piece.h"
+#include "content/browser/web_package/signed_exchange_utils.h"
 #include "content/common/content_export.h"
+#include "net/base/hash_value.h"
+#include "url/gurl.h"
 
 namespace content {
 
 // Provide parsers for signed-exchange headers.
-// https://wicg.github.io/webpackage/draft-yasskin-http-origin-signed-responses.html
+// https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html
 class CONTENT_EXPORT SignedExchangeHeaderParser {
  public:
   struct CONTENT_EXPORT Signature {
@@ -27,23 +32,27 @@ class CONTENT_EXPORT SignedExchangeHeaderParser {
     std::string label;
     std::string sig;
     std::string integrity;
-    std::string cert_url;
-    std::string cert_sha256;
-    std::string ed25519_key;
-    std::string validity_url;
+    GURL cert_url;
+    base::Optional<net::SHA256HashValue> cert_sha256;
+    // TODO(https://crbug.com/819467): Support ed25519key.
+    // std::string ed25519_key;
+    GURL validity_url;
     uint64_t date;
     uint64_t expires;
   };
 
-  // Parses a value of the Signed-Headers header.
-  // https://wicg.github.io/webpackage/draft-yasskin-http-origin-signed-responses.html#rfc.section.3.1
-  static base::Optional<std::vector<std::string>> ParseSignedHeaders(
-      const std::string& signed_headers_str);
-
   // Parses a value of the Signature header.
-  // https://wicg.github.io/webpackage/draft-yasskin-http-origin-signed-responses.html#rfc.section.3.2
+  // https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html#signature-header
   static base::Optional<std::vector<Signature>> ParseSignature(
-      base::StringPiece signature_str);
+      base::StringPiece signature_str,
+      const signed_exchange_utils::LogCallback& error_message_callback);
+
+  // Parses |content_type| to get the value of "v=" parameter of the signed
+  // exchange. Example: "b0" for "application/signed-exchange;v=b0". Returns
+  // false if failed to parse.
+  static bool GetVersionParamFromContentType(
+      base::StringPiece content_type,
+      base::Optional<std::string>* version_param);
 };
 
 }  // namespace content

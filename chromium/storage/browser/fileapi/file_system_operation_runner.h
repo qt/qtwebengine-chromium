@@ -15,6 +15,7 @@
 #include "base/containers/id_map.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "components/services/filesystem/public/interfaces/types.mojom.h"
 #include "storage/browser/blob/blob_data_handle.h"
 #include "storage/browser/fileapi/file_system_operation.h"
 #include "storage/browser/fileapi/file_system_url.h"
@@ -269,7 +270,7 @@ class STORAGE_EXPORT FileSystemOperationRunner
   void DidReadDirectory(const OperationHandle& handle,
                         const ReadDirectoryCallback& callback,
                         base::File::Error rv,
-                        std::vector<DirectoryEntry> entries,
+                        std::vector<filesystem::mojom::DirectoryEntry> entries,
                         bool has_more);
   void DidWrite(const OperationHandle& handle,
                 const WriteCallback& callback,
@@ -306,8 +307,10 @@ class STORAGE_EXPORT FileSystemOperationRunner
   // Not owned; file_system_context owns this.
   FileSystemContext* file_system_context_;
 
-  // IDMap<std::unique_ptr<FileSystemOperation>> operations_;
-  base::IDMap<std::unique_ptr<FileSystemOperation>> operations_;
+  using Operations =
+      std::map<OperationID, std::unique_ptr<FileSystemOperation>>;
+  OperationID next_operation_id_ = 1;
+  Operations operations_;
 
   // We keep track of the file to be modified by each operation so that
   // we can notify observers when we're done.

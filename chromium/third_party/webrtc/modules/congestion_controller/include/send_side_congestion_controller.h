@@ -62,32 +62,42 @@ class SendSideCongestionController
   // try to break this circular chain of references, and make the observer a
   // construction time constant.
   void RegisterNetworkObserver(Observer* observer) override;
-  void DeRegisterNetworkObserver(Observer* observer) override;
+  virtual void DeRegisterNetworkObserver(Observer* observer);
 
   void SetBweBitrates(int min_bitrate_bps,
                       int start_bitrate_bps,
                       int max_bitrate_bps) override;
+
+  void SetAllocatedSendBitrateLimits(int64_t min_send_bitrate_bps,
+                                     int64_t max_padding_bitrate_bps,
+                                     int64_t max_total_bitrate_bps) override;
+
   // Resets the BWE state. Note the first argument is the bitrate_bps.
   void OnNetworkRouteChanged(const rtc::NetworkRoute& network_route,
                              int bitrate_bps,
                              int min_bitrate_bps,
                              int max_bitrate_bps) override;
   void SignalNetworkState(NetworkState state) override;
-  void SetTransportOverhead(
-      size_t transport_overhead_bytes_per_packet) override;
+
+  // Deprecated: Is updated by OnNetworkRouteChanged
+  RTC_DEPRECATED virtual void SetTransportOverhead(
+      size_t transport_overhead_bytes_per_packet);
 
   // Deprecated: Use GetBandwidthObserver instead.
   RTC_DEPRECATED virtual BitrateController* GetBitrateController() const;
 
-  RtcpBandwidthObserver* GetBandwidthObserver() const override;
+  RtcpBandwidthObserver* GetBandwidthObserver() override;
+  RTC_DEPRECATED RtcpBandwidthObserver* GetBandwidthObserver() const;
 
   bool AvailableBandwidth(uint32_t* bandwidth) const override;
-  int64_t GetPacerQueuingDelayMs() const override;
-  int64_t GetFirstPacketTimeMs() const override;
+  virtual int64_t GetPacerQueuingDelayMs() const;
+  virtual int64_t GetFirstPacketTimeMs() const;
 
   TransportFeedbackObserver* GetTransportFeedbackObserver() override;
 
-  RateLimiter* GetRetransmissionRateLimiter() override;
+  RTC_DEPRECATED virtual RateLimiter* GetRetransmissionRateLimiter();
+
+  void SetPerPacketFeedbackAvailable(bool available) override;
   void EnablePeriodicAlrProbing(bool enable) override;
 
   void OnSentPacket(const rtc::SentPacket& sent_packet) override;
@@ -105,7 +115,10 @@ class SendSideCongestionController
                  size_t length,
                  const PacedPacketInfo& pacing_info) override;
   void OnTransportFeedback(const rtcp::TransportFeedback& feedback) override;
-  std::vector<PacketFeedback> GetTransportFeedbackVector() const override;
+
+  std::vector<PacketFeedback> GetTransportFeedbackVector() const;
+
+  void SetPacingFactor(float pacing_factor) override;
 
  private:
   void MaybeTriggerOnNetworkChanged();

@@ -35,7 +35,7 @@ class UpdateChecker {
   // |additional_attributes| provides a way to customize the <request> element.
   // This value is inserted as-is, therefore it must be well-formed as an
   // XML attribute string.
-  // |is_foreground| controls the value of "X-GoogleUpdate-Interactivity"
+  // |is_foreground| controls the value of "X-Goog-Update-Interactivity"
   // header which is sent with the update check.
   // On completion, the state of |components| is mutated as required by the
   // server response received.
@@ -44,7 +44,6 @@ class UpdateChecker {
                                const IdToComponentPtrMap& components,
                                const std::string& additional_attributes,
                                bool enabled_component_updates,
-                               bool is_foreground,
                                UpdateCheckCallback update_check_callback) = 0;
 
   static std::unique_ptr<UpdateChecker> Create(

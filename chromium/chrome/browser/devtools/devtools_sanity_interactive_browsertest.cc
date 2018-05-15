@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "build/build_config.h"
@@ -141,7 +140,14 @@ IN_PROC_BROWSER_TEST_F(DevToolsManagerDelegateTest, NormalToMinimizedWindow) {
   CheckIsMinimized(true);
 }
 
-IN_PROC_BROWSER_TEST_F(DevToolsManagerDelegateTest, NormalToFullscreenWindow) {
+#if defined(OS_MACOSX)
+// https://crbug.com/828031
+#define MAYBE_NormalToFullscreenWindow DISABLED_NormalToFullscreenWindow
+#else
+#define MAYBE_NormalToFullscreenWindow NormalToFullscreenWindow
+#endif
+IN_PROC_BROWSER_TEST_F(DevToolsManagerDelegateTest,
+                       MAYBE_NormalToFullscreenWindow) {
 #if defined(OS_MACOSX)
   ui::test::ScopedFakeNSWindowFullscreen faker;
 #endif
@@ -163,8 +169,14 @@ IN_PROC_BROWSER_TEST_F(DevToolsManagerDelegateTest,
   CheckIsMinimized(true);
 }
 
+#if defined(OS_MACOSX)
+// https://crbug.com/828031
+#define MAYBE_MaximizedToFullscreenWindow DISABLED_MaximizedToFullscreenWindow
+#else
+#define MAYBE_MaximizedToFullscreenWindow MaximizedToFullscreenWindow
+#endif
 IN_PROC_BROWSER_TEST_F(DevToolsManagerDelegateTest,
-                       MaximizedToFullscreenWindow) {
+                       MAYBE_MaximizedToFullscreenWindow) {
   browser()->window()->Maximize();
   CheckIsMaximized(true);
 
@@ -193,7 +205,14 @@ IN_PROC_BROWSER_TEST_F(DevToolsManagerDelegateTest, RestoreMaximizedWindow) {
   CheckIsMaximized(false);
 }
 
-IN_PROC_BROWSER_TEST_F(DevToolsManagerDelegateTest, ExitFullscreenWindow) {
+#if defined(OS_MACOSX)
+// https://crbug.com/828031
+#define MAYBE_ExitFullscreenWindow DISABLED_ExitFullscreenWindow
+#else
+#define MAYBE_ExitFullscreenWindow ExitFullscreenWindow
+#endif
+IN_PROC_BROWSER_TEST_F(DevToolsManagerDelegateTest,
+                       MAYBE_ExitFullscreenWindow) {
 #if defined(OS_MACOSX)
   ui::test::ScopedFakeNSWindowFullscreen faker;
 #endif

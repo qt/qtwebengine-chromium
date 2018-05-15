@@ -6,21 +6,20 @@
 
 #include <memory>
 
-#include "base/memory/ptr_util.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/child/scoped_child_process_reference.h"
-#include "content/child/thread_safe_sender.h"
-#include "content/common/service_worker/embedded_worker_messages.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/common/content_client.h"
+#include "content/renderer/render_thread_impl.h"
 #include "content/renderer/service_worker/service_worker_context_client.h"
 #include "content/renderer/service_worker/web_service_worker_installed_scripts_manager_impl.h"
-#include "third_party/WebKit/public/platform/WebContentSettingsClient.h"
-#include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerInstalledScriptsManager.h"
-#include "third_party/WebKit/public/web/WebEmbeddedWorker.h"
-#include "third_party/WebKit/public/web/WebEmbeddedWorkerStartData.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_installed_scripts_manager.h"
+#include "third_party/blink/public/platform/web_content_settings_client.h"
+#include "third_party/blink/public/platform/web_security_origin.h"
+#include "third_party/blink/public/platform/web_url.h"
+#include "third_party/blink/public/web/web_embedded_worker.h"
+#include "third_party/blink/public/web/web_embedded_worker_start_data.h"
 
 namespace content {
 
@@ -67,9 +66,19 @@ void EmbeddedWorkerInstanceClientImpl::StartWorker(
       std::move(params->controller_request),
       std::move(params->service_worker_host), std::move(params->instance_host),
       std::move(params->provider_info), std::move(temporal_self_),
-      ChildThreadImpl::current()->thread_safe_sender(), io_thread_runner_);
+      RenderThreadImpl::current()
+          ->GetWebMainThreadScheduler()
+          ->DefaultTaskRunner(),
+      io_thread_runner_);
   client->set_blink_initialized_time(blink_initialized_time_);
   client->set_start_worker_received_time(base::TimeTicks::Now());
+  // Record UMA to indicate StartWorker is received on renderer.
+  StartWorkerHistogramEnum metric =
+      params->is_installed ? StartWorkerHistogramEnum::RECEIVED_ON_INSTALLED
+                           : StartWorkerHistogramEnum::RECEIVED_ON_UNINSTALLED;
+  UMA_HISTOGRAM_ENUMERATION(
+      "ServiceWorker.EmbeddedWorkerInstanceClient.StartWorker", metric,
+      StartWorkerHistogramEnum::NUM_TYPES);
   wrapper_ = StartWorkerContext(std::move(params), std::move(client),
                                 std::move(interface_provider));
 }

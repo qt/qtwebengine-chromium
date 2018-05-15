@@ -1,6 +1,7 @@
 <?xml version="1.0" ?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="hi">
+<translation id="1005145902654145231">सत्र का नाम नहीं बदल पाए.</translation>
 <translation id="1008557486741366299">अभी नहीं</translation>
 <translation id="1015730422737071372">अतिरिक्त विवरण प्रदान करें</translation>
 <translation id="1021110881106174305">स्वीकार्य कार्ड</translation>
@@ -21,13 +22,13 @@
 <translation id="1113869188872983271">&amp;पुन: क्रमित करना वापस लाएं</translation>
 <translation id="1126551341858583091">स्थानीय जगह का आकार <ph name="CRASH_SIZE" /> है.</translation>
 <translation id="112840717907525620">नीति संचय ठीक है</translation>
-<translation id="1132774398110320017">Chrome ऑटोमैटिक भरने वाली सेटिंग...</translation>
 <translation id="1150979032973867961">यह सर्वर यह नहीं प्रमाणित कर सका कि यह <ph name="DOMAIN" /> है; इसका सुरक्षा प्रमाणपत्र आपके कंप्यूटर के ऑपरेटिंग सिस्टम द्वारा विश्वसनीय नहीं है. ऐसा गलत कॉन्फ़िगरेशन या किसी आक्रमणकर्ता द्वारा आपके कनेक्शन में अवरोध डालने के कारण हो सकता है.</translation>
 <translation id="1151972924205500581">पासवर्ड आवश्यक</translation>
 <translation id="1152921474424827756"><ph name="URL" /> की <ph name="BEGIN_LINK" />संचित प्रति<ph name="END_LINK" /> एक्सेस करें</translation>
 <translation id="1158211211994409885"><ph name="HOST_NAME" /> ने अनपेक्षित रूप से कनेक्शन बंद कर दिया है.</translation>
 <translation id="1161325031994447685">वाई-फ़ाई से फिर से कनेक्ट करें</translation>
 <translation id="1165039591588034296">गड़बड़ी</translation>
+<translation id="1173894706177603556">नाम बदलें</translation>
 <translation id="1175364870820465910">&amp;प्रिंट करें...</translation>
 <translation id="1181037720776840403">निकालें</translation>
 <translation id="1184214524891303587">Google को संभावित सुरक्षा घटनाओं के विवरण की <ph name="BEGIN_WHITEPAPER_LINK" />अपने आप रिपोर्ट करें<ph name="END_WHITEPAPER_LINK" />. <ph name="PRIVACY_PAGE_LINK" /></translation>
@@ -42,13 +43,22 @@
 <translation id="1228893227497259893">गलत इकाई पहचानकर्ता</translation>
 <translation id="1232569758102978740">शीर्षक रहित</translation>
 <translation id="1253921432148366685"><ph name="TYPE_1" />, <ph name="TYPE_2" /> (सिंक किए गए)</translation>
+<translation id="1256368399071562588">&lt;p&gt;अगर आप किसी वेबसाइट पर जाने की कोशिश करते हैं और वह नहीं खुलती है, तो पहले इन समस्या को हल करने के कदमों से गड़बड़ी को ठीक करके देखें:&lt;/p&gt;
+    &lt;ol&gt;
+    &lt;li&gt;देखें कि वेब पता लिखने में कोई गलती तो नहीं हुई है.&lt;/li&gt;
+    &lt;li&gt;पक्का करें कि आपका इंटरनेट कनेक्शन ठीक से काम कर रहा है.&lt;/li&gt;
+    &lt;li&gt;वेबसाइट के मालिक से संपर्क करें.&lt;/li&gt;
+    &lt;/ol&gt;</translation>
 <translation id="1263231323834454256">पठन सूची</translation>
 <translation id="1264126396475825575">ख़राबी रिपोर्ट <ph name="CRASH_TIME" /> पर कैप्चर की गई (अभी तक अपलोड नहीं की गई या उसे अनदेखा किया गया)</translation>
 <translation id="1270502636509132238">पिकअप का तरीका</translation>
 <translation id="1285320974508926690">कभी भी इस साइट का अनुवाद न करें</translation>
+<translation id="1292701964462482250">"आपके कंप्यूटर पर मौजूद सॉफ़्टवेयर Chrome को सुरक्षित रूप से वेब से कनेक्ट होने से रोक रहा है" (केवल Windows कंप्यूटर)</translation>
 <translation id="1294154142200295408">कमांड लाइन की विविधताएं</translation>
 <translation id="129553762522093515">हाल ही में बंद किए गए</translation>
 <translation id="129863573139666797"><ph name="BEGIN_LINK" />अपनी कुकी साफ़ करके देखें<ph name="END_LINK" /></translation>
+<translation id="1314614906530272393">चुना गया सत्र मौजूद नहीं है.</translation>
+<translation id="1323433172918577554">और दिखाएं</translation>
 <translation id="1333989956347591814">आपकी गतिविधि इन्हें <ph name="BEGIN_EMPHASIS" />अभी भी दिखाई दे सकती है<ph name="END_EMPHASIS" />:
         <ph name="BEGIN_LIST" />
           <ph name="LIST_ITEM" />जिन वेबसाइट पर आप जाते हैं
@@ -57,10 +67,10 @@
         <ph name="END_LIST" /></translation>
 <translation id="1339601241726513588">नामांकन डोमेन:</translation>
 <translation id="1340482604681802745">पिकअप पता</translation>
-<translation id="1344588688991793829">क्रोमियम ऑटोमैटिक भरने वाली सेटिंग...</translation>
 <translation id="1348198688976932919">आगे आने वाली साइट में खतरनाक ऐप्लिकेशन हैं</translation>
 <translation id="1374468813861204354">सुझाव</translation>
 <translation id="1375198122581997741">वर्शन के बारे में</translation>
+<translation id="1376836354785490390">कम दिखाएं</translation>
 <translation id="1377321085342047638">कार्ड नंबर</translation>
 <translation id="139305205187523129"><ph name="HOST_NAME" /> ने कोई डेटा नहीं भेजा.</translation>
 <translation id="1407135791313364759">सभी बुकमार्क खोलें</translation>
@@ -70,6 +80,8 @@
 <translation id="1430915738399379752">प्रिंट करें</translation>
 <translation id="1484290072879560759">शिपिंग पता चुनें</translation>
 <translation id="1506687042165942984">इस पृष्‍ठ की सहेजी गई (अर्थात जिसे पुराना माना जाता है) कॉपी दिखाएं.</translation>
+<translation id="1507202001669085618">&lt;p&gt;अगर आपके पास ऐसा वाई-फ़ाई पोर्टल है जिसके लिए यह ज़रूरी है कि आप ऑनलाइन होने से पहले साइन इन करें, तो आपको यह गड़बड़ी दिखाई देगी.&lt;/p&gt;
+    &lt;p&gt;गड़बड़ी ठीक करने के लिए, उस पेज पर &lt;strong&gt;कनेक्ट करें&lt;/strong&gt; को क्लिक करें जिसे आप खोलने की कोशिश कर रहे हैं.&lt;/p&gt;</translation>
 <translation id="1517433312004943670">फ़ोन नंबर आवश्यक है</translation>
 <translation id="1517500485252541695">स्वीकृत क्रेडिट और डेबिट कार्ड</translation>
 <translation id="1519264250979466059">बिल्ड दिनांक</translation>
@@ -133,15 +145,18 @@
 <translation id="1898423065542865115">फ़िल्टर किया जा रहा है</translation>
 <translation id="1916770123977586577">इस साइट पर अपनी अपडेट की गई सेटिंग लागू करने के लिए, इस पेज को फिर से लोड करें</translation>
 <translation id="1919345977826869612">विज्ञापन</translation>
+<translation id="1919367280705858090">गड़बड़ी के किसी खास मैसेज से मदद पाना</translation>
 <translation id="192020519938775529">{COUNT,plural, =0{कुछ नहीं}=1{1 साइट}one{# साइट}other{# साइट}}</translation>
 <translation id="1927235823738766038">स्वीकार किए जाने वाले क्रेडिट और डेबिट कार्ड</translation>
 <translation id="194030505837763158"><ph name="LINK" /> पर जाएं</translation>
+<translation id="1945968466830820669">आप अपने संगठन के खाते का एक्सेस खो सकते हैं या आपकी पहचान चोरी हो सकती है. Chromium आपको इसी समय अपना पासवर्ड बदलने का सुझाव देता है.</translation>
 <translation id="1948773908305951926">स्वीकृत प्रीपेड कार्ड</translation>
 <translation id="1962204205936693436"><ph name="DOMAIN" /> बुकमार्क</translation>
 <translation id="1973335181906896915">क्रमबद्ध करने में गड़बड़ी</translation>
 <translation id="1974060860693918893">उन्नत</translation>
 <translation id="1978555033938440688">फ़र्मवेयर वर्शन</translation>
 <translation id="2001146170449793414">{COUNT,plural, =1{और 1 अधिक}one{और # अधिक}other{और # अधिक}}</translation>
+<translation id="2003709556000175978">अपना पासवर्ड अभी रीसेट करें</translation>
 <translation id="2025186561304664664">प्रॉक्‍सी स्‍वत: कॉन्‍फ़‍िगर पर सेट है.</translation>
 <translation id="2030481566774242610">क्या आप मतलब <ph name="LINK" /> से है?</translation>
 <translation id="2032962459168915086"><ph name="BEGIN_LINK" />प्रॉक्सी और फायरवॉल की जाँच करें<ph name="END_LINK" /></translation>
@@ -149,6 +164,7 @@
 <translation id="2064691555167957331">{COUNT,plural, =1{1 सुझाव}one{# सुझाव}other{# सुझाव}}</translation>
 <translation id="2079545284768500474">वापस लाएं</translation>
 <translation id="20817612488360358">सिस्‍टम प्रॉक्‍सी सेटिंग उपयोग किए जाने के लिए सेट हैं लेकिन कोई स्पष्‍ट प्रॉक्‍सी कॉन्फ़िगरेशन भी निर्दिष्ट है.</translation>
+<translation id="2084558088529668945">आपने एक ऐसी साइट पर अपना पासवर्ड डाला है जिसे <ph name="ORG_NAME" /> प्रबंधित नहीं करता है. अपने खाते को सुरक्षित रखने के लिए, दूसरे ऐप्लिकेशन और साइटों पर अपने पासवर्ड का दोबारा इस्तेमाल नहीं करें.</translation>
 <translation id="2091887806945687916">ध्वनि</translation>
 <translation id="2094505752054353250">डोमेन का गलत-मिलान</translation>
 <translation id="2096368010154057602">विभाग</translation>
@@ -283,7 +299,6 @@
 <translation id="301521992641321250">ऑटोमैटिक रूप से ब्लॉक है</translation>
 <translation id="3024663005179499861">गलत नीति प्रकार</translation>
 <translation id="3037605927509011580">हे भगवान!</translation>
-<translation id="3039538478787849737">Google में कार्ड सेव करें?</translation>
 <translation id="3041612393474885105">प्रमाणपत्र जानकारी</translation>
 <translation id="3063697135517575841">Chrome इस समय आपके कार्ड की पुष्टि नहीं कर सका. कृपया बाद में पुन: प्रयास करें.</translation>
 <translation id="3064966200440839136">किसी बाहरी ऐप्लिकेशन के ज़रिए भुगतान करने के लिए गुप्त मोड छोड़ रहे हैं. जारी रखना चाहते हैं?</translation>
@@ -370,52 +385,6 @@
 <translation id="3583757800736429874">&amp;ले जाना फिर से करें</translation>
 <translation id="3586931643579894722">विवरण छुपाएं</translation>
 <translation id="3600246354004376029"><ph name="TITLE" />, <ph name="DOMAIN" />, <ph name="TIME" /></translation>
-<translation id="3602137825010714926">&lt;h1&gt;कनेक्शन गड़बड़ियां ठीक करना&lt;/h1&gt;
-    &lt;p&gt;अगर किसी वेबसाइट पर जाने की कोशिश करते समय आपको गड़बड़ी का कोई मैसेज मिलता है, तो ये समाधान आज़माकर देखें.&lt;/p&gt;
-    &lt;h2&gt;कनेक्शन से जुड़ी ज़्यादातर गड़बड़ियां ठीक करना&lt;/h2&gt;
-    &lt;p&gt;अगर आप किसी वेबसाइट पर जाने की कोशिश करते हैं और वह नहीं खुलती है, तो पहले समस्‍या निवारण के इन चरणों से गड़बड़ी को ठीक करके देखें:&lt;/p&gt;
-    &lt;ol&gt;
-    &lt;li&gt;देखें कि वेब पता लिखने में कोई गलती तो नहीं हुई है.&lt;/li&gt;
-    &lt;li&gt;पक्का करें कि आपका इंटरनेट कनेक्शन ठीक से काम कर रहा है.&lt;/li&gt;
-    &lt;li&gt;वेबसाइट के मालिक से संपर्क करें.&lt;/li&gt;
-    &lt;/ol&gt;
-    &lt;h2&gt;गड़बड़ी के किसी खास मैसेज के संबंध  में सहायता पाएं&lt;/h2&gt;
-    &lt;h3&gt;"आपका कनेक्शन निजी नहीं है" या "NET::ERR_CERT_AUTHORITY_INVALID" या "ERR_CERT_COMMON_NAME_INVALID" या "NET::ERR_CERT_WEAK_SIGNATURE_ALGORITHM" या "SSL प्रमाणपत्र की गड़बड़ी"&lt;/h3&gt;
-    &lt;h4&gt;चरण 1: पोर्टल में साइन इन करें&lt;/h4&gt;
-    &lt;p&gt;कैफ़े या हवाई अड्डों जैसी जगहों पर मौजूद वाई-फ़ाई नेटवर्क के लिए आपको साइन इन करना होगा. साइन-इन पेज देखने के लिए, किसी ऐसे पेज पर जाएं जो &lt;code&gt;http://&lt;/code&gt; का इस्तेमाल करता है.&lt;/p&gt;
-    &lt;ol&gt;
-    &lt;li&gt;&lt;code&gt;http://&lt;/code&gt; से शुरू होने वाली किसी भी वेबसाइट, जैसे कि &lt;a href="http://example.com" target="_blank"&gt;http://example.com&lt;/a&gt; पर जाएं.&lt;/li&gt;
-    &lt;li&gt;इंटरनेट का इस्तेमाल करने के लिए, खुलने वाले साइन-इन पेज पर साइन इन करें.&lt;/li&gt;
-    &lt;/ol&gt;
-    &lt;h4&gt;चरण 2: पेज को गुप्त मोड में खोलें (सिर्फ़ कंप्यूटर)&lt;/h4&gt;
-    &lt;p&gt;वह पेज खोलें, जिस पर आप गुप्त विंडो में आए थे.&lt;/p&gt;
-    &lt;p&gt;अगर पेज खुल जाता है, तो कोई Chrome एक्सटेंशन ठीक से काम नहीं कर रहा है. गड़बड़ी को ठीक करने के लिए, एक्सटेंशन बंद करें.&lt;/p&gt;
-    &lt;h4&gt;चरण 3: अपना ऑपरेटिंग सिस्टम अपडेट करें&lt;/h4&gt;
-    &lt;p&gt;पक्का करें कि आपका डिवाइस अप टू डेट है.&lt;/p&gt;
-    &lt;h4&gt;चरण 4: अपना एंटीवायरस कुछ देर के लिए बंद करें&lt;/h4&gt;
-    &lt;p&gt;अगर आपके पास ऐसा एंटीवायरस सॉफ़्टवेयर है जो "HTTPS सुरक्षा" या "HTTPS स्कैनिंग" उपलब्ध कराता है, तो आपको यह गड़बड़ी दिखाई देती है. एंटीवायरस, सुरक्षा उपलब्ध कराने से Chrome को रोक रहा है.&lt;/p&gt;
-    &lt;p&gt;समस्या को ठीक करने के लिए, अपना एंटीवायरस सॉफ़्टवेयर बंद करें. अगर सॉफ़्टवेयर बंद करने के बाद पेज काम करता है, तो सुरक्षित साइटों का इस्तेमाल करते समय इस सॉफ़्टवेयर को बंद कर दें.&lt;/p&gt;
-    &lt;p&gt;जब आपका काम हो जाए तो अपना एंटीवायरस प्रोग्राम वापस चालू करना न भूलें.&lt;/p&gt;
-    &lt;h4&gt;चरण 5: ज़्यादा सहायता पाएं&lt;/h4&gt;
-    &lt;p&gt;अगर आपको अभी भी गड़बड़ी दिखाई दे रही है, तो वेबसाइट के मालिक से संपर्क करें.&lt;/p&gt;
-    &lt;h3&gt;"नेटवर्क से कनेक्ट करें"&lt;/h3&gt;
-    &lt;p&gt;अगर आप ऐसे वाई-फ़ाई पोर्टल का इस्तेमाल कर रहे हैं जिसके लिए यह ज़रूरी है कि आप ऑनलाइन होने से पहले साइन इन करें, तो आपको यह गड़बड़ी दिखाई देगी.&lt;/p&gt;
-    &lt;p&gt;गड़बड़ी ठीक करने के लिए, जिस पेज को आप खोलने की कोशिश कर रहे हैं, उस पर &lt;strong&gt;कनेक्ट करें&lt;/strong&gt; पर क्लिक करें.&lt;/p&gt;
-    &lt;h3&gt;"आपकी घड़ी पीछे चल रही है" या "आपकी घड़ी आगे चल रही है" या "NET::ERR_CERT_DATE_INVALID"&lt;/h3&gt;
-    &lt;p&gt;अगर आपके कंप्यूटर या मोबाइल डिवाइस की तारीख और समय गलत हैं, तो आपको यह गड़बड़ी दिखाई देगी.&lt;/p&gt;
-    &lt;p&gt;गड़बड़ी को ठीक करने के लिए, अपने डिवाइस की घड़ी खोलें. यह पक्का करें कि समय और तारीख सही हैं.&lt;/p&gt;
-    &lt;h3&gt;"आपके कंप्यूटर पर मौजूद सॉफ़्टवेयर Chrome को सुरक्षित रूप से वेब से कनेक्ट होने से रोक रहा है" (सिर्फ़ Windows कंप्यूटर)&lt;/h3&gt;
-    &lt;p&gt;अगर आपके Windows कंप्यूटर पर Superfish सॉफ़्टवेयर मौजूद होता है, तो आपको यह गड़बड़ी दिखाई देगी.&lt;/p&gt;
-    &lt;p&gt;इन चरणों का पालन करके सॉफ़्टवेयर को कुछ समय के लिए बंद करें ताकि आप वेब पर जा सकें. आपको एडमिन विशेषाधिकारों की ज़रूरत होगी.&lt;/p&gt;
-    &lt;ol&gt;
-    &lt;li&gt;&lt;strong&gt;शुरू करें&lt;/strong&gt; पर क्लिक करें, फिर &lt;strong&gt;"स्थानीय सेवाएं देखें"&lt;/strong&gt; को खोजें और चुनें
-    &lt;li&gt;&lt;strong&gt;VisualDiscovery&lt;/strong&gt; चुनें
-    &lt;li&gt;&lt;strong&gt;स्टार्टअप प्रकार&lt;/strong&gt; में, &lt;strong&gt;बंद&lt;/strong&gt; चुनें
-    &lt;li&gt;&lt;strong&gt;सेवा स्थिति&lt;/strong&gt; में, &lt;strong&gt;रोकें&lt;/strong&gt; पर क्लिक करें
-    &lt;li&gt;&lt;strong&gt;लागू करें&lt;/strong&gt; पर क्लिक करें, उसके बाद &lt;strong&gt;ठीक है&lt;/strong&gt; पर क्लिक करें
-    &lt;li&gt;
-अपने कंप्यूटर से सॉफ़्टवेयर को हमेशा के लिए हटाने का तरीका जानने के लिए &lt;a href="https://support.google.com/chrome/answer/6098869"&gt;Chrome सहायता केंद्र&lt;/a&gt; पर जाएं
-    &lt;/ol&gt;</translation>
 <translation id="3615877443314183785">खत्म होने की मान्य तारीख डालें</translation>
 <translation id="36224234498066874">ब्राउज़िंग डेटा साफ़ करें...</translation>
 <translation id="362276910939193118">संपूर्ण इतिहास दिखाएं</translation>
@@ -459,6 +428,7 @@
 <translation id="3901925938762663762">इस कार्ड की समय सीमा समाप्‍त हो गई है</translation>
 <translation id="3909695131102177774"><ph name="LABEL" /> <ph name="ERROR" /></translation>
 <translation id="3945915738023014686">अपलोड की गई ख़राबी रिपोर्ट  आईडी <ph name="CRASH_ID" /> (स्थानीय क्रैश आईडी: <ph name="CRASH_LOCAL_ID" />)</translation>
+<translation id="3946209740501886391">इस साइट पर हमेशा पूछें</translation>
 <translation id="3949571496842715403">यह सर्वर प्रमाणित नहीं कर सका कि यह <ph name="DOMAIN" /> है; इसके सुरक्षा प्रमाणपत्र में विषय के वैकल्पिक नाम नहीं बताए गए हैं. ऐसा गलत कॉन्फ़िगरेशन के कारण या किसी आक्रमणकर्ता की ओर से आपके कनेक्शन में अवरोध डालने के कारण हो सकता है.</translation>
 <translation id="3949601375789751990">आपका ब्राउज़िंग इतिहास यहां दिखाई देता है</translation>
 <translation id="3950820424414687140">प्रवेश करें</translation>
@@ -466,6 +436,7 @@
 <translation id="3964661563329879394">{COUNT,plural, =0{कुछ नहीं}=1{1 साइट से }one{# साइटों से }other{# साइटों से }}</translation>
 <translation id="397105322502079400">गणना की जा रही है...</translation>
 <translation id="3973234410852337861"><ph name="HOST_NAME" /> अवरुद्ध है</translation>
+<translation id="3984550557525787191">यह सत्र नाम पहले से मौजूद है.</translation>
 <translation id="3987940399970879459">1 MB से कम</translation>
 <translation id="40103911065039147">{URL_count,plural, =1{आस-पास 1 वेब पेज है}one{आस-पास # वेब पेज हैं}other{आस-पास # वेब पेज हैं}}</translation>
 <translation id="4030383055268325496">&amp;जोड़ना वापस लाएं</translation>
@@ -491,10 +462,28 @@
 <translation id="4171400957073367226">गलत सत्यापन हस्ताक्षर</translation>
 <translation id="4173827307318847180">{MORE_ITEMS,plural, =1{<ph name="ITEM_COUNT" /> और आइटम}one{<ph name="ITEM_COUNT" /> और आइटम}other{<ph name="ITEM_COUNT" /> और आइटम}}</translation>
 <translation id="4179515394835346607"><ph name="ROW_NAME" /> <ph name="ROW_CONTENT" /></translation>
+<translation id="4192549185358213268">अगर आपने अपने <ph name="ORG_NAME" /> पासवर्ड का दूसरी साइटों पर दोबारा इस्तेमाल किया है, तो Chrome आपको उसे रीसेट करने का सुझाव देता है.</translation>
 <translation id="4196861286325780578">&amp;ले जाना फिर से करें</translation>
 <translation id="4203896806696719780"><ph name="BEGIN_LINK" />फायरवॉल और एंटीवायरस कॉन्फ़िगरेशन की जाँच करें<ph name="END_LINK" /></translation>
 <translation id="4220128509585149162">क्रैश</translation>
 <translation id="422022731706691852"><ph name="BEGIN_BOLD" /><ph name="SITE" /><ph name="END_BOLD" /> पर मौजूद हमलावर आपको ऐसे प्रोग्राम इंस्टॉल करने के लिए भ्रमित करने की कोशिश सकते हैं जिनसे आपके ब्राउज़िंग अनुभव को नुकसान पहुंच सकता है (उदाहरण के लिए, आपका होमपेज बदलकर या आप जिन साइटों पर जाते हैं उन पर अतिरिक्त विज्ञापन दिखाकर). <ph name="BEGIN_LEARN_MORE_LINK" />अधिक जानें<ph name="END_LEARN_MORE_LINK" /></translation>
+<translation id="4221630205957821124">&lt;h4&gt;कदम 1: पोर्टल में साइन इन करें&lt;/h4&gt;
+    &lt;p&gt;कैफ़े या हवाई अड्डों जैसी जगहों पर मौजूद वाई-फ़ाई नेटवर्क के लिए आपको साइन इन करना होगा. साइन-इन पेज देखने के लिए, किसी ऐसे पेज पर जाएं जो &lt;code&gt;http://&lt;/code&gt; का इस्तेमाल करता है.&lt;/p&gt;
+    &lt;ol&gt;
+    &lt;li&gt;&lt;li&gt;&lt;code&gt;http://&lt;/code&gt; से शुरू होने वाली किसी भी वेबसाइट, जैसे कि &lt;a href="http://example.com" target="_blank"&gt;http://example.com&lt;/a&gt; पर जाएं.&lt;/li&gt;
+    &lt;li&gt;इंटरनेट का इस्तेमाल करने के लिए, खुलने वाले साइन-इन पेज पर साइन इन करें.&lt;/li&gt;
+    &lt;/ol&gt;
+    &lt;h4&gt;कदम 2: पेज को गुप्त मोड में खोलें (सिर्फ़ कंप्यूटर)&lt;/h4&gt;
+    &lt;p&gt;वह पेज खोलें, जिस पर आप गुप्त विंडो में आए थे.&lt;/p&gt;
+    &lt;p&gt;अगर पेज खुल जाता है, तो कोई Chrome एक्सटेंशन ठीक से काम नहीं कर रहा है. गड़बड़ी को ठीक करने के लिए, एक्सटेंशन बंद करें.&lt;/p&gt;
+    &lt;h4&gt;कदम 3: अपना ऑपरेटिंग सिस्टम अपडेट करें&lt;/h4&gt;
+    &lt;p&gt;पक्का करें कि आपका डिवाइस अप टू डेट है.&lt;/p&gt;
+    &lt;h4&gt;कदम 4: अपना एंटीवायरस कुछ देर के लिए बंद करें&lt;/h4&gt;
+    &lt;p&gt;अगर आपके पास ऐसा एंटीवायरस सॉफ़्टवेयर है जो "HTTPS सुरक्षा" या "HTTPS स्कैनिंग" उपलब्ध कराता है, तो आपको यह गड़बड़ी दिखाई देती है. एंटीवायरस, सुरक्षा उपलब्ध कराने से Chrome को रोक रहा है.&lt;/p&gt;
+    &lt;p&gt;समस्या को ठीक करने के लिए, अपना एंटीवायरस सॉफ़्टवेयर बंद करें. अगर सॉफ़्टवेयर बंद करने के बाद पेज काम करता है, तो सुरक्षित साइटों का इस्तेमाल करते समय इस सॉफ़्टवेयर को बंद कर दें.&lt;/p&gt;
+    &lt;p&gt;जब आपका काम हो जाए तो अपना एंटीवायरस प्रोग्राम वापस चालू करना न भूलें.&lt;/p&gt;
+    &lt;h4&gt;कदम 5: ज़्यादा मदद पाएं&lt;/h4&gt;
+    &lt;p&gt;अगर आपको अभी भी गड़बड़ी दिखाई दे रही है, तो वेबसाइट के मालिक से संपर्क करें.&lt;/p&gt;</translation>
 <translation id="4226937834893929579"><ph name="BEGIN_LINK" />नेटवर्क निदान चलाकर देखें<ph name="END_LINK" />.</translation>
 <translation id="4235360514405112390">मान्य</translation>
 <translation id="4250431568374086873">इस साइट से आपका कनेक्शन पूरी तरह से सुरक्षित नहीं है</translation>
@@ -504,11 +493,13 @@
 <translation id="4265872034478892965">आपके व्यवस्थापक ने अनुमति दी है</translation>
 <translation id="4269787794583293679">(कोई उपयोगकर्ता नाम नहीं)</translation>
 <translation id="4275830172053184480">अपना डिवाइस पुन: प्रारंभ करें</translation>
+<translation id="4277028893293644418">पासवर्ड रीसेट करें</translation>
 <translation id="4280429058323657511">, समाप्ति दिनांक <ph name="EXPIRATION_DATE_ABBR" /></translation>
 <translation id="4312866146174492540">अवरुद्ध करें (डिफ़ॉल्ट)</translation>
 <translation id="4325863107915753736">लेख ढूंढ़ने में विफल</translation>
 <translation id="4326324639298822553">अपना समाप्ति दिनांक जाँचें और फिर से कोशिश करें</translation>
 <translation id="4331708818696583467">सुरक्षित नहीं है</translation>
+<translation id="4340982228985273705">इस कंप्यूटर की पहचान एंटरप्राइज़ की ओर से प्रबंधित होने के रूप में नहीं की गई है इसलिए नीति सिर्फ़ Chrome वेबस्टोर पर होस्ट किए जाने वाले एक्सटेंशन ही अपने आप इंस्टॉल कर सकती है. Chrome वेबस्टोर अपडेट यूआरएल "<ph name="CWS_UPDATE_URL" />" है.</translation>
 <translation id="4346197816712207223">स्वीकार किए जाने वाले क्रेडिट कार्ड</translation>
 <translation id="4356973930735388585">इस साइट पर मौजूद हमलावर आपके कंप्यूटर पर ऐसे खतरनाक प्रोग्राम इंस्टॉल करने की कोशिश कर सकते हैं जो आपकी जानकारी (उदाहरण के लिए, फ़ोटो, पासवर्ड, संदेश और क्रेडिट कार्ड) चुरा लेते हैं या उसे हटा देते हैं.</translation>
 <translation id="4372948949327679948">अपेक्षित <ph name="VALUE_TYPE" /> मान.</translation>
@@ -601,6 +592,7 @@
 <translation id="5141240743006678641">समन्वयित पासवर्ड अपने Google प्रमाणिकता के साथ एन्क्रिप्ट करें</translation>
 <translation id="5145883236150621069">नीति प्रतिसाद में गड़बड़ी कोड मौजूद है</translation>
 <translation id="5159010409087891077">पेज को नई गुप्त विंडो में खोलें (⇧⌘N)</translation>
+<translation id="5169827969064885044">आप अपने संगठन के खाते का एक्सेस खो सकते हैं या आपकी पहचान चोरी हो सकती है. Chrome आपको इसी समय अपना पासवर्ड बदलने का सुझाव देता है.</translation>
 <translation id="5171045022955879922">URL खोजें या लिखें</translation>
 <translation id="5172758083709347301">मशीन</translation>
 <translation id="5179510805599951267"><ph name="ORIGINAL_LANGUAGE" /> में नहीं है? इस गड़बड़ी की रिपोर्ट करें</translation>
@@ -610,6 +602,7 @@
 <translation id="5222812217790122047">ईमेल आवश्यक है</translation>
 <translation id="522700295135997067">शायद इस साइट ने अभी-अभी आपका पासवर्ड चुरा लिया है</translation>
 <translation id="5230733896359313003">शिपिंग पता</translation>
+<translation id="5250209940322997802">"नेटवर्क से कनेक्ट करें"</translation>
 <translation id="5251803541071282808">क्लाउड</translation>
 <translation id="5281113152797308730"><ph name="BEGIN_PARAGRAPH" />इन चरणों का पालन करके सॉफ़्टवेयर को कुछ समय के लिए अक्षम करें ताकि आप वेब पर जा सकें. आपको व्यावस्थापकीय विशेषाधिकारों की ज़रूरत होगी.<ph name="END_PARAGRAPH" />
 
@@ -633,6 +626,7 @@
 <translation id="5332219387342487447">शिपिंग का तरीका</translation>
 <translation id="5355557959165512791">आप इस समय <ph name="SITE" /> पर नहीं जा सकते हैं क्योंकि उसका प्रमाणपत्र निरस्त कर दिया गया है. नेटवर्क की गड़बड़ियां और हमले आमतौर पर कुछ देर के लिए होते हैं, इसलिए यह पेज शायद बाद में ठीक से काम करेगा.</translation>
 <translation id="536296301121032821">नीति सेटिंग संग्रहित करने में विफल</translation>
+<translation id="5377026284221673050">"आपकी घड़ी पीछे चल रही है" या "आपकी घड़ी आगे चल रही है" या "&lt;span class="error-code"&gt;NET::ERR_CERT_DATE_INVALID&lt;/span&gt;"</translation>
 <translation id="5386426401304769735">इस साइट की प्रमाणपत्र श्रृंखला में, SHA-1 का उपयोग करके हस्ताक्षर किया गया प्रमाणपत्र शामिल है.</translation>
 <translation id="5402410679244714488">समाप्ति दिनांक: <ph name="EXPIRATION_DATE_ABBR" />, पिछली बार एक वर्ष से पहले उपयोग किया गया</translation>
 <translation id="540969355065856584">यह सर्वर यह प्रमाणित नहीं कर सका कि यह <ph name="DOMAIN" /> है; इसका सुरक्षा प्रमाण पत्र इस समय मान्य नहीं है. ऐसा गलत कॉन्फ़िगरेशन या किसी आक्रमणकर्ता द्वारा आपके कनेक्शन में अवरोध डालने के कारण हो सकता है.</translation>
@@ -700,6 +694,7 @@
 <translation id="5869405914158311789">इस साइट तक नहीं पहुंचा जा सकता</translation>
 <translation id="5869522115854928033">सहेजे गए पासवर्ड</translation>
 <translation id="5893752035575986141">क्रेडिट कार्ड स्वीकार किए जाते हैं.</translation>
+<translation id="5898382028489516745">अगर आपने अपने <ph name="ORG_NAME" /> पासवर्ड का दूसरी साइटों पर दोबारा इस्तेमाल किया है, तो क्रोमियम आपको उसे रीसेट करने का सुझाव देता है.</translation>
 <translation id="5908541034548427511"><ph name="TYPE_1" /> (सिंक किया गया)</translation>
 <translation id="5920262536204764679">{NUM_COOKIES,plural, =1{1 उपयोग में है}one{# उपयोग में हैं}other{# उपयोग में हैं}}</translation>
 <translation id="5939518447894949180">रीसेट करें</translation>
@@ -713,6 +708,7 @@
 <translation id="5989320800837274978">न तो कोई फ़िक्‍स्‍ड प्रॉक्‍सी सर्वर और न ही कोई .pac स्क्रिप्ट URL निर्दिष्ट किए गए हैं.</translation>
 <translation id="5990559369517809815">सर्वर से किए गए अनुरोधों को एक्‍सटेंशन द्वारा अवरुद्ध कर दिया गया है.</translation>
 <translation id="6008256403891681546">JCB</translation>
+<translation id="6015796118275082299">वर्ष</translation>
 <translation id="6016158022840135739">{COUNT,plural, =1{पेज 1}one{पेज #}other{पेज #}}</translation>
 <translation id="6017850046339264347"><ph name="BEGIN_BOLD" /><ph name="SITE" /><ph name="END_BOLD" /> पर मौजूद हमलावर ऐसे भ्रामक ऐप्लिकेशन इंस्टॉल कर सकते हैं जो कुछ और होने का दावा करते हैं या ऐसा डेटा एकत्रित करते हैं जिसका उपयोग आप पर नज़र रखने के लिए किया जा सके. <ph name="BEGIN_LEARN_MORE_LINK" />अधिक जानें<ph name="END_LEARN_MORE_LINK" /></translation>
 <translation id="6025416945513303461"><ph name="TYPE_1" />, <ph name="TYPE_2" />, <ph name="TYPE_3" /> (सिंक किए गए)</translation>
@@ -722,6 +718,7 @@
 <translation id="6047233362582046994">अगर आप अपनी सुरक्षा में होने वाले जोखिमों को समझते हैं, तो खतरनाक ऐप्लिकेशन निकाले जाने से पहले आप <ph name="BEGIN_LINK" />इस साइट पर जा<ph name="END_LINK" /> सकते हैं.</translation>
 <translation id="6047927260846328439">यह सामग्री आपसे धोखे से सॉफ़्टवेयर इंस्‍टॉल करवाने या व्यक्तिगत जानकारी का खुलासा करवाने की कोशिश कर सकती है. <ph name="BEGIN_LINK" />फिर भी दिखाएं<ph name="END_LINK" /></translation>
 <translation id="6051221802930200923">आप इस समय <ph name="SITE" /> पर नहीं जा सकते हैं क्योंकि वेबसाइट प्रमाणपत्र पिनिंग का उपयोग करती है. नेटवर्क की गड़बड़ियां और हमले आमतौर पर कुछ देर के लिए होते हैं, इसलिए यह पेज शायद बाद में ठीक से काम करेगा.</translation>
+<translation id="6059925163896151826">USB डिवाइस</translation>
 <translation id="6080696365213338172">आपने व्यवस्थापक द्वारा प्रदत्त प्रमाणपत्र के उपयोग से सामग्री एक्सेस की है. आपके द्वारा <ph name="DOMAIN" /> को प्रदान किया गया डेटा आपके व्यवस्थापक द्वारा बीच में रोका जा सकता है.</translation>
 <translation id="610911394827799129">आपके Google खाते में <ph name="BEGIN_LINK" />myactivity.google.com<ph name="END_LINK" /> पर दूसरी तरह के ब्राउज़िंग इतिहास हो सकते हैं</translation>
 <translation id="6144381551823904650">{COUNT,plural, =0{कुछ नहीं}=1{1 पासवर्ड (सिंक किया हुआ)}one{# पासवर्ड (सिंक किए हुए)}other{# पासवर्ड (सिंक किए हुए)}}</translation>
@@ -743,6 +740,7 @@
 <translation id="6263376278284652872"><ph name="DOMAIN" /> बुकमार्क</translation>
 <translation id="6264485186158353794">सुरक्षा पर वापस</translation>
 <translation id="6276112860590028508">आपकी पठन सूची के पेज यहां दिखाई देंगे</translation>
+<translation id="627746635834430766">अगली बार तेज़ी से भुगतान करने के लिए, अपने कार्ड और बिलिंग पते को अपने Google खाते में सेव करें.</translation>
 <translation id="6280223929691119688">इस पते पर वितरित नहीं किया जा सकता. कोई दूसरा पता चुनें.</translation>
 <translation id="6282194474023008486">डाक कोड</translation>
 <translation id="6290238015253830360">आपके सुझाए गए लेख यहां दिखाई देते हैं</translation>
@@ -757,6 +755,7 @@
 <translation id="6355080345576803305">सार्वजनिक सत्र ओवरराइड</translation>
 <translation id="6358450015545214790">इनका क्‍या अर्थ है?</translation>
 <translation id="6386120369904791316">{COUNT,plural, =1{1 अन्‍य सुझाव}one{# अन्‍य सुझाव}other{# अन्‍य सुझाव}}</translation>
+<translation id="6387754724289022810">अगली बार तेज़ी से भुगतान करने के लिए, अपने कार्ड और बिलिंग पते को अपने Google खाते में और इस डिवाइस में सेव करें.</translation>
 <translation id="6397451950548600259">आपके कंप्यूटर पर मौजूद सॉफ़्टवेयर Chrome को सुरक्षित रूप से वेब से कनेक्ट होने से रोक रहा है</translation>
 <translation id="6404511346730675251">बुकमार्क संपादित करें</translation>
 <translation id="6410264514553301377"><ph name="CREDIT_CARD" /> का समाप्ति दिनांक और CVC डालें</translation>
@@ -770,6 +769,7 @@
 <translation id="647261751007945333">डिवाइस नीतियां</translation>
 <translation id="6477321094435799029">Chrome को इस पेज पर असामान्य कोड मिला था और उसने आपकी व्यक्तिगत जानकारी (उदाहरण के लिए, पासवर्ड, फ़ोन नंबर और क्रेडिट कार्ड) की सुरक्षा करने के लिए उसे अवरुद्ध कर दिया है.</translation>
 <translation id="6489534406876378309">क्रैश अपलोड करना प्रारंभ करें</translation>
+<translation id="6499038740797743453">क्या पासवर्ड रीसेट करना चाहते हैं?</translation>
 <translation id="6507833130742554667">क्रेडिट और डेबिट कार्ड स्वीकार किए जाते हैं.</translation>
 <translation id="6508722015517270189">Chrome को फिर से शुरू करें</translation>
 <translation id="6529602333819889595">&amp;हटाना फिर से करें</translation>
@@ -855,12 +855,23 @@
 <translation id="7334320624316649418">&amp;पुन: क्रमित करना फिर से करें</translation>
 <translation id="733923710415886693">प्रमाणपत्र पारदर्शिता के माध्यम से सर्वर के प्रमाणपत्र को प्रकट नहीं किया गया.</translation>
 <translation id="7353601530677266744">आदेश पंक्ति</translation>
+<translation id="7365061714576910172">Linux में निर्यात करें</translation>
 <translation id="7372973238305370288">खोज परिणाम</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE" /> - <ph name="FULL_DATE" /></translation>
 <translation id="7378627244592794276">नहीं</translation>
 <translation id="7378810950367401542">/</translation>
 <translation id="7390545607259442187">कार्ड की पुष्टि करें</translation>
 <translation id="7400418766976504921">URL</translation>
+<translation id="7407424307057130981">&lt;p&gt;अगर आपके Windows कंप्यूटर पर Superfish सॉफ़्टवेयर है, तो आपको यह गड़बड़ी दिखाई देगी.&lt;/p&gt;
+      &lt;p&gt;आगे बताए गए कदम उठाकर सॉफ़्टवेयर को कुछ देर के लिए बंद कर दें ताकि आप वेब पर जा सकें. आपको एडमिन विशेषाधिकार चाहिए होंगे.&lt;/p&gt;
+      &lt;ol&gt;
+      &lt;li&gt;&lt;strong&gt;शुरू करें&lt;/strong&gt; पर क्लिक करें, उसके बाद &lt;strong&gt;"स्थानीय सेवाएं देखें"&lt;/strong&gt; को खोजें और चुनें
+      &lt;li&gt;&lt;strong&gt;VisualDiscovery&lt;/strong&gt; चुनें
+      &lt;li&gt;&lt;strong&gt;स्टार्टअप प्रकार&lt;/strong&gt; में, &lt;strong&gt;बंद किया गया&lt;/strong&gt; चुनें
+      &lt;li&gt;&lt;strong&gt;सेवा स्थिति&lt;/strong&gt; में, &lt;strong&gt;रोकें&lt;/strong&gt; पर क्लिक करें
+      &lt;li&gt;&lt;strong&gt;लागू करें&lt;/strong&gt; पर क्लिक करें, फिर &lt;strong&gt;ठीक है&lt;/strong&gt; पर क्लिक करें
+      &lt;li&gt;&lt;a href="https://support.google.com/chrome/answer/6098869"&gt;Chrome सहायता केंद्र&lt;/a&gt; पर जाकर अपने कंप्यूटर से सॉफ़्टवेयर को हमेशा के लिए हटाने का तरीका जानें
+      &lt;/ol&gt;</translation>
 <translation id="7419106976560586862">प्रोफ़ाइल पथ</translation>
 <translation id="7437289804838430631">संपर्क जानकारी जोड़ें</translation>
 <translation id="7441627299479586546">गलत नीति विषय</translation>
@@ -882,12 +893,15 @@
 <translation id="7542403920425041731">आपकी तरफ से पुष्टि हो जाने पर, आपके कार्ड के विवरण इस साइट के साथ साझा किए जाएंगे.</translation>
 <translation id="7542995811387359312">स्वतः क्रेडिट कार्ड भरना अक्षम किया गया है क्योंकि यह फ़ॉर्म किसी सुरक्षित कनेक्शन का उपयोग नहीं करता है.</translation>
 <translation id="7543525346216957623">अपने अभिभावक से पूछें</translation>
+<translation id="7548892272833184391">कनेक्शन गड़बड़ियां ठीक करना</translation>
 <translation id="7549584377607005141">इस वेबपेज को आपके द्वारा पहले दर्ज किए गए डेटा की आवश्यकता है, ताकि इसे सही रूप में प्रदर्शित किया जा सके. आप यह डेटा पुन: भेज सकते हैं, लेकिन ऐसा करके आप इस पेज द्वारा पहले की जा चुकी कोई कार्यवाही दोहराएंगे.</translation>
 <translation id="7552846755917812628">ये टिप्स आज़माएं:</translation>
 <translation id="7554791636758816595">नया टैब</translation>
+<translation id="7564049878696755256">आप अपने <ph name="ORG_NAME" /> खाते का एक्सेस खो सकते हैं या आपकी पहचान चोरी हो सकती है. Chrome आपको इसी समय अपना पासवर्ड बदलने का सुझाव देता है.</translation>
 <translation id="7567204685887185387">यह सर्वर यह प्रमाणित नहीं कर सका कि यह <ph name="DOMAIN" /> है; हो सकता है इसका सुरक्षा प्रमाणपत्र धोखे से जारी किया गया हो. ऐसा गलत कॉन्फ़िगरेशन के कारण या किसी आक्रमणकर्ता द्वारा आपके कनेक्शन में अवरोध डालने के कारण हो सकता है.</translation>
 <translation id="7568593326407688803">यह पृष्ठ<ph name="ORIGINAL_LANGUAGE" />में है क्या आप इसका अनुवाद करना चाहेंगे?</translation>
 <translation id="7569952961197462199">Chrome से क्रेडिट कार्ड निकालें?</translation>
+<translation id="7575800019233204241">"आपका कनेक्शन निजी नहीं है" या "&lt;span class="error-code"&gt;NET::ERR_CERT_AUTHORITY_INVALID&lt;/span&gt;" या "&lt;span class="error-code"&gt;ERR_CERT_COMMON_NAME_INVALID&lt;/span&gt;" या "&lt;span class="error-code"&gt;NET::ERR_CERT_WEAK_SIGNATURE_ALGORITHM&lt;/span&gt;" या "SSL प्रमाणपत्र गड़बड़ी"</translation>
 <translation id="7578104083680115302">Google के साथ सहेजे गए कार्ड का उपयोग करके डिवाइसों में मौजूद साइटों और ऐप्‍स पर तुरंत भुगतान करें.</translation>
 <translation id="7588950540487816470">जीता-जागता वेब</translation>
 <translation id="7592362899630581445">सर्वर का प्रमाणपत्र नाम संबंधी प्रतिबंधों का उल्लंघन करता है.</translation>
@@ -1041,6 +1055,7 @@
 <translation id="8761567432415473239">Google सुरक्षित ब्राउज़िंग को <ph name="SITE" /> पर हाल ही में <ph name="BEGIN_LINK" />हानिकारक प्रोग्राम मिले हैं<ph name="END_LINK" />.</translation>
 <translation id="8763927697961133303">USB डिवाइस</translation>
 <translation id="8790007591277257123">&amp;हटाना फिर से करें</translation>
+<translation id="8792621596287649091">आप अपने <ph name="ORG_NAME" /> खाते का एक्सेस खो सकते हैं या आपकी पहचान चोरी हो सकती है. क्रोमियम आपको इसी समय अपना पासवर्ड बदलने का सुझाव देता है.</translation>
 <translation id="8800988563907321413">आपके आस-पास के सुझाव यहां दिखाई देंगे</translation>
 <translation id="8820817407110198400">बुकमार्क</translation>
 <translation id="883848425547221593">अन्य बुकमार्क</translation>
@@ -1061,6 +1076,7 @@
 <translation id="8957210676456822347">कैप्‍टिव पोर्टल प्राधिकरण</translation>
 <translation id="8971063699422889582">सर्वर के प्रमाणपत्र की समय-सीमा समाप्त हो चुकी है.</translation>
 <translation id="8978053250194585037">Google सुरक्षित ब्राउज़िंग को <ph name="SITE" /> पर हाल ही में <ph name="BEGIN_LINK" />फ़िशिंग का पता चला है<ph name="END_LINK" />. फ़िशिंग साइटें आपको भ्रमित करने के लिए अन्य वेबसाइटें होने का दिखावा करती हैं.</translation>
+<translation id="8987927404178983737">माह</translation>
 <translation id="8989148748219918422"><ph name="ORGANIZATION" /> [<ph name="COUNTRY" />]</translation>
 <translation id="8996941253935762404">साइट में आगे हानिकारक प्रोग्राम हैं</translation>
 <translation id="8997023839087525404">सर्वर ने एक प्रमाणपत्र प्रस्तुत किया है, जिसे प्रमाणपत्र पारदर्शिता पॉलिसी का उपयोग करके सार्वजनिक रूप से प्रकट नहीं किया गया था. कुछ प्रमाणपत्रों के लिए यह सुनिश्चित करना आवश्यक है कि वे विश्वसनीय हैं और आक्रमणकर्ताओं से रक्षा करते हैं.</translation>
@@ -1108,6 +1124,8 @@
 <translation id="973773823069644502">डिलीवरी का पता जोड़ें</translation>
 <translation id="975560348586398090">{COUNT,plural, =0{कुछ नहीं}=1{1 आइटम}one{# आइटम}other{# आइटम}}</translation>
 <translation id="981121421437150478">ऑफ़लाइन</translation>
+<translation id="985199708454569384">&lt;p&gt;अगर आपके कंप्यूटर या मोबाइल डिवाइस की तारीख और समय गलत है, तो आपको यह गड़बड़ी दिखाई देगी.&lt;/p&gt;
+    &lt;p&gt;इस गड़बड़ी को ठीक करने के लिए, अपने डिवाइस की घड़ी खोलें. पक्का करें कि समय और तारीख सही हों.&lt;/p&gt;</translation>
 <translation id="988159990683914416">डेवलपर बिल्ड</translation>
 <translation id="989988560359834682">पता संपादित करें</translation>
 <translation id="992115559265932548"><ph name="MICROSOFT_ACTIVE_DIRECTORY" /></translation>

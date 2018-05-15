@@ -20,7 +20,6 @@
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
@@ -506,10 +505,7 @@ void GetSecurityPolicyForURL(const GURL& url,
                                                               resource_path);
   }
 
-  if ((extension->manifest_version() >= 2 ||
-       extensions::WebAccessibleResourcesInfo::HasWebAccessibleResources(
-           extension)) &&
-      extensions::WebAccessibleResourcesInfo::IsResourceWebAccessible(
+  if (extensions::WebAccessibleResourcesInfo::IsResourceWebAccessible(
           extension, resource_path)) {
     *send_cors_header = true;
   }
@@ -652,7 +648,7 @@ ExtensionProtocolHandler::MaybeCreateJob(
     verify_job =
         verifier->CreateJobFor(extension_id, directory_path, relative_path);
     if (verify_job)
-      verify_job->Start();
+      verify_job->Start(verifier);
   }
 
   return new URLRequestExtensionJob(request,
@@ -782,6 +778,7 @@ class ExtensionURLLoaderFactory : public network::mojom::URLLoaderFactory {
                             const net::MutableNetworkTrafficAnnotationTag&
                                 traffic_annotation) override {
     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+    DCHECK(!request.download_to_file);
     const content::RenderProcessHost* process_host = frame_host_->GetProcess();
     BrowserContext* browser_context = process_host->GetBrowserContext();
 
@@ -863,7 +860,7 @@ class ExtensionURLLoaderFactory : public network::mojom::URLLoaderFactory {
         return;
       }
 
-      client->OnReceiveResponse(head, base::nullopt, nullptr);
+      client->OnReceiveResponse(head, nullptr);
       client->OnStartLoadingResponseBody(std::move(pipe.consumer_handle));
       client->OnComplete(network::URLLoaderCompletionStatus(net::OK));
       return;
@@ -980,7 +977,7 @@ class ExtensionURLLoaderFactory : public network::mojom::URLLoaderFactory {
                                                   resource.extension_root(),
                                                   resource.relative_path());
       if (verify_job)
-        verify_job->Start();
+        verify_job->Start(content_verifier.get());
     }
 
     content::CreateFileURLLoader(

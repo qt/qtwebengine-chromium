@@ -133,6 +133,9 @@ V4L2VideoDecodeAccelerator::OutputRecord::OutputRecord()
       texture_id(0),
       cleared(false) {}
 
+V4L2VideoDecodeAccelerator::OutputRecord::OutputRecord(OutputRecord&&) =
+    default;
+
 V4L2VideoDecodeAccelerator::OutputRecord::~OutputRecord() {}
 
 V4L2VideoDecodeAccelerator::PictureRecord::PictureRecord(bool cleared,
@@ -222,13 +225,13 @@ bool V4L2VideoDecodeAccelerator::Initialize(const Config& config,
 
   video_profile_ = config.profile;
 
-  if (egl_display_ == EGL_NO_DISPLAY) {
-    VLOGF(1) << "could not get EGLDisplay";
-    return false;
-  }
-
   // We need the context to be initialized to query extensions.
   if (!make_context_current_cb_.is_null()) {
+    if (egl_display_ == EGL_NO_DISPLAY) {
+      VLOGF(1) << "could not get EGLDisplay";
+      return false;
+    }
+
     if (!make_context_current_cb_.Run()) {
       VLOGF(1) << "could not make context current";
       return false;
@@ -264,6 +267,7 @@ bool V4L2VideoDecodeAccelerator::Initialize(const Config& config,
     return false;
   }
 
+  output_mode_ = config.output_mode;
   if (!SetupFormats())
     return false;
 
@@ -277,7 +281,6 @@ bool V4L2VideoDecodeAccelerator::Initialize(const Config& config,
   }
 
   decoder_state_ = kInitialized;
-  output_mode_ = config.output_mode;
 
   // InitializeTask will NOTIFY_ERROR on failure.
   decoder_thread_.task_runner()->PostTask(
@@ -793,8 +796,7 @@ void V4L2VideoDecodeAccelerator::DecodeTask(
     return;
   }
 
-  decoder_input_queue_.push(
-      linked_ptr<BitstreamBufferRef>(bitstream_record.release()));
+  decoder_input_queue_.push(std::move(bitstream_record));
   decoder_decode_buffer_tasks_scheduled_++;
   DecodeBufferTask();
 }
@@ -817,14 +819,14 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
       // We're waiting for a new buffer -- exit without scheduling a new task.
       return;
     }
-    linked_ptr<BitstreamBufferRef>& buffer_ref = decoder_input_queue_.front();
-    if (decoder_delay_bitstream_buffer_id_ == buffer_ref->input_id) {
+    if (decoder_delay_bitstream_buffer_id_ ==
+        decoder_input_queue_.front()->input_id) {
       // We're asked to delay decoding on this and subsequent buffers.
       return;
     }
 
     // Setup to use the next buffer.
-    decoder_current_bitstream_buffer_.reset(buffer_ref.release());
+    decoder_current_bitstream_buffer_ = std::move(decoder_input_queue_.front());
     decoder_input_queue_.pop();
     const auto& shm = decoder_current_bitstream_buffer_->shm;
     if (shm) {
@@ -1617,9 +1619,8 @@ void V4L2VideoDecodeAccelerator::FlushTask() {
   DCHECK(!decoder_flushing_);
 
   // Queue up an empty buffer -- this triggers the flush.
-  decoder_input_queue_.push(
-      linked_ptr<BitstreamBufferRef>(new BitstreamBufferRef(
-          decode_client_, decode_task_runner_, nullptr, kFlushBufferId)));
+  decoder_input_queue_.push(std::make_unique<BitstreamBufferRef>(
+      decode_client_, decode_task_runner_, nullptr, kFlushBufferId));
   decoder_flushing_ = true;
   SendPictureReady();  // Send all pending PictureReady.
 
@@ -2337,10 +2338,10 @@ uint32_t V4L2VideoDecodeAccelerator::FindImageProcessorOutputFormat() {
   static const uint32_t kPreferredFormats[] = {V4L2_PIX_FMT_YVU420,
                                                V4L2_PIX_FMT_NV12};
   auto preferred_formats_first = [](uint32_t a, uint32_t b) -> bool {
-    auto iter_a = std::find(std::begin(kPreferredFormats),
-                            std::end(kPreferredFormats), a);
-    auto iter_b = std::find(std::begin(kPreferredFormats),
-                            std::end(kPreferredFormats), b);
+    auto* iter_a = std::find(std::begin(kPreferredFormats),
+                             std::end(kPreferredFormats), a);
+    auto* iter_b = std::find(std::begin(kPreferredFormats),
+                             std::end(kPreferredFormats), b);
     return iter_a < iter_b;
   };
 

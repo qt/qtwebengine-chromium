@@ -4,7 +4,6 @@
 
 #include "content/renderer/render_frame_impl.h"
 
-#include <string.h>
 #include <algorithm>
 #include <map>
 #include <string>
@@ -38,6 +37,7 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task_runner_util.h"
+#include "base/task_scheduler/post_task.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
@@ -144,6 +144,7 @@
 #include "content/renderer/service_worker/worker_fetch_context_impl.h"
 #include "content/renderer/shared_worker/shared_worker_repository.h"
 #include "content/renderer/skia_benchmarking_extension.h"
+#include "content/renderer/speech_recognition_dispatcher.h"
 #include "content/renderer/stats_collection_controller.h"
 #include "content/renderer/v8_value_converter_impl.h"
 #include "content/renderer/web_frame_utils.h"
@@ -157,65 +158,65 @@
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_util.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/service_manager/public/mojom/interface_provider.mojom.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
-#include "third_party/WebKit/public/common/associated_interfaces/associated_interface_provider.h"
-#include "third_party/WebKit/public/common/frame/sandbox_flags.h"
-#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
-#include "third_party/WebKit/public/platform/FilePathConversion.h"
-#include "third_party/WebKit/public/platform/InterfaceProvider.h"
-#include "third_party/WebKit/public/platform/URLConversion.h"
-#include "third_party/WebKit/public/platform/WebData.h"
-#include "third_party/WebKit/public/platform/WebFocusType.h"
-#include "third_party/WebKit/public/platform/WebKeyboardEvent.h"
-#include "third_party/WebKit/public/platform/WebMediaPlayer.h"
-#include "third_party/WebKit/public/platform/WebMediaPlayerSource.h"
-#include "third_party/WebKit/public/platform/WebPoint.h"
-#include "third_party/WebKit/public/platform/WebScrollIntoViewParams.h"
-#include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/WebKit/public/platform/WebURLError.h"
-#include "third_party/WebKit/public/platform/WebURLResponse.h"
-#include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
-#include "third_party/WebKit/public/platform/modules/permissions/permission.mojom.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerNetworkProvider.h"
-#include "third_party/WebKit/public/web/WebAutofillClient.h"
-#include "third_party/WebKit/public/web/WebConsoleMessage.h"
-#include "third_party/WebKit/public/web/WebContextFeatures.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebElementCollection.h"
-#include "third_party/WebKit/public/web/WebFindOptions.h"
-#include "third_party/WebKit/public/web/WebFrameOwnerProperties.h"
-#include "third_party/WebKit/public/web/WebFrameSerializer.h"
-#include "third_party/WebKit/public/web/WebFrameSerializerCacheControlPolicy.h"
-#include "third_party/WebKit/public/web/WebFrameWidget.h"
-#include "third_party/WebKit/public/web/WebInputMethodController.h"
-#include "third_party/WebKit/public/web/WebKit.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebMediaStreamRegistry.h"
-#include "third_party/WebKit/public/web/WebNavigationPolicy.h"
-#include "third_party/WebKit/public/web/WebPlugin.h"
-#include "third_party/WebKit/public/web/WebPluginContainer.h"
-#include "third_party/WebKit/public/web/WebPluginDocument.h"
-#include "third_party/WebKit/public/web/WebPluginParams.h"
-#include "third_party/WebKit/public/web/WebRange.h"
-#include "third_party/WebKit/public/web/WebScopedUserGesture.h"
-#include "third_party/WebKit/public/web/WebScriptSource.h"
-#include "third_party/WebKit/public/web/WebSearchableFormData.h"
-#include "third_party/WebKit/public/web/WebSecurityPolicy.h"
-#include "third_party/WebKit/public/web/WebSerializedScriptValue.h"
-#include "third_party/WebKit/public/web/WebSettings.h"
-#include "third_party/WebKit/public/web/WebSurroundingText.h"
-#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
-#include "third_party/WebKit/public/web/WebView.h"
-#include "third_party/WebKit/public/web/WebWidget.h"
+#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+#include "third_party/blink/public/common/frame/sandbox_flags.h"
+#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
+#include "third_party/blink/public/platform/file_path_conversion.h"
+#include "third_party/blink/public/platform/interface_provider.h"
+#include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
+#include "third_party/blink/public/platform/modules/permissions/permission.mojom.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_network_provider.h"
+#include "third_party/blink/public/platform/url_conversion.h"
+#include "third_party/blink/public/platform/web_data.h"
+#include "third_party/blink/public/platform/web_focus_type.h"
+#include "third_party/blink/public/platform/web_keyboard_event.h"
+#include "third_party/blink/public/platform/web_media_player.h"
+#include "third_party/blink/public/platform/web_media_player_source.h"
+#include "third_party/blink/public/platform/web_point.h"
+#include "third_party/blink/public/platform/web_scroll_into_view_params.h"
+#include "third_party/blink/public/platform/web_security_origin.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_url.h"
+#include "third_party/blink/public/platform/web_url_error.h"
+#include "third_party/blink/public/platform/web_url_response.h"
+#include "third_party/blink/public/platform/web_vector.h"
+#include "third_party/blink/public/web/blink.h"
+#include "third_party/blink/public/web/web_autofill_client.h"
+#include "third_party/blink/public/web/web_console_message.h"
+#include "third_party/blink/public/web/web_context_features.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_element_collection.h"
+#include "third_party/blink/public/web/web_find_options.h"
+#include "third_party/blink/public/web/web_frame_owner_properties.h"
+#include "third_party/blink/public/web/web_frame_serializer.h"
+#include "third_party/blink/public/web/web_frame_serializer_cache_control_policy.h"
+#include "third_party/blink/public/web/web_frame_widget.h"
+#include "third_party/blink/public/web/web_input_method_controller.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_media_stream_registry.h"
+#include "third_party/blink/public/web/web_navigation_policy.h"
+#include "third_party/blink/public/web/web_plugin.h"
+#include "third_party/blink/public/web/web_plugin_container.h"
+#include "third_party/blink/public/web/web_plugin_document.h"
+#include "third_party/blink/public/web/web_plugin_params.h"
+#include "third_party/blink/public/web/web_range.h"
+#include "third_party/blink/public/web/web_scoped_user_gesture.h"
+#include "third_party/blink/public/web/web_script_source.h"
+#include "third_party/blink/public/web/web_searchable_form_data.h"
+#include "third_party/blink/public/web/web_security_policy.h"
+#include "third_party/blink/public/web/web_serialized_script_value.h"
+#include "third_party/blink/public/web/web_settings.h"
+#include "third_party/blink/public/web/web_surrounding_text.h"
+#include "third_party/blink/public/web/web_user_gesture_indicator.h"
+#include "third_party/blink/public/web/web_view.h"
+#include "third_party/blink/public/web/web_widget.h"
 #include "ui/events/base_event_utils.h"
 #include "url/origin.h"
 #include "url/url_constants.h"
@@ -238,7 +239,7 @@
 #include <cpu-features.h>
 
 #include "content/renderer/java/gin_java_bridge_dispatcher.h"
-#include "third_party/WebKit/public/platform/WebFloatPoint.h"
+#include "third_party/blink/public/platform/web_float_point.h"
 #endif
 
 using base::Time;
@@ -322,7 +323,7 @@ struct PendingNavigationParams {
 namespace {
 
 const base::Feature kConsumeGestureOnNavigation = {
-    "ConsumeGestureOnNavigation", base::FEATURE_DISABLED_BY_DEFAULT};
+    "ConsumeGestureOnNavigation", base::FEATURE_ENABLED_BY_DEFAULT};
 
 const int kExtraCharsBeforeAndAfterSelection = 100;
 
@@ -465,6 +466,7 @@ WebURLRequest CreateURLRequestForNavigation(
   extra_data->set_navigation_initiated_by_renderer(
       request_params.nav_entry_id == 0);
   request.SetExtraData(std::move(extra_data));
+  request.SetWasDiscarded(request_params.was_discarded);
 
   // Set the ui timestamp for this navigation. Currently the timestamp here is
   // only non empty when the navigation was triggered by an Android intent. The
@@ -675,17 +677,6 @@ class MHTMLPartsGenerationDelegate
     return false;
   }
 
-  WebString GetContentID(WebFrame* frame) override {
-    int routing_id = RenderFrame::GetRoutingIdForWebFrame(frame);
-
-    auto it = params_.frame_routing_id_to_content_id.find(routing_id);
-    if (it == params_.frame_routing_id_to_content_id.end())
-      return WebString();
-
-    const std::string& content_id = it->second;
-    return WebString::FromUTF8(content_id);
-  }
-
   blink::WebFrameSerializerCacheControlPolicy CacheControlPolicy() override {
     return params_.mhtml_cache_control_policy;
   }
@@ -831,12 +822,9 @@ class RenderFrameImpl::FrameURLLoaderFactory
       scoped_refptr<base::SingleThreadTaskRunner> task_runner) override {
     // This should not be called if the frame is detached.
     DCHECK(frame_);
-    frame_->UpdatePeakMemoryStats();
 
     mojom::KeepAliveHandlePtr keep_alive_handle;
-    if (base::FeatureList::IsEnabled(
-            features::kKeepAliveRendererForKeepaliveRequests) &&
-        request.GetKeepalive()) {
+    if (request.GetKeepalive()) {
       frame_->GetFrameHost()->IssueKeepAliveHandle(
           mojo::MakeRequest(&keep_alive_handle));
     }
@@ -862,7 +850,7 @@ NOINLINE void ExhaustMemory() {
   } while (ptr);
 }
 
-#if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
+#if defined(ADDRESS_SANITIZER)
 NOINLINE void MaybeTriggerAsanError(const GURL& url) {
   // NOTE(rogerm): We intentionally perform an invalid heap access here in
   //     order to trigger an Address Sanitizer (ASAN) error report.
@@ -878,7 +866,7 @@ NOINLINE void MaybeTriggerAsanError(const GURL& url) {
     LOG(ERROR) << "Intentionally causing ASAN heap use-after-free"
                << " because user navigated to " << url.spec();
     base::debug::AsanHeapUseAfterFree();
-#if defined(SYZYASAN)
+#if defined(OS_WIN)
   } else if (url == kChromeUICrashCorruptHeapBlockURL) {
     LOG(ERROR) << "Intentionally causing ASAN corrupt heap block"
                << " because user navigated to " << url.spec();
@@ -887,15 +875,10 @@ NOINLINE void MaybeTriggerAsanError(const GURL& url) {
     LOG(ERROR) << "Intentionally causing ASAN corrupt heap"
                << " because user navigated to " << url.spec();
     base::debug::AsanCorruptHeap();
-  } else if (url == kChromeUICrashDcheckURL) {
-    LOG(ERROR) << "Intentionally DCHECKING because user navigated to "
-               << url.spec();
-
-    DCHECK(false) << "Intentional DCHECK.";
-#endif
+#endif  // OS_WIN
   }
 }
-#endif  // ADDRESS_SANITIZER || SYZYASAN
+#endif  // ADDRESS_SANITIZER
 
 // Returns true if the URL is a debug URL, false otherwise. These URLs do not
 // commit, though they are intentionally left in the address bar above the
@@ -942,9 +925,18 @@ void HandleChromeDebugURL(const GURL& url) {
     CHECK(false);
   }
 
-#if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
+#if DCHECK_IS_ON()
+  if (url == kChromeUICrashDcheckURL) {
+    LOG(ERROR) << "Intentionally causing DCHECK because user navigated to "
+               << url.spec();
+
+    DCHECK(false) << "Intentional DCHECK.";
+  }
+#endif
+
+#if defined(ADDRESS_SANITIZER)
   MaybeTriggerAsanError(url);
-#endif  // ADDRESS_SANITIZER || SYZYASAN
+#endif  // ADDRESS_SANITIZER
 }
 
 struct RenderFrameImpl::PendingFileChooser {
@@ -1329,7 +1321,7 @@ RenderFrameImpl::RenderFrameImpl(CreateParams params)
       pepper_last_mouse_event_target_(nullptr),
 #endif
       engagement_binding_(this),
-      media_engagement_binding_(this),
+      autoplay_configuration_binding_(this),
       frame_binding_(this),
       host_zoom_binding_(this),
       frame_bindings_control_binding_(this),
@@ -1374,9 +1366,6 @@ RenderFrameImpl::RenderFrameImpl(CreateParams params)
     // Manages its own lifetime.
     new ManifestChangeNotifier(this);
   }
-
-  memset(&peak_memory_metrics_, 0,
-         sizeof(RenderThreadImpl::RendererMemoryMetrics));
 }
 
 mojom::FrameHost* RenderFrameImpl::GetFrameHost() {
@@ -1589,7 +1578,7 @@ RenderWidgetFullscreenPepper* RenderFrameImpl::CreatePepperFullscreenContainer(
   // TODO(fsamuel): It's not clear if we should be passing in the
   // web ScreenInfo or the original ScreenInfo here.
   RenderWidgetFullscreenPepper* widget = RenderWidgetFullscreenPepper::Create(
-      fullscreen_widget_routing_id, show_callback,
+      fullscreen_widget_routing_id, std::move(show_callback),
       GetRenderWidget()->compositor_deps(), plugin, active_url,
       GetRenderWidget()->GetWebScreenInfo(), std::move(widget_channel_request));
   // TODO(nick): The show() handshake seems like unnecessary complexity here,
@@ -1824,8 +1813,8 @@ bool RenderFrameImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(FrameMsg_MixedContentFound, OnMixedContentFound)
     IPC_MESSAGE_HANDLER(FrameMsg_SetOverlayRoutingToken,
                         OnSetOverlayRoutingToken)
-    IPC_MESSAGE_HANDLER(FrameMsg_SetHasReceivedUserGesture,
-                        OnSetHasReceivedUserGesture)
+    IPC_MESSAGE_HANDLER(FrameMsg_NotifyUserActivation, OnNotifyUserActivation)
+
 #if defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(FrameMsg_ActivateNearestFindResult,
                         OnActivateNearestFindResult)
@@ -1868,17 +1857,19 @@ void RenderFrameImpl::BindFullscreen(
                            GetTaskRunner(blink::TaskType::kInternalIPC));
 }
 
-void RenderFrameImpl::BindMediaEngagement(
-    blink::mojom::MediaEngagementClientAssociatedRequest request) {
-  media_engagement_binding_.Bind(std::move(request),
-                                 GetTaskRunner(blink::TaskType::kInternalIPC));
+void RenderFrameImpl::BindAutoplayConfiguration(
+    blink::mojom::AutoplayConfigurationClientAssociatedRequest request) {
+  autoplay_configuration_binding_.Bind(
+      std::move(request), GetTaskRunner(blink::TaskType::kInternalIPC));
 }
 
 void RenderFrameImpl::BindFrame(
     const service_manager::BindSourceInfo& browser_info,
     mojom::FrameRequest request) {
   browser_info_ = browser_info;
-  frame_binding_.Bind(std::move(request));
+  frame_binding_.Bind(
+      std::move(request),
+      frame_ ? GetTaskRunner(blink::TaskType::kInternalIPC) : nullptr);
 }
 
 void RenderFrameImpl::BindFrameBindingsControl(
@@ -2406,9 +2397,10 @@ void RenderFrameImpl::OnSetAccessibilityMode(ui::AXMode new_mode) {
     observer.AccessibilityModeChanged();
 }
 
-void RenderFrameImpl::OnSnapshotAccessibilityTree(int callback_id) {
+void RenderFrameImpl::OnSnapshotAccessibilityTree(int callback_id,
+                                                  ui::AXMode ax_mode) {
   AXContentTreeUpdate response;
-  RenderAccessibilityImpl::SnapshotAccessibilityTree(this, &response);
+  RenderAccessibilityImpl::SnapshotAccessibilityTree(this, &response, ax_mode);
   Send(new AccessibilityHostMsg_SnapshotResponse(
       routing_id_, callback_id, response));
 }
@@ -2531,7 +2523,7 @@ void RenderFrameImpl::OnPostMessageEvent(
     converter.SetDateAllowed(true);
     converter.SetRegExpAllowed(true);
     base::string16 data;
-    data.resize(params.message->data.encoded_message.length() /
+    data.resize(params.message->data.encoded_message.size() /
                 sizeof(base::char16));
     std::memcpy(&data[0], params.message->data.encoded_message.data(),
                 data.length() * sizeof(base::char16));
@@ -2584,7 +2576,6 @@ void RenderFrameImpl::OnTextSurroundingSelectionRequest(uint32_t max_length) {
 bool RenderFrameImpl::RunJavaScriptDialog(JavaScriptDialogType type,
                                           const base::string16& message,
                                           const base::string16& default_value,
-                                          const GURL& frame_url,
                                           base::string16* result) {
   // Don't allow further dialogs if we are waiting to swap out, since the
   // ScopedPageLoadDeferrer in our stack prevents it.
@@ -2606,7 +2597,7 @@ bool RenderFrameImpl::RunJavaScriptDialog(JavaScriptDialogType type,
     result = &result_temp;
 
   Send(new FrameHostMsg_RunJavaScriptDialog(routing_id_, message, default_value,
-                                            frame_url, type, &success, result));
+                                            type, &success, result));
   return success;
 }
 
@@ -2853,14 +2844,20 @@ blink::WebPlugin* RenderFrameImpl::CreatePlugin(
     // |delegate| deletes itself.
     BrowserPluginDelegate* delegate =
         GetContentClient()->renderer()->CreateBrowserPluginDelegate(
-            this, params.mime_type.Utf8(), GURL(params.url));
+            this, info, params.mime_type.Utf8(), GURL(params.url));
     return BrowserPluginManager::Get()->CreateBrowserPlugin(
         this, delegate->GetWeakPtr());
   }
 
+  base::Optional<url::Origin> origin_lock;
+  if (base::FeatureList::IsEnabled(features::kPdfIsolation) &&
+      GetContentClient()->renderer()->IsOriginIsolatedPepperPlugin(info.path)) {
+    origin_lock = url::Origin::Create(GURL(params.url));
+  }
+
   bool pepper_plugin_was_registered = false;
   scoped_refptr<PluginModule> pepper_module(PluginModule::Create(
-      this, info, &pepper_plugin_was_registered));
+      this, info, origin_lock, &pepper_plugin_was_registered));
   if (pepper_plugin_was_registered) {
     if (pepper_module.get()) {
       return new PepperWebPluginImpl(
@@ -2918,13 +2915,14 @@ RenderFrameImpl::GetRemoteAssociatedInterfaces() {
       mojom::AssociatedInterfaceProviderAssociatedPtr remote_interfaces;
       thread->GetRemoteRouteProvider()->GetRoute(
           routing_id_, mojo::MakeRequest(&remote_interfaces));
-      remote_associated_interfaces_.reset(
-          new AssociatedInterfaceProviderImpl(std::move(remote_interfaces)));
+      remote_associated_interfaces_.reset(new AssociatedInterfaceProviderImpl(
+          std::move(remote_interfaces),
+          GetTaskRunner(blink::TaskType::kInternalIPC)));
     } else {
       // In some tests the thread may be null,
       // so set up a self-contained interface provider instead.
-      remote_associated_interfaces_.reset(
-          new AssociatedInterfaceProviderImpl());
+      remote_associated_interfaces_.reset(new AssociatedInterfaceProviderImpl(
+          GetTaskRunner(blink::TaskType::kInternalIPC)));
     }
   }
   return remote_associated_interfaces_.get();
@@ -3047,10 +3045,18 @@ void RenderFrameImpl::RequestFullscreenVideoElement() {
   }
 }
 
-// blink::mojom::MediaEngagementClient implementation --------------------------
+// blink::mojom::AutoplayConfigurationClient implementation
+// --------------------------
 
-void RenderFrameImpl::SetHasHighMediaEngagement(const url::Origin& origin) {
-  high_media_engagement_origin_ = origin;
+void RenderFrameImpl::AddAutoplayFlags(const url::Origin& origin,
+                                       const int32_t flags) {
+  // If the origin is the same as the previously stored flags then we should
+  // merge the two sets of flags together.
+  if (autoplay_flags_.first == origin) {
+    autoplay_flags_.second |= flags;
+  } else {
+    autoplay_flags_ = std::make_pair(origin, flags);
+  }
 }
 
 // mojom::Frame implementation -------------------------------------------------
@@ -3095,6 +3101,8 @@ void RenderFrameImpl::CommitNavigation(
     const RequestNavigationParams& request_params,
     network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
     std::unique_ptr<URLLoaderFactoryBundleInfo> subresource_loader_factories,
+    base::Optional<std::vector<mojom::TransferrableURLLoaderPtr>>
+        subresource_overrides,
     mojom::ControllerServiceWorkerInfoPtr controller_service_worker_info,
     const base::UnguessableToken& devtools_navigation_token) {
   DCHECK(!IsRendererDebugURL(common_params.url));
@@ -3124,7 +3132,8 @@ void RenderFrameImpl::CommitNavigation(
          !base::FeatureList::IsEnabled(network::features::kNetworkService) ||
          subresource_loader_factories);
 
-  SetupLoaderFactoryBundle(std::move(subresource_loader_factories));
+  SetupLoaderFactoryBundle(std::move(subresource_loader_factories),
+                           std::move(subresource_overrides));
 
   // Clear pending navigations which weren't sent to the browser because we
   // did not get a didStartProvisionalLoad() notification for them.
@@ -3247,7 +3256,8 @@ void RenderFrameImpl::CommitFailedNavigation(
   GetContentClient()->SetActiveURL(
       common_params.url, frame_->Top()->GetSecurityOrigin().ToString().Utf8());
 
-  SetupLoaderFactoryBundle(std::move(subresource_loader_factories));
+  SetupLoaderFactoryBundle(std::move(subresource_loader_factories),
+                           base::nullopt /* subresource_overrides */);
 
   pending_navigation_params_.reset(new PendingNavigationParams(
       common_params, request_params,
@@ -3256,7 +3266,7 @@ void RenderFrameImpl::CommitFailedNavigation(
 
   // Send the provisional load failure.
   WebURLError error(
-      error_code,
+      error_code, 0,
       has_stale_copy_in_cache ? WebURLError::HasCopyInCache::kTrue
                               : WebURLError::HasCopyInCache::kFalse,
       WebURLError::IsWebSecurityViolation::kFalse, common_params.url);
@@ -3474,7 +3484,7 @@ blink::WebPlugin* RenderFrameImpl::CreatePlugin(
     // |delegate| deletes itself.
     BrowserPluginDelegate* delegate =
         GetContentClient()->renderer()->CreateBrowserPluginDelegate(
-            this, kBrowserPluginMimeType, GURL(params.url));
+            this, WebPluginInfo(), kBrowserPluginMimeType, GURL(params.url));
     return BrowserPluginManager::Get()->CreateBrowserPlugin(
         this, delegate->GetWeakPtr());
   }
@@ -3566,7 +3576,7 @@ RenderFrameImpl::CreateWorkerFetchContext() {
   }
 
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
-  std::unique_ptr<SharedURLLoaderFactoryInfo>
+  std::unique_ptr<network::SharedURLLoaderFactoryInfo>
       direct_network_loader_factory_info;
   // Could be null in tests.
   if (render_thread) {
@@ -3647,8 +3657,7 @@ RenderFrameImpl::CreateServiceWorkerProvider() {
     // The context can be null when the frame is sandboxed.
     return nullptr;
   }
-  return std::make_unique<WebServiceWorkerProviderImpl>(
-      ChildThreadImpl::current()->thread_safe_sender(), provider->context());
+  return std::make_unique<WebServiceWorkerProviderImpl>(provider->context());
 }
 
 service_manager::InterfaceProvider* RenderFrameImpl::GetInterfaceProvider() {
@@ -3739,7 +3748,8 @@ blink::WebLocalFrame* RenderFrameImpl::CreateChildFrame(
   service_manager::mojom::InterfaceProviderPtr child_interface_provider;
   child_interface_provider.Bind(
       service_manager::mojom::InterfaceProviderPtrInfo(
-          mojo::ScopedMessagePipeHandle(child_interface_provider_handle), 0u));
+          mojo::ScopedMessagePipeHandle(child_interface_provider_handle), 0u),
+      GetTaskRunner(blink::TaskType::kInternalIPC));
 
   // This method is always called by local frames, never remote frames.
 
@@ -3970,15 +3980,15 @@ void RenderFrameImpl::DidAddMessageToConsole(
       static_cast<int32_t>(source_line), source_name.Utf16()));
 }
 
-void RenderFrameImpl::DownloadURL(const blink::WebURLRequest& request,
-                                  const blink::WebString& suggested_name) {
+void RenderFrameImpl::DownloadURL(const blink::WebURLRequest& request) {
   FrameHostMsg_DownloadUrl_Params params;
   params.render_view_id = render_view_->GetRoutingID();
   params.render_frame_id = GetRoutingID();
   params.url = request.Url();
   params.referrer = RenderViewImpl::GetReferrerFromRequest(frame_, request);
   params.initiator_origin = request.RequestorOrigin();
-  params.suggested_name = suggested_name.Utf16();
+  if (request.GetSuggestedFilename().has_value())
+    params.suggested_name = request.GetSuggestedFilename()->Utf16();
 
   Send(new FrameHostMsg_DownloadUrl(params));
 }
@@ -4053,7 +4063,7 @@ void RenderFrameImpl::DidCreateDocumentLoader(
 
   // Set the navigation start time in blink.
   document_loader->SetNavigationStartTime(
-      ConvertToBlinkTime(navigation_state->common_params().navigation_start));
+      navigation_state->common_params().navigation_start);
 
   // If an actual navigation took place, inform the document loader of what
   // happened in the browser.
@@ -4061,12 +4071,12 @@ void RenderFrameImpl::DidCreateDocumentLoader(
            .navigation_timing.fetch_start.is_null()) {
     // Set timing of several events that happened during navigation.
     // They will be used in blink for the Navigation Timing API.
-    double redirect_start = ConvertToBlinkTime(
-        navigation_state->request_params().navigation_timing.redirect_start);
-    double redirect_end = ConvertToBlinkTime(
-        navigation_state->request_params().navigation_timing.redirect_end);
-    double fetch_start = ConvertToBlinkTime(
-        navigation_state->request_params().navigation_timing.fetch_start);
+    base::TimeTicks redirect_start =
+        navigation_state->request_params().navigation_timing.redirect_start;
+    base::TimeTicks redirect_end =
+        navigation_state->request_params().navigation_timing.redirect_end;
+    base::TimeTicks fetch_start =
+        navigation_state->request_params().navigation_timing.fetch_start;
 
     document_loader->UpdateNavigation(
         redirect_start, redirect_end, fetch_start,
@@ -4095,7 +4105,7 @@ void RenderFrameImpl::DidCreateDocumentLoader(
     return;
 
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
-  scoped_refptr<SharedURLLoaderFactory> direct_network_loader_factory;
+  scoped_refptr<network::SharedURLLoaderFactory> direct_network_loader_factory;
   if (render_thread) {
     direct_network_loader_factory =
         base::MakeRefCounted<PossiblyAssociatedWrapperSharedURLLoaderFactory>(
@@ -4137,6 +4147,8 @@ void RenderFrameImpl::DidStartProvisionalLoad(
     info.source_location = pending_navigation_info_->source_location;
     info.devtools_initiator_info =
         pending_navigation_info_->devtools_initiator_info;
+    info.blob_url_token =
+        pending_navigation_info_->blob_url_token.PassInterface().PassHandle();
 
     pending_navigation_info_.reset(nullptr);
     BeginNavigation(info);
@@ -4421,6 +4433,17 @@ void RenderFrameImpl::DidReceiveTitle(const blink::WebString& title,
     base::string16 shortened_title = title16.substr(0, kMaxTitleChars);
     Send(new FrameHostMsg_UpdateTitle(routing_id_,
                                       shortened_title, direction));
+  } else {
+    // Set process title for sub-frames in traces.
+    GURL loading_url = GetLoadingUrl();
+    if (!loading_url.host().empty() &&
+        loading_url.scheme() != url::kFileScheme) {
+      std::string subframe_title = "Subframe: " + loading_url.scheme() +
+                                   url::kStandardSchemeSeparator +
+                                   loading_url.host();
+      base::trace_event::TraceLog::GetInstance()->UpdateProcessLabel(
+          routing_id_, subframe_title);
+    }
   }
 
   // Also check whether we have new encoding name.
@@ -4428,13 +4451,18 @@ void RenderFrameImpl::DidReceiveTitle(const blink::WebString& title,
 }
 
 void RenderFrameImpl::DidChangeIcon(blink::WebIconURL::Type icon_type) {
-  SendUpdateFaviconURL(icon_type);
+  SendUpdateFaviconURL();
 }
 
-void RenderFrameImpl::SendUpdateFaviconURL(
-    blink::WebIconURL::Type icon_types_mask) {
+void RenderFrameImpl::SendUpdateFaviconURL() {
   if (frame_->Parent())
     return;
+
+  blink::WebIconURL::Type icon_types_mask =
+      static_cast<blink::WebIconURL::Type>(
+          blink::WebIconURL::kTypeFavicon |
+          blink::WebIconURL::kTypeTouchPrecomposed |
+          blink::WebIconURL::kTypeTouch);
 
   WebVector<blink::WebIconURL> icon_urls = frame_->IconURLs(icon_types_mask);
   if (icon_urls.empty())
@@ -4525,8 +4553,8 @@ void RenderFrameImpl::DidFailLoad(const WebURLError& error,
 
   const WebURLRequest& failed_request = document_loader->GetRequest();
   base::string16 error_description;
-  GetContentClient()->renderer()->PrepareErrorPage(this, failed_request, error,
-                                                   nullptr, &error_description);
+  GetContentClient()->renderer()->GetErrorDescription(failed_request, error,
+                                                      &error_description);
   Send(new FrameHostMsg_DidFailLoadWithError(
       routing_id_, failed_request.Url(), error.reason(), error_description));
 }
@@ -4546,7 +4574,6 @@ void RenderFrameImpl::DidFinishLoad() {
   Send(new FrameHostMsg_DidFinishLoad(routing_id_,
                                       document_loader->GetRequest().Url()));
 
-  ReportPeakMemoryStats();
   if (!RenderThreadImpl::current())
     return;
   RenderThreadImpl::RendererMemoryMetrics memory_metrics;
@@ -4671,13 +4698,12 @@ bool RenderFrameImpl::HandleCurrentKeyboardEvent() {
 
 void RenderFrameImpl::RunModalAlertDialog(const blink::WebString& message) {
   RunJavaScriptDialog(JAVASCRIPT_DIALOG_TYPE_ALERT, message.Utf16(),
-                      base::string16(), frame_->GetDocument().Url(), nullptr);
+                      base::string16(), nullptr);
 }
 
 bool RenderFrameImpl::RunModalConfirmDialog(const blink::WebString& message) {
   return RunJavaScriptDialog(JAVASCRIPT_DIALOG_TYPE_CONFIRM, message.Utf16(),
-                             base::string16(), frame_->GetDocument().Url(),
-                             nullptr);
+                             base::string16(), nullptr);
 }
 
 bool RenderFrameImpl::RunModalPromptDialog(
@@ -4686,8 +4712,7 @@ bool RenderFrameImpl::RunModalPromptDialog(
     blink::WebString* actual_value) {
   base::string16 result;
   bool ok = RunJavaScriptDialog(JAVASCRIPT_DIALOG_TYPE_PROMPT, message.Utf16(),
-                                default_value.Utf16(),
-                                frame_->GetDocument().Url(), &result);
+                                default_value.Utf16(), &result);
   if (ok)
     *actual_value = WebString::FromUTF16(result);
   return ok;
@@ -4703,9 +4728,8 @@ bool RenderFrameImpl::RunModalBeforeUnloadDialog(bool is_reload) {
   // This is an ignored return value, but is included so we can accept the same
   // response as RunJavaScriptDialog.
   base::string16 ignored_result;
-  Send(new FrameHostMsg_RunBeforeUnloadConfirm(
-      routing_id_, frame_->GetDocument().Url(), is_reload, &success,
-      &ignored_result));
+  Send(new FrameHostMsg_RunBeforeUnloadConfirm(routing_id_, is_reload, &success,
+                                               &ignored_result));
   return success;
 }
 
@@ -4795,12 +4819,15 @@ void RenderFrameImpl::FrameRectsChanged(const blink::WebRect& frame_rect) {
 }
 
 void RenderFrameImpl::WillSendRequest(blink::WebURLRequest& request) {
+  if (render_view_->renderer_preferences_.enable_do_not_track)
+    request.SetHTTPHeaderField(blink::WebString::FromUTF8(kDoNotTrackHeader),
+                               "1");
+
   WebDocumentLoader* provisional_document_loader =
       frame_->GetProvisionalDocumentLoader();
   WebDocumentLoader* document_loader = provisional_document_loader
                                            ? provisional_document_loader
                                            : frame_->GetDocumentLoader();
-
   DocumentState* document_state =
       DocumentState::FromDocumentLoader(document_loader);
   DCHECK(document_state);
@@ -4816,10 +4843,17 @@ void RenderFrameImpl::WillSendRequest(blink::WebURLRequest& request) {
   }
 
   GURL new_url;
-  if (GetContentClient()->renderer()->WillSendRequest(
-          frame_, transition_type, request.Url(), &new_url)) {
+  bool attach_same_site_cookies = false;
+  base::Optional<url::Origin> initiator_origin =
+      request.RequestorOrigin().IsNull()
+          ? base::Optional<url::Origin>()
+          : base::Optional<url::Origin>(request.RequestorOrigin());
+  GetContentClient()->renderer()->WillSendRequest(
+      frame_, transition_type, request.Url(),
+      base::OptionalOrNullptr(initiator_origin), &new_url,
+      &attach_same_site_cookies);
+  if (!new_url.is_empty())
     request.SetURL(WebURL(new_url));
-  }
 
   if (internal_data->is_cache_policy_override_set())
     request.SetCacheMode(internal_data->cache_policy_override());
@@ -4877,7 +4911,6 @@ void RenderFrameImpl::WillSendRequest(blink::WebURLRequest& request) {
   extra_data->set_requested_with(requested_with);
   extra_data->set_render_frame_id(routing_id_);
   extra_data->set_is_main_frame(!parent);
-  extra_data->set_frame_origin(url::Origin(frame_document.GetSecurityOrigin()));
   extra_data->set_allow_download(
       navigation_state->common_params().allow_download);
   extra_data->set_transition_type(transition_type);
@@ -4889,6 +4922,7 @@ void RenderFrameImpl::WillSendRequest(blink::WebURLRequest& request) {
   extra_data->set_download_to_network_cache_only(
       is_for_no_state_prefetch && resource_type != RESOURCE_TYPE_MAIN_FRAME);
   extra_data->set_initiated_in_secure_context(frame_document.IsSecureContext());
+  extra_data->set_attach_same_site_cookies(attach_same_site_cookies);
 
   // Renderer process transfers apply only to navigational requests.
   bool is_navigational_request =
@@ -4911,7 +4945,7 @@ void RenderFrameImpl::WillSendRequest(blink::WebURLRequest& request) {
   if (render_thread && render_thread->url_loader_throttle_provider()) {
     extra_data->set_url_loader_throttles(
         render_thread->url_loader_throttle_provider()->CreateThrottles(
-            routing_id_, request.Url(), resource_type));
+            routing_id_, request, resource_type));
   }
 
   if (request.GetPreviewsState() == WebURLRequest::kPreviewsUnspecified) {
@@ -5115,6 +5149,12 @@ void RenderFrameImpl::DidObserveNewFeatureUsage(
     blink::mojom::WebFeature feature) {
   for (auto& observer : observers_)
     observer.DidObserveNewFeatureUsage(feature);
+}
+
+void RenderFrameImpl::DidObserveNewCssPropertyUsage(int css_property,
+                                                    bool is_animated) {
+  for (auto& observer : observers_)
+    observer.DidObserveNewCssPropertyUsage(css_property, is_animated);
 }
 
 bool RenderFrameImpl::ShouldTrackUseCounter(const blink::WebURL& url) {
@@ -5441,12 +5481,12 @@ RenderFrameImpl::MakeDidCommitProvisionalLoadParams(
   params->post_id = -1;
   params->nav_entry_id = navigation_state->request_params().nav_entry_id;
   // We need to track the RenderViewHost routing_id because of downstream
-  // dependencies (crbug.com/392171 DownloadRequestHandle, SaveFileManager,
-  // ResourceDispatcherHostImpl, MediaStreamUIProxy,
-  // SpeechRecognitionDispatcherHost and possibly others). They look up the view
-  // based on the ID stored in the resource requests. Once those dependencies
-  // are unwound or moved to RenderFrameHost (crbug.com/304341) we can move the
-  // client to be based on the routing_id of the RenderFrameHost.
+  // dependencies (https://crbug.com/392171 DownloadRequestHandle,
+  // SaveFileManager, ResourceDispatcherHostImpl, MediaStreamUIProxy and
+  // possibly others). They look up the view based on the ID stored in the
+  // resource requests. Once those dependencies are unwound or moved to
+  // RenderFrameHost (https://crbug.com/304341) we can move the client to be
+  // based on the routing_id of the RenderFrameHost.
   params->render_view_routing_id = render_view_->routing_id();
 
   // "Standard" commits from Blink create new NavigationEntries. We also treat
@@ -5723,12 +5763,17 @@ void RenderFrameImpl::UpdateStateForCommit(
     engagement_level_.first = url::Origin();
   }
 
-  // Set the correct high media engagement bit on the frame, and wipe the cached
-  // origin so this will not be reused accidentally.
-  if (url::Origin(frame_->GetSecurityOrigin()) ==
-      high_media_engagement_origin_) {
-    frame_->SetHasHighMediaEngagement(true);
-    high_media_engagement_origin_ = url::Origin();
+  // If we are a top frame navigation we should clear any existing autoplay
+  // flags on the Page. This is because flags are stored at the page level so
+  // subframes would only add to them.
+  if (!frame_->Parent())
+    render_view_->webview()->ClearAutoplayFlags();
+
+  // Set the correct autoplay flags on the Page and wipe the cached origin so
+  // this will not be used incorrectly.
+  if (url::Origin(frame_->GetSecurityOrigin()) == autoplay_flags_.first) {
+    render_view_->webview()->AddAutoplayFlags(autoplay_flags_.second);
+    autoplay_flags_.first = url::Origin();
   }
 }
 
@@ -5897,12 +5942,7 @@ void RenderFrameImpl::DidStopLoading() {
   // this state anymore.
   history_subframe_unique_names_.clear();
 
-  blink::WebIconURL::Type icon_types_mask =
-      static_cast<blink::WebIconURL::Type>(
-          blink::WebIconURL::kTypeFavicon |
-          blink::WebIconURL::kTypeTouchPrecomposed |
-          blink::WebIconURL::kTypeTouch);
-  SendUpdateFaviconURL(icon_types_mask);
+  SendUpdateFaviconURL();
 
   render_view_->FrameDidStopLoading(frame_);
   Send(new FrameHostMsg_DidStopLoading(routing_id_));
@@ -6046,6 +6086,46 @@ WebNavigationPolicy RenderFrameImpl::DecidePolicyForNavigation(
   // See http://crbug.com/93517.
   GURL old_url(frame_->GetDocumentLoader()->GetRequest().Url());
 
+  // Detect when a page is "forking" a new tab that can be safely rendered in
+  // its own process.  This is done by sites like Gmail that try to open links
+  // in new windows without script connections back to the original page.  We
+  // treat such cases as browser navigations (in which we will create a new
+  // renderer for a cross-site navigation), rather than WebKit navigations.
+  //
+  // We use the following heuristic to decide whether to fork a new page in its
+  // own process:
+  // The parent page must open a new tab to about:blank, set the new tab's
+  // window.opener to null, and then redirect the tab to a cross-site URL using
+  // JavaScript.
+  //
+  // TODO(creis): Deprecate this logic once we can rely on rel=noreferrer
+  // (see below).
+  bool is_fork =
+      // Must start from a tab showing about:blank, which is later redirected.
+      old_url == url::kAboutBlankURL &&
+      // Must be the first real navigation of the tab.
+      render_view_->HistoryBackListCount() < 1 &&
+      render_view_->HistoryForwardListCount() < 1 &&
+      // The parent page must have set the child's window.opener to null before
+      // redirecting to the desired URL.
+      frame_->Opener() == nullptr &&
+      // Must be a top-level frame.
+      frame_->Parent() == nullptr &&
+      // Must not have issued the request from this page.
+      is_content_initiated &&
+      // Must be targeted at the current tab.
+      info.default_policy == blink::kWebNavigationPolicyCurrentTab &&
+      // Must be a JavaScript navigation, which appears as "other".
+      info.navigation_type == blink::kWebNavigationTypeOther;
+
+  if (is_fork) {
+    // Open the URL via the browser, not via WebKit. Make sure the referrer is
+    // stripped.
+    OpenURL(info, /*send_referrer=*/false,
+            /*is_history_navigation_in_new_child=*/false);
+    return blink::kWebNavigationPolicyIgnore;
+  }
+
   // Detect when we're crossing a permission-based boundary (e.g. into or out of
   // an extension or app origin, leaving a WebUI page, etc). We only care about
   // top-level navigations (not iframes). But we sometimes navigate to
@@ -6093,46 +6173,6 @@ WebNavigationPolicy RenderFrameImpl::DecidePolicyForNavigation(
     }
   }
 
-  // Detect when a page is "forking" a new tab that can be safely rendered in
-  // its own process.  This is done by sites like Gmail that try to open links
-  // in new windows without script connections back to the original page.  We
-  // treat such cases as browser navigations (in which we will create a new
-  // renderer for a cross-site navigation), rather than WebKit navigations.
-  //
-  // We use the following heuristic to decide whether to fork a new page in its
-  // own process:
-  // The parent page must open a new tab to about:blank, set the new tab's
-  // window.opener to null, and then redirect the tab to a cross-site URL using
-  // JavaScript.
-  //
-  // TODO(creis): Deprecate this logic once we can rely on rel=noreferrer
-  // (see below).
-  bool is_fork =
-      // Must start from a tab showing about:blank, which is later redirected.
-      old_url == url::kAboutBlankURL &&
-      // Must be the first real navigation of the tab.
-      render_view_->HistoryBackListCount() < 1 &&
-      render_view_->HistoryForwardListCount() < 1 &&
-      // The parent page must have set the child's window.opener to null before
-      // redirecting to the desired URL.
-      frame_->Opener() == nullptr &&
-      // Must be a top-level frame.
-      frame_->Parent() == nullptr &&
-      // Must not have issued the request from this page.
-      is_content_initiated &&
-      // Must be targeted at the current tab.
-      info.default_policy == blink::kWebNavigationPolicyCurrentTab &&
-      // Must be a JavaScript navigation, which appears as "other".
-      info.navigation_type == blink::kWebNavigationTypeOther;
-
-  if (is_fork) {
-    // Open the URL via the browser, not via WebKit. Make sure the referrer is
-    // stripped.
-    OpenURL(info, /*send_referrer=*/false,
-            /*is_history_navigation_in_new_child=*/false);
-    return blink::kWebNavigationPolicyIgnore;
-  }
-
   bool should_dispatch_before_unload =
       info.default_policy == blink::kWebNavigationPolicyCurrentTab &&
       // There is no need to execute the BeforeUnload event during a redirect,
@@ -6174,31 +6214,24 @@ WebNavigationPolicy RenderFrameImpl::DecidePolicyForNavigation(
       (info.archive_status == NavigationPolicyInfo::ArchiveStatus::Present) &&
       !url.SchemeIs(url::kDataScheme);
 
-  // If the navigation is not synchronous, send it to the browser.  This
-  // includes navigations with no request being sent to the network stack.
-  if (info.url_request.CheckForBrowserSideNavigation() &&
-      IsURLHandledByNetworkStack(url) && !use_archive) {
-    if (info.default_policy == blink::kWebNavigationPolicyCurrentTab) {
-      // The BeginNavigation() call happens in didStartProvisionalLoad(). We
-      // need to save information about the navigation here.
+  if (info.default_policy == blink::kWebNavigationPolicyCurrentTab) {
+    // If the navigation is not synchronous, send it to the browser.  This
+    // includes navigations with no request being sent to the network stack.
+    if (!use_archive && info.url_request.CheckForBrowserSideNavigation() &&
+        IsURLHandledByNetworkStack(url)) {
       pending_navigation_info_.reset(new PendingNavigationInfo(info));
       return blink::kWebNavigationPolicyHandledByClient;
-    } else if (info.default_policy == blink::kWebNavigationPolicyDownload) {
-      DownloadURL(info.url_request, blink::WebString());
-      return blink::kWebNavigationPolicyIgnore;
     } else {
-      OpenURL(info, /*send_referrer=*/true,
-              /*is_history_navigation_in_new_child=*/false);
-      return blink::kWebNavigationPolicyIgnore;
+      return blink::kWebNavigationPolicyCurrentTab;
     }
   }
 
-  if (info.default_policy == blink::kWebNavigationPolicyCurrentTab ||
-      info.default_policy == blink::kWebNavigationPolicyDownload) {
-    return info.default_policy;
+  if (info.default_policy == blink::kWebNavigationPolicyDownload) {
+    DownloadURL(info.url_request);
+  } else {
+    OpenURL(info, /*send_referrer=*/true,
+            /*is_history_navigation_in_new_child=*/false);
   }
-  OpenURL(info, /*send_referrer=*/true,
-          /*is_history_navigation_in_new_child=*/false);
   return blink::kWebNavigationPolicyIgnore;
 }
 
@@ -6291,8 +6324,8 @@ void RenderFrameImpl::OnSerializeAsMHTML(
       main_thread_use_time);
 
   if (save_status == MhtmlSaveStatus::SUCCESS && has_some_data) {
-    base::PostTaskAndReplyWithResult(
-        RenderThreadImpl::current()->GetFileThreadTaskRunner().get(), FROM_HERE,
+    base::PostTaskWithTraitsAndReplyWithResult(
+        FROM_HERE, {base::MayBlock()},
         base::Bind(&WriteMHTMLToDisk, base::Passed(&mhtml_contents),
                    base::Passed(&file)),
         base::Bind(&RenderFrameImpl::OnWriteMHTMLToDiskComplete,
@@ -6518,14 +6551,10 @@ void RenderFrameImpl::OnSetOverlayRoutingToken(
   pending_routing_token_callbacks_.clear();
 }
 
-void RenderFrameImpl::OnSetHasReceivedUserGesture() {
-  frame_->SetHasReceivedUserGesture();
-}
-
 void RenderFrameImpl::RequestOverlayRoutingToken(
     media::RoutingTokenCallback callback) {
   if (overlay_routing_token_.has_value()) {
-    callback.Run(overlay_routing_token_.value());
+    std::move(callback).Run(overlay_routing_token_.value());
     return;
   }
 
@@ -6533,7 +6562,11 @@ void RenderFrameImpl::RequestOverlayRoutingToken(
   // arrives later.
   Send(new FrameHostMsg_RequestOverlayRoutingToken(routing_id_));
 
-  pending_routing_token_callbacks_.push_back(callback);
+  pending_routing_token_callbacks_.push_back(std::move(callback));
+}
+
+void RenderFrameImpl::OnNotifyUserActivation() {
+  frame_->NotifyUserActivation();
 }
 
 #if BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
@@ -6541,6 +6574,8 @@ void RenderFrameImpl::RequestOverlayRoutingToken(
 void RenderFrameImpl::OnSelectPopupMenuItem(int selected_index) {
   if (external_popup_menu_ == NULL)
     return;
+
+  blink::WebScopedUserGesture gesture(frame_);
   external_popup_menu_->DidSelectItem(selected_index);
   external_popup_menu_.reset();
 }
@@ -6555,6 +6590,7 @@ void RenderFrameImpl::OnSelectPopupMenuItems(
   if (!external_popup_menu_)
     return;
 
+  blink::WebScopedUserGesture gesture(frame_);
   external_popup_menu_->DidSelectItems(canceled, selected_indices);
   external_popup_menu_.reset();
 }
@@ -6684,28 +6720,34 @@ ChildURLLoaderFactoryBundle* RenderFrameImpl::GetLoaderFactoryBundle() {
           base::MakeRefCounted<TrackedChildURLLoaderFactoryBundle>(
               std::move(bundle_info));
     } else {
-      SetupLoaderFactoryBundle(nullptr);
+      SetupLoaderFactoryBundle(nullptr,
+                               base::nullopt /* subresource_overrides */);
     }
   }
   return loader_factories_.get();
 }
 
 void RenderFrameImpl::SetupLoaderFactoryBundle(
-    std::unique_ptr<URLLoaderFactoryBundleInfo> info) {
+    std::unique_ptr<URLLoaderFactoryBundleInfo> info,
+    base::Optional<std::vector<mojom::TransferrableURLLoaderPtr>>
+        subresource_overrides) {
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
 
-  loader_factories_ = base::MakeRefCounted<HostChildURLLoaderFactoryBundle>();
+  loader_factories_ = base::MakeRefCounted<HostChildURLLoaderFactoryBundle>(
+      GetTaskRunner(blink::TaskType::kInternalLoading));
 
   // In some tests |render_thread| could be null.
   if (render_thread) {
     loader_factories_->Update(render_thread->blink_platform_impl()
                                   ->CreateDefaultURLLoaderFactoryBundle()
-                                  ->PassInterface());
+                                  ->PassInterface(),
+                              base::nullopt);
   }
 
   if (info) {
-    static_cast<URLLoaderFactoryBundle*>(loader_factories_.get())
-        ->Update(std::move(info));
+    loader_factories_->Update(
+        std::make_unique<ChildURLLoaderFactoryBundleInfo>(std::move(info)),
+        std::move(subresource_overrides));
   }
 }
 
@@ -6792,8 +6834,11 @@ void RenderFrameImpl::ScrollFocusedEditableElementIntoRect(
     return;
   }
 
-  if (!render_view_->webview()->ScrollFocusedEditableElementIntoView())
+  if (!frame_->LocalRoot()
+           ->FrameWidget()
+           ->ScrollFocusedEditableElementIntoView()) {
     return;
+  }
 
   rect_for_scrolled_focused_editable_node_ = rect;
   has_scrolled_focused_editable_node_into_rect_ = true;
@@ -6816,7 +6861,8 @@ void RenderFrameImpl::InitializeUserMediaClient() {
   DCHECK(!web_user_media_client_);
   web_user_media_client_ = new UserMediaClientImpl(
       this, RenderThreadImpl::current()->GetPeerConnectionDependencyFactory(),
-      std::make_unique<MediaStreamDeviceObserver>(this));
+      std::make_unique<MediaStreamDeviceObserver>(this),
+      GetTaskRunner(blink::TaskType::kInternalMedia));
 #endif
 }
 
@@ -6932,6 +6978,15 @@ void RenderFrameImpl::BeginNavigation(const NavigationPolicyInfo& info) {
   if (info.is_client_redirect)
     client_side_redirect_url = frame_->GetDocument().Url();
 
+  blink::mojom::BlobURLTokenPtr blob_url_token;
+  if (info.blob_url_token.is_valid()) {
+    blink::mojom::BlobURLTokenPtr token(blink::mojom::BlobURLTokenPtrInfo(
+        mojo::ScopedMessagePipeHandle(info.blob_url_token.get()),
+        blink::mojom::BlobURLToken::Version_));
+    token->Clone(MakeRequest(&blob_url_token));
+    ignore_result(token.PassInterface().PassHandle().release());
+  }
+
   int load_flags = GetLoadFlagsForWebURLRequest(info.url_request);
   std::unique_ptr<base::DictionaryValue> initiator =
       GetDevToolsInitiator(info.devtools_initiator_info);
@@ -6942,10 +6997,13 @@ void RenderFrameImpl::BeginNavigation(const NavigationPolicyInfo& info) {
           GetRequestContextTypeForWebURLRequest(info.url_request),
           GetMixedContentContextTypeForWebURLRequest(info.url_request),
           is_form_submission, searchable_form_url, searchable_form_encoding,
-          initiator_origin, client_side_redirect_url, std::move(initiator));
+          initiator_origin, client_side_redirect_url,
+          initiator ? base::make_optional<base::Value>(std::move(*initiator))
+                    : base::nullopt);
 
   GetFrameHost()->BeginNavigation(MakeCommonNavigationParams(info, load_flags),
-                                  std::move(begin_navigation_params));
+                                  std::move(begin_navigation_params),
+                                  std::move(blob_url_token));
 }
 
 void RenderFrameImpl::LoadDataURL(
@@ -7010,8 +7068,8 @@ void RenderFrameImpl::SendFailedProvisionalLoad(
 
   FrameHostMsg_DidFailProvisionalLoadWithError_Params params;
   params.error_code = error.reason();
-  GetContentClient()->renderer()->PrepareErrorPage(
-      this, request, error, nullptr, &params.error_description);
+  GetContentClient()->renderer()->GetErrorDescription(
+      request, error, &params.error_description);
   params.url = error.url(),
   params.showing_repost_interstitial = show_repost_interstitial;
   Send(new FrameHostMsg_DidFailProvisionalLoadWithError(routing_id_, params));
@@ -7180,7 +7238,7 @@ void RenderFrameImpl::RegisterMojoInterfaces() {
       base::Bind(&RenderFrameImpl::BindEngagement, weak_factory_.GetWeakPtr()));
 
   GetAssociatedInterfaceRegistry()->AddInterface(base::Bind(
-      &RenderFrameImpl::BindMediaEngagement, weak_factory_.GetWeakPtr()));
+      &RenderFrameImpl::BindAutoplayConfiguration, weak_factory_.GetWeakPtr()));
 
   GetAssociatedInterfaceRegistry()->AddInterface(base::Bind(
       &RenderFrameImpl::BindFrameBindingsControl, weak_factory_.GetWeakPtr()));
@@ -7240,9 +7298,16 @@ void RenderFrameImpl::CheckIfAudioSinkExistsAndIsAuthorized(
     blink::WebSetSinkIdCallbacks* web_callbacks) {
   media::OutputDeviceStatusCB callback =
       media::ConvertToOutputDeviceStatusCB(web_callbacks);
-  callback.Run(AudioDeviceFactory::GetOutputDeviceInfo(
-                   GetRoutingID(), 0, sink_id.Utf8(), security_origin)
-                   .device_status());
+  std::move(callback).Run(
+      AudioDeviceFactory::GetOutputDeviceInfo(GetRoutingID(), 0, sink_id.Utf8(),
+                                              security_origin)
+          .device_status());
+}
+
+blink::WebSpeechRecognizer* RenderFrameImpl::SpeechRecognizer() {
+  if (!speech_recognition_dispatcher_)
+    speech_recognition_dispatcher_ = new SpeechRecognitionDispatcher(this);
+  return speech_recognition_dispatcher_;
 }
 
 blink::mojom::PageVisibilityState RenderFrameImpl::VisibilityState() const {
@@ -7303,15 +7368,21 @@ void RenderFrameImpl::FrameDidCallFocus() {
 }
 
 void RenderFrameImpl::OnPictureInPictureSurfaceIdUpdated(
-    const viz::SurfaceId& surface_id) {
-  GetFrameHost()->OnUpdatePictureInPictureSurfaceId(surface_id);
+    const viz::SurfaceId& surface_id,
+    const gfx::Size& natural_size) {
+  GetFrameHost()->OnUpdatePictureInPictureSurfaceId(surface_id, natural_size);
+}
+
+void RenderFrameImpl::OnExitPictureInPicture() {
+  GetFrameHost()->OnExitPictureInPicture();
 }
 
 void RenderFrameImpl::SetAccessibilityModeForTest(ui::AXMode new_mode) {
   OnSetAccessibilityMode(new_mode);
 }
 
-scoped_refptr<SharedURLLoaderFactory> RenderFrameImpl::GetURLLoaderFactory() {
+scoped_refptr<network::SharedURLLoaderFactory>
+RenderFrameImpl::GetURLLoaderFactory() {
   return GetLoaderFactoryBundle();
 }
 
@@ -7450,51 +7521,6 @@ void RenderFrameImpl::RenderWidgetWillHandleMouseEvent() {
 #endif
 }
 
-void RenderFrameImpl::UpdatePeakMemoryStats() {
-  if (!base::FeatureList::IsEnabled(features::kReportRendererPeakMemoryStats))
-    return;
-
-  RenderThreadImpl::RendererMemoryMetrics memory_metrics;
-  if (!RenderThreadImpl::current()->GetRendererMemoryMetrics(&memory_metrics))
-    return;
-  peak_memory_metrics_.partition_alloc_kb =
-      std::max(peak_memory_metrics_.partition_alloc_kb,
-               memory_metrics.partition_alloc_kb);
-  peak_memory_metrics_.blink_gc_kb =
-      std::max(peak_memory_metrics_.blink_gc_kb, memory_metrics.blink_gc_kb);
-  peak_memory_metrics_.malloc_mb =
-      std::max(peak_memory_metrics_.malloc_mb, memory_metrics.malloc_mb);
-  peak_memory_metrics_.discardable_kb = std::max(
-      peak_memory_metrics_.discardable_kb, memory_metrics.discardable_kb);
-  peak_memory_metrics_.v8_main_thread_isolate_mb =
-      std::max(peak_memory_metrics_.v8_main_thread_isolate_mb,
-               memory_metrics.v8_main_thread_isolate_mb);
-  peak_memory_metrics_.total_allocated_mb =
-      std::max(peak_memory_metrics_.total_allocated_mb,
-               memory_metrics.total_allocated_mb);
-  peak_memory_metrics_.non_discardable_total_allocated_mb =
-      std::max(peak_memory_metrics_.non_discardable_total_allocated_mb,
-               memory_metrics.non_discardable_total_allocated_mb);
-  peak_memory_metrics_.total_allocated_per_render_view_mb =
-      std::max(peak_memory_metrics_.total_allocated_per_render_view_mb,
-               memory_metrics.total_allocated_per_render_view_mb);
-}
-
-void RenderFrameImpl::ReportPeakMemoryStats() {
-  if (!base::FeatureList::IsEnabled(features::kReportRendererPeakMemoryStats))
-    return;
-
-  RecordSuffixedRendererMemoryMetrics(peak_memory_metrics_, ".PeakDuringLoad");
-  if (!IsMainFrame())
-    return;
-  RecordSuffixedRendererMemoryMetrics(peak_memory_metrics_,
-                                      ".MainFrame.PeakDuringLoad");
-  if (!IsControlledByServiceWorker())
-    return;
-  RecordSuffixedRendererMemoryMetrics(
-      peak_memory_metrics_, ".ServiceWorkerControlledMainFrame.PeakDuringLoad");
-}
-
 bool RenderFrameImpl::ConsumeGestureOnNavigation() const {
   return is_main_frame_ &&
          base::FeatureList::IsEnabled(kConsumeGestureOnNavigation);
@@ -7522,7 +7548,17 @@ RenderFrameImpl::PendingNavigationInfo::PendingNavigationInfo(
       triggering_event_info(info.triggering_event_info),
       form(info.form),
       source_location(info.source_location),
-      devtools_initiator_info(info.devtools_initiator_info) {}
+      devtools_initiator_info(info.devtools_initiator_info) {
+  if (info.blob_url_token.is_valid()) {
+    blink::mojom::BlobURLTokenPtr token(blink::mojom::BlobURLTokenPtrInfo(
+        mojo::ScopedMessagePipeHandle(info.blob_url_token.get()),
+        blink::mojom::BlobURLToken::Version_));
+    token->Clone(MakeRequest(&blob_url_token));
+    ignore_result(token.PassInterface().PassHandle().release());
+  }
+}
+
+RenderFrameImpl::PendingNavigationInfo::~PendingNavigationInfo() = default;
 
 void RenderFrameImpl::BindWidget(mojom::WidgetRequest request) {
   GetRenderWidget()->SetWidgetBinding(std::move(request));

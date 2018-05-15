@@ -6,7 +6,7 @@
 
 #include "base/run_loop.h"
 #include "base/test/scoped_feature_list.h"
-#include "content/browser/loader/url_loader_request_handler.h"
+#include "content/browser/loader/navigation_loader_interceptor.h"
 #include "content/browser/service_worker/embedded_worker_test_helper.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_registration.h"
@@ -16,8 +16,8 @@
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/common/single_request_url_loader_factory.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "mojo/common/data_pipe_utils.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
+#include "mojo/public/cpp/system/data_pipe_utils.h"
 #include "net/http/http_util.h"
 #include "net/ssl/ssl_info.h"
 #include "net/test/cert_test_util.h"
@@ -31,8 +31,8 @@
 #include "storage/browser/blob/blob_impl.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_event_status.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 namespace service_worker_navigation_loader_unittest {
@@ -85,7 +85,6 @@ class NavigationPreloadLoaderClient final
   // network::mojom::URLLoaderClient implementation
   void OnReceiveResponse(
       const network::ResourceResponseHead& response_head,
-      const base::Optional<net::SSLInfo>& ssl_info,
       network::mojom::DownloadedTempFilePtr downloaded_file) override {
     response_head_ = response_head;
   }
@@ -178,7 +177,7 @@ class MockNetworkURLLoaderFactory final
     network::ResourceResponseHead response;
     response.headers = info.headers;
     response.headers->GetMimeType(&response.mime_type);
-    client->OnReceiveResponse(response, base::nullopt, nullptr);
+    client->OnReceiveResponse(response, nullptr);
 
     std::string body = "this body came from the network";
     uint32_t bytes_written = body.size();
@@ -690,8 +689,8 @@ TEST_F(ServiceWorkerNavigationLoaderTest, BlobResponse) {
   // Test the body.
   std::string body;
   EXPECT_TRUE(client_.response_body().is_valid());
-  EXPECT_TRUE(mojo::common::BlockingCopyToString(
-      client_.response_body_release(), &body));
+  EXPECT_TRUE(
+      mojo::BlockingCopyToString(client_.response_body_release(), &body));
   EXPECT_EQ(kResponseBody, body);
   EXPECT_EQ(net::OK, client_.completion_status().error_code);
 }
@@ -759,8 +758,8 @@ TEST_F(ServiceWorkerNavigationLoaderTest, StreamResponse) {
   // Test the body.
   std::string response;
   EXPECT_TRUE(client_.response_body().is_valid());
-  EXPECT_TRUE(mojo::common::BlockingCopyToString(
-      client_.response_body_release(), &response));
+  EXPECT_TRUE(
+      mojo::BlockingCopyToString(client_.response_body_release(), &response));
   EXPECT_EQ(kResponseBody, response);
 }
 
@@ -797,8 +796,8 @@ TEST_F(ServiceWorkerNavigationLoaderTest, StreamResponse_Abort) {
   // Test the body.
   std::string response;
   EXPECT_TRUE(client_.response_body().is_valid());
-  EXPECT_TRUE(mojo::common::BlockingCopyToString(
-      client_.response_body_release(), &response));
+  EXPECT_TRUE(
+      mojo::BlockingCopyToString(client_.response_body_release(), &response));
   EXPECT_EQ(kResponseBody, response);
 }
 
@@ -949,8 +948,8 @@ TEST_F(ServiceWorkerNavigationLoaderTest, NavigationPreload) {
 
   std::string response;
   EXPECT_TRUE(client_.response_body().is_valid());
-  EXPECT_TRUE(mojo::common::BlockingCopyToString(
-      client_.response_body_release(), &response));
+  EXPECT_TRUE(
+      mojo::BlockingCopyToString(client_.response_body_release(), &response));
   EXPECT_EQ("this body came from the network", response);
 }
 

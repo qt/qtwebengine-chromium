@@ -64,13 +64,12 @@ class HeadlessPrintManager
     LIMIT_ERROR,
   };
 
-  using GetPDFCallback = base::Callback<void(PrintResult, const std::string&)>;
+  using GetPDFCallback =
+      base::OnceCallback<void(PrintResult, const std::string&)>;
 
   ~HeadlessPrintManager() override;
 
   static std::string PrintResultToString(PrintResult result);
-  static std::unique_ptr<base::DictionaryValue> PDFContentsToDictionaryValue(
-      const std::string& data);
   // Exported for tests.
   HEADLESS_EXPORT static PageRangeStatus PageRangeTextToPages(
       base::StringPiece page_range_text,
@@ -84,7 +83,7 @@ class HeadlessPrintManager
   // finishes.
   void GetPDFContents(content::RenderFrameHost* rfh,
                       const HeadlessPrintSettings& settings,
-                      const GetPDFCallback& callback);
+                      GetPDFCallback callback);
 
  private:
   explicit HeadlessPrintManager(content::WebContents* web_contents);

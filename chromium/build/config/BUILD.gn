@@ -61,6 +61,9 @@ config("feature_flags") {
   defines = [ "V8_DEPRECATION_WARNINGS" ]
   if (dcheck_always_on) {
     defines += [ "DCHECK_ALWAYS_ON=1" ]
+    if (dcheck_is_configurable) {
+      defines += [ "DCHECK_IS_CONFIGURABLE=1" ]
+    }
   }
   if (use_udev) {
     # TODO(brettw) should probably be "=1".
@@ -123,12 +126,6 @@ config("feature_flags") {
     defines += [ "GOOGLE_CHROME_BUILD" ]
   } else {
     defines += [ "CHROMIUM_BUILD" ]
-  }
-  if (is_syzyasan) {
-    defines += [
-      "SYZYASAN",
-      "MEMORY_SANITIZER_INITIAL_SIZE",
-    ]
   }
   if (!fieldtrial_testing_like_official_build && !is_chrome_branded) {
     defines += [ "FIELDTRIAL_TESTING_ENABLED" ]
@@ -205,14 +202,11 @@ config("default_libs") {
       "advapi32.lib",
       "comdlg32.lib",
       "dbghelp.lib",
-      "delayimp.lib",
       "dnsapi.lib",
       "gdi32.lib",
-      "kernel32.lib",
       "msimg32.lib",
       "odbc32.lib",
       "odbccp32.lib",
-      "ole32.lib",
       "oleaut32.lib",
       "psapi.lib",
       "shell32.lib",
@@ -231,6 +225,20 @@ config("default_libs") {
       # some extra libraries, please just add a libs = [ "foo.lib" ] to your
       # target that needs it.
     ]
+    if (current_os == "winuwp") {
+      # These libraries are needed for Windows UWP (i.e. store apps).
+      libs += [
+        "dloadhelper.lib",
+        "WindowsApp.lib",
+      ]
+    } else {
+      # These libraries are not compatible with Windows UWP (i.e. store apps.)
+      libs += [
+        "delayimp.lib",
+        "kernel32.lib",
+        "ole32.lib",
+      ]
+    }
   } else if (is_android) {
     libs = [
       "dl",

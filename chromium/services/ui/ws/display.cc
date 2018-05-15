@@ -8,7 +8,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "services/service_manager/public/mojom/connector.mojom.h"
 #include "services/ui/common/types.h"
@@ -29,10 +28,6 @@
 #include "services/ui/ws/window_tree_binding.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/display/screen.h"
-
-#if defined(USE_OZONE)
-#include "ui/ozone/public/ozone_platform.h"
-#endif
 
 namespace ui {
 namespace ws {
@@ -137,7 +132,7 @@ bool Display::SetFocusedWindow(ServerWindow* new_focused_window) {
   ServerWindow* old_focused_window = focus_controller_->GetFocusedWindow();
   if (old_focused_window == new_focused_window)
     return true;
-  DCHECK(!new_focused_window || root_window()->Contains(new_focused_window));
+  DCHECK(!new_focused_window || root_->Contains(new_focused_window));
   return focus_controller_->SetFocusedWindow(new_focused_window);
 }
 
@@ -255,14 +250,6 @@ void Display::OnNativeCaptureLost() {
   }
 }
 
-OzonePlatform* Display::GetOzonePlatform() {
-#if defined(USE_OZONE)
-  return OzonePlatform::GetInstance();
-#else
-  return nullptr;
-#endif
-}
-
 bool Display::IsHostingViz() const {
   return window_server_->is_hosting_viz();
 }
@@ -290,6 +277,23 @@ ServerWindow* Display::GetActiveRootWindow() {
   if (window_manager_display_root_)
     return window_manager_display_root_->root();
   return nullptr;
+}
+
+void Display::ProcessEvent(ui::Event* event,
+                           base::OnceClosure event_processed_callback) {
+  if (window_manager_display_root_) {
+    WindowManagerState* wm_state =
+        window_manager_display_root_->window_manager_state();
+    wm_state->ProcessEvent(event, GetId());
+    if (event_processed_callback) {
+      wm_state->ScheduleCallbackWhenDoneProcessingEvents(
+          std::move(event_processed_callback));
+    }
+  } else if (event_processed_callback) {
+    std::move(event_processed_callback).Run();
+  }
+
+  window_server_->user_activity_monitor()->OnUserActivity();
 }
 
 void Display::OnActivationChanged(ServerWindow* old_active_window,
@@ -371,13 +375,7 @@ void Display::OnWindowManagerWindowTreeFactoryReady(
 }
 
 EventDispatchDetails Display::OnEventFromSource(Event* event) {
-  if (window_manager_display_root_) {
-    WindowManagerState* wm_state =
-        window_manager_display_root_->window_manager_state();
-    wm_state->ProcessEvent(event, GetId());
-  }
-
-  window_server_->user_activity_monitor()->OnUserActivity();
+  ProcessEvent(event);
   return EventDispatchDetails();
 }
 

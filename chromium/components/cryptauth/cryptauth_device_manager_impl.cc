@@ -11,14 +11,15 @@
 #include <memory>
 
 #include "base/base64url.h"
+#include "base/memory/ptr_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "chromeos/components/proximity_auth/logging/logging.h"
 #include "components/cryptauth/cryptauth_client.h"
 #include "components/cryptauth/pref_names.h"
 #include "components/cryptauth/sync_scheduler_impl.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
-#include "components/proximity_auth/logging/logging.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 
 namespace cryptauth {
@@ -315,6 +316,42 @@ std::unique_ptr<SyncSchedulerImpl> CreateSyncScheduler(
 }
 
 }  // namespace
+
+// static
+CryptAuthDeviceManagerImpl::Factory*
+    CryptAuthDeviceManagerImpl::Factory::factory_instance_ = nullptr;
+
+// static
+std::unique_ptr<CryptAuthDeviceManager>
+CryptAuthDeviceManagerImpl::Factory::NewInstance(
+    base::Clock* clock,
+    std::unique_ptr<CryptAuthClientFactory> client_factory,
+    CryptAuthGCMManager* gcm_manager,
+    PrefService* pref_service) {
+  if (!factory_instance_)
+    factory_instance_ = new Factory();
+
+  return factory_instance_->BuildInstance(clock, std::move(client_factory),
+                                          gcm_manager, pref_service);
+}
+
+// static
+void CryptAuthDeviceManagerImpl::Factory::SetInstanceForTesting(
+    Factory* factory) {
+  factory_instance_ = factory;
+}
+
+CryptAuthDeviceManagerImpl::Factory::~Factory() = default;
+
+std::unique_ptr<CryptAuthDeviceManager>
+CryptAuthDeviceManagerImpl::Factory::BuildInstance(
+    base::Clock* clock,
+    std::unique_ptr<CryptAuthClientFactory> client_factory,
+    CryptAuthGCMManager* gcm_manager,
+    PrefService* pref_service) {
+  return base::WrapUnique(new CryptAuthDeviceManagerImpl(
+      clock, std::move(client_factory), gcm_manager, pref_service));
+}
 
 CryptAuthDeviceManagerImpl::CryptAuthDeviceManagerImpl(
     base::Clock* clock,

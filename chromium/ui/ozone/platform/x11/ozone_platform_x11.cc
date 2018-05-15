@@ -7,7 +7,6 @@
 #include <memory>
 #include <utility>
 
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/x/x11_util.h"
@@ -108,14 +107,17 @@ class OzonePlatformX11 : public OzonePlatform {
  private:
   // Performs initialization steps need by both UI and GPU.
   void InitializeCommon(const InitParams& params) {
-    // TODO(kylechar): Add DCHECK we only enter InitializeCommon() twice for
-    // single process mode.
     if (common_initialized_)
       return;
 
-    // Always initialze in multi-thread mode, since this is used only during
+    // Always initialize in multi-thread mode, since this is used only during
     // development.
     XInitThreads();
+
+    // If XOpenDisplay() failed there is nothing we can do. Crash here instead
+    // of crashing later. If you are crashing here, make sure there is an X
+    // server running and $DISPLAY is set.
+    CHECK(gfx::GetXDisplay()) << "Missing X server or $DISPLAY";
 
     ui::SetDefaultX11ErrorHandlers();
 

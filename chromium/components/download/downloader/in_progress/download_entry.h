@@ -8,6 +8,7 @@
 #include <string>
 
 #include "components/download/public/common/download_source.h"
+#include "components/download/public/common/download_url_parameters.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 
 namespace download {
@@ -17,13 +18,13 @@ struct DownloadEntry {
  public:
   DownloadEntry();
   DownloadEntry(const DownloadEntry& other);
-  DownloadEntry(const std::string& guid,
-                DownloadSource download_source,
-                int64_t ukm_id);
-  DownloadEntry(const std::string& guid,
-                const std::string& request_origin,
-                DownloadSource download_source,
-                int64_t ukm_id);
+  DownloadEntry(
+      const std::string& guid,
+      const std::string& request_origin,
+      DownloadSource download_source,
+      bool fetch_error_body,
+      const DownloadUrlParameters::RequestHeadersType& request_headers,
+      int64_t ukm_id);
   ~DownloadEntry();
 
   bool operator==(const DownloadEntry& other) const;
@@ -42,6 +43,17 @@ struct DownloadEntry {
   // Unique ID that tracks the download UKM entry, where 0 means the
   // download_id is not yet initialized.
   uint64_t ukm_download_id = 0;
+
+  // Count for how many (extra) bytes were used (including resumption).
+  int64_t bytes_wasted = 0;
+
+  // If the entity body of unsuccessful HTTP response, like HTTP 404, will be
+  // downloaded.
+  bool fetch_error_body = false;
+
+  // Request header key/value pairs that will be added to the download HTTP
+  // request.
+  DownloadUrlParameters::RequestHeadersType request_headers;
 };
 
 }  // namespace download

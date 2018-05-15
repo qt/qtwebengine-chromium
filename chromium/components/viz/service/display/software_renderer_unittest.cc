@@ -7,7 +7,6 @@
 #include <stdint.h>
 
 #include "base/bind.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "cc/test/animation_test_common.h"
 #include "cc/test/fake_output_surface_client.h"
@@ -158,9 +157,9 @@ TEST_F(SoftwareRendererTest, TileQuad) {
   InitializeRenderer(std::make_unique<SoftwareOutputDevice>());
 
   ResourceId resource_yellow = child_resource_provider()->CreateBitmapResource(
-      outer_size, gfx::ColorSpace());
+      outer_size, gfx::ColorSpace(), RGBA_8888);
   ResourceId resource_cyan = child_resource_provider()->CreateBitmapResource(
-      inner_size, gfx::ColorSpace());
+      inner_size, gfx::ColorSpace(), RGBA_8888);
 
   SkBitmap yellow_tile;
   yellow_tile.allocN32Pixels(outer_size.width(), outer_size.height());
@@ -198,11 +197,11 @@ TEST_F(SoftwareRendererTest, TileQuad) {
   auto* inner_quad = root_render_pass->CreateAndAppendDrawQuad<TileDrawQuad>();
   inner_quad->SetNew(shared_quad_state, inner_rect, inner_rect, needs_blending,
                      mapped_resource_cyan, gfx::RectF(gfx::SizeF(inner_size)),
-                     inner_size, false, false, false);
+                     inner_size, false, false, false, false);
   auto* outer_quad = root_render_pass->CreateAndAppendDrawQuad<TileDrawQuad>();
   outer_quad->SetNew(shared_quad_state, outer_rect, outer_rect, needs_blending,
                      mapped_resource_yellow, gfx::RectF(gfx::SizeF(outer_size)),
-                     outer_size, false, false, false);
+                     outer_size, false, false, false, false);
 
   RenderPassList list;
   list.push_back(std::move(root_render_pass));
@@ -230,7 +229,7 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
   InitializeRenderer(std::make_unique<SoftwareOutputDevice>());
 
   ResourceId resource_cyan = child_resource_provider()->CreateBitmapResource(
-      tile_size, gfx::ColorSpace());
+      tile_size, gfx::ColorSpace(), RGBA_8888);
 
   SkBitmap cyan_tile;  // The lowest five rows are yellow.
   cyan_tile.allocN32Pixels(tile_size.width(), tile_size.height());
@@ -260,7 +259,7 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
   auto* quad = root_render_pass->CreateAndAppendDrawQuad<TileDrawQuad>();
   quad->SetNew(shared_quad_state, tile_rect, tile_rect, needs_blending,
                mapped_resource_cyan, gfx::RectF(gfx::SizeF(tile_size)),
-               tile_size, false, false, false);
+               tile_size, false, false, false, false);
   quad->visible_rect = visible_rect;
 
   RenderPassList list;

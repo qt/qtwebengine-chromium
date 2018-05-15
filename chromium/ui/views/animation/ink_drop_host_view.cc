@@ -4,7 +4,6 @@
 
 #include "ui/views/animation/ink_drop_host_view.h"
 
-#include "base/memory/ptr_util.h"
 #include "ui/events/event.h"
 #include "ui/events/scoped_target_handler.h"
 #include "ui/gfx/color_palette.h"
@@ -168,6 +167,10 @@ std::unique_ptr<InkDropHighlight> InkDropHostView::CreateInkDropHighlight()
       gfx::RectF(GetMirroredRect(GetContentsBounds())).CenterPoint());
 }
 
+std::unique_ptr<views::InkDropMask> InkDropHostView::CreateInkDropMask() const {
+  return nullptr;
+}
+
 std::unique_ptr<InkDropRipple> InkDropHostView::CreateDefaultInkDropRipple(
     const gfx::Point& center_point,
     const gfx::Size& size) const {
@@ -278,10 +281,6 @@ SkColor InkDropHostView::GetInkDropBaseColor() const {
   return gfx::kPlaceholderColor;
 }
 
-std::unique_ptr<views::InkDropMask> InkDropHostView::CreateInkDropMask() const {
-  return nullptr;
-}
-
 bool InkDropHostView::HasInkDrop() const {
   return !!ink_drop_;
 }
@@ -298,12 +297,9 @@ InkDrop* InkDropHostView::GetInkDrop() {
 }
 
 void InkDropHostView::InstallInkDropMask(ui::Layer* ink_drop_layer) {
-// Layer masks don't work on Windows. See crbug.com/713359
-#if !defined(OS_WIN)
   ink_drop_mask_ = CreateInkDropMask();
   if (ink_drop_mask_)
     ink_drop_layer->SetMaskLayer(ink_drop_mask_->layer());
-#endif
 }
 
 void InkDropHostView::ResetInkDropMask() {
@@ -316,13 +312,9 @@ void InkDropHostView::UpdateInkDropMaskLayerSize(const gfx::Size& new_size) {
 }
 
 std::unique_ptr<InkDropImpl> InkDropHostView::CreateDefaultInkDropImpl() {
-  std::unique_ptr<InkDropImpl> ink_drop =
-      std::make_unique<InkDropImpl>(this, size());
-  views::InkDropImpl::AutoHighlightMode mode =
-      PlatformStyle::kUseRipples
-          ? views::InkDropImpl::AutoHighlightMode::HIDE_ON_RIPPLE
-          : views::InkDropImpl::AutoHighlightMode::SHOW_ON_RIPPLE;
-  ink_drop->SetAutoHighlightMode(mode);
+  auto ink_drop = std::make_unique<InkDropImpl>(this, size());
+  ink_drop->SetAutoHighlightMode(
+      InkDropImpl::AutoHighlightMode::HIDE_ON_RIPPLE);
   return ink_drop;
 }
 

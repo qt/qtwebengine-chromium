@@ -232,9 +232,6 @@ are declared in build/common.gypi.
       <message name="IDS_PERMISSIONS_BUBBLE_PROMPT" desc="The label that is used to introduce permission request details to the user in a popup.">
         <ph name="SITE_NAME">$1<ex>google.com</ex></ph> wants to
       </message>
-      <message name="IDS_PERMISSIONS_BUBBLE_ACCESSIBLE_TITLE" desc="The sentence read out by screen readers to describe the permission request popup.">
-        <ph name="SITE_NAME">$1<ex>google.com</ex></ph> has a permission request.
-      </message>
       <message name="IDS_PERMISSION_ALLOW" desc="Label on button to allow a permissions request.">
         Allow
       </message>
@@ -868,6 +865,9 @@ are declared in build/common.gypi.
           <message name="IDS_SITE_SETTINGS" desc="The text label of the Site Settings menu item for the Hosted App app menu">
             &amp;Site settings
           </message>
+          <message name="IDS_OPEN_IN_APP_WINDOW" desc="The text label of the menu item for moving the current tab to a standalone app window">
+            Open in <ph name="APP">$1<ex>Gmail App</ex></ph>
+          </message>
         </if>
         <if expr="use_titlecase">
           <message name="IDS_NEW_TAB" desc="In Title Case: The text label of a menu item for opening a new tab">
@@ -938,6 +938,9 @@ are declared in build/common.gypi.
           </message>
           <message name="IDS_SITE_SETTINGS" desc="In Title Case: The text label of the Site Settings menu item for the Hosted App app menu">
             &amp;Site Settings
+          </message>
+          <message name="IDS_OPEN_IN_APP_WINDOW" desc="In Title Case: The text label of the menu item for moving the current tab to a standalone app window">
+            Open in <ph name="APP">$1<ex>Gmail App</ex></ph>
           </message>
         </if>
       </if>
@@ -1159,6 +1162,9 @@ are declared in build/common.gypi.
       </message>
 
       <!-- Download Shelf-->
+      <message name="IDS_ACCNAME_DOWNLOADS_BAR" desc="Accessible name for the entire downloads bar, read to screen reader users when navigating into the grouping">
+        Downloads bar
+      </message>
       <if expr="use_titlecase">
         <message name="IDS_HIDE_DOWNLOADS" desc="Button label for screenreader users, for button at the corner of the download shelf that closes the download shelf (title case)">
           Close Downloads Bar
@@ -1632,7 +1638,7 @@ are declared in build/common.gypi.
       </message>
       <message name="IDS_DOWNLOAD_MORE_ACTIONS"
                desc="Tooltip of a button on the downloads page that shows a menu with actions like 'Open downloads folder' or 'Clear all'">
-        More actions...
+        More actions
       </message>
       <message name="IDS_DOWNLOAD_BY_EXTENSION_URL"
                desc="Indicates which extension downloaded this file by name and URL.">
@@ -1641,6 +1647,32 @@ are declared in build/common.gypi.
       <message name="IDS_DOWNLOAD_IN_INCOGNITO"
                desc="Indicates a download was started in Incognito mode.">
         Downloaded in Incognito
+      </message>
+
+      <!-- Download Alerts for Accessibility -->
+      <message name="IDS_DOWNLOAD_STATUS_IN_PROGRESS_ACCESSIBLE_ALERT"
+               desc="The title of a download notification: the current download status is in progress. This message is for screen reader users.">
+               Downloading <ph name="SIZE">$1<ex>52.7 MB</ex></ph>, <ph name="FILE_NAME">$2<ex>somedocument.pdf</ex></ph>
+      </message>
+      <message name="IDS_DOWNLOAD_STATUS_PERCENT_COMPLETE_ACCESSIBLE_ALERT"
+               desc="The title of a download notification: the current download status is in progress and time remaining is known. This message is for screen reader users.">
+               Downloading, <ph name="PERCENT_REMAINING">$1<ex>33</ex>% remaining</ph>
+      </message>
+      <message name="IDS_DOWNLOAD_STATUS_TIME_REMAINING_ACCESSIBLE_ALERT"
+               desc="The title of a download notification: the current download status is in progress and time remaining is known. This message is for screen reader users.">
+               Downloading, <ph name="STATUS">$1<ex>42 mins left</ex></ph>
+      </message>
+      <message name="IDS_DOWNLOAD_FAILED_ACCESSIBLE_ALERT"
+               desc="The title of a download notification: the current download status is failed. This message is for screen reader users.">
+               Download unsuccessful: <ph name="FILE_NAME">$1<ex>somedocument.pdf</ex></ph>
+      </message>
+      <message name="IDS_DOWNLOAD_CANCELLED_ACCESSIBLE_ALERT"
+               desc="The title of a download notification: the current download status is cancelled. This message is for screen reader users.">
+               Download cancelled: <ph name="FILE_NAME">$1<ex>somedocument.pdf</ex>.</ph>
+      </message>
+      <message name="IDS_DOWNLOAD_COMPLETE_ACCESSIBLE_ALERT"
+               desc="The title of a download notification: the current download status is finished successufully. This message is for screen reader users.">
+               Download complete: <ph name="FILE_NAME">$1<ex>somedocument.pdf</ex>. Press Shift+F6 to cycle to the downloads bar area.</ph>
       </message>
 
       <!-- Download Notification Labels -->
@@ -1879,44 +1911,46 @@ are declared in build/common.gypi.
 
       <!-- Ambient badge -->
       <if expr="is_android">
-        <message name="IDS_AMBIENT_BADGE_INSTALL" desc="String for the ambient badge promoting an app installation" formatter_data="android_java">
-          Add to Home screen
+        <message name="IDS_AMBIENT_BADGE_INSTALL" desc="String for the ambient badge promoting an app installation">
+          Add <ph name="APP_NAME">$1<ex>Google Maps</ex></ph> to Home screen
         </message>
-        <message name="IDS_AMBIENT_BADGE_OPEN" desc="String for the ambient badge promoting opening an installed app" formatter_data="android_java">
-          Open in app
+        <message name="IDS_AMBIENT_BADGE_OPEN" desc="String for the ambient badge promoting opening an installed app">
+          Open <ph name="APP_NAME">$1<ex>Google Maps</ex></ph>
         </message>
       </if>
       <!-- Bookmark app bubble -->
-      <if expr="chromeos">
-        <message name="IDS_ADD_TO_OS_LAUNCH_SURFACE_BUBBLE_TITLE" desc="Title of the bubble for adding a bookmark app to the shelf.">
-          Add to shelf
+      <if expr="use_titlecase">
+        <message name="IDS_ADD_TO_OS_LAUNCH_SURFACE_BUBBLE_TITLE" desc="In Title Case: Title of the bubble for adding a bookmark app shortcut to the operating system.">
+          Create Shortcut?
+        </message>
+        <message name="IDS_CREATE_SHORTCUTS_BUTTON_LABEL" desc="In Title Case: Text for button that adds a bookmark app shortcut to the operating system.">
+          Create
         </message>
       </if>
-      <if expr="is_macosx">
-        <message name="IDS_ADD_TO_OS_LAUNCH_SURFACE_BUBBLE_TITLE" desc="In Title Case: Title of the bubble adding a bookmark app to the Applications Folder on Mac. Note `Applications` should match the name that appears under Favourites in Finder on macOS.">
-          Add to Applications
+      <if expr="not use_titlecase">
+        <message name="IDS_ADD_TO_OS_LAUNCH_SURFACE_BUBBLE_TITLE" desc="Title of the bubble for adding a bookmark app shortcut to the operating system.">
+          Create shortcut?
         </message>
-      </if>
-      <if expr="not chromeos and not is_macosx">
-        <message name="IDS_ADD_TO_OS_LAUNCH_SURFACE_BUBBLE_TITLE" desc="Title of the bubble for adding a bookmark app to the desktop.">
-          Add to desktop
+        <message name="IDS_CREATE_SHORTCUTS_BUTTON_LABEL" desc="Text for button that adds a bookmark app shortcut to the operating system.">
+          Create
         </message>
       </if>
 
       <!-- "Install web app" confirmation bubble -->
-      <if expr="chromeos">
-        <message name="IDS_INSTALL_TO_OS_LAUNCH_SURFACE_BUBBLE_TITLE" desc="Title of the bubble for installing a web app to the shelf.">
-          Install to shelf
+      <if expr="use_titlecase">
+        <message name="IDS_INSTALL_TO_OS_LAUNCH_SURFACE_BUBBLE_TITLE" desc="In Title Case: Title of the bubble for installing a web app to the operating system.">
+          Install App?
+        </message>
+        <message name="IDS_INSTALL_PWA_BUTTON_LABEL" desc="In Title Case: Text for button that installs a web app to the operating system.">
+          Install
         </message>
       </if>
-      <if expr="is_macosx">
-        <message name="IDS_INSTALL_TO_OS_LAUNCH_SURFACE_BUBBLE_TITLE" desc="In Title Case: Title of the bubble for installing a web app to the Applications Folder on Mac. Note `Applications` should match the name that appears under Favourites in Finder on macOS.">
-          Install to Applications
+      <if expr="not use_titlecase">
+        <message name="IDS_INSTALL_TO_OS_LAUNCH_SURFACE_BUBBLE_TITLE" desc="Title of the bubble for installing a web app to the operating system.">
+          Install app?
         </message>
-      </if>
-      <if expr="not chromeos and not is_macosx">
-        <message name="IDS_INSTALL_TO_OS_LAUNCH_SURFACE_BUBBLE_TITLE" desc="Title of the bubble for installing a web app to the desktop.">
-          Install to desktop
+        <message name="IDS_INSTALL_PWA_BUTTON_LABEL" desc="Text for button that installs a web app to the operating system.">
+          Install
         </message>
       </if>
 
@@ -1944,36 +1978,26 @@ are declared in build/common.gypi.
       </if>
 
       <!-- "Create application shortcuts" menu item -->
-      <if expr="chromeos">
-        <message name="IDS_ADD_TO_OS_LAUNCH_SURFACE" desc="Button text for adding a bookmark app to the shelf.">
-          Add to shelf...
+      <if expr="use_titlecase">
+        <message name="IDS_ADD_TO_OS_LAUNCH_SURFACE" desc="In Title Case: Menu text for adding a bookmark app shortcut to the operating system.">
+          Create Shortcut...
         </message>
       </if>
-      <if expr="is_macosx">
-        <message name="IDS_ADD_TO_OS_LAUNCH_SURFACE" desc="In Title Case: Button text for adding a bookmark app to the Applications Folder. Note `Applications` should match the name that appears under Favourites in Finder on macOS">
-          Add to Applications...
-        </message>
-      </if>
-      <if expr="not chromeos and not is_macosx">
-        <message name="IDS_ADD_TO_OS_LAUNCH_SURFACE" desc="Button text for adding a bookmark app to the desktop.">
-          Add to desktop...
+      <if expr="not use_titlecase">
+        <message name="IDS_ADD_TO_OS_LAUNCH_SURFACE" desc="Menu text for adding a bookmark app shortcut to the operating system.">
+          Create shortcut...
         </message>
       </if>
 
       <!-- "Install web app" menu item -->
-      <if expr="chromeos">
-        <message name="IDS_INSTALL_TO_OS_LAUNCH_SURFACE" desc="Button text for installing a web app to the shelf.">
-          Install to shelf...
+      <if expr="use_titlecase">
+        <message name="IDS_INSTALL_TO_OS_LAUNCH_SURFACE" desc="In Title Case: Menu text for installing a web app to the operating system.">
+          Install <ph name="APP">$1<ex>Gmail</ex></ph>...
         </message>
       </if>
-      <if expr="is_macosx">
-        <message name="IDS_INSTALL_TO_OS_LAUNCH_SURFACE" desc="In Title Case: Button text for installing a web app to the Applications Folder. Note `Applications` should match the name that appears under Favourites in Finder on macOS">
-          Install to Applications...
-        </message>
-      </if>
-      <if expr="not chromeos and not is_macosx">
-        <message name="IDS_INSTALL_TO_OS_LAUNCH_SURFACE" desc="Button text for installing a web app to the desktop.">
-          Install to desktop...
+      <if expr="not use_titlecase">
+        <message name="IDS_INSTALL_TO_OS_LAUNCH_SURFACE" desc="Menu text for installing a web app to the operating system.">
+          Install <ph name="APP">$1<ex>Gmail</ex></ph>...
         </message>
       </if>
 
@@ -2042,7 +2066,7 @@ are declared in build/common.gypi.
         </if>
         <if expr="not is_macosx">
           <message name="IDS_APPLICATION_INFO_CREATE_SHORTCUTS_BUTTON_TEXT" desc="In Title Case: Text for the button that opens the dialog to create shortcuts for the app.">
-          Create Shortcuts...
+            Create Shortcuts...
           </message>
         </if>
       </if>
@@ -2977,17 +3001,8 @@ are declared in build/common.gypi.
           <message name="IDS_TASK_MANAGER_CPU_TIME_COLUMN" desc="The text of the CPU time usage column">
             CPU Time
           </message>
-          <message name="IDS_TASK_MANAGER_PHYSICAL_MEM_COLUMN" desc="Task manager process memory column. This is the similar to the process 'working set' reported by the Windows Task Manager">
-            Memory
-          </message>
           <message name="IDS_TASK_MANAGER_MEM_FOOTPRINT_COLUMN" desc="Task manager process memory footprint column. This is the amount of memory used by the process.">
             Memory footprint
-          </message>
-          <message name="IDS_TASK_MANAGER_PRIVATE_MEM_COLUMN" desc="Task manager process private memory column. This is the allocated size that cannot be shared with other processes">
-            Private memory
-          </message>
-          <message name="IDS_TASK_MANAGER_SHARED_MEM_COLUMN" desc="Task manager process shared memory column. Shows the size of the memory used by the process which is shared with other processes">
-            Shared memory
           </message>
           <message name="IDS_TASK_MANAGER_SWAPPED_MEM_COLUMN" desc="Task manager process swapped memory column. Shows the size of the memory that lives in the swap space.">
             Swapped memory
@@ -3065,15 +3080,6 @@ are declared in build/common.gypi.
           </message>
           <message name="IDS_TASK_MANAGER_MEM_FOOTPRINT_COLUMN" desc="Task manager process memory footprint column. This is the amount of memory used by the process.">
             Memory Footprint
-          </message>
-          <message name="IDS_TASK_MANAGER_PHYSICAL_MEM_COLUMN" desc="Task manager process memory column. This is the similar to the process 'working set' reported by the Windows Task Manager">
-            Memory
-          </message>
-          <message name="IDS_TASK_MANAGER_PRIVATE_MEM_COLUMN" desc="Task manager process private memory column. This is the allocated size that cannot be shared with other processes">
-            Private Memory
-          </message>
-          <message name="IDS_TASK_MANAGER_SHARED_MEM_COLUMN" desc="Task manager process shared memory column. Shows the size of the memory used by the process which is shared with other processes">
-            Shared Memory
           </message>
           <message name="IDS_TASK_MANAGER_SWAPPED_MEM_COLUMN" desc="Task manager process swapped memory column. Shows the size of the memory that lives in the swap space.">
             Swapped Memory
@@ -3845,15 +3851,6 @@ are declared in build/common.gypi.
       </message>
       <message name="IDS_EXTENSION_INVALID_IMAGE_PATH" desc="">
         Could not load '<ph name="IMAGE_PATH">$1<ex>/path/to/file</ex></ph>' for theme.
-      </message>
-      <message name="IDS_EXTENSION_LOAD_JAVASCRIPT_FAILED" desc="">
-        Could not load javascript '<ph name="RELATIVE_PATH">$1<ex>javas.js</ex></ph>' for content script.
-      </message>
-      <message name="IDS_EXTENSION_LOAD_CSS_FAILED" desc="">
-        Could not load css '<ph name="RELATIVE_PATH">$1<ex>file.css</ex></ph>' for content script.
-      </message>
-      <message name="IDS_EXTENSION_BAD_FILE_ENCODING" desc="">
-        Could not load file '<ph name="RELATIVE_PATH">$1<ex>file.js</ex></ph>' for content script. It isn't UTF-8 encoded.
       </message>
       <message name="IDS_EXTENSION_LOAD_ICON_FOR_PAGE_ACTION_FAILED" desc="">
         Could not load icon '<ph name="ICON">$1<ex>icon.png</ex></ph>' for page action.
@@ -4710,6 +4707,20 @@ Keep your key file in a safe place. You will need it to create new versions of y
          Updated just now
       </message>
 
+      <!-- Page Capping InfoBar -->
+      <message name="IDS_PAGE_CAPPING_TITLE" desc="The text of the infobar notifying the user that data usage on the page is beyond a certain threshold.">
+         This page uses more than <ph name="megabytes">$1<ex>5</ex></ph>MB
+      </message>
+      <message name="IDS_PAGE_CAPPING_STOPPED_TITLE" desc="The text of the infobar indicating that the user has chosen to pause resource loading on the page. This infobar is shown in response to clicking on a link in a different infobar that informed the user the page used a lot of data.">
+         Stopped loading
+      </message>
+      <message name="IDS_PAGE_CAPPING_CONTINUE_MESSAGE" desc="A link on an infobar that allows the resource loading to continue on the page. Clicking the link resumes resource loading on the page. This infobar is shown in response to clicking on a link in a different infobar that informed the user the page used a lot of data.">
+         Continue
+      </message>
+      <message name="IDS_PAGE_CAPPING_STOP_MESSAGE" desc="A link on the of infobar notifying the user that data usage on the page is beyond a certain threshold. Clicking the link pauses the resource loading on the page.">
+         Stop loading
+      </message>
+
       <!-- WebRTC logs -->
       <message name="IDS_WEBRTC_LOGS_TITLE" desc="Title for the chrome://webrtc-logs page.">
         WebRTC logs
@@ -4884,6 +4895,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <!-- Bad Flags Infobar-->
       <message name="IDS_BAD_FLAGS_WARNING_MESSAGE" desc="Message shown when an unsupported command-line flag is used. [Keep it short so it fits in the infobar.]">
         You are using an unsupported command-line flag: <ph name="BAD_FLAG">$1<ex>--no-sandbox</ex></ph>. Stability and security will suffer.
+      </message>
+
+      <!-- Bad Feature Flags Infobar-->
+      <message name="IDS_BAD_FEATURES_WARNING_MESSAGE" desc="Message shown when an unsupported feature flag is used. [Keep it short so it fits in the infobar.]">
+        You are using an unsupported feature flag: <ph name="BAD_FLAG">$1<ex>SignedHTTPExchange</ex></ph>. Stability and security will suffer.
       </message>
 
       <!-- Pepper Broker Infobar -->
@@ -5144,6 +5160,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_TOOLTIP_FIND" desc="The tooltip for the find button">
         Find
       </message>
+      <if expr="chromeos">
+        <message name="IDS_TOOLTIP_INTENT_PICKER_ICON" desc="The tooltip for the intent picker bubble icon">
+          To open this link, choose an app
+        </message>
+      </if>
 
       <!--Accessible name/action strings-->
       <message name="IDS_ACCESSIBLE_INCOGNITO_WINDOW_TITLE_FORMAT" desc="The format for the accessible title of an incognito window">
@@ -5163,9 +5184,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_ACCNAME_RELOAD" desc="The accessible name for the reload/stop button.">
         Reload
-      </message>
-      <message name="IDS_ACCNAME_ZOOM" desc="The accessible name for the zoom button.">
-        Zoom
       </message>
       <message name="IDS_ACCNAME_FIND" desc="The accessible name for the find button.">
         Find
@@ -5641,6 +5659,9 @@ the Bookmarks menu.">
       </message>
       <message name="IDS_GENERIC_USER_AVATAR_LABEL" desc="Label shown for the user that is currently active, when there are multiple user accounts.">
         Current user
+      </message>
+      <message name="IDS_INCOGNITO_AVATAR_BUTTON_TOOLTIP" desc="Tooltip for the inactive avatar button when the user is in incognito mode.">
+        You're incognito
       </message>
       <message name="IDS_LEGACY_SUPERVISED_USER_NEW_AVATAR_LABEL" desc="Label shown in the new avatar menu for a supervised user.">
         <ph name="PROFILE_DISPLAY_NAME">$1<ex>Markus</ex></ph> (Supervised)
@@ -6224,10 +6245,10 @@ I don't think this site should be blocked!
       <message name="IDS_LOAD_STATE_RESOLVING_PROXY_FOR_URL">
         Resolving proxy...
       </message>
-      <message name="IDS_LOAD_STATE_RESOLVING_HOST_IN_PROXY_SCRIPT">
+      <message name="IDS_LOAD_STATE_RESOLVING_HOST_IN_PAC_FILE">
         Resolving host in proxy script...
       </message>
-      <message name="IDS_LOAD_STATE_DOWNLOADING_PROXY_SCRIPT">
+      <message name="IDS_LOAD_STATE_DOWNLOADING_PAC_FILE">
         Downloading proxy script...
       </message>
       <message name="IDS_LOAD_STATE_RESOLVING_HOST">
@@ -6247,9 +6268,6 @@ I don't think this site should be blocked!
       </message>
       <message name="IDS_LOAD_STATE_WAITING_FOR_RESPONSE">
         Waiting for <ph name="HOST_NAME">$1<ex>www.google.com</ex></ph>...
-      </message>
-      <message name="IDS_LOAD_STATE_THROTTLED" desc="Tab status shown when tab loading is blocked on other in process network operations">
-        Waiting for other requests to complete...
       </message>
 
       <!-- Tab Context Menu -->
@@ -6653,6 +6671,9 @@ I don't think this site should be blocked!
         </message>
         <message name="IDS_CONTROLLED_SETTING_EXTENSION" desc="Text displayed in the controlled settings bubble when a setting's value is enforced by an extension.">
           This setting is enforced by the "<ph name="NAME">$1<ex>Google Cast</ex></ph>" extension.
+        </message>
+        <message name="IDS_CONTROLLED_SETTING_EXTENSION_WITHOUT_NAME" desc="Text displayed in the controlled settings bubble when a setting's value is enforced by an extension.">
+          This setting is enforced by an extension.
         </message>
         <message name="IDS_CONTROLLED_SETTING_RECOMMENDED" desc="Text displayed in the controlled settings bubble when a value is recommended for a setting through policy and the user has not overridden this recommendation.">
           You are following the administrator's recommendation for this setting.
@@ -7323,9 +7344,6 @@ I don't think this site should be blocked!
         <message name="IDS_PROFILES_BUBBLE_ACCESSIBLE_DESCRIPTION" desc="The help text for the avatar bubble.">
           Switch to a different user.
         </message>
-        <message name="IDS_PROFILES_NEW_AVATAR_MENU_ACCESSIBLE_NAME" desc="Title of the new avatar bubble menu for accessibility">
-          Switch Person
-        </message>
         <message name="IDS_PROFILES_CREATE_NEW_PROFILE_OPTION" desc="In Title Case. Create new profile menu item and button title.">
           Add Person...
         </message>
@@ -7366,8 +7384,8 @@ I don't think this site should be blocked!
       <message name="IDS_PROFILES_SETTINGS_LINK" desc="The link text to the Chrome settings page in the account removal view.">
         settings
       </message>
-      <message name="IDS_PROFILES_SYNCED_TO_TITLE" desc="Title of the profile card when sync is complete.">
-        Synced to
+      <message name="IDS_PROFILES_SYNC_COMPLETE_TITLE" desc="Title of the profile card when sync is complete.">
+        Syncing to
       </message>
       <message name="IDS_PROFILES_SYNC_SETTINGS_LINK" desc="The link text to the Chrome sync settings page in the avatar menu tutorial card.">
         Settings
@@ -7383,6 +7401,9 @@ I don't think this site should be blocked!
       </message>
       <message name="IDS_PROFILES_DICE_SIGNIN_WITH_ANOTHER_ACCOUNT_BUTTON" desc="Button to sign in and turn on Sync with another web account.">
         Sync to another account
+      </message>
+      <message name="IDS_PROFILES_DICE_SYNC_PAUSED_TITLE" desc="Title of the profile user menu when sync is paused.">
+        Sync is paused
       </message>
       <message name="IDS_PROFILES_DICE_USE_ANOTHER_ACCOUNT_BUTTON" desc="Button to use another account to sign in and turn on Sync.">
         Use another account
@@ -7767,6 +7788,9 @@ I don't think this site should be blocked!
       </message>
       <message name="IDS_SIGNIN_ERROR_EMAIL_TITLE" desc="Title of the signin error tab modal dialog when username can be retrieved to display.">
         Can't sign in to <ph name="USERNAME">$1<ex>Jane.Doe@gmail.com</ex></ph>
+      </message>
+      <message name="IDS_SIGNIN_ERROR_DICE_EMAIL_TITLE" desc="Title of the signin error tab modal dialog when username can be retrieved to display and when Desktop Identity Consistency is enabled.">
+        Can't sync to <ph name="USERNAME">$1<ex>Jane.Doe@gmail.com</ex></ph>
       </message>
       <message name="IDS_SIGNIN_ERROR_CLOSE_BUTTON_LABEL" desc="Label of the Close button in the signin error dialog.">
         Close
@@ -8181,7 +8205,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
         </message>
         <if expr="not chromeos">
           <message name="IDS_SYNC_RELOGIN_ERROR" desc="The text to display on in the hyperlink when the user needs to sign in again to use sync.">
-            Sign in again to start sync
+            Sign in again to resume sync
           </message>
         </if>
         <if expr="chromeos">
@@ -8540,7 +8564,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
 
       <!-- Web and message center notifications -->
       <message name="IDS_NOTIFICATIONS_INFOBAR_TEXT" desc="Text requesting permission for Web Notifications.">
-        <ph name="site">$1<ex>mail.google.com</ex></ph> wants to send you notifications.
+        <ph name="site">$1<ex>mail.google.com</ex></ph> wants to send you notifications
       </message>
       <message name="IDS_NOTIFICATION_PERMISSIONS_FRAGMENT" desc="Permission sentence fragment to show following the prompt 'This site wants to:' in a permissions request">
         Show notifications
@@ -9089,7 +9113,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
           Know your unique device identifier
         </message>
         <message name="IDS_PROTECTED_MEDIA_IDENTIFIER_INFOBAR_TEXT" desc="Text requesting permission for a site to access protected media identifier. It shows the origin of the URL.">
-          <ph name="URL">$1<ex>https://www.youtube.com</ex></ph> wants to uniquely identify your device to play protected content
+          <ph name="URL">$1<ex>https://www.youtube.com</ex></ph> wants to play protected content. Your device’s identity will be verified by Google.
         </message>
       </if>
       <message name="IDS_MANAGE_PASSWORDS_CONFIRM_GENERATED_TEXT" desc="A message that the browser shows after saving a password it has autogenerated for the user. This message appears in a bubble and contains a link to all the user's saved autogenerated passwords. The link text is a separate string in the translation console and appears here as placeholder text.">
@@ -9858,7 +9882,7 @@ For more information, visit our <ph name="BEGIN_LINK">&lt;a target="_blank" href
           </message>
           <message name="IDS_APP_LIST_UNINSTALL_ITEM"
                    desc="Title text for the 'uninstall' context menu item of an app list item.">
-            Uninstall...
+            Uninstall
           </message>
           <message name="IDS_APP_LIST_REMOVE_SHORTCUT"
                    desc="Title text for the 'remove' context menu item of an app list shortcut item.">
@@ -9892,7 +9916,7 @@ For more information, visit our <ph name="BEGIN_LINK">&lt;a target="_blank" href
           </message>
           <message name="IDS_APP_LIST_UNINSTALL_ITEM"
                    desc="Title text for the 'uninstall' context menu item of an app list item.">
-            Uninstall...
+            Uninstall
           </message>
           <message name="IDS_APP_LIST_REMOVE_SHORTCUT"
                    desc="Title text for the 'remove' context menu item of an app list shortcut item.">
@@ -9909,23 +9933,6 @@ For more information, visit our <ph name="BEGIN_LINK">&lt;a target="_blank" href
           </message>
         </if>
       </if>
-
-      <!-- Pepper 3D and WebGL (client 3D APIs) infobar strings -->
-      <message name="IDS_3D_APIS_BLOCKED_TEXT" desc="Infobar message when 3D graphics APIs are blocked because the graphics processor was reset recently. NOTE that 'rats' here is being used like 'darn'.">
-        Rats! <ph name="API_NAME">$1<ex>WebGL</ex></ph> hit a snag.
-      </message>
-      <message name="IDS_3D_APIS_WEBGL_NAME" desc="Name of the WebGL API.">
-        WebGL
-      </message>
-      <message name="IDS_3D_APIS_PEPPER_3D_NAME" desc="Name of the Pepper 3D API.">
-        Pepper 3D
-      </message>
-      <message name="IDS_3D_APIS_BLOCKED_OK_BUTTON_LABEL" desc="Label for the 'ok' button on the infobar indicating that 3D APIs were blocked. Clicking this button dismisses the infobar with no other action.">
-        Ignore
-      </message>
-      <message name="IDS_3D_APIS_BLOCKED_TRY_AGAIN_BUTTON_LABEL" desc="Label for the 'cancel' button on the infobar indicating that 3D APIs were blocked. Clicking this button unblocks the APIs and reloads the page.">
-        Reload
-      </message>
 
       <!-- Identity internals strings -->
       <message name="IDS_IDENTITY_INTERNALS_TOKEN_CACHE_TEXT" desc="The title of the token cache of the Identity API.">
@@ -10602,18 +10609,6 @@ For more information, visit our <ph name="BEGIN_LINK">&lt;a target="_blank" href
       <message name="IDS_BLUETOOTH_DEVICE_CHOOSER_PROMPT_EXTENSION_NAME" desc="The label that is used to introduce Bluetooth chooser details to the user in a popup when it is from a Chrome extension.">
         "<ph name="CHROME_EXTENSION_NAME">$1<ex>Chrome Extension Name</ex></ph>" wants to pair
       </message>
-      <message name="IDS_USB_DEVICE_CHOOSER_PROMPT_ORIGIN" desc="The label that is used to introduce USB chooser details to the user in a popup when it is from a website.">
-        <ph name="Origin">$1<ex>www.google.com</ex></ph> wants to connect
-      </message>
-      <message name="IDS_USB_DEVICE_CHOOSER_PROMPT_EXTENSION_NAME" desc="The label that is used to introduce USB chooser details to the user in a popup when it is from a Chrome extension.">
-        "<ph name="CHROME_EXTENSION_NAME">$1<ex>Chrome Extension Name</ex></ph>" wants to connect
-      </message>
-      <message name="IDS_DEVICE_CHOOSER_NO_DEVICES_FOUND_PROMPT" desc="The label shown to the user to inform them that no USB devices were found matching the requirements that the application provided.">
-        No compatible devices found.
-      </message>
-      <message name="IDS_DEVICE_CHOOSER_DEVICE_NAME_WITH_ID" desc="To distinguish devices with the same name, the device chooser shows the device name with id.">
-        <ph name="DEVICE_NAME">$1<ex>device name</ex></ph> (<ph name="DEVICE_ID">$2<ex>device id</ex></ph>)
-      </message>
       <message name="IDS_BLUETOOTH_DEVICE_CHOOSER_NO_DEVICES_FOUND_PROMPT" desc="The label shown to the user to inform them that no Bluetooth devices were found matching the requirements that the application provided.">
         No compatible devices found.
       </message>
@@ -10641,9 +10636,6 @@ For more information, visit our <ph name="BEGIN_LINK">&lt;a target="_blank" href
       <message name="IDS_BLUETOOTH_DEVICE_CHOOSER_PAIR_BUTTON_TEXT" desc="Label on the button that closes the Bluetooth chooser popup and pairs the selected device.">
         Pair
       </message>
-      <message name="IDS_USB_DEVICE_CHOOSER_CONNECT_BUTTON_TEXT" desc="Label on the button that closes the USB chooser popup and connects the selected device.">
-        Connect
-      </message>
       <message name="IDS_DEVICE_CHOOSER_CANCEL_BUTTON_TEXT" desc="Label on the button that closes the chooser popup without selecting an option.">
         Cancel
       </message>
@@ -10660,6 +10652,21 @@ For more information, visit our <ph name="BEGIN_LINK">&lt;a target="_blank" href
         <ph name="DEVICE_NAME">$1<ex>device name</ex></ph> - Paired
       </message>
     </if>
+    <message name="IDS_USB_DEVICE_CHOOSER_PROMPT_ORIGIN" desc="The label that is used to introduce USB chooser details to the user in a popup when it is from a website.">
+      <ph name="Origin">$1<ex>www.google.com</ex></ph> wants to connect
+    </message>
+    <message name="IDS_USB_DEVICE_CHOOSER_PROMPT_EXTENSION_NAME" desc="The label that is used to introduce USB chooser details to the user in a popup when it is from a Chrome extension.">
+      "<ph name="CHROME_EXTENSION_NAME">$1<ex>Chrome Extension Name</ex></ph>" wants to connect
+    </message>
+    <message name="IDS_DEVICE_CHOOSER_DEVICE_NAME_WITH_ID" desc="To distinguish devices with the same name, the device chooser shows the device name with id.">
+      <ph name="DEVICE_NAME">$1<ex>device name</ex></ph> (<ph name="DEVICE_ID">$2<ex>device id</ex></ph>)
+    </message>
+    <message name="IDS_DEVICE_CHOOSER_NO_DEVICES_FOUND_PROMPT" desc="The label shown to the user to inform them that no USB devices were found matching the requirements that the application provided.">
+      No compatible devices found.
+    </message>
+    <message name="IDS_USB_DEVICE_CHOOSER_CONNECT_BUTTON_TEXT" desc="Label on the button that closes the USB chooser popup and connects the selected device.">
+      Connect
+    </message>
 
     <!-- Device Chooser Device Name Unknown -->
     <message name="IDS_DEVICE_CHOOSER_DEVICE_NAME_UNKNOWN_DEVICE_WITH_VENDOR_NAME" desc="String describing an unknown device by its vendor name.">
@@ -10827,14 +10834,14 @@ For more information, visit our <ph name="BEGIN_LINK">&lt;a target="_blank" href
     </message>
 
     <!-- Security Key permission -->
-    <message name="IDS_SECURITY_KEY_ATTESTATION_PERMISSION_FRAGMENT" desc="A permission prompt shown to a user when a website wants to see information that uniquely identifies the user's Security Key, such as make and model number. The text '[website URL] wants to:' precedes this string. The word 'identifying' modifies 'information'.">
-      See identifying information about your Security Key
+    <message name="IDS_SECURITY_KEY_ATTESTATION_PERMISSION_FRAGMENT" desc="A permission prompt shown to a user when a website wants to see information that identifies the user's Security Key, such as make and model number. The text '[website URL] wants to:' precedes this string. The 'make' of a device is the brand name of the manufacturer, e.g. Yubikey is a make of Security Key. The 'model' of a device is the specific product, e.g. Yubikey Neo is a model of Security Key.">
+      See the make and model of your Security Key
     </message>
     <if expr="is_android">
-      <message name="IDS_SECURITY_KEY_ATTESTATION_INFOBAR_QUESTION" desc="An infobar prompt shown to a user when a website wants to see information that uniquely identifies the user's Security Key, such as make and model number. The word 'identifying' modifies 'information'.">
+      <message name="IDS_SECURITY_KEY_ATTESTATION_INFOBAR_QUESTION" desc="An infobar prompt shown to a user when a website wants to see information that identifies the user's Security Key, such as make and model number. The 'make' of a device is the brand name of the manufacturer, e.g. Yubikey is a make of Security Key. The 'model' of a device is the specific product, e.g. Yubikey Neo is a model of Security Key.">
         <ph name="URL">
           $1<ex>maps.google.com</ex>
-        </ph> wants to see identifying information about your Security Key
+        </ph> wants to see the make and model of your Security Key
       </message>
     </if>
 
@@ -10855,10 +10862,52 @@ For more information, visit our <ph name="BEGIN_LINK">&lt;a target="_blank" href
     </if>
 
     <!-- Strings that are only used when VR devices are supported -->
-      <!-- TODO(ddorwin): Use consistent naming schemes for VR strings. -->
+    <!-- TODO(ddorwin): Use consistent naming schemes for VR strings. -->
     <if expr="enable_vr">
-      <message name="IDS_PRESS_APP_TO_EXIT" desc="Text displayed in a transient bubble to tell users how to return from cinema mode (where the page displayed in a cinema like environment) or presentation mode (where the WebVR page occupies the entire screen) to normal mode.">
+      <message name="IDS_PRESS_APP_TO_EXIT" desc="Text displayed in a transient bubble to tell users how to return from presentation mode (where the WebVR page occupies the entire screen) to normal mode.">
         Press App button to exit
+      </message>
+      <message name="IDS_VR_SHELL_SITE_IS_TRACKING_LOCATION" desc="Text displayed in a transient bubble to inform the user that the page is tracking location.">
+        Site is tracking your location
+      </message>
+      <message name="IDS_VR_SHELL_SITE_IS_USING_MICROPHONE" desc="Text displayed in a transient bubble to inform the user that the page is using the microphone.">
+        Site is using your microphone
+      </message>
+      <message name="IDS_VR_SHELL_SITE_IS_USING_BLUETOOTH" desc="Text displayed in a transient bubble to inform the user that the page is using bluetooth.">
+        Site is using bluetooth
+      </message>
+      <message name="IDS_VR_SHELL_SITE_IS_USING_CAMERA" desc="Text displayed in a transient bubble to inform the user that the page is using the camera.">
+        Site is using your camera
+      </message>
+      <message name="IDS_VR_SHELL_SITE_IS_SHARING_SCREEN" desc="Text displayed in a transient bubble to inform the user that the page is sharing the screen.">
+        Site is sharing your screen
+      </message>
+      <message name="IDS_VR_SHELL_BG_IS_USING_MICROPHONE" desc="Text displayed in a transient bubble to inform the user that a background tab is using the microphone.">
+        Background tab is using your microphone
+      </message>
+      <message name="IDS_VR_SHELL_BG_IS_USING_BLUETOOTH" desc="Text displayed in a transient bubble to inform the user that a background tab is using bluetooth.">
+        Background tab is using bluetooth
+      </message>
+      <message name="IDS_VR_SHELL_BG_IS_USING_CAMERA" desc="Text displayed in a transient bubble to inform the user that a background tab is using the camera.">
+        Background tab is using your camera
+      </message>
+      <message name="IDS_VR_SHELL_BG_IS_SHARING_SCREEN" desc="Text displayed in a transient bubble to inform the user that a background tab is sharing the screen.">
+        Background tab is sharing your screen
+      </message>
+      <message name="IDS_VR_SHELL_SITE_CAN_TRACK_LOCATION" desc="Text displayed in a transient bubble to inform the user that the page may track location, but isn't doing so yet.">
+        Site can track your location
+      </message>
+      <message name="IDS_VR_SHELL_SITE_CAN_USE_MICROPHONE" desc="Text displayed in a transient bubble to inform the user that the page may use the microphone, but isn't doing so yet.">
+        Site can use your microphone
+      </message>
+      <message name="IDS_VR_SHELL_SITE_CAN_USE_BLUETOOTH" desc="Text displayed in a transient bubble to inform the user that the page may use bluetooth, but isn't doing so yet.">
+        Site can use bluetooth
+      </message>
+      <message name="IDS_VR_SHELL_SITE_CAN_USE_CAMERA" desc="Text displayed in a transient bubble to inform the user that the page may use the camera, but isn't doing so yet.">
+        Site can use your camera
+      </message>
+      <message name="IDS_VR_SHELL_SITE_CAN_SHARE_SCREEN" desc="Text displayed in a transient bubble to inform the user that the page may share your screen, but isn't doing so yet.">
+        Site can share your screen
       </message>
 
       <!-- VR browser -->
@@ -10916,12 +10965,18 @@ For more information, visit our <ph name="BEGIN_LINK">&lt;a target="_blank" href
       <message name="IDS_VR_BUTTON_BACK" desc="The label for the back button on the VR controller -- shown when the keyboard is visible, we are in voice search, or we are repositioning.">
         Back
       </message>
-      <message name="IDS_VR_BUTTON_TRACKPAD_REPOSITION" desc="The label for the trackpad while in window repositioning mode.">
-        Finish repositioning
+      <message name="IDS_VR_BUTTON_TRACKPAD_REPOSITION" desc="The label for the trackpad while in window repositioning/resizing mode.">
+        Touch to resize
       </message>
-      <message name="IDS_VR_REPOSITION_LABEL" desc="This text appears over a window to explain to the user how to manipulate the window.">
-        Move the controller to reposition. Click to finish.
+      <message name="IDS_VR_BUTTON_APP_REPOSITION" desc="This is the label for the app button while in reposition mode">
+        Finish
       </message>
+      <message name="IDS_VR_MENU_NEW_INCOGNITO_TAB" desc="Menu item for opening a new incognito tab that facilitates pseudononymous browsing. [CHAR-LIMIT=27]">
+        New incognito tab
+      </message>
+      <message name="IDS_VR_MENU_CLOSE_INCOGNITO_TABS" desc="Menu item for closing all open incognito tabs. [CHAR-LIMIT=27]">
+        Close incognito tabs
+     </message>
     </if>
 
     <message name="IDS_CONFIRM_FILE_UPLOAD_TITLE" desc="Title of dialog for confirming that many files are about to be uploaded / given to the site. [ICU Syntax]">

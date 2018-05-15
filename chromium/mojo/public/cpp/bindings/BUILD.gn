@@ -7,8 +7,8 @@ declare_args() {
   enable_mojo_tracing = false
 }
 
-buildflag_header("mojo_features") {
-  header = "mojo_features.h"
+buildflag_header("mojo_buildflags") {
+  header = "mojo_buildflags.h"
 
   flags = [ "MOJO_TRACE_ENABLED=$enable_mojo_tracing" ]
 }
@@ -56,7 +56,6 @@ component("bindings_base") {
     "lib/serialization_forward.h",
     "lib/serialization_util.h",
     "lib/string_serialization.h",
-    "lib/string_traits_string16.cc",
     "lib/template_util.h",
     "lib/unserialized_message_context.cc",
     "lib/unserialized_message_context.h",
@@ -77,7 +76,6 @@ component("bindings_base") {
     "string_data_view.h",
     "string_traits.h",
     "string_traits_stl.h",
-    "string_traits_string16.h",
     "string_traits_string_piece.h",
     "struct_ptr.h",
     "struct_traits.h",
@@ -88,6 +86,7 @@ component("bindings_base") {
   defines = [ "IS_MOJO_CPP_BINDINGS_BASE_IMPL" ]
 
   public_deps = [
+    ":mojo_buildflags",
     "//base",
     "//mojo/public/cpp/system",
   ]
@@ -102,6 +101,7 @@ component("bindings") {
     "associated_interface_request.h",
     "binding.h",
     "binding_set.h",
+    "bindings_export.h",
     "callback_helpers.h",
     "connection_error_callback.h",
     "connector.h",
@@ -136,6 +136,7 @@ component("bindings") {
     "lib/native_struct_serialization.h",
     "lib/pipe_control_message_handler.cc",
     "lib/pipe_control_message_proxy.cc",
+    "lib/sequence_local_sync_event_watcher.cc",
     "lib/sync_call_restrictions.cc",
     "lib/sync_event_watcher.cc",
     "lib/sync_handle_registry.cc",
@@ -147,6 +148,7 @@ component("bindings") {
     "pipe_control_message_handler_delegate.h",
     "pipe_control_message_proxy.h",
     "raw_ptr_impl_ref_traits.h",
+    "sequence_local_sync_event_watcher.h",
     "strong_associated_binding.h",
     "strong_binding.h",
     "strong_binding_set.h",
@@ -160,7 +162,6 @@ component("bindings") {
 
   public_deps = [
     ":bindings_base",
-    ":mojo_features",
     ":struct_traits",
     "//base",
     "//ipc:message_support",
@@ -203,10 +204,10 @@ if (!is_ios) {
 
     public_deps = [
       ":bindings",
-      "//third_party/WebKit/Source/platform:platform_export",
-      "//third_party/WebKit/Source/platform/wtf",
+      "//third_party/blink/renderer/platform:platform_export",
+      "//third_party/blink/renderer/platform/wtf",
     ]
 
-    public_configs = [ "//third_party/WebKit/Source:config" ]
+    public_configs = [ "//third_party/blink/renderer:config" ]
   }
 }

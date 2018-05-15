@@ -4,7 +4,6 @@
 
 #include "base/command_line.h"
 #include "base/feature_list.h"
-#include "base/memory/ptr_util.h"
 #include "base/path_service.h"
 #include "base/posix/global_descriptors.h"
 #include "content/browser/child_process_launcher.h"
@@ -13,6 +12,7 @@
 #include "content/browser/mach_broker_mac.h"
 #include "content/browser/sandbox_parameters_mac.h"
 #include "content/grit/content_resources.h"
+#include "content/public/browser/child_process_launcher_utils.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_paths.h"
@@ -47,7 +47,7 @@ void ChildProcessLauncherHelper::BeforeLaunchOnClientThread() {
 
 std::unique_ptr<PosixFileDescriptorInfo>
 ChildProcessLauncherHelper::GetFilesToMap() {
-  DCHECK_CURRENTLY_ON(BrowserThread::PROCESS_LAUNCHER);
+  DCHECK(CurrentlyOnProcessLauncherTaskRunner());
   return CreateDefaultPosixFilesToMap(
       child_process_id(), mojo_client_handle(),
       false /* include_service_required_files */, GetProcessType(),
@@ -231,15 +231,17 @@ base::TerminationStatus ChildProcessLauncherHelper::GetTerminationStatus(
 }
 
 // static
-bool ChildProcessLauncherHelper::TerminateProcess(
-    const base::Process& process, int exit_code, bool wait) {
-  return process.Terminate(exit_code, wait);
+bool ChildProcessLauncherHelper::TerminateProcess(const base::Process& process,
+                                                  int exit_code) {
+  // TODO(https://crbug.com/818244): Determine whether we should also call
+  // EnsureProcessTerminated() to make sure of process-exit, and reap it.
+  return process.Terminate(exit_code, false);
 }
 
 // static
 void ChildProcessLauncherHelper::ForceNormalProcessTerminationSync(
     ChildProcessLauncherHelper::Process process) {
-  DCHECK_CURRENTLY_ON(BrowserThread::PROCESS_LAUNCHER);
+  DCHECK(CurrentlyOnProcessLauncherTaskRunner());
   // Client has gone away, so just kill the process.  Using exit code 0 means
   // that UMA won't treat this as a crash.
   process.process.Terminate(RESULT_CODE_NORMAL_EXIT, false);

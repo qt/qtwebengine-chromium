@@ -225,15 +225,15 @@ void URLLoaderClientImpl::FlushDeferredMessages() {
 
 void URLLoaderClientImpl::Bind(
     network::mojom::URLLoaderClientEndpointsPtr endpoints) {
-  url_loader_.Bind(std::move(endpoints->url_loader));
-  url_loader_client_binding_.Bind(std::move(endpoints->url_loader_client));
+  url_loader_.Bind(std::move(endpoints->url_loader), task_runner_);
+  url_loader_client_binding_.Bind(std::move(endpoints->url_loader_client),
+                                  task_runner_);
   url_loader_client_binding_.set_connection_error_handler(base::BindOnce(
       &URLLoaderClientImpl::OnConnectionClosed, weak_factory_.GetWeakPtr()));
 }
 
 void URLLoaderClientImpl::OnReceiveResponse(
     const network::ResourceResponseHead& response_head,
-    const base::Optional<net::SSLInfo>& ssl_info,
     network::mojom::DownloadedTempFilePtr downloaded_file) {
   has_received_response_ = true;
   downloaded_file_ = std::move(downloaded_file);
@@ -306,6 +306,13 @@ void URLLoaderClientImpl::OnStartLoadingResponseBody(
     mojo::ScopedDataPipeConsumerHandle body) {
   DCHECK(!body_consumer_);
   DCHECK(has_received_response_);
+
+  if (pass_response_pipe_to_dispatcher_) {
+    resource_dispatcher_->OnStartLoadingResponseBody(request_id_,
+                                                     std::move(body));
+    return;
+  }
+
   body_consumer_ = new URLResponseBodyConsumer(
       request_id_, resource_dispatcher_, std::move(body), task_runner_);
 
@@ -329,6 +336,11 @@ void URLLoaderClientImpl::OnComplete(
     return;
   }
   body_consumer_->OnComplete(status);
+}
+
+network::mojom::DownloadedTempFilePtr
+URLLoaderClientImpl::TakeDownloadedTempFile() {
+  return std::move(downloaded_file_);
 }
 
 bool URLLoaderClientImpl::NeedsStoringMessage() const {

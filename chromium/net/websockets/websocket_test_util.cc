@@ -8,11 +8,14 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "net/proxy_resolution/proxy_service.h"
+#include "net/http/http_network_session.h"
+#include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/socket/socket_test_util.h"
 #include "net/spdy/core/spdy_protocol.h"
+#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/websockets/websocket_basic_handshake_stream.h"
 #include "url/origin.h"
 
@@ -34,6 +37,15 @@ uint32_t LinearCongruentialGenerator::Generate() {
   uint64_t result = current_;
   current_ = (current_ * kA + kC) % kM;
   return static_cast<uint32_t>(result >> 16);
+}
+
+std::string WebSocketExtraHeadersToString(
+    const WebSocketExtraHeaders& headers) {
+  std::string answer;
+  for (const auto& header : headers) {
+    base::StrAppend(&answer, {header.first, ": ", header.second, "\r\n"});
+  }
+  return answer;
 }
 
 std::string WebSocketStandardRequest(
@@ -139,8 +151,7 @@ struct WebSocketMockClientSocketFactoryMaker::Detail {
 };
 
 WebSocketMockClientSocketFactoryMaker::WebSocketMockClientSocketFactoryMaker()
-    : detail_(new Detail) {
-}
+    : detail_(std::make_unique<Detail>()) {}
 
 WebSocketMockClientSocketFactoryMaker::
     ~WebSocketMockClientSocketFactoryMaker() = default;
@@ -171,8 +182,8 @@ void WebSocketMockClientSocketFactoryMaker::SetExpectations(
                           kHttpStreamParserBufferSize),
                  sequence++));
   }
-  std::unique_ptr<SequencedSocketData> socket_data(new SequencedSocketData(
-      detail_->reads.data(), detail_->reads.size(), &detail_->write, 1));
+  auto socket_data = std::make_unique<SequencedSocketData>(
+      detail_->reads.data(), detail_->reads.size(), &detail_->write, 1);
   socket_data->set_connect_data(MockConnect(SYNCHRONOUS, OK));
   AddRawExpectations(std::move(socket_data));
 }
@@ -192,6 +203,12 @@ void WebSocketMockClientSocketFactoryMaker::AddSSLSocketDataProvider(
 WebSocketTestURLRequestContextHost::WebSocketTestURLRequestContextHost()
     : url_request_context_(true), url_request_context_initialized_(false) {
   url_request_context_.set_client_socket_factory(maker_.factory());
+  auto params = std::make_unique<HttpNetworkSession::Params>();
+  params->enable_spdy_ping_based_connection_checking = false;
+  params->enable_quic = false;
+  params->enable_websocket_over_http2 = true;
+  params->disable_idle_sockets_close_on_memory_pressure = false;
+  url_request_context_.set_http_network_session_params(std::move(params));
 }
 
 WebSocketTestURLRequestContextHost::~WebSocketTestURLRequestContextHost() =
@@ -210,7 +227,8 @@ void WebSocketTestURLRequestContextHost::AddSSLSocketDataProvider(
 void WebSocketTestURLRequestContextHost::SetProxyConfig(
     const std::string& proxy_rules) {
   DCHECK(!url_request_context_initialized_);
-  proxy_resolution_service_ = ProxyResolutionService::CreateFixed(proxy_rules);
+  proxy_resolution_service_ = ProxyResolutionService::CreateFixed(
+      proxy_rules, TRAFFIC_ANNOTATION_FOR_TESTS);
   url_request_context_.set_proxy_resolution_service(
       proxy_resolution_service_.get());
 }

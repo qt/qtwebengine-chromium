@@ -13,15 +13,15 @@
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
-#include "core/fxge/dib/ifx_scanlinecomposer.h"
+#include "core/fxge/dib/scanlinecomposer_iface.h"
 #include "core/fxge/fx_dib.h"
 
 class CFX_DIBSource;
-class IFX_PauseIndicator;
+class PauseIndicatorIface;
 
 class CFX_ImageStretcher {
  public:
-  CFX_ImageStretcher(IFX_ScanlineComposer* pDest,
+  CFX_ImageStretcher(ScanlineComposerIface* pDest,
                      const RetainPtr<CFX_DIBSource>& pSource,
                      int dest_width,
                      int dest_height,
@@ -30,17 +30,17 @@ class CFX_ImageStretcher {
   ~CFX_ImageStretcher();
 
   bool Start();
-  bool Continue(IFX_PauseIndicator* pPause);
+  bool Continue(PauseIndicatorIface* pPause);
 
   RetainPtr<CFX_DIBSource> source() { return m_pSource; }
 
  private:
   bool StartQuickStretch();
   bool StartStretch();
-  bool ContinueQuickStretch(IFX_PauseIndicator* pPause);
-  bool ContinueStretch(IFX_PauseIndicator* pPause);
+  bool ContinueQuickStretch(PauseIndicatorIface* pPause);
+  bool ContinueStretch(PauseIndicatorIface* pPause);
 
-  UnownedPtr<IFX_ScanlineComposer> const m_pDest;
+  UnownedPtr<ScanlineComposerIface> const m_pDest;
   RetainPtr<CFX_DIBSource> m_pSource;
   std::unique_ptr<CStretchEngine> m_pStretchEngine;
   std::unique_ptr<uint8_t, FxFreeDeleter> m_pScanline;

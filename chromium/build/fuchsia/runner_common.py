@@ -23,7 +23,7 @@ import uuid
 
 DIR_SOURCE_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
-SDK_ROOT = os.path.join(DIR_SOURCE_ROOT, 'third_party', 'fuchsia-sdk')
+SDK_ROOT = os.path.join(DIR_SOURCE_ROOT, 'third_party', 'fuchsia-sdk', 'sdk')
 
 # The guest will get 192.168.3.9 from DHCP, while the host will be
 # accessible as 192.168.3.2 .
@@ -630,8 +630,18 @@ def RunFuchsia(bootfs_data, use_device, kernel_path, dry_run,
     kernel_path = os.path.join(_TargetCpuToSdkBinPath(bootfs_data.target_cpu),
                                'zircon.bin')
 
-  kernel_args = ['devmgr.epoch=%d' % time.time(),
-                 'zircon.nodename=' + INSTANCE_ID]
+  kernel_args = [
+      'devmgr.epoch=%d' % time.time(),
+      'zircon.nodename=' + INSTANCE_ID,
+
+      # TERM=dumb tells the guest OS to not emit ANSI commands that trigger
+      # noisy ANSI spew from the user's terminal emulator.
+      'TERM=dumb',
+
+      # Enable logging to the serial port.
+      'kernel.serial=legacy'
+  ]
+
   if bootfs_data.has_autorun:
     # See https://fuchsia.googlesource.com/zircon/+/master/docs/kernel_cmdline.md#zircon_autorun_system_command.
     kernel_args.append('zircon.autorun.system=/boot/bin/sh+/system/cr_autorun')
@@ -673,9 +683,7 @@ def RunFuchsia(bootfs_data, use_device, kernel_path, dry_run,
         '-serial', 'stdio',
         '-monitor', 'none',
 
-        # TERM=dumb tells the guest OS to not emit ANSI commands that trigger
-        # noisy ANSI spew from the user's terminal emulator.
-        '-append', 'TERM=dumb ' + ' '.join(kernel_args)
+        '-append', ' '.join(kernel_args)
       ]
 
     # Configure the machine & CPU to emulate, based on the target architecture.
@@ -733,7 +741,7 @@ def RunFuchsia(bootfs_data, use_device, kernel_path, dry_run,
     # The precise root cause is still nebulous, but this fix works.
     # See crbug.com/741194.
     process = subprocess.Popen(
-        qemu_command, stdout=subprocess.PIPE, stdin=open(os.devnull))
+        qemu_command, stdout=subprocess.PIPE)
 
   success = _HandleOutputFromProcess(process,
                                      bootfs_data.symbols_mapping)

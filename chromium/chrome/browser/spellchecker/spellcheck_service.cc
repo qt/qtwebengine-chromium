@@ -26,7 +26,7 @@
 #include "components/spellcheck/browser/spelling_service_client.h"
 #include "components/spellcheck/common/spellcheck.mojom.h"
 #include "components/spellcheck/common/spellcheck_common.h"
-#include "components/spellcheck/spellcheck_build_features.h"
+#include "components/spellcheck/spellcheck_buildflags.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -240,11 +240,8 @@ void SpellcheckService::LoadHunspellDictionaries() {
 
   for (const auto& dictionary : dictionaries) {
     hunspell_dictionaries_.push_back(
-        std::make_unique<SpellcheckHunspellDictionary>(
-            dictionary,
-            content::BrowserContext::GetDefaultStoragePartition(context_)
-                ->GetURLRequestContext(),
-            this));
+        std::make_unique<SpellcheckHunspellDictionary>(dictionary, context_,
+                                                       this));
     hunspell_dictionaries_.back()->AddObserver(this);
     hunspell_dictionaries_.back()->Load();
   }

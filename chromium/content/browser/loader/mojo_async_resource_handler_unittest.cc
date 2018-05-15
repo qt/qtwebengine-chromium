@@ -14,7 +14,6 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
 #include "base/test/gtest_util.h"
@@ -45,6 +44,7 @@
 #include "net/http/http_status_code.h"
 #include "net/http/http_util.h"
 #include "net/ssl/ssl_info.h"
+#include "net/test/cert_test_util.h"
 #include "net/test/url_request/url_request_mock_data_job.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/url_request.h"
@@ -130,13 +130,6 @@ class TestResourceDispatcherHostDelegate final
       bool is_new_request,
       std::vector<std::unique_ptr<ResourceThrottle>>* throttles) override {
     ADD_FAILURE() << "DownloadStarting should not be called.";
-  }
-
-  bool HandleExternalProtocol(
-      const GURL& url,
-      ResourceRequestInfo* resource_request_info) override {
-    ADD_FAILURE() << "HandleExternalProtocol should not be called.";
-    return false;
   }
 
   bool ShouldInterceptResourceAsStream(net::URLRequest* request,
@@ -401,6 +394,13 @@ class MojoAsyncResourceHandlerTestBase {
   }
   void AdvanceCurrentTime(const base::TimeDelta& delta) {
     handler_->upload_progress_tracker()->current_time_ += delta;
+  }
+
+  void SetupRequestSSLInfo() {
+    net::CertificateList certs;
+    ASSERT_TRUE(net::LoadCertificateFiles({"multi-root-B-by-C.pem"}, &certs));
+    ASSERT_EQ(1U, certs.size());
+    const_cast<net::SSLInfo&>(request_->ssl_info()).cert = certs[0];
   }
 
   TestBrowserThreadBundle thread_bundle_;
@@ -1401,6 +1401,7 @@ TEST_F(MojoAsyncResourceHandlerDeferOnResponseStartedTest,
 // Test that SSLInfo is not attached to OnResponseStarted when there is no
 // kURLLoadOptionsSendSSLInfoWithResponse option.
 TEST_F(MojoAsyncResourceHandlerTest, SSLInfoOnResponseStarted) {
+  SetupRequestSSLInfo();
   EXPECT_TRUE(CallOnWillStartAndOnResponseStarted());
   EXPECT_FALSE(url_loader_client_.ssl_info());
 }
@@ -1409,6 +1410,7 @@ TEST_F(MojoAsyncResourceHandlerTest, SSLInfoOnResponseStarted) {
 // kURLLoadOptionsSendSSLInfoWithResponse option.
 TEST_F(MojoAsyncResourceHandlerSendSSLInfoWithResponseTest,
        SSLInfoOnResponseStarted) {
+  SetupRequestSSLInfo();
   EXPECT_TRUE(CallOnWillStartAndOnResponseStarted());
   EXPECT_TRUE(url_loader_client_.ssl_info());
 }

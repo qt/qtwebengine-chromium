@@ -15,7 +15,6 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/guid.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
 #include "base/time/time.h"
@@ -44,7 +43,7 @@ void DidRegisterServiceWorker(int64_t* out_service_worker_registration_id,
 
   *out_service_worker_registration_id = service_worker_registration_id;
 
-  quit_closure.Run();
+  std::move(quit_closure).Run();
 }
 
 void DidFindServiceWorkerRegistration(
@@ -57,7 +56,7 @@ void DidFindServiceWorkerRegistration(
 
   *out_service_worker_registration = service_worker_registration;
 
-  quit_closure.Run();
+  std::move(quit_closure).Run();
 }
 
 }  // namespace
@@ -95,8 +94,9 @@ int64_t BackgroundFetchTestBase::RegisterServiceWorker() {
     base::RunLoop run_loop;
     embedded_worker_test_helper_.context()->RegisterServiceWorker(
         script_url, options,
-        base::Bind(&DidRegisterServiceWorker, &service_worker_registration_id,
-                   run_loop.QuitClosure()));
+        base::BindOnce(&DidRegisterServiceWorker,
+                       &service_worker_registration_id,
+                       run_loop.QuitClosure()));
 
     run_loop.Run();
   }

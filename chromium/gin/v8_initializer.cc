@@ -25,6 +25,7 @@
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "gin/gin_features.h"
 
 #if defined(V8_USE_EXTERNAL_STARTUP_DATA)
 #if defined(OS_ANDROID)
@@ -70,19 +71,23 @@ base::LazyInstance<OpenedFileMap>::Leaky g_opened_files =
     LAZY_INSTANCE_INITIALIZER;
 
 const char kNativesFileName[] = "natives_blob.bin";
-const char kV8ContextSnapshotFileName[] = "v8_context_snapshot.bin";
 
 #if defined(OS_ANDROID)
+const char kV8ContextSnapshotFileName64[] = "v8_context_snapshot_64.bin";
+const char kV8ContextSnapshotFileName32[] = "v8_context_snapshot_32.bin";
 const char kSnapshotFileName64[] = "snapshot_blob_64.bin";
 const char kSnapshotFileName32[] = "snapshot_blob_32.bin";
 
 #if defined(__LP64__)
+#define kV8ContextSnapshotFileName kV8ContextSnapshotFileName64
 #define kSnapshotFileName kSnapshotFileName64
 #else
+#define kV8ContextSnapshotFileName kV8ContextSnapshotFileName32
 #define kSnapshotFileName kSnapshotFileName32
 #endif
 
 #else  // defined(OS_ANDROID)
+const char kV8ContextSnapshotFileName[] = "v8_context_snapshot.bin";
 const char kSnapshotFileName[] = "snapshot_blob.bin";
 #endif  // defined(OS_ANDROID)
 
@@ -238,6 +243,14 @@ void V8Initializer::Initialize(IsolateHolder::ScriptMode mode,
 
   v8::V8::InitializePlatform(V8Platform::Get());
 
+  if (base::FeatureList::IsEnabled(features::kV8OptimizeJavascript)) {
+    static const char optimize[] = "--opt";
+    v8::V8::SetFlagsFromString(optimize, sizeof(optimize) - 1);
+  } else {
+    static const char no_optimize[] = "--no-opt";
+    v8::V8::SetFlagsFromString(no_optimize, sizeof(no_optimize) - 1);
+  }
+
   if (IsolateHolder::kStrictMode == mode) {
     static const char use_strict[] = "--use_strict";
     v8::V8::SetFlagsFromString(use_strict, sizeof(use_strict) - 1);
@@ -380,9 +393,23 @@ base::FilePath V8Initializer::GetNativesFilePath() {
 }
 
 // static
-base::FilePath V8Initializer::GetSnapshotFilePath(bool abi_32_bit) {
+base::FilePath V8Initializer::GetSnapshotFilePath(
+    bool abi_32_bit,
+    V8SnapshotFileType snapshot_file_type) {
   base::FilePath path;
-  GetV8FilePath(abi_32_bit ? kSnapshotFileName32 : kSnapshotFileName64, &path);
+  const char* filename = nullptr;
+  switch (snapshot_file_type) {
+    case V8Initializer::V8SnapshotFileType::kDefault:
+      filename = abi_32_bit ? kSnapshotFileName32 : kSnapshotFileName64;
+      break;
+    case V8Initializer::V8SnapshotFileType::kWithAdditionalContext:
+      filename = abi_32_bit ? kV8ContextSnapshotFileName32
+                            : kV8ContextSnapshotFileName64;
+      break;
+  }
+  CHECK(filename);
+
+  GetV8FilePath(filename, &path);
   return path;
 }
 #endif  // defined(OS_ANDROID)

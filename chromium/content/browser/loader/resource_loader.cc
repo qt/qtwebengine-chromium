@@ -9,7 +9,6 @@
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -26,7 +25,7 @@
 #include "content/browser/ssl/ssl_client_auth_handler.h"
 #include "content/browser/ssl/ssl_manager.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/browser/resource_dispatcher_host_login_delegate.h"
+#include "content/public/browser/login_delegate.h"
 #include "content/public/common/appcache_info.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_client.h"
@@ -35,7 +34,6 @@
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/cert/symantec_certs.h"
-#include "net/cert/x509_util.h"
 #include "net/http/http_response_headers.h"
 #include "net/nqe/effective_connection_type.h"
 #include "net/nqe/network_quality_estimator.h"
@@ -72,6 +70,8 @@ void PopulateResourceResponse(
       response_info.alpn_negotiated_protocol;
   response->head.connection_info = response_info.connection_info;
   response->head.socket_address = response_info.socket_address;
+  response->head.was_fetched_via_proxy = request->was_fetched_via_proxy();
+  response->head.network_accessed = response_info.network_accessed;
   const content::ResourceRequestInfo* request_info =
       content::ResourceRequestInfo::ForRequest(request);
   if (request_info) {
@@ -116,25 +116,9 @@ void PopulateResourceResponse(
         (!net::IsCertStatusError(response->head.cert_status) ||
          net::IsCertStatusMinorError(response->head.cert_status)) &&
         net::IsLegacySymantecCert(request->ssl_info().public_key_hashes);
-    if (info->ShouldReportRawHeaders()) {
-      // Only pass these members when the network panel of the DevTools is open,
-      // i.e. ShouldReportRawHeaders() is set. These data are used to populate
-      // the requests in the security panel too.
-      response->head.ssl_connection_status =
-          request->ssl_info().connection_status;
-      response->head.ssl_key_exchange_group =
-          request->ssl_info().key_exchange_group;
-      response->head.signed_certificate_timestamps =
-          request->ssl_info().signed_certificate_timestamps;
-      response->head.certificate.emplace_back(
-          net::x509_util::CryptoBufferAsStringPiece(
-              request->ssl_info().cert->cert_buffer()));
-      for (const auto& cert :
-           request->ssl_info().cert->intermediate_buffers()) {
-        response->head.certificate.emplace_back(
-            net::x509_util::CryptoBufferAsStringPiece(cert.get()));
-      }
-    }
+
+    if (info->ShouldReportRawHeaders())
+      response->head.ssl_info = request->ssl_info();
   } else {
     // We should not have any SSL state.
     DCHECK(!request->ssl_info().cert_status);
@@ -473,7 +457,8 @@ void ResourceLoader::OnCertificateRequested(
   std::unique_ptr<net::ClientCertStore> client_cert_store =
       GetContentClient()->browser()->CreateClientCertStore(resource_context_);
   ssl_client_auth_handler_.reset(new SSLClientAuthHandler(
-      std::move(client_cert_store), web_contents_getter, cert_info, this));
+      std::move(client_cert_store), std::move(web_contents_getter), cert_info,
+      this));
   ssl_client_auth_handler_->SelectCertificate();
 }
 

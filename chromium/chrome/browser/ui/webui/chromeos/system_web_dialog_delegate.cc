@@ -42,6 +42,10 @@ void SystemWebDialogDelegate::GetDialogSize(gfx::Size* size) const {
   size->SetSize(kDialogWidth, kDialogHeight);
 }
 
+std::string SystemWebDialogDelegate::GetDialogArgs() const {
+  return std::string();
+}
+
 void SystemWebDialogDelegate::OnDialogShown(
     content::WebUI* webui,
     content::RenderViewHost* render_view_host) {
@@ -61,7 +65,7 @@ bool SystemWebDialogDelegate::ShouldShowDialogTitle() const {
   return !title_.empty();
 }
 
-void SystemWebDialogDelegate::ShowSystemDialog() {
+void SystemWebDialogDelegate::ShowSystemDialog(bool is_minimal_style) {
   // NetworkConfigView does not interact well with web dialogs. For now, do
   // not show the dialog while NetworkConfigView is shown: crbug.com/791955.
   // TODO(stevenjb): Remove this when NetworkConfigView is deprecated.
@@ -74,7 +78,8 @@ void SystemWebDialogDelegate::ShowSystemDialog() {
   int container_id = GetDialogModalType() == ui::MODAL_TYPE_NONE
                          ? ash::kShellWindowId_AlwaysOnTopContainer
                          : ash::kShellWindowId_LockSystemModalContainer;
-  chrome::ShowWebDialogInContainer(container_id, browser_context, this);
+  chrome::ShowWebDialogInContainer(container_id, browser_context, this,
+                                   is_minimal_style);
 }
 
 }  // namespace chromeos

@@ -20,7 +20,6 @@
 #include "base/containers/queue.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/condition_variable.h"
@@ -42,7 +41,6 @@ class GLImage;
 namespace media {
 
 class AcceleratedVideoDecoder;
-class VaapiDecodeSurface;
 class VaapiPicture;
 
 // Class to provide video decode acceleration for Intel systems with hardware
@@ -86,21 +84,24 @@ class MEDIA_GPU_EXPORT VaapiVideoDecodeAccelerator
   //
   // Below methods are used by accelerator implementations.
   //
-  // Decode of |dec_surface| is ready to be submitted and all codec-specific
+  // Decode of |va_surface| is ready to be submitted and all codec-specific
   // settings are set in hardware.
-  bool DecodeSurface(const scoped_refptr<VaapiDecodeSurface>& dec_surface);
-  // |dec_surface| is ready to be outputted once decode is finished.
-  // This can be called before decode is actually done in hardware, and this
-  // method is responsible for maintaining the ordering, i.e. the surfaces have
-  // to be outputted in the same order as SurfaceReady is called.
-  // On Intel, we don't have to explicitly maintain the ordering however, as the
-  // driver will maintain ordering, as well as dependencies, and will process
-  // each submitted command in order, and run each command only if its
-  // dependencies are ready.
-  void SurfaceReady(const scoped_refptr<VaapiDecodeSurface>& dec_surface);
-  // Return a new VaapiDecodeSurface for decoding into, or nullptr if not
-  // available.
-  scoped_refptr<VaapiDecodeSurface> CreateSurface();
+  bool DecodeVASurface(const scoped_refptr<VASurface>& va_surface);
+
+  // The |visible_rect| area of |va_surface| associated with |bitstream_id| is
+  // ready to be outputted once decode is finished. This can be called before
+  // decode is actually done in hardware, and this method is responsible for
+  // maintaining the ordering, i.e. the surfaces have to be outputted in the
+  // same order as VASurfaceReady is called.  On Intel, we don't have to
+  // explicitly maintain the ordering however, as the driver will maintain
+  // ordering, as well as dependencies, and will process each submitted command
+  // in order, and run each command only if its dependencies are ready.
+  void VASurfaceReady(const scoped_refptr<VASurface>& va_surface,
+                      int32_t bitstream_id,
+                      const gfx::Rect& visible_rect);
+
+  // Return a new VASurface for decoding into, or nullptr if not available.
+  scoped_refptr<VASurface> CreateVASurface();
 
  private:
   friend class VaapiVideoDecodeAcceleratorTest;

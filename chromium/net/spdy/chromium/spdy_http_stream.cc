@@ -23,6 +23,7 @@
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_with_source.h"
 #include "net/spdy/chromium/spdy_http_utils.h"
+#include "net/spdy/chromium/spdy_log_util.h"
 #include "net/spdy/chromium/spdy_session.h"
 #include "net/spdy/core/spdy_header_block.h"
 #include "net/spdy/core/spdy_protocol.h"
@@ -92,13 +93,12 @@ int SpdyHttpStream::InitializeStream(const HttpRequestInfo* request_info,
     }
   }
 
-  // TODO(https://crbug.com/656607): Add proper annotation here.
   int rv = stream_request_.StartRequest(
       SPDY_REQUEST_RESPONSE_STREAM, spdy_session_, request_info_->url, priority,
       request_info_->socket_tag, stream_net_log,
       base::BindOnce(&SpdyHttpStream::OnStreamCreated,
                      weak_factory_.GetWeakPtr(), std::move(callback)),
-      NO_TRAFFIC_ANNOTATION_BUG_656607);
+      NetworkTrafficAnnotationTag(request_info->traffic_annotation));
 
   if (rv == OK) {
     stream_ = stream_request_.ReleaseStream().get();

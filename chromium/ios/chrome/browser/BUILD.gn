@@ -5,7 +5,7 @@
 import("//build/buildflag_header.gni")
 import("//build/config/features.gni")
 import("//build/config/ios/rules.gni")
-import("//rlz/features/features.gni")
+import("//rlz/buildflags/buildflags.gni")
 import("//third_party/protobuf/proto_library.gni")
 
 source_set("chrome_paths") {
@@ -117,18 +117,19 @@ source_set("browser") {
     "//ios/chrome/browser/browsing_data:features",
     "//ios/chrome/browser/download",
     "//ios/chrome/browser/drag_and_drop",
+    "//ios/chrome/browser/itunes_links",
     "//ios/chrome/browser/mailto:features",
     "//ios/chrome/browser/payments:constants",
     "//ios/chrome/browser/ssl:features",
     "//ios/chrome/browser/sync/glue",
     "//ios/chrome/browser/ui:feature_flags",
-    "//ios/chrome/browser/ui/activity_services:features",
     "//ios/chrome/browser/ui/coordinators:chrome_coordinators",
     "//ios/chrome/browser/ui/external_search:features",
+    "//ios/chrome/browser/ui/fullscreen:features",
     "//ios/chrome/browser/ui/history:history_base_feature",
     "//ios/chrome/browser/ui/main:feature_flags",
-    "//ios/chrome/browser/ui/ntp/recent_tabs:base_feature",
     "//ios/chrome/browser/ui/omnibox",
+    "//ios/chrome/browser/ui/popup_menu:flags",
     "//ios/chrome/browser/ui/toolbar/public:toolbar_base_feature",
     "//ios/chrome/common",
     "//ios/components/io_thread",
@@ -138,7 +139,7 @@ source_set("browser") {
     "//ios/web",
     "//ios/web/public",
     "//net",
-    "//rlz/features",
+    "//rlz/buildflags",
     "//url",
   ]
   public_deps = [
@@ -203,7 +204,7 @@ source_set("browser_impl") {
     "//ios/web",
     "//ios/web/public/app",
     "//net",
-    "//rlz/features",
+    "//rlz/buildflags",
     "//ui/base",
   ]
 
@@ -250,6 +251,7 @@ source_set("unit_tests") {
     "//net",
     "//net:test_support",
     "//testing/gtest",
+    "//third_party/ocmock",
     "//url",
   ]
 }

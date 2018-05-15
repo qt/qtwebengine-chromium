@@ -145,9 +145,6 @@ class MESSAGE_CENTER_PUBLIC_EXPORT RichNotificationData {
   // depending on visual assistance systems.
   bool should_make_spoken_feedback_for_popup_updates = true;
 
-  // Whether it should be possible for the user to click on the notification.
-  bool clickable = false;
-
 #if defined(OS_CHROMEOS)
   // Flag if the notification is pinned. If true, the notification is pinned
   // and the user can't remove it.
@@ -239,10 +236,6 @@ class MESSAGE_CENTER_PUBLIC_EXPORT Notification {
       bool include_body_image,
       bool include_small_image,
       bool include_icon_images);
-
-  // Copies the internal on-memory state from |base|, i.e. shown_as_popup,
-  // is_read and never_timeout.
-  void CopyState(Notification* base);
 
   NotificationType type() const { return type_; }
   void set_type(NotificationType type) { type_ = type; }
@@ -372,15 +365,6 @@ class MESSAGE_CENTER_PUBLIC_EXPORT Notification {
   }
   void SetButtonIcon(size_t index, const gfx::Image& icon);
 
-  bool shown_as_popup() const { return shown_as_popup_; }
-  void set_shown_as_popup(bool shown_as_popup) {
-    shown_as_popup_ = shown_as_popup;
-  }
-
-  // Read status in the message center.
-  bool IsRead() const;
-  void set_is_read(bool read) { is_read_ = read; }
-
   // Used to keep the order of notifications with the same timestamp.
   // The notification with lesser serial_number is considered 'older'.
   unsigned serial_number() { return serial_number_; }
@@ -390,9 +374,6 @@ class MESSAGE_CENTER_PUBLIC_EXPORT Notification {
   void set_never_timeout(bool never_timeout) {
     optional_fields_.never_timeout = never_timeout;
   }
-
-  bool clickable() const { return optional_fields_.clickable; }
-  void set_clickable(bool clickable) { optional_fields_.clickable = clickable; }
 
   bool pinned() const {
 #if defined(OS_CHROMEOS)
@@ -441,11 +422,6 @@ class MESSAGE_CENTER_PUBLIC_EXPORT Notification {
   // Set the priority to SYSTEM. The system priority user needs to call this
   // method explicitly, to avoid setting it accidentally.
   void SetSystemPriority();
-
-  // Delegate actions.
-  void Click() const { delegate()->Click(); }
-  void ButtonClick(int index) const { delegate()->ButtonClick(index); }
-  void Close(bool by_user) const { delegate()->Close(by_user); }
 
   // Helper method to create a simple system notification. |click_callback|
   // will be invoked when the notification is clicked.
@@ -512,8 +488,6 @@ class MESSAGE_CENTER_PUBLIC_EXPORT Notification {
   // TODO(estade): these book-keeping fields should be moved into
   // NotificationList.
   unsigned serial_number_;
-  bool shown_as_popup_;  // True if this has been shown as a popup.
-  bool is_read_;         // True if this has been seen in the message center.
 
   // A proxy object that allows access back to the JavaScript object that
   // represents the notification, for firing events.
@@ -525,7 +499,8 @@ class MESSAGE_CENTER_PUBLIC_EXPORT Notification {
 // of icons it expects to see, this allows for icon lookup without
 // serialization/deserialization.
 MESSAGE_CENTER_PUBLIC_EXPORT
-void RegisterVectorIcon(const gfx::VectorIcon& vector_icon);
+void RegisterVectorIcons(
+    const std::vector<const gfx::VectorIcon*>& vector_icon);
 
 MESSAGE_CENTER_PUBLIC_EXPORT
 const gfx::VectorIcon* GetRegisteredVectorIcon(const std::string& id);

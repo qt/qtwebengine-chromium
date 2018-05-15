@@ -9,6 +9,7 @@ import "components/sync/mojo/syncer.mojom";
 import "mojo/public/mojom/base/string16.mojom";
 import "ui/gfx/geometry/mojo/geometry.mojom";
 import "ui/gfx/image/mojo/image.mojom";
+import "ui/gfx/range/mojo/range.mojom";
 
 // A structure holding the common information of AppListItem and
 // ChromeAppListItem, which is sent between ash and chrome representing
@@ -23,6 +24,7 @@ struct AppListItemMetadata {
   string folder_id;   // The id of the item's folder.
   syncer.mojom.StringOrdinal position; // The position of the item.
   bool is_folder;     // Whether this item is a folder.
+  gfx.mojom.ImageSkia? icon;  // The icon of this item.
 };
 
 // All possible states of the app list.
@@ -36,6 +38,52 @@ enum AppListState {
 enum AppListModelStatus {
   kStatusNormal,
   kStatusSyncing,  // Syncing apps or installing synced apps.
+};
+
+// How the result should be displayed. Do not change the order of these as
+// they are used for metrics.
+enum SearchResultDisplayType {
+  kNone = 0,
+  kList,
+  kTile,
+  kRecommendation,
+  kCard,
+  // Add new values here.
+};
+
+// Type of the search result, which is set in Chrome.
+enum SearchResultType {
+  kInstalledApp,  // Installed apps.
+  kPlayStoreApp,  // Uninstalled apps from playstore.
+  kInstantApp,    // Instant apps.
+  kInternalApp,   // Chrome OS apps.
+  // Add new values here.
+};
+
+// A tagged range in search result text.
+struct SearchResultTag {
+  // Similar to ACMatchClassification::Style, the style values are not
+  // mutually exclusive.
+  int16 styles;
+  gfx.mojom.Range range;
+};
+
+// Data representing an action that can be performed on a search result.
+// An action could be represented as an icon set or as a blue button with
+// a label. Icon set is chosen if label text is empty. Otherwise, a blue
+// button with the label text will be used.
+struct SearchResultActionImageLabel {
+  gfx.mojom.ImageSkia base_image;
+  gfx.mojom.ImageSkia hover_image;
+  gfx.mojom.ImageSkia pressed_Image;
+};
+union SearchResultActionLabel {
+  SearchResultActionImageLabel image_label;
+  mojo_base.mojom.String16 text_label;
+};
+struct SearchResultAction {
+  mojo_base.mojom.String16 tooltip_text;
+  SearchResultActionLabel label;
 };
 
 // The Chrome app list (aka Launcher), is the place where user can find and
@@ -125,6 +173,9 @@ interface AppListController {
   SetSearchHintText(mojo_base.mojom.String16 hint_text);
   // Sets the text for the search box's Textfield and the voice search flag.
   UpdateSearchBox(mojo_base.mojom.String16 text, bool initiated_by_user);
+  // Update the whole model, usually when profile changes happen in Chrome.
+  SetModelData(array<AppListItemMetadata> apps,
+               bool is_search_engine_google);
 
   //////////////////////////////////////////////////////////////////////////////
   // Interfaces only used by ChromeAppListItem:

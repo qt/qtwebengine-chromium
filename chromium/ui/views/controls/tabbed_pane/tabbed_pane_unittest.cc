@@ -32,7 +32,10 @@ base::string16 DefaultTabTitle() {
 
 class TabbedPaneTest : public ViewsTestBase {
  public:
-  TabbedPaneTest() {
+  TabbedPaneTest() = default;
+
+  void SetUp() override {
+    ViewsTestBase::SetUp();
     tabbed_pane_ = std::make_unique<TabbedPane>();
     tabbed_pane_->set_owned_by_client();
   }
@@ -226,8 +229,8 @@ TEST_F(TabbedPaneTest, SelectTabWithAccessibleAction) {
     EXPECT_EQ(ax::mojom::Role::kTab, data.role);
     EXPECT_EQ(DefaultTabTitle(),
               data.GetString16Attribute(ax::mojom::StringAttribute::kName));
-    EXPECT_TRUE(data.HasState(ax::mojom::State::kSelectable));
-    EXPECT_EQ(i == 0, data.HasState(ax::mojom::State::kSelected));
+    EXPECT_EQ(i == 0,
+              data.GetBoolAttribute(ax::mojom::BoolAttribute::kSelected));
   }
 
   ui::AXActionData action;

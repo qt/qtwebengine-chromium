@@ -8,7 +8,7 @@
 
 #include "content/common/ax_content_node_data.h"
 #include "content/renderer/accessibility/render_accessibility_impl.h"
-#include "third_party/WebKit/public/web/WebAXEnums.h"
+#include "third_party/blink/public/web/web_ax_enums.h"
 #include "ui/accessibility/ax_enum_util.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node.h"
@@ -24,6 +24,8 @@ ax::mojom::BoolAttribute GetCorrespondingAXAttribute(
       return ax::mojom::BoolAttribute::kBusy;
     case blink::WebAOMBoolAttribute::AOM_ATTR_MODAL:
       return ax::mojom::BoolAttribute::kModal;
+    case blink::WebAOMBoolAttribute::AOM_ATTR_SELECTED:
+      return ax::mojom::BoolAttribute::kSelected;
     default:
       return ax::mojom::BoolAttribute::kNone;
   }
@@ -111,8 +113,6 @@ ax::mojom::State GetCorrespondingStateFlag(blink::WebAOMBoolAttribute attr) {
       return ax::mojom::State::kMultiselectable;
     case blink::WebAOMBoolAttribute::AOM_ATTR_REQUIRED:
       return ax::mojom::State::kRequired;
-    case blink::WebAOMBoolAttribute::AOM_ATTR_SELECTED:
-      return ax::mojom::State::kSelected;
     default:
       return ax::mojom::State::kNone;
   }
@@ -127,8 +127,8 @@ AomContentAxTree::AomContentAxTree(RenderFrameImpl* render_frame)
 
 bool AomContentAxTree::ComputeAccessibilityTree() {
   AXContentTreeUpdate content_tree_update;
-  RenderAccessibilityImpl::SnapshotAccessibilityTree(render_frame_,
-                                                     &content_tree_update);
+  RenderAccessibilityImpl::SnapshotAccessibilityTree(
+      render_frame_, &content_tree_update, ui::kAXModeComplete);
 
   // Hack to convert between AXContentNodeData and AXContentTreeData to just
   // AXNodeData and AXTreeData to preserve content specific attributes while

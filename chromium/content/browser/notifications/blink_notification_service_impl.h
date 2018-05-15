@@ -7,15 +7,17 @@
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_context.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
-#include "third_party/WebKit/public/platform/modules/notifications/notification_service.mojom.h"
+#include "third_party/blink/public/platform/modules/notifications/notification_service.mojom.h"
 #include "url/origin.h"
 
 namespace content {
 
+struct NotificationDatabaseData;
 class PlatformNotificationContextImpl;
 struct PlatformNotificationData;
 class ResourceContext;
@@ -30,6 +32,7 @@ class CONTENT_EXPORT BlinkNotificationServiceImpl
       PlatformNotificationContextImpl* notification_context,
       BrowserContext* browser_context,
       ResourceContext* resource_context,
+      scoped_refptr<ServiceWorkerContextWrapper> service_worker_context,
       int render_process_id,
       const url::Origin& origin,
       mojo::InterfaceRequest<blink::mojom::NotificationService> request);
@@ -48,6 +51,9 @@ class CONTENT_EXPORT BlinkNotificationServiceImpl
       const PlatformNotificationData& platform_notification_data,
       const NotificationResources& notification_resources,
       DisplayPersistentNotificationCallback) override;
+  void GetNotifications(int64_t service_worker_registration_id,
+                        const std::string& filter_tag,
+                        GetNotificationsCallback callback) override;
 
  private:
   // Called when an error is detected on binding_.
@@ -68,10 +74,24 @@ class CONTENT_EXPORT BlinkNotificationServiceImpl
       bool success,
       const std::string& notification_id);
 
+  void DisplayPersistentNotificationWithIdForServiceWorker(
+      const std::string& notification_id,
+      const PlatformNotificationData& platform_notification_data,
+      const NotificationResources& notification_resources,
+      DisplayPersistentNotificationCallback callback,
+      content::ServiceWorkerStatusCode service_worker_status,
+      scoped_refptr<content::ServiceWorkerRegistration> registration);
+
   void CloseNonPersistentNotificationOnUIThread(
       const std::string& notification_id);
 
   blink::mojom::PermissionStatus CheckPermissionStatus();
+
+  void DidGetNotifications(
+      const std::string& filter_tag,
+      GetNotificationsCallback callback,
+      bool success,
+      const std::vector<NotificationDatabaseData>& notifications);
 
   // The notification context that owns this service instance.
   PlatformNotificationContextImpl* notification_context_;
@@ -79,6 +99,8 @@ class CONTENT_EXPORT BlinkNotificationServiceImpl
   BrowserContext* browser_context_;
 
   ResourceContext* resource_context_;
+
+  scoped_refptr<ServiceWorkerContextWrapper> service_worker_context_;
 
   int render_process_id_;
 

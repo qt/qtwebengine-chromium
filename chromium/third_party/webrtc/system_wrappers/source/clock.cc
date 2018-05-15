@@ -15,7 +15,7 @@
 // Windows needs to be included before mmsystem.h
 #include "rtc_base/win32.h"
 
-#include <MMSystem.h>
+#include <mmsystem.h>
 
 #elif defined(WEBRTC_POSIX)
 
@@ -25,8 +25,8 @@
 #endif  // defined(WEBRTC_POSIX)
 
 #include "rtc_base/criticalsection.h"
+#include "rtc_base/synchronization/rw_lock_wrapper.h"
 #include "rtc_base/timeutils.h"
-#include "system_wrappers/include/rw_lock_wrapper.h"
 
 namespace webrtc {
 

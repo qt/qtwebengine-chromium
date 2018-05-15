@@ -13,7 +13,6 @@
 
 #include "base/bind.h"
 #include "base/containers/queue.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
 #include "base/test/scoped_task_environment.h"
@@ -562,8 +561,8 @@ class ProxyResolverFactoryMojoTest : public testing::Test {
     mock_proxy_resolver_factory_->AddCreateProxyResolverAction(
         CreateProxyResolverAction::ReturnResult(kScriptData, net::OK));
     net::TestCompletionCallback callback;
-    scoped_refptr<net::ProxyResolverScriptData> pac_script(
-        net::ProxyResolverScriptData::FromUTF8(kScriptData));
+    scoped_refptr<net::PacFileData> pac_script(
+        net::PacFileData::FromUTF8(kScriptData));
     std::unique_ptr<net::ProxyResolverFactory::Request> request;
     ASSERT_EQ(
         net::OK,
@@ -598,8 +597,7 @@ TEST_F(ProxyResolverFactoryMojoTest, CreateProxyResolver) {
 
 TEST_F(ProxyResolverFactoryMojoTest, CreateProxyResolver_Empty) {
   net::TestCompletionCallback callback;
-  scoped_refptr<net::ProxyResolverScriptData> pac_script(
-      net::ProxyResolverScriptData::FromUTF8(""));
+  scoped_refptr<net::PacFileData> pac_script(net::PacFileData::FromUTF8(""));
   std::unique_ptr<net::ProxyResolverFactory::Request> request;
   EXPECT_EQ(
       net::ERR_PAC_SCRIPT_FAILED,
@@ -610,8 +608,8 @@ TEST_F(ProxyResolverFactoryMojoTest, CreateProxyResolver_Empty) {
 
 TEST_F(ProxyResolverFactoryMojoTest, CreateProxyResolver_Url) {
   net::TestCompletionCallback callback;
-  scoped_refptr<net::ProxyResolverScriptData> pac_script(
-      net::ProxyResolverScriptData::FromURL(GURL(kExampleUrl)));
+  scoped_refptr<net::PacFileData> pac_script(
+      net::PacFileData::FromURL(GURL(kExampleUrl)));
   std::unique_ptr<net::ProxyResolverFactory::Request> request;
   EXPECT_EQ(
       net::ERR_PAC_SCRIPT_FAILED,
@@ -626,8 +624,8 @@ TEST_F(ProxyResolverFactoryMojoTest, CreateProxyResolver_Failed) {
                                               net::ERR_PAC_STATUS_NOT_OK));
 
   net::TestCompletionCallback callback;
-  scoped_refptr<net::ProxyResolverScriptData> pac_script(
-      net::ProxyResolverScriptData::FromUTF8(kScriptData));
+  scoped_refptr<net::PacFileData> pac_script(
+      net::PacFileData::FromUTF8(kScriptData));
   std::unique_ptr<net::ProxyResolverFactory::Request> request;
   EXPECT_EQ(
       net::ERR_PAC_STATUS_NOT_OK,
@@ -643,8 +641,8 @@ TEST_F(ProxyResolverFactoryMojoTest, CreateProxyResolver_BothDisconnected) {
   mock_proxy_resolver_factory_->AddCreateProxyResolverAction(
       CreateProxyResolverAction::DropBoth(kScriptData));
 
-  scoped_refptr<net::ProxyResolverScriptData> pac_script(
-      net::ProxyResolverScriptData::FromUTF8(kScriptData));
+  scoped_refptr<net::PacFileData> pac_script(
+      net::PacFileData::FromUTF8(kScriptData));
   std::unique_ptr<net::ProxyResolverFactory::Request> request;
   net::TestCompletionCallback callback;
   EXPECT_EQ(
@@ -658,8 +656,8 @@ TEST_F(ProxyResolverFactoryMojoTest, CreateProxyResolver_ClientDisconnected) {
   mock_proxy_resolver_factory_->AddCreateProxyResolverAction(
       CreateProxyResolverAction::DropClient(kScriptData));
 
-  scoped_refptr<net::ProxyResolverScriptData> pac_script(
-      net::ProxyResolverScriptData::FromUTF8(kScriptData));
+  scoped_refptr<net::PacFileData> pac_script(
+      net::PacFileData::FromUTF8(kScriptData));
   std::unique_ptr<net::ProxyResolverFactory::Request> request;
   net::TestCompletionCallback callback;
   EXPECT_EQ(
@@ -673,8 +671,8 @@ TEST_F(ProxyResolverFactoryMojoTest, CreateProxyResolver_ResolverDisconnected) {
   mock_proxy_resolver_factory_->AddCreateProxyResolverAction(
       CreateProxyResolverAction::DropResolver(kScriptData));
 
-  scoped_refptr<net::ProxyResolverScriptData> pac_script(
-      net::ProxyResolverScriptData::FromUTF8(kScriptData));
+  scoped_refptr<net::PacFileData> pac_script(
+      net::PacFileData::FromUTF8(kScriptData));
   std::unique_ptr<net::ProxyResolverFactory::Request> request;
   net::TestCompletionCallback callback;
   EXPECT_EQ(
@@ -689,8 +687,8 @@ TEST_F(ProxyResolverFactoryMojoTest,
   mock_proxy_resolver_factory_->AddCreateProxyResolverAction(
       CreateProxyResolverAction::DropResolver(kScriptData));
 
-  scoped_refptr<net::ProxyResolverScriptData> pac_script(
-      net::ProxyResolverScriptData::FromUTF8(kScriptData));
+  scoped_refptr<net::PacFileData> pac_script(
+      net::PacFileData::FromUTF8(kScriptData));
   std::unique_ptr<net::ProxyResolverFactory::Request> request;
   net::TestCompletionCallback callback;
   EXPECT_EQ(
@@ -706,8 +704,8 @@ TEST_F(ProxyResolverFactoryMojoTest, CreateProxyResolver_Cancel) {
   mock_proxy_resolver_factory_->AddCreateProxyResolverAction(
       CreateProxyResolverAction::WaitForClientDisconnect(kScriptData));
 
-  scoped_refptr<net::ProxyResolverScriptData> pac_script(
-      net::ProxyResolverScriptData::FromUTF8(kScriptData));
+  scoped_refptr<net::PacFileData> pac_script(
+      net::PacFileData::FromUTF8(kScriptData));
   std::unique_ptr<net::ProxyResolverFactory::Request> request;
   net::TestCompletionCallback callback;
   EXPECT_EQ(
@@ -725,8 +723,8 @@ TEST_F(ProxyResolverFactoryMojoTest, CreateProxyResolver_DnsRequest) {
   mock_proxy_resolver_factory_->AddCreateProxyResolverAction(
       CreateProxyResolverAction::MakeDnsRequest(kScriptData));
 
-  scoped_refptr<net::ProxyResolverScriptData> pac_script(
-      net::ProxyResolverScriptData::FromUTF8(kScriptData));
+  scoped_refptr<net::PacFileData> pac_script(
+      net::PacFileData::FromUTF8(kScriptData));
   std::unique_ptr<net::ProxyResolverFactory::Request> request;
   net::TestCompletionCallback callback;
   EXPECT_EQ(
@@ -903,8 +901,7 @@ TEST_F(ProxyResolverFactoryMojoTest, GetProxyForURL_DnsRequest) {
   EXPECT_EQ(net::LOAD_STATE_RESOLVING_PROXY_FOR_URL, request->load_state());
 
   host_resolver_.waiter().WaitForEvent(MockHostResolver::DNS_REQUEST);
-  EXPECT_EQ(net::LOAD_STATE_RESOLVING_HOST_IN_PROXY_SCRIPT,
-            request->load_state());
+  EXPECT_EQ(net::LOAD_STATE_RESOLVING_HOST_IN_PAC_FILE, request->load_state());
   mock_proxy_resolver_.ClearBlockedClients();
   request->WaitForResult();
 }

@@ -94,34 +94,6 @@ class RtcEventLogProxy final : public webrtc::RtcEventLog {
   RTC_DISALLOW_COPY_AND_ASSIGN(RtcEventLogProxy);
 };
 
-class RtcpRttStatsProxy final : public RtcpRttStats {
- public:
-  RtcpRttStatsProxy() : rtcp_rtt_stats_(nullptr) {}
-
-  void OnRttUpdate(int64_t rtt) override {
-    rtc::CritScope lock(&crit_);
-    if (rtcp_rtt_stats_)
-      rtcp_rtt_stats_->OnRttUpdate(rtt);
-  }
-
-  int64_t LastProcessedRtt() const override {
-    rtc::CritScope lock(&crit_);
-    if (!rtcp_rtt_stats_)
-      return 0;
-    return rtcp_rtt_stats_->LastProcessedRtt();
-  }
-
-  void SetRtcpRttStats(RtcpRttStats* rtcp_rtt_stats) {
-    rtc::CritScope lock(&crit_);
-    rtcp_rtt_stats_ = rtcp_rtt_stats;
-  }
-
- private:
-  rtc::CriticalSection crit_;
-  RtcpRttStats* rtcp_rtt_stats_ RTC_GUARDED_BY(crit_);
-  RTC_DISALLOW_COPY_AND_ASSIGN(RtcpRttStatsProxy);
-};
-
 class TransportFeedbackProxy : public TransportFeedbackObserver {
  public:
   TransportFeedbackProxy() : feedback_observer_(nullptr) {
@@ -152,10 +124,6 @@ class TransportFeedbackProxy : public TransportFeedbackObserver {
     rtc::CritScope lock(&crit_);
     if (feedback_observer_)
       feedback_observer_->OnTransportFeedback(feedback);
-  }
-  std::vector<PacketFeedback> GetTransportFeedbackVector() const override {
-    RTC_NOTREACHED();
-    return std::vector<PacketFeedback>();
   }
 
  private:
@@ -394,23 +362,6 @@ void Channel::OnIncomingSSRCChanged(uint32_t ssrc) {
   _rtpRtcpModule->SetRemoteSSRC(ssrc);
 }
 
-void Channel::OnIncomingCSRCChanged(uint32_t CSRC, bool added) {
-  // TODO(saza): remove.
-}
-
-int32_t Channel::OnInitializeDecoder(int payload_type,
-                                     const SdpAudioFormat& audio_format,
-                                     uint32_t rate) {
-  if (!audio_coding_->RegisterReceiveCodec(payload_type, audio_format)) {
-    RTC_DLOG(LS_WARNING) << "Channel::OnInitializeDecoder() invalid codec (pt="
-                         << payload_type << ", " << audio_format
-                         << ") received -1";
-    return -1;
-  }
-
-  return 0;
-}
-
 int32_t Channel::OnReceivedPayloadData(const uint8_t* payloadData,
                                        size_t payloadSize,
                                        const WebRtcRTPHeader* rtpHeader) {
@@ -556,23 +507,27 @@ int Channel::PreferredSampleRate() const {
 
 Channel::Channel(rtc::TaskQueue* encoder_queue,
                  ProcessThread* module_process_thread,
-                 AudioDeviceModule* audio_device_module)
+                 AudioDeviceModule* audio_device_module,
+                 RtcpRttStats* rtcp_rtt_stats)
     : Channel(module_process_thread,
               audio_device_module,
+              rtcp_rtt_stats,
               0,
               false,
-              rtc::scoped_refptr<AudioDecoderFactory>()) {
+              rtc::scoped_refptr<AudioDecoderFactory>(),
+              rtc::nullopt) {
   RTC_DCHECK(encoder_queue);
   encoder_queue_ = encoder_queue;
 }
 
 Channel::Channel(ProcessThread* module_process_thread,
                  AudioDeviceModule* audio_device_module,
+                 RtcpRttStats* rtcp_rtt_stats,
                  size_t jitter_buffer_max_packets,
                  bool jitter_buffer_fast_playout,
-                 rtc::scoped_refptr<AudioDecoderFactory> decoder_factory)
+                 rtc::scoped_refptr<AudioDecoderFactory> decoder_factory,
+                 rtc::Optional<AudioCodecPairId> codec_pair_id)
     : event_log_proxy_(new RtcEventLogProxy()),
-      rtcp_rtt_stats_proxy_(new RtcpRttStatsProxy()),
       rtp_payload_registry_(new RTPPayloadRegistry()),
       rtp_receive_statistics_(
           ReceiveStatistics::Create(Clock::GetRealTimeClock())),
@@ -614,6 +569,7 @@ Channel::Channel(ProcessThread* module_process_thread,
   RTC_DCHECK(audio_device_module);
   AudioCodingModule::Config acm_config;
   acm_config.decoder_factory = decoder_factory;
+  acm_config.neteq_config.codec_pair_id = codec_pair_id;
   acm_config.neteq_config.max_packets_in_buffer = jitter_buffer_max_packets;
   acm_config.neteq_config.enable_fast_accelerate = jitter_buffer_fast_playout;
   acm_config.neteq_config.enable_muted_state = true;
@@ -634,7 +590,7 @@ Channel::Channel(ProcessThread* module_process_thread,
     configuration.transport_feedback_callback = feedback_observer_proxy_.get();
   }
   configuration.event_log = &(*event_log_proxy_);
-  configuration.rtt_stats = &(*rtcp_rtt_stats_proxy_);
+  configuration.rtt_stats = rtcp_rtt_stats;
   configuration.retransmission_rate_limiter =
       retransmission_rate_limiter_.get();
 
@@ -926,7 +882,6 @@ void Channel::OnRtpPacket(const RtpPacketReceived& packet) {
     bool in_order = IsPacketInOrder(header);
     rtp_receive_statistics_->IncomingPacket(
         header, packet.size(), IsPacketRetransmitted(header, in_order));
-    rtp_payload_registry_->SetIncomingPayloadType(header);
 
     ReceivePacket(packet.data(), packet.size(), header);
   }
@@ -1081,6 +1036,12 @@ int Channel::SetLocalSSRC(unsigned int ssrc) {
   }
   _rtpRtcpModule->SetSSRC(ssrc);
   return 0;
+}
+
+void Channel::SetMid(const std::string& mid, int extension_id) {
+  int ret = SetSendRtpHeaderExtension(true, kRtpExtensionMid, extension_id);
+  RTC_DCHECK_EQ(0, ret);
+  _rtpRtcpModule->SetMid(mid);
 }
 
 int Channel::GetRemoteSSRC(unsigned int& ssrc) {
@@ -1326,10 +1287,6 @@ void Channel::SetAssociatedSendChannel(Channel* channel) {
 
 void Channel::SetRtcEventLog(RtcEventLog* event_log) {
   event_log_proxy_->SetEventLog(event_log);
-}
-
-void Channel::SetRtcpRttStats(RtcpRttStats* rtcp_rtt_stats) {
-  rtcp_rtt_stats_proxy_->SetRtcpRttStats(rtcp_rtt_stats);
 }
 
 void Channel::UpdateOverheadForEncoder() {

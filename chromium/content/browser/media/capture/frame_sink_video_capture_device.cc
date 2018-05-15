@@ -18,7 +18,7 @@
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "media/base/bind_to_current_loop.h"
-#include "media/capture/mojo/video_capture_types.mojom.h"
+#include "media/capture/mojom/video_capture_types.mojom.h"
 #include "mojo/public/cpp/system/buffer.h"
 
 namespace content {
@@ -258,12 +258,10 @@ void FrameSinkVideoCaptureDevice::OnFrameCaptured(
 
   // Set the INTERACTIVE_CONTENT frame metadata.
   media::VideoFrameMetadata modified_metadata;
-  if (info->metadata) {
-    modified_metadata.MergeInternalValuesFrom(*info->metadata);
-  }
+  modified_metadata.MergeInternalValuesFrom(info->metadata);
   modified_metadata.SetBoolean(media::VideoFrameMetadata::INTERACTIVE_CONTENT,
                                cursor_renderer_->IsUserInteractingWithView());
-  info->metadata = modified_metadata.CopyInternalValues();
+  info->metadata = modified_metadata.GetInternalValues().Clone();
 
   // Pass the video frame to the VideoFrameReceiver. This is done by first
   // passing the shared memory buffer handle and then notifying it that a new

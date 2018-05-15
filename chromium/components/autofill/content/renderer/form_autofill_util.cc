@@ -15,6 +15,7 @@
 #include "base/i18n/case_conversion.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
+#include "base/no_destructor.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -27,20 +28,20 @@
 #include "components/autofill/core/common/autofill_util.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
-#include "third_party/WebKit/public/platform/URLConversion.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebElementCollection.h"
-#include "third_party/WebKit/public/web/WebFormControlElement.h"
-#include "third_party/WebKit/public/web/WebFormElement.h"
-#include "third_party/WebKit/public/web/WebInputElement.h"
-#include "third_party/WebKit/public/web/WebLabelElement.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebNode.h"
-#include "third_party/WebKit/public/web/WebOptionElement.h"
-#include "third_party/WebKit/public/web/WebSelectElement.h"
+#include "third_party/blink/public/platform/url_conversion.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_vector.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_element.h"
+#include "third_party/blink/public/web/web_element_collection.h"
+#include "third_party/blink/public/web/web_form_control_element.h"
+#include "third_party/blink/public/web/web_form_element.h"
+#include "third_party/blink/public/web/web_input_element.h"
+#include "third_party/blink/public/web/web_label_element.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_node.h"
+#include "third_party/blink/public/web/web_option_element.h"
+#include "third_party/blink/public/web/web_select_element.h"
 
 using autofill::FormFieldData;
 using blink::WebDocument;
@@ -392,6 +393,16 @@ base::string16 InferLabelFromPlaceholder(const WebFormControlElement& element) {
   return base::string16();
 }
 
+// Helper for |InferLabelForElement()| that infers a label, if possible, from
+// the aria-label. e.g. <input aria-label="foo">
+base::string16 InferLabelFromAriaLabel(const WebFormControlElement& element) {
+  static const base::NoDestructor<WebString> kAriaLabel("aria-label");
+  if (element.HasAttribute(*kAriaLabel))
+    return element.GetAttribute(*kAriaLabel).Utf16();
+
+  return base::string16();
+}
+
 // Helper for |InferLabelForElement()| that infers a label, from
 // the value attribute when it is present and user has not typed in (if
 // element's value attribute is same as the element's value).
@@ -711,6 +722,14 @@ bool InferLabelForElement(const WebFormControlElement& element,
     return true;
   }
 
+  // If we didn't find a placeholder, check for aria-label text.
+  inferred_label = InferLabelFromAriaLabel(element);
+  if (IsLabelValid(inferred_label, stop_words)) {
+    *label_source = FormFieldData::LabelSource::ARIA_LABEL;
+    *label = std::move(inferred_label);
+    return true;
+  }
+
   // For all other searches that involve traversing up the tree, the search
   // order is based on which tag is the closest ancestor to |element|.
   std::vector<std::string> tag_names = AncestorTagNames(element);
@@ -815,17 +834,6 @@ void ForEachMatchingFormFieldCommon(
   // are appended to the end of the form and are not visible.
   for (size_t i = 0; i < control_elements->size(); ++i) {
     WebFormControlElement* element = &(*control_elements)[i];
-
-    if (element->NameForAutofill().Utf16() != data.fields[i].name) {
-      // This case should be reachable only for pathological websites, which
-      // rename form fields while the user is interacting with the Autofill
-      // popup.  I (isherman) am not aware of any such websites, and so am
-      // optimistically including a NOTREACHED().  If you ever trip this check,
-      // please file a bug against me.
-      NOTREACHED();
-      continue;
-    }
-
     bool is_initiating_element = (*element == initiating_element);
 
     // Only autofill empty fields (or those with the field's default value

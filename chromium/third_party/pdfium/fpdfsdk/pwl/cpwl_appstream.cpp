@@ -129,8 +129,8 @@ ByteString GetColorAppStream(const CFX_Color& color,
 }
 
 ByteString GetAP_Check(const CFX_FloatRect& crBBox) {
-  const float fWidth = crBBox.right - crBBox.left;
-  const float fHeight = crBBox.top - crBBox.bottom;
+  const float fWidth = crBBox.Width();
+  const float fHeight = crBBox.Height();
 
   CFX_PointF pts[8][3] = {{CFX_PointF(0.28f, 0.52f), CFX_PointF(0.27f, 0.48f),
                            CFX_PointF(0.29f, 0.40f)},
@@ -180,8 +180,8 @@ ByteString GetAP_Check(const CFX_FloatRect& crBBox) {
 ByteString GetAP_Circle(const CFX_FloatRect& crBBox) {
   std::ostringstream csAP;
 
-  float fWidth = crBBox.right - crBBox.left;
-  float fHeight = crBBox.top - crBBox.bottom;
+  float fWidth = crBBox.Width();
+  float fHeight = crBBox.Height();
 
   CFX_PointF pt1(crBBox.left, crBBox.bottom + fHeight / 2);
   CFX_PointF pt2(crBBox.left + fWidth / 2, crBBox.top);
@@ -236,8 +236,8 @@ ByteString GetAP_Cross(const CFX_FloatRect& crBBox) {
 ByteString GetAP_Diamond(const CFX_FloatRect& crBBox) {
   std::ostringstream csAP;
 
-  float fWidth = crBBox.right - crBBox.left;
-  float fHeight = crBBox.top - crBBox.bottom;
+  float fWidth = crBBox.Width();
+  float fHeight = crBBox.Height();
 
   CFX_PointF pt1(crBBox.left, crBBox.bottom + fHeight / 2);
   CFX_PointF pt2(crBBox.left + fWidth / 2, crBBox.top);
@@ -298,8 +298,8 @@ ByteString GetAP_Star(const CFX_FloatRect& crBBox) {
 ByteString GetAP_HalfCircle(const CFX_FloatRect& crBBox, float fRotate) {
   std::ostringstream csAP;
 
-  float fWidth = crBBox.right - crBBox.left;
-  float fHeight = crBBox.top - crBBox.bottom;
+  float fWidth = crBBox.Width();
+  float fHeight = crBBox.Height();
 
   CFX_PointF pt1(-fWidth / 2, 0);
   CFX_PointF pt2(0, fHeight / 2);
@@ -776,7 +776,7 @@ ByteString GetPushButtonAppStream(const CFX_FloatRect& rcBBox,
     case ButtonStyle::kIconTopLabelBottom:
       if (pIconStream) {
         if (IsFloatZero(fFontSize)) {
-          fHeight = rcBBox.top - rcBBox.bottom;
+          fHeight = rcBBox.Height();
           rcLabel = CFX_FloatRect(rcBBox.left, rcBBox.bottom, rcBBox.right,
                                   rcBBox.bottom + fHeight * fAutoFontScale);
           rcIcon =
@@ -800,7 +800,7 @@ ByteString GetPushButtonAppStream(const CFX_FloatRect& rcBBox,
     case ButtonStyle::kIconBottomLabelTop:
       if (pIconStream) {
         if (IsFloatZero(fFontSize)) {
-          fHeight = rcBBox.top - rcBBox.bottom;
+          fHeight = rcBBox.Height();
           rcLabel =
               CFX_FloatRect(rcBBox.left, rcBBox.top - fHeight * fAutoFontScale,
                             rcBBox.right, rcBBox.top);
@@ -1180,13 +1180,18 @@ void CPWL_AppStream::SetAsPushButton() {
   CFX_Color crText(CFX_Color::kGray, 0);
   ByteString csNameTag;
   CPDF_DefaultAppearance da = pControl->GetDefaultAppearance();
-  if (da.HasColor()) {
-    da.GetColor(iColorType, fc);
+  Optional<CFX_Color::Type> color = da.GetColor(fc);
+  if (color) {
+    iColorType = *color;
     crText = CFX_Color(iColorType, fc[0], fc[1], fc[2], fc[3]);
   }
-  float fFontSize = 12.0f;
-  if (da.HasFont())
-    csNameTag = da.GetFont(&fFontSize);
+
+  float fFontSize;
+  Optional<ByteString> font = da.GetFont(&fFontSize);
+  if (font)
+    csNameTag = *font;
+  else
+    fFontSize = 12.0f;
 
   WideString csWCaption;
   WideString csNormalCaption;
@@ -1354,8 +1359,9 @@ void CPWL_AppStream::SetAsCheckBox() {
   CFX_FloatRect rcWindow = widget_->GetRotatedRect();
   CFX_FloatRect rcClient = rcWindow.GetDeflated(fBorderWidth, fBorderWidth);
   CPDF_DefaultAppearance da = pControl->GetDefaultAppearance();
-  if (da.HasColor()) {
-    da.GetColor(iColorType, fc);
+  Optional<CFX_Color::Type> color = da.GetColor(fc);
+  if (color) {
+    iColorType = *color;
     crText = CFX_Color(iColorType, fc[0], fc[1], fc[2], fc[3]);
   }
 
@@ -1470,8 +1476,9 @@ void CPWL_AppStream::SetAsRadioButton() {
   CFX_FloatRect rcWindow = widget_->GetRotatedRect();
   CFX_FloatRect rcClient = rcWindow.GetDeflated(fBorderWidth, fBorderWidth);
   CPDF_DefaultAppearance da = pControl->GetDefaultAppearance();
-  if (da.HasColor()) {
-    da.GetColor(iColorType, fc);
+  Optional<CFX_Color::Type> color = da.GetColor(fc);
+  if (color) {
+    iColorType = *color;
     crText = CFX_Color(iColorType, fc[0], fc[1], fc[2], fc[3]);
   }
 

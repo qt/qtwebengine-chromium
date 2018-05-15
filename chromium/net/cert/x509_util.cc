@@ -13,7 +13,9 @@
 #include "build/build_config.h"
 #include "crypto/openssl_util.h"
 #include "crypto/rsa_private_key.h"
+#include "crypto/sha2.h"
 #include "net/base/hash_value.h"
+#include "net/cert/asn1_util.h"
 #include "net/cert/internal/cert_errors.h"
 #include "net/cert/internal/name_constraints.h"
 #include "net/cert/internal/parse_certificate.h"
@@ -202,23 +204,19 @@ bool CreateKeyAndSelfSignedCert(const std::string& subject,
                                 std::string* der_cert) {
   std::unique_ptr<crypto::RSAPrivateKey> new_key(
       crypto::RSAPrivateKey::Create(kRSAKeyLength));
-  if (!new_key.get())
+  if (!new_key)
     return false;
 
-  bool success = CreateSelfSignedCert(new_key.get(),
-                                      kSignatureDigestAlgorithm,
-                                      subject,
-                                      serial_number,
-                                      not_valid_before,
-                                      not_valid_after,
-                                      der_cert);
+  bool success = CreateSelfSignedCert(new_key->key(), kSignatureDigestAlgorithm,
+                                      subject, serial_number, not_valid_before,
+                                      not_valid_after, der_cert);
   if (success)
     *key = std::move(new_key);
 
   return success;
 }
 
-bool CreateSelfSignedCert(crypto::RSAPrivateKey* key,
+bool CreateSelfSignedCert(EVP_PKEY* key,
                           DigestAlgorithm alg,
                           const std::string& subject,
                           uint32_t serial_number,
@@ -256,7 +254,7 @@ bool CreateSelfSignedCert(crypto::RSAPrivateKey* key,
       !AddTime(&validity, not_valid_before) ||
       !AddTime(&validity, not_valid_after) ||
       !AddNameWithCommonName(&tbs_cert, common_name) ||  // subject
-      !EVP_marshal_public_key(&tbs_cert, key->key()) ||  // subjectPublicKeyInfo
+      !EVP_marshal_public_key(&tbs_cert, key) ||         // subjectPublicKeyInfo
       !CBB_finish(cbb.get(), &tbs_cert_bytes, &tbs_cert_len)) {
     return false;
   }
@@ -275,8 +273,7 @@ bool CreateSelfSignedCert(crypto::RSAPrivateKey* key,
       !AddRSASignatureAlgorithm(&cert, alg) ||
       !CBB_add_asn1(&cert, &signature, CBS_ASN1_BITSTRING) ||
       !CBB_add_u8(&signature, 0 /* no unused bits */) ||
-      !EVP_DigestSignInit(ctx.get(), nullptr, ToEVP(alg), nullptr,
-                          key->key()) ||
+      !EVP_DigestSignInit(ctx.get(), nullptr, ToEVP(alg), nullptr, key) ||
       // Compute the maximum signature length.
       !EVP_DigestSign(ctx.get(), nullptr, &sig_len, tbs_cert_bytes,
                       tbs_cert_len) ||
@@ -351,6 +348,16 @@ ParseCertificateOptions DefaultParseCertificateOptions() {
   ParseCertificateOptions options;
   options.allow_invalid_serial_numbers = true;
   return options;
+}
+
+bool CalculateSha256SpkiHash(const CRYPTO_BUFFER* buffer, HashValue* hash) {
+  base::StringPiece spki;
+  if (!asn1::ExtractSPKIFromDERCert(CryptoBufferAsStringPiece(buffer), &spki)) {
+    return false;
+  }
+  *hash = HashValue(HASH_VALUE_SHA256);
+  crypto::SHA256HashString(spki, hash->data(), hash->size());
+  return true;
 }
 
 }  // namespace x509_util

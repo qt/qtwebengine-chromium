@@ -11,7 +11,6 @@
 #include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
@@ -30,7 +29,6 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/media/audio_device_factory.h"
-#include "content/renderer/pepper/content_decryptor_delegate.h"
 #include "content/renderer/pepper/event_conversion.h"
 #include "content/renderer/pepper/fullscreen_container.h"
 #include "content/renderer/pepper/gfx_conversion.h"
@@ -95,36 +93,36 @@
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_buffer_api.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/public/platform/URLConversion.h"
-#include "third_party/WebKit/public/platform/WebCoalescedInputEvent.h"
-#include "third_party/WebKit/public/platform/WebCursorInfo.h"
-#include "third_party/WebKit/public/platform/WebFloatRect.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
-#include "third_party/WebKit/public/platform/WebKeyboardEvent.h"
-#include "third_party/WebKit/public/platform/WebMouseEvent.h"
-#include "third_party/WebKit/public/platform/WebPointerEvent.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebTouchEvent.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/WebKit/public/platform/WebURLError.h"
-#include "third_party/WebKit/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebDocumentLoader.h"
-#include "third_party/WebKit/public/web/WebImeTextSpan.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebPluginContainer.h"
-#include "third_party/WebKit/public/web/WebPluginScriptForbiddenScope.h"
-#include "third_party/WebKit/public/web/WebPrintParams.h"
-#include "third_party/WebKit/public/web/WebPrintPresetOptions.h"
-#include "third_party/WebKit/public/web/WebPrintScalingOption.h"
-#include "third_party/WebKit/public/web/WebScopedUserGesture.h"
-#include "third_party/WebKit/public/web/WebScriptSource.h"
-#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
-#include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/blink/public/platform/url_conversion.h"
+#include "third_party/blink/public/platform/web_coalesced_input_event.h"
+#include "third_party/blink/public/platform/web_cursor_info.h"
+#include "third_party/blink/public/platform/web_float_rect.h"
+#include "third_party/blink/public/platform/web_input_event.h"
+#include "third_party/blink/public/platform/web_keyboard_event.h"
+#include "third_party/blink/public/platform/web_mouse_event.h"
+#include "third_party/blink/public/platform/web_pointer_event.h"
+#include "third_party/blink/public/platform/web_rect.h"
+#include "third_party/blink/public/platform/web_security_origin.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_touch_event.h"
+#include "third_party/blink/public/platform/web_url.h"
+#include "third_party/blink/public/platform/web_url_error.h"
+#include "third_party/blink/public/platform/web_url_request.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_document_loader.h"
+#include "third_party/blink/public/web/web_ime_text_span.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_plugin_container.h"
+#include "third_party/blink/public/web/web_plugin_script_forbidden_scope.h"
+#include "third_party/blink/public/web/web_print_params.h"
+#include "third_party/blink/public/web/web_print_preset_options.h"
+#include "third_party/blink/public/web/web_print_scaling_option.h"
+#include "third_party/blink/public/web/web_scoped_user_gesture.h"
+#include "third_party/blink/public/web/web_script_source.h"
+#include "third_party/blink/public/web/web_user_gesture_indicator.h"
+#include "third_party/blink/public/web/web_view.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "ui/events/blink/blink_event_util.h"
 #include "ui/gfx/geometry/rect_conversions.h"
@@ -405,7 +403,7 @@ PepperPluginInstanceImpl* PepperPluginInstanceImpl::Create(
   base::Callback<const void*(const char*)> get_plugin_interface_func =
       base::Bind(&PluginModule::GetPluginInterface, module);
   PPP_Instance_Combined* ppp_instance_combined =
-      PPP_Instance_Combined::Create(get_plugin_interface_func);
+      PPP_Instance_Combined::Create(std::move(get_plugin_interface_func));
   if (!ppp_instance_combined)
     return nullptr;
 
@@ -855,11 +853,6 @@ void PepperPluginInstanceImpl::InstanceCrashed() {
   BindGraphics(pp_instance(), 0);
   InvalidateRect(gfx::Rect());
 
-  if (content_decryptor_delegate_) {
-    content_decryptor_delegate_->InstanceCrashed();
-    content_decryptor_delegate_.reset();
-  }
-
   if (render_frame_)
     render_frame_->PluginCrashed(module_->path(), module_->GetPeerProcessId());
   UnSetAndDeleteLockTargetAdapter();
@@ -1031,7 +1024,8 @@ bool PepperPluginInstanceImpl::
 
   // Set the composition target.
   for (size_t i = 0; i < ime_text_spans.size(); ++i) {
-    if (ime_text_spans[i].thick) {
+    if (ime_text_spans[i].thickness ==
+        ui::mojom::ImeTextSpanThickness::kThick) {
       std::vector<uint32_t>::iterator it =
           std::find(event.composition_segment_offsets.begin(),
                     event.composition_segment_offsets.end(),
@@ -1576,7 +1570,7 @@ void PepperPluginInstanceImpl::StopFind() {
 }
 
 bool PepperPluginInstanceImpl::LoadFindInterface() {
-  if (!module_->permissions().HasPermission(ppapi::PERMISSION_PRIVATE))
+  if (!module_->permissions().HasPermission(ppapi::PERMISSION_PDF))
     return false;
   if (!plugin_find_interface_) {
     plugin_find_interface_ = static_cast<const PPP_Find_Private*>(
@@ -2206,12 +2200,13 @@ void PepperPluginInstanceImpl::UpdateLayer(bool force_creation) {
 }
 
 bool PepperPluginInstanceImpl::PrepareTransferableResource(
+    cc::SharedBitmapIdRegistrar* bitmap_registrar,
     viz::TransferableResource* transferable_resource,
     std::unique_ptr<viz::SingleReleaseCallback>* release_callback) {
   if (!bound_graphics_2d_platform_)
     return false;
   return bound_graphics_2d_platform_->PrepareTransferableResource(
-      transferable_resource, release_callback);
+      bitmap_registrar, transferable_resource, release_callback);
 }
 
 void PepperPluginInstanceImpl::AccessibilityModeChanged() {
@@ -2357,28 +2352,12 @@ void PepperPluginInstanceImpl::SimulateImeSetCompositionEvent(
     ime_text_span.start_offset = offsets[i];
     ime_text_span.end_offset = offsets[i + 1];
     if (input_event.composition_target_segment == static_cast<int32_t>(i - 2))
-      ime_text_span.thick = true;
+      ime_text_span.thickness = ui::mojom::ImeTextSpanThickness::kThick;
     ime_text_spans.push_back(ime_text_span);
   }
 
   render_frame_->SimulateImeSetComposition(utf16_text, ime_text_spans,
                                            offsets[0], offsets[1]);
-}
-
-ContentDecryptorDelegate*
-PepperPluginInstanceImpl::GetContentDecryptorDelegate() {
-  if (content_decryptor_delegate_)
-    return content_decryptor_delegate_.get();
-
-  const PPP_ContentDecryptor_Private* plugin_decryption_interface =
-      static_cast<const PPP_ContentDecryptor_Private*>(
-          module_->GetPluginInterface(PPP_CONTENTDECRYPTOR_PRIVATE_INTERFACE));
-  if (!plugin_decryption_interface)
-    return nullptr;
-
-  content_decryptor_delegate_ = std::make_unique<ContentDecryptorDelegate>(
-      pp_instance_, plugin_decryption_interface);
-  return content_decryptor_delegate_.get();
 }
 
 PP_Bool PepperPluginInstanceImpl::BindGraphics(PP_Instance instance,
@@ -2580,128 +2559,6 @@ PP_Var PepperPluginInstanceImpl::GetDefaultCharSet(PP_Instance instance) {
     return PP_MakeUndefined();
   return StringVar::StringToPPVar(
       render_frame_->render_view()->webkit_preferences().default_encoding);
-}
-
-// These PPB_ContentDecryptor_Private calls are responses to
-// PPP_ContentDecryptor_Private calls made on |content_decryptor_delegate_|.
-// Therefore, |content_decryptor_delegate_| must have been initialized when
-// the following methods are called.
-void PepperPluginInstanceImpl::PromiseResolved(PP_Instance instance,
-                                               uint32_t promise_id) {
-  content_decryptor_delegate_->OnPromiseResolved(promise_id);
-}
-
-void PepperPluginInstanceImpl::PromiseResolvedWithKeyStatus(
-    PP_Instance instance,
-    uint32_t promise_id,
-    PP_CdmKeyStatus key_status) {
-  content_decryptor_delegate_->OnPromiseResolvedWithKeyStatus(promise_id,
-                                                              key_status);
-}
-
-void PepperPluginInstanceImpl::PromiseResolvedWithSession(
-    PP_Instance instance,
-    uint32_t promise_id,
-    PP_Var session_id_var) {
-  content_decryptor_delegate_->OnPromiseResolvedWithSession(promise_id,
-                                                            session_id_var);
-}
-
-void PepperPluginInstanceImpl::PromiseRejected(
-    PP_Instance instance,
-    uint32_t promise_id,
-    PP_CdmExceptionCode exception_code,
-    uint32_t system_code,
-    PP_Var error_description_var) {
-  content_decryptor_delegate_->OnPromiseRejected(
-      promise_id, exception_code, system_code, error_description_var);
-}
-
-void PepperPluginInstanceImpl::SessionMessage(PP_Instance instance,
-                                              PP_Var session_id_var,
-                                              PP_CdmMessageType message_type,
-                                              PP_Var message_var,
-                                              PP_Var legacy_destination_url) {
-  // |legacy_destination_url| is obsolete.
-  content_decryptor_delegate_->OnSessionMessage(session_id_var, message_type,
-                                                message_var);
-}
-
-void PepperPluginInstanceImpl::SessionKeysChange(
-    PP_Instance instance,
-    PP_Var session_id_var,
-    PP_Bool has_additional_usable_key,
-    uint32_t key_count,
-    const struct PP_KeyInformation key_information[]) {
-  content_decryptor_delegate_->OnSessionKeysChange(
-      session_id_var, has_additional_usable_key, key_count, key_information);
-}
-
-void PepperPluginInstanceImpl::SessionExpirationChange(
-    PP_Instance instance,
-    PP_Var session_id_var,
-    PP_Time new_expiry_time) {
-  content_decryptor_delegate_->OnSessionExpirationChange(session_id_var,
-                                                         new_expiry_time);
-}
-
-void PepperPluginInstanceImpl::SessionClosed(PP_Instance instance,
-                                             PP_Var session_id_var) {
-  content_decryptor_delegate_->OnSessionClosed(session_id_var);
-}
-
-void PepperPluginInstanceImpl::LegacySessionError(
-    PP_Instance instance,
-    PP_Var session_id_var,
-    PP_CdmExceptionCode exception_code,
-    uint32_t system_code,
-    PP_Var error_description_var) {
-  // Obsolete.
-}
-
-void PepperPluginInstanceImpl::DeliverBlock(
-    PP_Instance instance,
-    PP_Resource decrypted_block,
-    const PP_DecryptedBlockInfo* block_info) {
-  content_decryptor_delegate_->DeliverBlock(decrypted_block, block_info);
-}
-
-void PepperPluginInstanceImpl::DecoderInitializeDone(
-    PP_Instance instance,
-    PP_DecryptorStreamType decoder_type,
-    uint32_t request_id,
-    PP_Bool success) {
-  content_decryptor_delegate_->DecoderInitializeDone(
-      decoder_type, request_id, success);
-}
-
-void PepperPluginInstanceImpl::DecoderDeinitializeDone(
-    PP_Instance instance,
-    PP_DecryptorStreamType decoder_type,
-    uint32_t request_id) {
-  content_decryptor_delegate_->DecoderDeinitializeDone(decoder_type,
-                                                       request_id);
-}
-
-void PepperPluginInstanceImpl::DecoderResetDone(
-    PP_Instance instance,
-    PP_DecryptorStreamType decoder_type,
-    uint32_t request_id) {
-  content_decryptor_delegate_->DecoderResetDone(decoder_type, request_id);
-}
-
-void PepperPluginInstanceImpl::DeliverFrame(
-    PP_Instance instance,
-    PP_Resource decrypted_frame,
-    const PP_DecryptedFrameInfo* frame_info) {
-  content_decryptor_delegate_->DeliverFrame(decrypted_frame, frame_info);
-}
-
-void PepperPluginInstanceImpl::DeliverSamples(
-    PP_Instance instance,
-    PP_Resource audio_frames,
-    const PP_DecryptedSampleInfo* sample_info) {
-  content_decryptor_delegate_->DeliverSamples(audio_frames, sample_info);
 }
 
 void PepperPluginInstanceImpl::SetPluginToHandleFindRequests(
@@ -3076,7 +2933,7 @@ PP_ExternalPluginResult PepperPluginInstanceImpl::ResetAsProxied(
   base::Callback<const void*(const char*)> get_plugin_interface_func =
       base::Bind(&PluginModule::GetPluginInterface, module_);
   PPP_Instance_Combined* ppp_instance_combined =
-      PPP_Instance_Combined::Create(get_plugin_interface_func);
+      PPP_Instance_Combined::Create(std::move(get_plugin_interface_func));
   if (!ppp_instance_combined) {
     // The proxy must support at least one usable PPP_Instance interface.
     // While this could be a failure to implement the interface in the NaCl

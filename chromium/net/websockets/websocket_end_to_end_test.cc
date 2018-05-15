@@ -19,6 +19,7 @@
 #include "base/location.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_piece.h"
@@ -26,7 +27,7 @@
 #include "build/build_config.h"
 #include "net/base/auth.h"
 #include "net/base/proxy_delegate.h"
-#include "net/proxy_resolution/proxy_service.h"
+#include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "net/test/test_data_directory.h"
@@ -72,31 +73,31 @@ class ConnectTestingEventInterface : public WebSocketEventInterface {
   // Implementation of WebSocketEventInterface.
   void OnCreateURLRequest(URLRequest* request) override {}
 
-  ChannelState OnAddChannelResponse(const std::string& selected_subprotocol,
-                                    const std::string& extensions) override;
+  void OnAddChannelResponse(const std::string& selected_subprotocol,
+                            const std::string& extensions) override;
 
-  ChannelState OnDataFrame(bool fin,
-                           WebSocketMessageType type,
-                           scoped_refptr<IOBuffer> data,
-                           size_t data_size) override;
+  void OnDataFrame(bool fin,
+                   WebSocketMessageType type,
+                   scoped_refptr<IOBuffer> data,
+                   size_t data_size) override;
 
-  ChannelState OnFlowControl(int64_t quota) override;
+  void OnFlowControl(int64_t quota) override;
 
-  ChannelState OnClosingHandshake() override;
+  void OnClosingHandshake() override;
 
-  ChannelState OnDropChannel(bool was_clean,
-                             uint16_t code,
-                             const std::string& reason) override;
+  void OnDropChannel(bool was_clean,
+                     uint16_t code,
+                     const std::string& reason) override;
 
-  ChannelState OnFailChannel(const std::string& message) override;
+  void OnFailChannel(const std::string& message) override;
 
-  ChannelState OnStartOpeningHandshake(
+  void OnStartOpeningHandshake(
       std::unique_ptr<WebSocketHandshakeRequestInfo> request) override;
 
-  ChannelState OnFinishOpeningHandshake(
+  void OnFinishOpeningHandshake(
       std::unique_ptr<WebSocketHandshakeResponseInfo> response) override;
 
-  ChannelState OnSSLCertificateError(
+  void OnSSLCertificateError(
       std::unique_ptr<SSLErrorCallbacks> ssl_error_callbacks,
       const GURL& url,
       const SSLInfo& ssl_info,
@@ -134,60 +135,40 @@ std::string ConnectTestingEventInterface::extensions() const {
   return extensions_;
 }
 
-// Make the function definitions below less verbose.
-typedef ConnectTestingEventInterface::ChannelState ChannelState;
-
-ChannelState ConnectTestingEventInterface::OnAddChannelResponse(
+void ConnectTestingEventInterface::OnAddChannelResponse(
     const std::string& selected_subprotocol,
     const std::string& extensions) {
   selected_subprotocol_ = selected_subprotocol;
   extensions_ = extensions;
   QuitNestedEventLoop();
-  return CHANNEL_ALIVE;
 }
 
-ChannelState ConnectTestingEventInterface::OnDataFrame(
-    bool fin,
-    WebSocketMessageType type,
-    scoped_refptr<IOBuffer> data,
-    size_t data_size) {
-  return CHANNEL_ALIVE;
-}
+void ConnectTestingEventInterface::OnDataFrame(bool fin,
+                                               WebSocketMessageType type,
+                                               scoped_refptr<IOBuffer> data,
+                                               size_t data_size) {}
 
-ChannelState ConnectTestingEventInterface::OnFlowControl(int64_t quota) {
-  return CHANNEL_ALIVE;
-}
+void ConnectTestingEventInterface::OnFlowControl(int64_t quota) {}
 
-ChannelState ConnectTestingEventInterface::OnClosingHandshake() {
-  return CHANNEL_ALIVE;
-}
+void ConnectTestingEventInterface::OnClosingHandshake() {}
 
-ChannelState ConnectTestingEventInterface::OnDropChannel(
-    bool was_clean,
-    uint16_t code,
-    const std::string& reason) {
-  return CHANNEL_DELETED;
-}
+void ConnectTestingEventInterface::OnDropChannel(bool was_clean,
+                                                 uint16_t code,
+                                                 const std::string& reason) {}
 
-ChannelState ConnectTestingEventInterface::OnFailChannel(
-    const std::string& message) {
+void ConnectTestingEventInterface::OnFailChannel(const std::string& message) {
   failed_ = true;
   failure_message_ = message;
   QuitNestedEventLoop();
-  return CHANNEL_DELETED;
 }
 
-ChannelState ConnectTestingEventInterface::OnStartOpeningHandshake(
-    std::unique_ptr<WebSocketHandshakeRequestInfo> request) {
-  return CHANNEL_ALIVE;
-}
+void ConnectTestingEventInterface::OnStartOpeningHandshake(
+    std::unique_ptr<WebSocketHandshakeRequestInfo> request) {}
 
-ChannelState ConnectTestingEventInterface::OnFinishOpeningHandshake(
-    std::unique_ptr<WebSocketHandshakeResponseInfo> response) {
-  return CHANNEL_ALIVE;
-}
+void ConnectTestingEventInterface::OnFinishOpeningHandshake(
+    std::unique_ptr<WebSocketHandshakeResponseInfo> response) {}
 
-ChannelState ConnectTestingEventInterface::OnSSLCertificateError(
+void ConnectTestingEventInterface::OnSSLCertificateError(
     std::unique_ptr<SSLErrorCallbacks> ssl_error_callbacks,
     const GURL& url,
     const SSLInfo& ssl_info,
@@ -196,7 +177,6 @@ ChannelState ConnectTestingEventInterface::OnSSLCertificateError(
       FROM_HERE, base::Bind(&SSLErrorCallbacks::CancelSSLRequest,
                             base::Owned(ssl_error_callbacks.release()),
                             ERR_SSL_PROTOCOL_ERROR, &ssl_info));
-  return CHANNEL_ALIVE;
 }
 
 void ConnectTestingEventInterface::QuitNestedEventLoop() {
@@ -239,7 +219,7 @@ class WebSocketEndToEndTest : public ::testing::Test {
  protected:
   WebSocketEndToEndTest()
       : event_interface_(),
-        proxy_delegate_(new TestProxyDelegateWithProxyInfo),
+        proxy_delegate_(std::make_unique<TestProxyDelegateWithProxyInfo>()),
         context_(true),
         channel_(),
         initialised_context_(false) {}
@@ -262,8 +242,8 @@ class WebSocketEndToEndTest : public ::testing::Test {
     url::Origin origin = url::Origin::Create(GURL("http://localhost"));
     GURL site_for_cookies("http://localhost/");
     event_interface_ = new ConnectTestingEventInterface;
-    channel_.reset(
-        new WebSocketChannel(base::WrapUnique(event_interface_), &context_));
+    channel_ = std::make_unique<WebSocketChannel>(
+        base::WrapUnique(event_interface_), &context_);
     channel_->SendAddChannelRequest(GURL(socket_url), sub_protocols_, origin,
                                     site_for_cookies, "");
     event_interface_->WaitForResponse();
@@ -302,7 +282,8 @@ TEST_F(WebSocketEndToEndTest, DISABLED_HttpsProxyUnauthedFails) {
   std::string proxy_config =
       "https=" + proxy_server.host_port_pair().ToString();
   std::unique_ptr<ProxyResolutionService> proxy_resolution_service(
-      ProxyResolutionService::CreateFixed(proxy_config));
+      ProxyResolutionService::CreateFixed(proxy_config,
+                                          TRAFFIC_ANNOTATION_FOR_TESTS));
   ASSERT_TRUE(proxy_resolution_service);
   context_.set_proxy_resolution_service(proxy_resolution_service.get());
   EXPECT_FALSE(ConnectAndWait(ws_server.GetURL(kEchoServer)));
@@ -332,7 +313,8 @@ TEST_F(WebSocketEndToEndTest, MAYBE_HttpsWssProxyUnauthedFails) {
   std::string proxy_config =
       "https=" + proxy_server.host_port_pair().ToString();
   std::unique_ptr<ProxyResolutionService> proxy_resolution_service(
-      ProxyResolutionService::CreateFixed(proxy_config));
+      ProxyResolutionService::CreateFixed(proxy_config,
+                                          TRAFFIC_ANNOTATION_FOR_TESTS));
   ASSERT_TRUE(proxy_resolution_service);
   context_.set_proxy_resolution_service(proxy_resolution_service.get());
   EXPECT_FALSE(ConnectAndWait(wss_server.GetURL(kEchoServer)));
@@ -354,7 +336,8 @@ TEST_F(WebSocketEndToEndTest, MAYBE_HttpsProxyUsed) {
                              proxy_server.host_port_pair().ToString() + ";" +
                              "http=" + proxy_server.host_port_pair().ToString();
   std::unique_ptr<ProxyResolutionService> proxy_resolution_service(
-      ProxyResolutionService::CreateFixed(proxy_config));
+      ProxyResolutionService::CreateFixed(proxy_config,
+                                          TRAFFIC_ANNOTATION_FOR_TESTS));
   context_.set_proxy_resolution_service(proxy_resolution_service.get());
   InitialiseContext();
 

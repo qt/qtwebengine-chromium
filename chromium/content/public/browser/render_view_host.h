@@ -13,7 +13,7 @@
 #include "content/public/common/page_zoom.h"
 #include "ipc/ipc_sender.h"
 #include "mojo/public/cpp/system/core.h"
-#include "third_party/WebKit/public/platform/WebDragOperation.h"
+#include "third_party/blink/public/platform/web_drag_operation.h"
 
 namespace base {
 class FilePath;
@@ -94,14 +94,6 @@ class CONTENT_EXPORT RenderViewHost : public IPC::Sender {
   // Tells the renderer not to add scrollbars with height and width below a
   // threshold.
   virtual void DisableScrollbarsForThreshold(const gfx::Size& size) = 0;
-
-  // Instructs the RenderView to automatically resize and send back updates
-  // for the new size.
-  virtual void EnableAutoResize(const gfx::Size& min_size,
-                                const gfx::Size& max_size) = 0;
-
-  // Turns off auto-resize and gives a new size that the view should be.
-  virtual void DisableAutoResize(const gfx::Size& new_size) = 0;
 
   // Instructs the RenderView to send back updates to the preferred size.
   virtual void EnablePreferredSizeMode() = 0;

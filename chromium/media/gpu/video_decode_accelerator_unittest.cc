@@ -59,8 +59,8 @@
 #include "gpu/command_buffer/service/gpu_preferences.h"
 #include "gpu/config/gpu_driver_bug_workarounds.h"
 #include "media/base/test_data_util.h"
+#include "media/gpu/buildflags.h"
 #include "media/gpu/fake_video_decode_accelerator.h"
-#include "media/gpu/features.h"
 #include "media/gpu/format_utils.h"
 #include "media/gpu/gpu_video_decode_accelerator_factory.h"
 #include "media/gpu/rendering_helper.h"
@@ -117,6 +117,8 @@ const base::FilePath::CharType* g_output_log = NULL;
 
 // The value is set by the switch "--rendering_fps".
 double g_rendering_fps = 60;
+
+bool g_use_gl_renderer = true;
 
 // The value is set by the switch "--num_play_throughs". The video will play
 // the specified number of times. In different test cases, we have different
@@ -263,7 +265,8 @@ class VideoDecodeAcceleratorTestEnvironment : public ::testing::Environment {
     base::WaitableEvent done(base::WaitableEvent::ResetPolicy::AUTOMATIC,
                              base::WaitableEvent::InitialState::NOT_SIGNALED);
     rendering_thread_.task_runner()->PostTask(
-        FROM_HERE, base::Bind(&RenderingHelper::InitializeOneOff, &done));
+        FROM_HERE, base::Bind(&RenderingHelper::InitializeOneOff,
+                              g_use_gl_renderer, &done));
     done.Wait();
 
 #if defined(OS_CHROMEOS)
@@ -369,14 +372,16 @@ gfx::GpuMemoryBufferHandle TextureRef::ExportGpuMemoryBufferHandle() const {
   gfx::GpuMemoryBufferHandle handle;
 #if defined(OS_CHROMEOS)
   CHECK(pixmap_);
-  int duped_fd = HANDLE_EINTR(dup(pixmap_->GetDmaBufFd(0)));
-  LOG_ASSERT(duped_fd != -1) << "Failed duplicating dmabuf fd";
   handle.type = gfx::NATIVE_PIXMAP;
-  handle.native_pixmap_handle.fds.emplace_back(
-      base::FileDescriptor(duped_fd, true));
-  handle.native_pixmap_handle.planes.emplace_back(
-      pixmap_->GetDmaBufPitch(0), pixmap_->GetDmaBufOffset(0), 0,
-      pixmap_->GetDmaBufModifier(0));
+  for (size_t i = 0; i < pixmap_->GetDmaBufFdCount(); i++) {
+    int duped_fd = HANDLE_EINTR(dup(pixmap_->GetDmaBufFd(i)));
+    LOG_ASSERT(duped_fd != -1) << "Failed duplicating dmabuf fd";
+    handle.native_pixmap_handle.fds.emplace_back(
+        base::FileDescriptor(duped_fd, true));
+    handle.native_pixmap_handle.planes.emplace_back(
+        pixmap_->GetDmaBufPitch(i), pixmap_->GetDmaBufOffset(i), i,
+        pixmap_->GetDmaBufModifier(i));
+  }
 #endif
   return handle;
 }
@@ -400,7 +405,6 @@ class GLRenderingVDAClient
   // calls have been made, N>=0 means interpret as ClientState.
   // Both |reset_after_frame_num| & |delete_decoder_state| apply only to the
   // last play-through (governed by |num_play_throughs|).
-  // |suppress_rendering| indicates GL rendering is supressed or not.
   // After |delay_reuse_after_frame_num| frame has been delivered, the client
   // will start delaying the call to ReusePictureBuffer() for kReuseDelay.
   // |decode_calls_per_second| is the number of VDA::Decode calls per second.
@@ -417,7 +421,6 @@ class GLRenderingVDAClient
                        int frame_height,
                        VideoCodecProfile profile,
                        int fake_decoder,
-                       bool suppress_rendering,
                        int delay_reuse_after_frame_num,
                        int decode_calls_per_second,
                        bool render_as_thumbnails);
@@ -505,7 +508,6 @@ class GLRenderingVDAClient
   int fake_decoder_;
   GLenum texture_target_;
   VideoPixelFormat pixel_format_;
-  bool suppress_rendering_;
   std::vector<base::TimeTicks> frame_delivery_times_;
   int delay_reuse_after_frame_num_;
   // A map from bitstream buffer id to the decode start time of the buffer.
@@ -556,7 +558,6 @@ GLRenderingVDAClient::GLRenderingVDAClient(
     int frame_height,
     VideoCodecProfile profile,
     int fake_decoder,
-    bool suppress_rendering,
     int delay_reuse_after_frame_num,
     int decode_calls_per_second,
     bool render_as_thumbnails)
@@ -580,7 +581,6 @@ GLRenderingVDAClient::GLRenderingVDAClient(
       fake_decoder_(fake_decoder),
       texture_target_(0),
       pixel_format_(PIXEL_FORMAT_UNKNOWN),
-      suppress_rendering_(suppress_rendering),
       delay_reuse_after_frame_num_(delay_reuse_after_frame_num),
       decode_calls_per_second_(decode_calls_per_second),
       render_as_thumbnails_(render_as_thumbnails),
@@ -617,10 +617,15 @@ void GLRenderingVDAClient::CreateAndStartDecoder() {
     LOG_ASSERT(decoder_->Initialize(config, this));
   } else {
     if (!vda_factory_) {
-      vda_factory_ = GpuVideoDecodeAcceleratorFactory::Create(
-          base::Bind(&RenderingHelper::GetGLContext,
-                     base::Unretained(rendering_helper_)),
-          base::Bind([]() { return true; }), base::Bind(&DummyBindImage));
+      if (g_use_gl_renderer) {
+        vda_factory_ = GpuVideoDecodeAcceleratorFactory::Create(
+            base::Bind(&RenderingHelper::GetGLContext,
+                       base::Unretained(rendering_helper_)),
+            base::Bind([]() { return true; }), base::Bind(&DummyBindImage));
+      } else {
+        vda_factory_ = GpuVideoDecodeAcceleratorFactory::CreateWithNoGL();
+      }
+
       LOG_ASSERT(vda_factory_);
     }
 
@@ -766,7 +771,7 @@ void GLRenderingVDAClient::PictureReady(const Picture& picture) {
   if (render_as_thumbnails_) {
     rendering_helper_->RenderThumbnail(video_frame->texture_target(),
                                        video_frame->texture_id());
-  } else if (!suppress_rendering_) {
+  } else {
     rendering_helper_->QueueVideoFrame(window_id_, video_frame);
   }
 }
@@ -1348,6 +1353,13 @@ TEST_P(VideoDecodeAcceleratorParamTest, TestSimpleDecode) {
   bool test_reuse_delay = std::get<5>(GetParam());
   const bool render_as_thumbnails = std::get<6>(GetParam());
 
+  // We cannot render thumbnails without GL
+  if (!g_use_gl_renderer && render_as_thumbnails) {
+    LOG(WARNING) << "Skipping thumbnail test because GL is deactivated by "
+                    "--disable_rendering";
+    return;
+  }
+
   if (test_video_files_.size() > 1)
     num_concurrent_decoders = test_video_files_.size();
 
@@ -1357,23 +1369,9 @@ TEST_P(VideoDecodeAcceleratorParamTest, TestSimpleDecode) {
   UpdateTestVideoFileParams(num_concurrent_decoders, reset_point,
                             &test_video_files_);
 
-  // Suppress GL rendering for all tests when the "--rendering_fps" is 0.
-  const bool suppress_rendering = g_rendering_fps == 0;
-
   notes_.resize(num_concurrent_decoders);
   clients_.resize(num_concurrent_decoders);
 
-  RenderingHelperParams helper_params;
-  helper_params.rendering_fps = g_rendering_fps;
-  helper_params.render_as_thumbnails = render_as_thumbnails;
-  if (render_as_thumbnails) {
-    // Only one decoder is supported with thumbnail rendering
-    LOG_ASSERT(num_concurrent_decoders == 1U);
-    helper_params.thumbnails_page_size = kThumbnailsPageSize;
-    helper_params.thumbnail_size = kThumbnailSize;
-  }
-
-  helper_params.num_windows = num_concurrent_decoders;
   // First kick off all the decoders.
   for (size_t index = 0; index < num_concurrent_decoders; ++index) {
     TestVideoFile* video_file =
@@ -1394,12 +1392,21 @@ TEST_P(VideoDecodeAcceleratorParamTest, TestSimpleDecode) {
             video_file->data_str, num_in_flight_decodes, num_play_throughs,
             video_file->reset_after_frame_num, delete_decoder_state,
             video_file->width, video_file->height, video_file->profile,
-            g_fake_decoder, suppress_rendering, delay_after_frame_num, 0,
-            render_as_thumbnails);
+            g_fake_decoder, delay_after_frame_num, 0, render_as_thumbnails);
 
     clients_[index] = std::move(client);
   }
 
+  RenderingHelperParams helper_params;
+  helper_params.rendering_fps = g_rendering_fps;
+  helper_params.render_as_thumbnails = render_as_thumbnails;
+  helper_params.num_windows = num_concurrent_decoders;
+  if (render_as_thumbnails) {
+    // Only one decoder is supported with thumbnail rendering
+    LOG_ASSERT(num_concurrent_decoders == 1U);
+    helper_params.thumbnails_page_size = kThumbnailsPageSize;
+    helper_params.thumbnail_size = kThumbnailSize;
+  }
   InitializeRenderingHelper(helper_params);
 
   for (size_t index = 0; index < num_concurrent_decoders; ++index) {
@@ -1474,8 +1481,8 @@ TEST_P(VideoDecodeAcceleratorParamTest, TestSimpleDecode) {
     }
     LOG(INFO) << "Decoder " << i << " fps: " << client->frames_per_second();
     if (!render_as_thumbnails) {
-      int min_fps = suppress_rendering ? video_file->min_fps_no_render
-                                       : video_file->min_fps_render;
+      int min_fps = g_rendering_fps == 0 ? video_file->min_fps_no_render
+                                         : video_file->min_fps_render;
       if (min_fps > 0 && !test_reuse_delay)
         EXPECT_GT(client->frames_per_second(), min_fps);
     }
@@ -1738,7 +1745,7 @@ TEST_F(VideoDecodeAcceleratorTest, TestDecodeTimeMedian) {
       0, &rendering_helper_, notes_[0].get(), test_video_files_[0]->data_str, 1,
       1, test_video_files_[0]->reset_after_frame_num, CS_RESET,
       test_video_files_[0]->width, test_video_files_[0]->height,
-      test_video_files_[0]->profile, g_fake_decoder, true,
+      test_video_files_[0]->profile, g_fake_decoder,
       std::numeric_limits<int>::max(), kWebRtcDecodeCallsPerSecond, false));
   RenderingHelperParams helper_params;
   helper_params.num_windows = 1;
@@ -1766,7 +1773,7 @@ TEST_F(VideoDecodeAcceleratorTest, NoCrash) {
       0, &rendering_helper_, notes_[0].get(), test_video_files_[0]->data_str, 1,
       1, test_video_files_[0]->reset_after_frame_num, CS_RESET,
       test_video_files_[0]->width, test_video_files_[0]->height,
-      test_video_files_[0]->profile, g_fake_decoder, true,
+      test_video_files_[0]->profile, g_fake_decoder,
       std::numeric_limits<int>::max(), 0, false));
   RenderingHelperParams helper_params;
   helper_params.num_windows = 1;
@@ -1850,13 +1857,8 @@ int main(int argc, char** argv) {
       LOG_ASSERT(base::StringToDouble(input, &media::g_rendering_fps));
       continue;
     }
-    if (it->first == "rendering_warm_up") {
-      // TODO(owenlin): Remove this after autotest stop using it.
-      continue;
-    }
-    // TODO(owenlin): Remove this flag once it is not used in autotest.
     if (it->first == "disable_rendering") {
-      media::g_rendering_fps = 0;
+      media::g_use_gl_renderer = false;
       continue;
     }
 

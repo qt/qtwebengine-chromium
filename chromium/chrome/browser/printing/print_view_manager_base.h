@@ -8,7 +8,7 @@
 #include <memory>
 
 #include "base/macros.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "build/build_config.h"
@@ -19,12 +19,12 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "mojo/public/cpp/system/platform_handle.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 
 struct PrintHostMsg_DidPrintDocument_Params;
 
 namespace base {
-class RefCountedBytes;
+class RefCountedMemory;
 }
 
 namespace content {
@@ -60,7 +60,7 @@ class PrintViewManagerBase : public content::NotificationObserver,
   // frame host for the preview initiator contents respectively.
   void PrintForPrintPreview(
       std::unique_ptr<base::DictionaryValue> job_settings,
-      const scoped_refptr<base::RefCountedBytes>& print_data,
+      const scoped_refptr<base::RefCountedMemory>& print_data,
       content::RenderFrameHost* rfh,
       PrinterHandler::PrintCallback callback);
 #endif
@@ -90,6 +90,15 @@ class PrintViewManagerBase : public content::NotificationObserver,
   bool OnMessageReceived(const IPC::Message& message,
                          content::RenderFrameHost* render_frame_host) override;
 
+  // Creates a new empty print job. It has no settings loaded. If there is
+  // currently a print job, safely disconnect from it. Returns false if it is
+  // impossible to safely disconnect from the current print job or it is
+  // impossible to create a new print job.
+  virtual bool CreateNewPrintJob(PrintJobWorkerOwner* job);
+
+  // Manages the low-level talk to the printer.
+  scoped_refptr<PrintJob> print_job_;
+
  private:
   // content::NotificationObserver implementation.
   void Observe(int type,
@@ -117,13 +126,13 @@ class PrintViewManagerBase : public content::NotificationObserver,
 // Helpers for PrintForPrintPreview();
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
   void OnPrintSettingsDone(
-      const scoped_refptr<base::RefCountedBytes>& print_data,
+      const scoped_refptr<base::RefCountedMemory>& print_data,
       int page_count,
       PrinterHandler::PrintCallback callback,
       scoped_refptr<printing::PrinterQuery> printer_query);
 
   void StartLocalPrintJob(
-      const scoped_refptr<base::RefCountedBytes>& print_data,
+      const scoped_refptr<base::RefCountedMemory>& print_data,
       int page_count,
       scoped_refptr<printing::PrinterQuery> printer_query,
       PrinterHandler::PrintCallback callback);
@@ -144,7 +153,7 @@ class PrintViewManagerBase : public content::NotificationObserver,
   // Starts printing |document| with the given |print_data|. This method assumes
   // |print_data| contains valid data.
   void PrintDocument(PrintedDocument* document,
-                     const scoped_refptr<base::RefCountedBytes>& print_data,
+                     const scoped_refptr<base::RefCountedMemory>& print_data,
                      const gfx::Size& page_size,
                      const gfx::Rect& content_area,
                      const gfx::Point& offsets);
@@ -155,12 +164,6 @@ class PrintViewManagerBase : public content::NotificationObserver,
   // notification. The inner message loop is created was created by
   // RenderAllMissingPagesNow().
   void ShouldQuitFromInnerMessageLoop();
-
-  // Creates a new empty print job. It has no settings loaded. If there is
-  // currently a print job, safely disconnect from it. Returns false if it is
-  // impossible to safely disconnect from the current print job or it is
-  // impossible to create a new print job.
-  bool CreateNewPrintJob(PrintJobWorkerOwner* job);
 
   // Makes sure the current print_job_ has all its data before continuing, and
   // disconnect from it.
@@ -196,9 +199,6 @@ class PrintViewManagerBase : public content::NotificationObserver,
 
   // The current RFH that is printing with a system printing dialog.
   content::RenderFrameHost* printing_rfh_;
-
-  // Manages the low-level talk to the printer.
-  scoped_refptr<PrintJob> print_job_;
 
   // Indication of success of the print job.
   bool printing_succeeded_;

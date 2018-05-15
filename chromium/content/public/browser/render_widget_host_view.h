@@ -5,12 +5,12 @@
 #ifndef CONTENT_PUBLIC_BROWSER_RENDER_WIDGET_HOST_VIEW_H_
 #define CONTENT_PUBLIC_BROWSER_RENDER_WIDGET_HOST_VIEW_H_
 
-#include <memory>
-
+#include "base/containers/flat_set.h"
+#include "base/optional.h"
 #include "base/strings/string16.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/blink/public/platform/web_input_event.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/point_conversions.h"
@@ -22,9 +22,21 @@ class Rect;
 class Size;
 }
 
+namespace mojo {
+template <class T>
+class InterfacePtr;
+}
+
 namespace ui {
 class TextInputClient;
 }
+
+namespace viz {
+namespace mojom {
+class FrameSinkVideoCapturer;
+using FrameSinkVideoCapturerPtr = mojo::InterfacePtr<FrameSinkVideoCapturer>;
+}  // namespace mojom
+}  // namespace viz
 
 namespace content {
 
@@ -59,12 +71,20 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // Tells the View to size itself to the specified size.
   virtual void SetSize(const gfx::Size& size) = 0;
 
+  // Instructs the View to automatically resize and send back updates
+  // for the new size.
+  virtual void EnableAutoResize(const gfx::Size& min_size,
+                                const gfx::Size& max_size) = 0;
+
+  // Turns off auto-resize and gives a new size that the view should be.
+  virtual void DisableAutoResize(const gfx::Size& new_size) = 0;
+
   // Tells the View to size and move itself to the specified size and point in
   // screen space.
   virtual void SetBounds(const gfx::Rect& rect) = 0;
 
-  // Retrieves the last known scroll position.
-  virtual gfx::Vector2dF GetLastScrollOffset() const = 0;
+  // Indicates whether the scroll offset of the view is at top.
+  virtual bool IsScrollOffsetAtTop() const = 0;
 
   // Sets a flag that indicates if it is in virtual reality mode.
   virtual void SetIsInVR(bool is_in_vr) = 0;
@@ -116,9 +136,7 @@ class CONTENT_EXPORT RenderWidgetHostView {
 
   // Indicates if the view is currently occluded (e.g, not visible because it's
   // covered up by other windows), and as a result the view's renderer may be
-  // suspended. If Show() is called on a view then its state should be re-set to
-  // being un-occluded (an explicit WasUnOccluded call will not be made for
-  // that). These calls are not necessarily made in pairs.
+  // suspended. Calling Show()/Hide() overrides the state set by these methods.
   virtual void WasUnOccluded() = 0;
   virtual void WasOccluded() = 0;
 
@@ -151,6 +169,12 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // Returns true if the mouse pointer is currently locked.
   virtual bool IsMouseLocked() = 0;
 
+  // Start/Stop intercepting future system keyboard events.
+  virtual bool LockKeyboard(base::Optional<base::flat_set<int>> keys) = 0;
+  virtual void UnlockKeyboard() = 0;
+  // Returns true if keyboard lock is active.
+  virtual bool IsKeyboardLocked() = 0;
+
   // Retrives the size of the viewport for the visible region. May be smaller
   // than the view size if a portion of the view is obstructed (e.g. by a
   // virtual keyboard).
@@ -167,7 +191,7 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // Copies the given subset of the view's surface, optionally scales it, and
   // returns the result as a bitmap via the provided callback. This is meant for
   // one-off snapshots. For continuous video capture of the surface, please use
-  // viz::FrameSinkManager::CreateVideoCapturer() instead.
+  // CreateVideoCapturer() instead.
   //
   // |src_rect| is either the subset of the view's surface, in view coordinates,
   // or empty to indicate that all of it should be copied. This is NOT the same
@@ -190,13 +214,16 @@ class CONTENT_EXPORT RenderWidgetHostView {
       const gfx::Size& output_size,
       base::OnceCallback<void(const SkBitmap&)> callback) = 0;
 
+  // Creates a video capturer, which will allow the caller to receive a stream
+  // of media::VideoFrames captured from this view. The capturer is configured
+  // to target this view, so there is no need to call ChangeTarget() before
+  // Start(). See viz.mojom.FrameSinkVideoCapturer for documentation.
+  virtual viz::mojom::FrameSinkVideoCapturerPtr CreateVideoCapturer() = 0;
+
   // Notification that a node was touched.
-  // The |location_dips_screen| parameter contains the location where the touch
-  // occurred in DIPs in screen coordinates.
   // The |editable| parameter indicates if the node is editable, for e.g.
   // an input field, etc.
-  virtual void FocusedNodeTouched(const gfx::Point& location_dips_screen,
-                                  bool editable) = 0;
+  virtual void FocusedNodeTouched(bool editable) = 0;
 
   // Informs the view that its associated render widget has frames to draw and
   // wants to have BeginFrame messages sent to it.  This should only be called
@@ -222,15 +249,13 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // Brings up the dictionary showing a definition for the selected text.
   virtual void ShowDefinitionForSelection() = 0;
 
-  // Returns |true| if Mac OS X text to speech is supported.
-  virtual bool SupportsSpeech() const = 0;
   // Tells the view to speak the currently selected text.
   virtual void SpeakSelection() = 0;
-  // Returns |true| if text is currently being spoken by Mac OS X.
-  virtual bool IsSpeaking() const = 0;
-  // Stops speaking, if it is currently in progress.
-  virtual void StopSpeaking() = 0;
 #endif  // defined(OS_MACOSX)
+
+  // Indicates that this view should show the contents of |view| if it doesn't
+  // have anything to show.
+  virtual void TakeFallbackContentFrom(RenderWidgetHostView* view) = 0;
 };
 
 }  // namespace content

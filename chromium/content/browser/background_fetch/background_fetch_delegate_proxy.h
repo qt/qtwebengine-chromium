@@ -15,12 +15,13 @@
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/background_fetch/background_fetch_request_info.h"
+#include "content/public/browser/background_fetch_delegate.h"
 #include "content/public/browser/background_fetch_response.h"
 #include "content/public/browser/browser_thread.h"
 
-namespace content {
+class SkBitmap;
 
-class BackgroundFetchDelegate;
+namespace content {
 
 // Proxy class for passing messages between BackgroundFetchJobControllers on the
 // IO thread and BackgroundFetchDelegate on the UI thread.
@@ -54,6 +55,10 @@ class CONTENT_EXPORT BackgroundFetchDelegateProxy {
 
   ~BackgroundFetchDelegateProxy();
 
+  // Gets size of the icon to display with the Background Fetch UI.
+  void GetIconDisplaySize(
+      BackgroundFetchDelegate::GetIconDisplaySizeCallback callback);
+
   // Creates a new download grouping identified by |job_unique_id|. Further
   // downloads started by StartRequest will also use this |job_unique_id| so
   // that a notification can be updated with the current status. If the download
@@ -65,6 +70,7 @@ class CONTENT_EXPORT BackgroundFetchDelegateProxy {
   void CreateDownloadJob(const std::string& job_unique_id,
                          const std::string& title,
                          const url::Origin& origin,
+                         const SkBitmap& icon,
                          base::WeakPtr<Controller> controller,
                          int completed_parts,
                          int total_parts,

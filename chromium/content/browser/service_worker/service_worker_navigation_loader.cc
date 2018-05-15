@@ -71,7 +71,7 @@ class ServiceWorkerNavigationLoader::StreamWaiter
 };
 
 ServiceWorkerNavigationLoader::ServiceWorkerNavigationLoader(
-    URLLoaderRequestHandler::LoaderCallback callback,
+    NavigationLoaderInterceptor::LoaderCallback callback,
     Delegate* delegate,
     const network::ResourceRequest& resource_request,
     scoped_refptr<URLLoaderFactoryGetter> url_loader_factory_getter)
@@ -83,12 +83,7 @@ ServiceWorkerNavigationLoader::ServiceWorkerNavigationLoader(
       weak_factory_(this) {
   DCHECK(ServiceWorkerUtils::IsMainResourceType(
       static_cast<ResourceType>(resource_request.resource_type)));
-  DCHECK_EQ(network::mojom::FetchRequestMode::kNavigate,
-            resource_request_.fetch_request_mode);
-  DCHECK_EQ(network::mojom::FetchCredentialsMode::kInclude,
-            resource_request_.fetch_credentials_mode);
-  DCHECK_EQ(network::mojom::FetchRedirectMode::kManual,
-            resource_request_.fetch_redirect_mode);
+
   response_head_.load_timing.request_start = base::TimeTicks::Now();
   response_head_.load_timing.request_start_time = base::Time::Now();
 }
@@ -198,7 +193,7 @@ void ServiceWorkerNavigationLoader::CommitResponseHeaders() {
   DCHECK_EQ(Status::kStarted, status_);
   DCHECK(url_loader_client_.is_bound());
   status_ = Status::kSentHeader;
-  url_loader_client_->OnReceiveResponse(response_head_, ssl_info_,
+  url_loader_client_->OnReceiveResponse(response_head_,
                                         nullptr /* downloaded_file */);
 }
 
@@ -264,8 +259,8 @@ void ServiceWorkerNavigationLoader::DidDispatchFetchEvent(
     return;
   }
 
-  // Creates a new HttpResponseInfo using the the ServiceWorker script's
-  // HttpResponseInfo to show HTTPS padlock.
+  // Get SSLInfo from the ServiceWorker script's HttpResponseInfo to show HTTPS
+  // padlock.
   // TODO(horo): When we support mixed-content (HTTP) no-cors requests from a
   // ServiceWorker, we have to check the security level of the responses.
   const net::HttpResponseInfo* main_script_http_info =
@@ -301,6 +296,7 @@ void ServiceWorkerNavigationLoader::StartResponse(
   response_head_.did_service_worker_navigation_preload =
       did_navigation_preload_;
   response_head_.load_timing.receive_headers_end = base::TimeTicks::Now();
+  response_head_.ssl_info = ssl_info_;
 
   // Handle a redirect response. ComputeRedirectInfo returns non-null redirect
   // info if the given response is a redirect.
@@ -368,9 +364,9 @@ void ServiceWorkerNavigationLoader::FollowRedirect() {
 }
 
 void ServiceWorkerNavigationLoader::ProceedWithResponse() {
-  // TODO(arthursonzogni): Implement this for navigation requests if the
-  // ServiceWorker service is enabled before the Network Service.
-  NOTREACHED();
+  // ServiceWorkerNavigationLoader doesn't need to wait for
+  // ProceedWithResponse() since it doesn't use MojoAsyncResourceHandler to load
+  // the resource request.
 }
 
 void ServiceWorkerNavigationLoader::SetPriority(net::RequestPriority priority,

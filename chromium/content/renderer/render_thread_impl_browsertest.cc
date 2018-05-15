@@ -6,21 +6,25 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+#include <memory>
 #include <utility>
 
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/leak_annotations.h"
 #include "base/location.h"
+#include "base/macros.h"
 #include "base/memory/discardable_memory.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/task_scheduler/task_scheduler.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "build/build_config.h"
 #include "content/app/mojo/mojo_init.h"
 #include "content/common/in_process_child_thread_params.h"
 #include "content/common/service_manager/child_connection.h"
@@ -37,10 +41,8 @@
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_content_client_initializer.h"
 #include "content/public/test/test_launcher.h"
-#include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_service_manager_context.h"
 #include "content/renderer/render_process_impl.h"
-#include "content/shell/browser/shell.h"
 #include "content/test/mock_render_process.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gpu_memory_buffer_manager.h"
@@ -50,11 +52,10 @@
 #include "ipc/ipc_channel_mojo.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/embedder/outgoing_broker_client_invitation.h"
-#include "net/dns/mock_host_resolver.h"
+#include "mojo/edk/embedder/scoped_ipc_support.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
-#include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
-#include "third_party/skia/include/core/SkGraphics.h"
+#include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/buffer_format_util.h"
 
@@ -131,9 +132,13 @@ class RenderThreadImplForTest : public RenderThreadImpl {
  public:
   RenderThreadImplForTest(
       const InProcessChildThreadParams& params,
-      std::unique_ptr<blink::scheduler::RendererScheduler> scheduler,
-      scoped_refptr<base::SingleThreadTaskRunner>& test_task_counter)
-      : RenderThreadImpl(params, std::move(scheduler), test_task_counter) {}
+      std::unique_ptr<blink::scheduler::WebMainThreadScheduler> scheduler,
+      scoped_refptr<base::SingleThreadTaskRunner>& test_task_counter,
+      base::MessageLoop* unowned_message_loop)
+      : RenderThreadImpl(params,
+                         std::move(scheduler),
+                         test_task_counter,
+                         unowned_message_loop) {}
 
   ~RenderThreadImplForTest() override {}
 };
@@ -170,18 +175,42 @@ class QuitOnTestMsgFilter : public IPC::MessageFilter {
 
 class RenderThreadImplBrowserTest : public testing::Test {
  public:
+  // Managing our own main MessageLoop also forces us to manage our own
+  // TaskScheduler. This ensures a basic TaskScheduler is in scope during this
+  // test.
+  class TestTaskScheduler {
+   public:
+    TestTaskScheduler() {
+      base::TaskScheduler::CreateAndStartWithDefaultParams(
+          "RenderThreadImplBrowserTest");
+    }
+
+    ~TestTaskScheduler() {
+      base::TaskScheduler::GetInstance()->Shutdown();
+      base::TaskScheduler::GetInstance()->JoinForTesting();
+      base::TaskScheduler::SetInstance(nullptr);
+    }
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(TestTaskScheduler);
+  };
+
   RenderThreadImplBrowserTest() : field_trial_list_(nullptr) {}
 
   void SetUp() override {
     content_renderer_client_.reset(new ContentRendererClient());
     SetRendererClientForTesting(content_renderer_client_.get());
 
+    main_message_loop_.reset(new base::MessageLoop(base::MessageLoop::TYPE_IO));
+    test_task_scheduler_.reset(new TestTaskScheduler);
     browser_threads_.reset(
         new TestBrowserThreadBundle(TestBrowserThreadBundle::IO_MAINLOOP));
     scoped_refptr<base::SingleThreadTaskRunner> io_task_runner =
         blink::scheduler::GetSingleThreadTaskRunnerForTesting();
 
     InitializeMojo();
+    mojo_ipc_support_.reset(new mojo::edk::ScopedIPCSupport(
+        io_task_runner, mojo::edk::ScopedIPCSupport::ShutdownPolicy::FAST));
     shell_context_.reset(new TestServiceManagerContext);
     mojo::edk::OutgoingBrokerClientInvitation invitation;
     service_manager::Identity child_identity(
@@ -219,8 +248,9 @@ class RenderThreadImplBrowserTest : public testing::Test {
     // in RenderThreadImpl::Init().
     cmd->AppendSwitch(switches::kIgnoreGpuBlacklist);
 
-    std::unique_ptr<blink::scheduler::RendererScheduler> renderer_scheduler =
-        blink::scheduler::RendererScheduler::Create();
+    std::unique_ptr<blink::scheduler::WebMainThreadScheduler>
+        main_thread_scheduler =
+            blink::scheduler::WebMainThreadScheduler::Create();
     scoped_refptr<base::SingleThreadTaskRunner> test_task_counter(
         test_task_counter_.get());
 
@@ -229,7 +259,8 @@ class RenderThreadImplBrowserTest : public testing::Test {
     thread_ = new RenderThreadImplForTest(
         InProcessChildThreadParams(io_task_runner, &invitation,
                                    child_connection_->service_token()),
-        std::move(renderer_scheduler), test_task_counter);
+        std::move(main_thread_scheduler), test_task_counter,
+        main_message_loop_.get());
     cmd->InitFromArgv(old_argv);
 
     run_loop_ = std::make_unique<base::RunLoop>();
@@ -249,16 +280,20 @@ class RenderThreadImplBrowserTest : public testing::Test {
     }
   }
 
+ protected:
   IPC::Sender* sender() { return channel_.get(); }
 
   scoped_refptr<TestTaskCounter> test_task_counter_;
   TestContentClientInitializer content_client_initializer_;
   std::unique_ptr<ContentRendererClient> content_renderer_client_;
 
+  std::unique_ptr<base::MessageLoop> main_message_loop_;
+  std::unique_ptr<TestTaskScheduler> test_task_scheduler_;
   std::unique_ptr<TestBrowserThreadBundle> browser_threads_;
   std::unique_ptr<TestServiceManagerContext> shell_context_;
   std::unique_ptr<ChildConnection> child_connection_;
   std::unique_ptr<IPC::ChannelProxy> channel_;
+  std::unique_ptr<mojo::edk::ScopedIPCSupport> mojo_ipc_support_;
 
   std::unique_ptr<MockRenderProcess> mock_process_;
   scoped_refptr<QuitOnTestMsgFilter> test_msg_filter_;
@@ -267,6 +302,9 @@ class RenderThreadImplBrowserTest : public testing::Test {
   base::FieldTrialList field_trial_list_;
 
   std::unique_ptr<base::RunLoop> run_loop_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(RenderThreadImplBrowserTest);
 };
 
 class RenderThreadImplMojoInputMessagesDisabledBrowserTest
@@ -418,38 +456,5 @@ INSTANTIATE_TEST_CASE_P(
                                          gfx::BufferFormat::RGBA_8888,
                                          gfx::BufferFormat::BGRA_8888,
                                          gfx::BufferFormat::YVU_420)));
-
-class RenderThreadImplClearMemoryBrowserTest : public ContentBrowserTest {
- protected:
-  void SetUpOnMainThread() override {
-    host_resolver()->AddRule("*", "127.0.0.1");
-    ASSERT_TRUE(embedded_test_server()->Start());
-  }
-};
-
-#if defined(OS_ANDROID) || defined(OS_MACOSX) || defined(IS_CHROMECAST)
-#define MAYBE_ClearMemory DISABLED_ClearMemory
-#else
-#define MAYBE_ClearMemory ClearMemory
-#endif
-
-IN_PROC_BROWSER_TEST_F(RenderThreadImplClearMemoryBrowserTest,
-                       MAYBE_ClearMemory) {
-  TestNavigationObserver observer(shell()->web_contents());
-  GURL url(embedded_test_server()->GetURL("/simple_page.html"));
-  NavigateToURL(shell(), url);
-
-  EXPECT_GT(static_cast<int>(SkGraphics::GetFontCacheUsed()), 0);
-  EXPECT_GT(SkGraphics::GetFontCacheCountUsed(), 0);
-
-  // TODO(gyuyoung): How to call RenderThreadImpl::ClearMemory() from here?
-  // Instead we call same function that RenderThreadImpl::ClearMemory() calls at
-  // the moment.
-  SkGraphics::PurgeAllCaches();
-
-  EXPECT_EQ(static_cast<int>(SkGraphics::GetFontCacheUsed()), 0);
-  EXPECT_EQ(SkGraphics::GetFontCacheCountUsed(), 0);
-}
-
 }  // namespace
 }  // namespace content

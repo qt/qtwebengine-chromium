@@ -319,12 +319,12 @@ bool FramebufferD3D::checkStatus(const gl::Context *context) const
     return true;
 }
 
-void FramebufferD3D::syncState(const gl::Context *context,
-                               const gl::Framebuffer::DirtyBits &dirtyBits)
+gl::Error FramebufferD3D::syncState(const gl::Context *context,
+                                    const gl::Framebuffer::DirtyBits &dirtyBits)
 {
     if (!mColorAttachmentsForRender.valid())
     {
-        return;
+        return gl::NoError();
     }
 
     for (auto dirtyBit : dirtyBits)
@@ -336,6 +336,8 @@ void FramebufferD3D::syncState(const gl::Context *context,
             mColorAttachmentsForRender.reset();
         }
     }
+
+    return gl::NoError();
 }
 
 const gl::AttachmentList &FramebufferD3D::getColorAttachmentsForRender(const gl::Context *context)
@@ -400,7 +402,8 @@ const gl::AttachmentList &FramebufferD3D::getColorAttachmentsForRender(const gl:
 
             gl::Texture *dummyTex = nullptr;
             // TODO(Jamie): Handle error if dummy texture can't be created.
-            ANGLE_SWALLOW_ERR(mRenderer->getIncompleteTexture(context, GL_TEXTURE_2D, &dummyTex));
+            ANGLE_SWALLOW_ERR(
+                mRenderer->getIncompleteTexture(context, gl::TextureType::_2D, &dummyTex));
             if (dummyTex)
             {
 

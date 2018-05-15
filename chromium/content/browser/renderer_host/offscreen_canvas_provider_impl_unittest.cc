@@ -8,7 +8,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "components/viz/common/quads/compositor_frame.h"
@@ -22,7 +21,7 @@
 #include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/modules/offscreencanvas/offscreen_canvas_surface.mojom.h"
+#include "third_party/blink/public/platform/modules/offscreencanvas/offscreen_canvas_surface.mojom.h"
 #include "ui/compositor/compositor.h"
 
 #if !defined(OS_ANDROID)
@@ -128,9 +127,10 @@ class OffscreenCanvasProviderImplTest : public testing::Test {
                                                   &host_frame_sink_client_);
   }
   void TearDown() override {
+    host_frame_sink_manager_->InvalidateFrameSinkId(kFrameSinkParent);
     provider_.reset();
-    frame_sink_manager_.reset();
     host_frame_sink_manager_.reset();
+    frame_sink_manager_.reset();
   }
 
  private:

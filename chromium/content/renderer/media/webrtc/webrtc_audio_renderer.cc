@@ -22,7 +22,7 @@
 #include "media/base/audio_latency.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/sample_rates.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
+#include "third_party/blink/public/platform/web_media_stream_track.h"
 #include "third_party/webrtc/api/mediastreaminterface.h"
 
 #if defined(OS_WIN)
@@ -234,7 +234,8 @@ WebRtcAudioRenderer::CreateSharedAudioRendererProxy(
       base::Bind(&WebRtcAudioRenderer::OnPlayStateChanged, this);
   SharedAudioRenderer::OnPlayStateRemoved on_play_state_removed =
       base::BindOnce(&WebRtcAudioRenderer::OnPlayStateRemoved, this);
-  return new SharedAudioRenderer(this, media_stream, on_play_state_changed,
+  return new SharedAudioRenderer(this, media_stream,
+                                 std::move(on_play_state_changed),
                                  std::move(on_play_state_removed));
 }
 

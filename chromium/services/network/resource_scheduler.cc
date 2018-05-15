@@ -11,7 +11,6 @@
 
 #include "base/bind.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_macros.h"
@@ -25,6 +24,7 @@
 #include "net/base/load_flags.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_server_properties.h"
+#include "net/log/net_log.h"
 #include "net/nqe/network_quality_estimator.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
@@ -44,6 +44,12 @@ namespace {
 // alternatives to.
 const base::Feature kPrioritySupportedRequestsDelayable{
     "PrioritySupportedRequestsDelayable", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// When kSpdyProxiesRequestsDelayable is enabled, HTTP requests fetched from
+// a SPDY/QUIC/H2 proxies can be delayed by the ResourceScheduler just as
+// HTTP/1.1 resources are.
+const base::Feature kSpdyProxiesRequestsDelayable{
+    "SpdyProxiesRequestsDelayable", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // When enabled, low-priority H2 and QUIC requests are throttled, but only
 // when the parser is in head.
@@ -71,7 +77,7 @@ const int kYieldMsDefault = 0;
 // may also throttle delayable requests based on the number of non-delayable
 // requests in-flight times a weighting factor.
 const base::Feature kThrottleDelayable{"ThrottleDelayable",
-                                       base::FEATURE_DISABLED_BY_DEFAULT};
+                                       base::FEATURE_ENABLED_BY_DEFAULT};
 
 enum StartMode { START_SYNC, START_ASYNC };
 
@@ -172,8 +178,8 @@ struct ResourceScheduler::RequestPriorityParams {
 
 class ResourceScheduler::RequestQueue {
  public:
-  typedef std::multiset<ScheduledResourceRequestImpl*, ScheduledResourceSorter>
-      NetQueue;
+  using NetQueue =
+      std::multiset<ScheduledResourceRequestImpl*, ScheduledResourceSorter>;
 
   RequestQueue() : fifo_ordering_ids_(0) {}
   ~RequestQueue() {}
@@ -199,11 +205,11 @@ class ResourceScheduler::RequestQueue {
   }
 
   // Returns true if no requests are queued.
-  bool IsEmpty() const { return queue_.size() == 0; }
+  bool IsEmpty() const { return queue_.empty(); }
 
  private:
-  typedef std::map<ScheduledResourceRequestImpl*, NetQueue::iterator>
-      PointerMap;
+  using PointerMap =
+      std::map<ScheduledResourceRequestImpl*, NetQueue::iterator>;
 
   uint32_t MakeFifoOrderingId() {
     fifo_ordering_ids_ += 1;
@@ -398,7 +404,9 @@ class ResourceScheduler::Client {
  public:
   Client(const net::NetworkQualityEstimator* const network_quality_estimator,
          ResourceScheduler* resource_scheduler)
-      : deprecated_is_loaded_(false),
+      : spdy_proxy_requests_delayble_(
+            base::FeatureList::IsEnabled(kSpdyProxiesRequestsDelayable)),
+        deprecated_is_loaded_(false),
         deprecated_has_html_body_(false),
         using_spdy_proxy_(false),
         in_flight_delayable_count_(0),
@@ -506,6 +514,11 @@ class ResourceScheduler::Client {
   }
 
   void OnReceivedSpdyProxiedHttpResponse() {
+    // If the requests to SPDY/H2/QUIC proxies are delayable, then return
+    // immediately.
+    if (spdy_proxy_requests_delayble_)
+      return;
+
     if (!using_spdy_proxy_) {
       using_spdy_proxy_ = true;
       LoadAnyStartablePendingRequests(RequestStartTrigger::SPDY_PROXY_DETECTED);
@@ -959,6 +972,10 @@ class ResourceScheduler::Client {
     }
   }
 
+  // True if requests to SPDY/H2/QUIC proxies can be delayed by the
+  // ResourceScheduler just as HTTP/1.1 resources are.
+  const bool spdy_proxy_requests_delayble_;
+
   bool deprecated_is_loaded_;
   // Tracks if the main HTML parser has reached the body which marks the end of
   // layout-blocking resources.
@@ -1051,7 +1068,7 @@ ResourceScheduler::ScheduleRequest(int child_id,
     return std::move(request);
   }
 
-  Client* client = it->second;
+  Client* client = it->second.get();
   client->ScheduleRequest(*url_request, request.get());
   return std::move(request);
 }
@@ -1064,11 +1081,10 @@ void ResourceScheduler::RemoveRequest(ScheduledResourceRequestImpl* request) {
   }
 
   ClientMap::iterator client_it = client_map_.find(request->client_id());
-  if (client_it == client_map_.end()) {
+  if (client_it == client_map_.end())
     return;
-  }
 
-  Client* client = client_it->second;
+  Client* client = client_it->second.get();
   client->RemoveRequest(request);
 }
 
@@ -1080,8 +1096,8 @@ void ResourceScheduler::OnClientCreated(
   ClientId client_id = MakeClientId(child_id, route_id);
   DCHECK(!base::ContainsKey(client_map_, client_id));
 
-  Client* client = new Client(network_quality_estimator, this);
-  client_map_[client_id] = client;
+  client_map_[client_id] =
+      std::make_unique<Client>(network_quality_estimator, this);
 }
 
 void ResourceScheduler::OnClientDeleted(int child_id, int route_id) {
@@ -1090,7 +1106,7 @@ void ResourceScheduler::OnClientDeleted(int child_id, int route_id) {
   ClientMap::iterator it = client_map_.find(client_id);
   DCHECK(it != client_map_.end());
 
-  Client* client = it->second;
+  Client* client = it->second.get();
   // ResourceDispatcherHost cancels all requests except for cross-renderer
   // navigations, async revalidations and detachable requests after
   // OnClientDeleted() returns.
@@ -1100,7 +1116,6 @@ void ResourceScheduler::OnClientDeleted(int child_id, int route_id) {
     unowned_requests_.insert(*request_it);
   }
 
-  delete client;
   client_map_.erase(it);
 }
 
@@ -1122,7 +1137,7 @@ void ResourceScheduler::DeprecatedOnNavigate(int child_id, int route_id) {
     return;
   }
 
-  Client* client = it->second;
+  Client* client = it->second.get();
   client->DeprecatedOnNavigate();
 }
 
@@ -1136,7 +1151,7 @@ void ResourceScheduler::DeprecatedOnWillInsertBody(int child_id, int route_id) {
     return;
   }
 
-  Client* client = it->second;
+  Client* client = it->second.get();
   client->DeprecatedOnWillInsertBody();
 }
 
@@ -1146,11 +1161,10 @@ void ResourceScheduler::OnReceivedSpdyProxiedHttpResponse(int child_id,
   ClientId client_id = MakeClientId(child_id, route_id);
 
   ClientMap::iterator client_it = client_map_.find(client_id);
-  if (client_it == client_map_.end()) {
+  if (client_it == client_map_.end())
     return;
-  }
 
-  Client* client = client_it->second;
+  Client* client = client_it->second.get();
   client->OnReceivedSpdyProxiedHttpResponse();
 }
 
@@ -1166,10 +1180,9 @@ ResourceScheduler::Client* ResourceScheduler::GetClient(int child_id,
                                                         int route_id) {
   ClientId client_id = MakeClientId(child_id, route_id);
   ClientMap::iterator client_it = client_map_.find(client_id);
-  if (client_it == client_map_.end()) {
+  if (client_it == client_map_.end())
     return nullptr;
-  }
-  return client_it->second;
+  return client_it->second.get();
 }
 
 void ResourceScheduler::ReprioritizeRequest(net::URLRequest* request,
@@ -1207,7 +1220,7 @@ void ResourceScheduler::ReprioritizeRequest(net::URLRequest* request,
     return;
   }
 
-  Client* client = client_it->second;
+  Client* client = client_it->second.get();
   client->ReprioritizeRequest(scheduled_resource_request, old_priority_params,
                               new_priority_params);
 }
@@ -1260,6 +1273,11 @@ ResourceScheduler::ThrottleDelayable::GetParamsForNetworkQualityContainer() {
   static const char kNonDelayableWeightBase[] = "NonDelayableWeight";
 
   ParamsForNetworkQualityContainer result;
+  // Set the default params for networks with ECT Slow2G and 2G. These params
+  // can still be overridden using the field trial.
+  result.push_back({net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G, 8, 3});
+  result.push_back({net::EFFECTIVE_CONNECTION_TYPE_2G, 8, 3});
+
   if (!base::FeatureList::IsEnabled(kThrottleDelayable))
     return result;
 
@@ -1293,8 +1311,22 @@ ResourceScheduler::ThrottleDelayable::GetParamsForNetworkQualityContainer() {
       return result;
     }
 
-    result.push_back({effective_connection_type.value(), max_delayable_requests,
-                      non_delayable_weight});
+    // Check if the entry is already present. This will happen if the default
+    // params are being overridden by the field trial.
+    bool entry_found = false;
+    for (auto& range : result) {
+      if (effective_connection_type == range.effective_connection_type) {
+        range.max_delayable_requests = max_delayable_requests;
+        range.non_delayable_weight = non_delayable_weight;
+        entry_found = true;
+        break;
+      }
+    }
+
+    if (!entry_found) {
+      result.push_back({effective_connection_type.value(),
+                        max_delayable_requests, non_delayable_weight});
+    }
     config_param_index++;
   }
 }

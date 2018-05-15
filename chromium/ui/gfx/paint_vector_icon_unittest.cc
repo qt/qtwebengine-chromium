@@ -43,15 +43,11 @@ TEST(VectorIconTest, RelativeMoveToAfterClose) {
   Canvas canvas(recorder.beginRecording(100, 100), 1.0f);
 
   const PathElement elements[] = {
-      MOVE_TO, 4, 5,
-      LINE_TO, 10, 11,
-      CLOSE,
+      MOVE_TO, 4, 5, LINE_TO, 10, 11, CLOSE,
       // This move should use (4, 5) as the start point rather than (10, 11).
-      R_MOVE_TO, 20, 21,
-      R_LINE_TO, 50, 51,
-      END,
-  };
-  const VectorIcon icon = {elements, arraysize(elements)};
+      R_MOVE_TO, 20, 21, R_LINE_TO, 50, 51};
+  const VectorIconRep icon_rep = {elements, arraysize(elements)};
+  const VectorIcon icon = {&icon_rep};
 
   PaintVectorIcon(&canvas, icon, 100, SK_ColorMAGENTA);
   sk_sp<cc::PaintRecord> record = recorder.finishRecordingAsPicture();
@@ -78,17 +74,21 @@ TEST(VectorIconTest, FlipsInRtl) {
 
   // Create a 20x20 square icon which has FLIPS_IN_RTL, and CANVAS_DIMENSIONS
   // are twice as large as |canvas|.
-  const PathElement elements[] = {
-      CANVAS_DIMENSIONS, 2 * canvas_size,
-      FLIPS_IN_RTL,
-      MOVE_TO, 10, 10,
-      R_H_LINE_TO, 20,
-      R_V_LINE_TO, 20,
-      R_H_LINE_TO, -20,
-      CLOSE,
-      END,
-  };
-  const VectorIcon icon = {elements, arraysize(elements)};
+  const PathElement elements[] = {CANVAS_DIMENSIONS,
+                                  2 * canvas_size,
+                                  FLIPS_IN_RTL,
+                                  MOVE_TO,
+                                  10,
+                                  10,
+                                  R_H_LINE_TO,
+                                  20,
+                                  R_V_LINE_TO,
+                                  20,
+                                  R_H_LINE_TO,
+                                  -20,
+                                  CLOSE};
+  const VectorIconRep icon_rep = {elements, arraysize(elements)};
+  const VectorIcon icon = {&icon_rep};
   PaintVectorIcon(&canvas, icon, canvas_size, color);
 
   // Count the number of pixels in the canvas.

@@ -12,7 +12,6 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/bind.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -26,7 +25,6 @@
 #include "content/browser/service_worker/service_worker_test_utils.h"
 #include "content/common/background_fetch/background_fetch_types.h"
 #include "content/common/renderer.mojom.h"
-#include "content/common/service_worker/embedded_worker_messages.h"
 #include "content/common/service_worker/service_worker_event_dispatcher.mojom.h"
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/common/service_worker/service_worker_utils.h"
@@ -39,7 +37,7 @@
 #include "services/network/public/mojom/fetch_api.mojom.h"
 #include "storage/common/blob_storage/blob_handle.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_event_status.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom.h"
 
 namespace content {
 
@@ -778,11 +776,6 @@ void EmbeddedWorkerTestHelper::SimulateWorkerStopped(int embedded_worker_id) {
     embedded_worker_id_remote_provider_map_.erase(embedded_worker_id);
     base::RunLoop().RunUntilIdle();
   }
-}
-
-void EmbeddedWorkerTestHelper::SimulateSend(IPC::Message* message) {
-  registry()->OnMessageReceived(*message, mock_render_process_id_);
-  delete message;
 }
 
 void EmbeddedWorkerTestHelper::OnStartWorkerStub(

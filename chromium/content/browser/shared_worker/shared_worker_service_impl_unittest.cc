@@ -14,7 +14,6 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
@@ -31,7 +30,7 @@
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/test_support/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/common/message_port/message_port_channel.h"
+#include "third_party/blink/public/common/message_port/message_port_channel.h"
 
 using blink::MessagePortChannel;
 
@@ -193,6 +192,10 @@ class MockSharedWorkerFactory : public mojom::SharedWorkerFactory {
       bool pause_on_start,
       const base::UnguessableToken& devtools_worker_token,
       blink::mojom::WorkerContentSettingsProxyPtr content_settings,
+      mojom::ServiceWorkerProviderInfoForSharedWorkerPtr
+          service_worker_provider_info,
+      network::mojom::URLLoaderFactoryAssociatedPtrInfo
+          script_loader_factory_ptr_info,
       mojom::SharedWorkerHostPtr host,
       mojom::SharedWorkerRequest request,
       service_manager::mojom::InterfaceProviderPtr interface_provider)

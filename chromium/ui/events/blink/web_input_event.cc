@@ -68,7 +68,7 @@ blink::WebGestureEvent MakeWebGestureEventFromUIEvent(
 // construct our pre-translated events.
 
 blink::WebMouseEvent MakeUntranslatedWebMouseEventFromNativeEvent(
-    const base::NativeEvent& native_event,
+    const PlatformEvent& native_event,
     const base::TimeTicks& time_stamp,
     blink::WebPointerProperties::PointerType pointer_type) {
   return WebMouseEventBuilder::Build(
@@ -77,7 +77,7 @@ blink::WebMouseEvent MakeUntranslatedWebMouseEventFromNativeEvent(
 }
 
 blink::WebMouseWheelEvent MakeUntranslatedWebMouseWheelEventFromNativeEvent(
-    const base::NativeEvent& native_event,
+    const PlatformEvent& native_event,
     const base::TimeTicks& time_stamp,
     blink::WebPointerProperties::PointerType pointer_type) {
   return WebMouseWheelEventBuilder::Build(
@@ -149,6 +149,44 @@ blink::WebMouseWheelEvent MakeWebMouseWheelEventFromUiEvent(
 
   webkit_event.pointer_type =
       EventPointerTypeToWebPointerType(event.pointer_details().pointer_type);
+
+  switch (event.scroll_event_phase()) {
+    case ui::ScrollEventPhase::kNone:
+      webkit_event.phase = blink::WebMouseWheelEvent::kPhaseNone;
+      break;
+    case ui::ScrollEventPhase::kBegan:
+      webkit_event.phase = blink::WebMouseWheelEvent::kPhaseBegan;
+      break;
+    case ui::ScrollEventPhase::kUpdate:
+      webkit_event.phase = blink::WebMouseWheelEvent::kPhaseChanged;
+      break;
+    case ui::ScrollEventPhase::kEnd:
+      webkit_event.phase = blink::WebMouseWheelEvent::kPhaseEnded;
+      break;
+    default:
+      NOTREACHED();
+  }
+
+  switch (event.momentum_phase()) {
+    case ui::EventMomentumPhase::NONE:
+      webkit_event.momentum_phase = blink::WebMouseWheelEvent::kPhaseNone;
+      break;
+    case ui::EventMomentumPhase::BEGAN:
+      webkit_event.momentum_phase = blink::WebMouseWheelEvent::kPhaseBegan;
+      break;
+    case ui::EventMomentumPhase::MAY_BEGIN:
+      webkit_event.momentum_phase = blink::WebMouseWheelEvent::kPhaseMayBegin;
+      break;
+    case ui::EventMomentumPhase::INERTIAL_UPDATE:
+      webkit_event.momentum_phase = blink::WebMouseWheelEvent::kPhaseChanged;
+      break;
+    case ui::EventMomentumPhase::END:
+      webkit_event.momentum_phase = blink::WebMouseWheelEvent::kPhaseEnded;
+      break;
+    default:
+      NOTREACHED();
+  }
+
   return webkit_event;
 }
 
@@ -171,8 +209,8 @@ blink::WebGestureEvent MakeWebGestureEventFromUiEvent(
 
   blink::WebGestureEvent webkit_event(
       type, EventFlagsToWebEventModifiers(event.flags()),
-      EventTimeStampToSeconds(event.time_stamp()));
-  webkit_event.source_device = blink::kWebGestureDeviceTouchpad;
+      EventTimeStampToSeconds(event.time_stamp()),
+      blink::kWebGestureDeviceTouchpad);
   if (event.type() == ET_SCROLL_FLING_START) {
     webkit_event.data.fling_start.velocity_x = event.x_offset();
     webkit_event.data.fling_start.velocity_y = event.y_offset();
@@ -193,13 +231,13 @@ blink::WebMouseWheelEvent MakeWebMouseWheelEventFromUiEvent(
 // information cleanly and consistently.
 //
 // The only place where an Event's data differs from what the underlying
-// base::NativeEvent would provide is position data. We would like to provide
+// PlatformEvent would provide is position data. We would like to provide
 // coordinates relative to its hosting window, rather than the top level
 // platform window. To do this a callback is accepted to allow for clients to
 // map the coordinates.
 //
 // The approach is to fully construct a blink::WebInputEvent from the
-// Event's base::NativeEvent, and then replace the coordinate fields with
+// Event's PlatformEvent, and then replace the coordinate fields with
 // the translated values from the Event.
 //
 // The exception is mouse events on linux. The MouseEvent contains enough
@@ -312,7 +350,7 @@ blink::WebKeyboardEvent MakeWebKeyboardEvent(const KeyEvent& event) {
   blink::WebKeyboardEvent webkit_event = MakeWebKeyboardEventFromUiEvent(event);
 #if defined(OS_WIN)
   if (event.HasNativeEvent()) {
-    const base::NativeEvent& native_event = event.native_event();
+    const PlatformEvent& native_event = event.native_event();
 
     // System key events are explicitly distinguished, under Windows.
     webkit_event.is_system_key = native_event.message == WM_SYSCHAR ||
@@ -332,13 +370,11 @@ blink::WebGestureEvent MakeWebGestureEvent(
         screen_location_callback) {
   blink::WebGestureEvent gesture_event = MakeWebGestureEventFromUIEvent(event);
 
-  gesture_event.x = event.x();
-  gesture_event.y = event.y();
+  gesture_event.SetPositionInWidget(event.location_f());
 
   const gfx::PointF screen_point =
       GetScreenLocationFromEvent(event, screen_location_callback);
-  gesture_event.global_x = screen_point.x();
-  gesture_event.global_y = screen_point.y();
+  gesture_event.SetPositionInScreen(screen_point);
 
   return gesture_event;
 }
@@ -348,13 +384,11 @@ blink::WebGestureEvent MakeWebGestureEvent(
     const base::Callback<gfx::PointF(const LocatedEvent& event)>&
         screen_location_callback) {
   blink::WebGestureEvent gesture_event = MakeWebGestureEventFromUiEvent(event);
-  gesture_event.x = event.x();
-  gesture_event.y = event.y();
+  gesture_event.SetPositionInWidget(event.location_f());
 
   const gfx::PointF screen_point =
       GetScreenLocationFromEvent(event, screen_location_callback);
-  gesture_event.global_x = screen_point.x();
-  gesture_event.global_y = screen_point.y();
+  gesture_event.SetPositionInScreen(screen_point);
 
   return gesture_event;
 }
@@ -363,10 +397,9 @@ blink::WebGestureEvent MakeWebGestureEventFlingCancel() {
   blink::WebGestureEvent gesture_event(
       blink::WebInputEvent::kGestureFlingCancel,
       blink::WebInputEvent::kNoModifiers,
-      EventTimeStampToSeconds(EventTimeForNow()));
-
+      EventTimeStampToSeconds(EventTimeForNow()),
+      blink::kWebGestureDeviceTouchpad);
   // All other fields are ignored on a GestureFlingCancel event.
-  gesture_event.source_device = blink::kWebGestureDeviceTouchpad;
   return gesture_event;
 }
 
@@ -387,7 +420,7 @@ blink::WebMouseEvent MakeWebMouseEventFromUiEvent(const MouseEvent& event) {
       // NotifyVirtual events are created for intermediate windows that the
       // pointer crosses through. These occur when middle clicking.
       // Change these into mouse move events.
-      const base::NativeEvent& native_event = event.native_event();
+      const PlatformEvent& native_event = event.native_event();
 
       if (native_event && native_event->type == LeaveNotify &&
           native_event->xcrossing.detail == NotifyVirtual) {
@@ -463,6 +496,9 @@ blink::WebMouseWheelEvent MakeWebMouseWheelEventFromUiEvent(
 
   webkit_event.delta_x = event.x_offset();
   webkit_event.delta_y = event.y_offset();
+
+  if (event.flags() & ui::EF_PRECISION_SCROLLING_DELTA)
+    webkit_event.has_precise_scrolling_deltas = true;
 
   webkit_event.wheel_ticks_x =
       webkit_event.delta_x / MouseWheelEvent::kWheelDelta;

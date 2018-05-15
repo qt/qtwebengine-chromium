@@ -16,7 +16,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
 #include "content/common/content_export.h"
 #include "content/common/cursors/webcursor.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/blink/public/platform/web_input_event.h"
 #include "ui/events/event.h"
 #include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/events/gestures/gesture_types.h"
@@ -111,10 +111,6 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
                         const gfx::Range& range) override;
   void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) override;
-  void SubmitCompositorFrame(
-      const viz::LocalSurfaceId& local_surface_id,
-      viz::CompositorFrame frame,
-      viz::mojom::HitTestRegionListPtr hit_test_region_list) override;
 #if defined(USE_AURA)
   void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                               InputEventAckState ack_result) override;
@@ -134,10 +130,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   // RenderWidgetHostView implementation.
   void SetActive(bool active) override;
   void ShowDefinitionForSelection() override;
-  bool SupportsSpeech() const override;
   void SpeakSelection() override;
-  bool IsSpeaking() const override;
-  void StopSpeaking() override;
 #endif  // defined(OS_MACOSX)
 
   void WheelEventAck(const blink::WebMouseWheelEvent& event,
@@ -154,8 +147,13 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
 
   void GetScreenInfo(ScreenInfo* screen_info) const override;
 
-  void ResizeDueToAutoResize(const gfx::Size& new_size,
-                             uint64_t sequence_number) override;
+  void EnableAutoResize(const gfx::Size& min_size,
+                        const gfx::Size& max_size) override;
+  void DisableAutoResize(const gfx::Size& new_size) override;
+
+  viz::ScopedSurfaceIdAllocator ResizeDueToAutoResize(
+      const gfx::Size& new_size,
+      uint64_t sequence_number) override;
 
  private:
   friend class RenderWidgetHostView;

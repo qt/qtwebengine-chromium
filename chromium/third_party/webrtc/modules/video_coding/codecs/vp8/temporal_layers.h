@@ -15,6 +15,7 @@
 #include <vector>
 #include <memory>
 
+#include "common_types.h"  // NOLINT(build/include)
 #include "typedefs.h"  // NOLINT(build/include)
 
 #define VP8_TS_MAX_PERIODICITY 16
@@ -35,6 +36,7 @@ struct Vp8EncoderConfig {
   unsigned int rc_max_quantizer;
 };
 
+class TemporalLayersChecker;
 class TemporalLayers {
  public:
   enum BufferFlags {
@@ -95,6 +97,13 @@ class TemporalLayers {
                 bool freeze_entropy);
   };
 
+  static std::unique_ptr<TemporalLayers> CreateTemporalLayers(
+      const VideoCodec& codec,
+      size_t spatial_id);
+  static std::unique_ptr<TemporalLayersChecker> CreateTemporalLayersChecker(
+      const VideoCodec& codec,
+      size_t spatial_id);
+
   // Factory for TemporalLayer strategy. Default behavior is a fixed pattern
   // of temporal layers. See default_temporal_layers.cc
   virtual ~TemporalLayers() {}
@@ -103,11 +112,9 @@ class TemporalLayers {
   // and/or update the reference buffers.
   virtual FrameConfig UpdateLayerConfig(uint32_t timestamp) = 0;
 
-  // Update state based on new bitrate target and incoming framerate.
-  // Returns the bitrate allocation for the active temporal layers.
-  virtual std::vector<uint32_t> OnRatesUpdated(int bitrate_kbps,
-                                               int max_bitrate_kbps,
-                                               int framerate) = 0;
+  // New target bitrate, per temporal layer.
+  virtual void OnRatesUpdated(const std::vector<uint32_t>& bitrates_bps,
+                              int framerate_fps) = 0;
 
   // Update the encoder configuration with target bitrates or other parameters.
   // Returns true iff the configuration was actually modified.
@@ -120,70 +127,23 @@ class TemporalLayers {
       uint32_t timestamp) = 0;
 
   virtual void FrameEncoded(unsigned int size, int qp) = 0;
-
-  // Returns the current tl0_pic_idx, so it can be reused in future
-  // instantiations.
-  virtual uint8_t Tl0PicIdx() const = 0;
 };
 
-class TemporalLayersListener;
-class TemporalLayersChecker;
-
+// TODO(webrtc:9012): Remove TemporalLayersFactory type and field once all
+// upstream usage is gone.
 class TemporalLayersFactory {
  public:
-  TemporalLayersFactory() : listener_(nullptr) {}
-  virtual ~TemporalLayersFactory() {}
-  virtual TemporalLayers* Create(int simulcast_id,
-                                 int temporal_layers,
-                                 uint8_t initial_tl0_pic_idx) const;
-
-  // Creates helper class which performs online checks of a correctness of
-  // temporal layers dependencies returned by TemporalLayers class created in
-  // the same factory.
-  virtual std::unique_ptr<TemporalLayersChecker> CreateChecker(
-      int simulcast_id,
-      int temporal_layers,
-      uint8_t initial_tl0_pic_idx) const;
-
-  void SetListener(TemporalLayersListener* listener);
-
- protected:
-  TemporalLayersListener* listener_;
+  TemporalLayersFactory() = default;
+  virtual ~TemporalLayersFactory() = default;
 };
 
-class ScreenshareTemporalLayersFactory : public webrtc::TemporalLayersFactory {
- public:
-  ScreenshareTemporalLayersFactory() {}
-  virtual ~ScreenshareTemporalLayersFactory() {}
-
-  webrtc::TemporalLayers* Create(int simulcast_id,
-                                 int num_temporal_layers,
-                                 uint8_t initial_tl0_pic_idx) const override;
-
-  // Creates helper class which performs online checks of a correctness of
-  // temporal layers dependencies returned by TemporalLayers class created in
-  // the same factory.
-  std::unique_ptr<webrtc::TemporalLayersChecker> CreateChecker(
-      int simulcast_id,
-      int temporal_layers,
-      uint8_t initial_tl0_pic_idx) const override;
-};
-
-class TemporalLayersListener {
- public:
-  TemporalLayersListener() {}
-  virtual ~TemporalLayersListener() {}
-
-  virtual void OnTemporalLayersCreated(int simulcast_id,
-                                       TemporalLayers* layers) = 0;
-};
 
 // Used only inside RTC_DCHECK(). It checks correctness of temporal layers
 // dependencies and sync bits. The only method of this class is called after
 // each UpdateLayersConfig() of a corresponding TemporalLayers class.
 class TemporalLayersChecker {
  public:
-  TemporalLayersChecker(int num_temporal_layers, uint8_t initial_tl0_pic_idx);
+  explicit TemporalLayersChecker(int num_temporal_layers);
   virtual ~TemporalLayersChecker() {}
 
   virtual bool CheckTemporalConfig(

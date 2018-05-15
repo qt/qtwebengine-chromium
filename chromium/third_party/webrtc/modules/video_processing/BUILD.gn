@@ -78,7 +78,7 @@ if (build_video_processing_sse2) {
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
 
-    if (is_posix) {
+    if (is_posix || is_fuchsia) {
       cflags = [ "-msse2" ]
     }
   }
@@ -112,6 +112,7 @@ if (rtc_include_tests) {
     deps = [
       ":video_processing",
       "../../common_video:common_video",
+      "../../test:fileutils",
       "../../test:test_support",
       "../../test:video_test_common",
     ]

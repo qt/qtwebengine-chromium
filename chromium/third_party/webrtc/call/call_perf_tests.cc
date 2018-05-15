@@ -18,6 +18,7 @@
 #include "call/video_config.h"
 #include "logging/rtc_event_log/rtc_event_log.h"
 #include "modules/audio_coding/include/audio_coding_module.h"
+#include "modules/audio_device/include/test_audio_device.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #include "modules/rtp_rtcp/include/rtp_header_parser.h"
 #include "rtc_base/bitrateallocationstrategy.h"
@@ -29,7 +30,6 @@
 #include "test/direct_transport.h"
 #include "test/drifting_clock.h"
 #include "test/encoder_settings.h"
-#include "test/fake_audio_device.h"
 #include "test/fake_encoder.h"
 #include "test/field_trial.h"
 #include "test/frame_generator.h"
@@ -42,7 +42,6 @@
 #include "video/transport_adapter.h"
 
 using webrtc::test::DriftingClock;
-using webrtc::test::FakeAudioDevice;
 
 namespace webrtc {
 
@@ -170,10 +169,11 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
 
   task_queue_.SendTask([&]() {
     metrics::Reset();
-    rtc::scoped_refptr<FakeAudioDevice> fake_audio_device =
-        new rtc::RefCountedObject<FakeAudioDevice>(
-            FakeAudioDevice::CreatePulsedNoiseCapturer(256, 48000),
-            FakeAudioDevice::CreateDiscardRenderer(48000), audio_rtp_speed);
+    rtc::scoped_refptr<TestAudioDeviceModule> fake_audio_device =
+        TestAudioDeviceModule::CreateTestAudioDeviceModule(
+            TestAudioDeviceModule::CreatePulsedNoiseCapturer(256, 48000),
+            TestAudioDeviceModule::CreateDiscardRenderer(48000),
+            audio_rtp_speed);
     EXPECT_EQ(0, fake_audio_device->Init());
 
     AudioState::Config send_audio_state_config;
@@ -243,7 +243,7 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
     audio_recv_config.rtp.remote_ssrc = kAudioSendSsrc;
     audio_recv_config.rtp.local_ssrc = kAudioRecvSsrc;
     audio_recv_config.sync_group = kSyncGroup;
-    audio_recv_config.decoder_factory = decoder_factory_;
+    audio_recv_config.decoder_factory = audio_decoder_factory_;
     audio_recv_config.decoder_map = {
         {kAudioSendPayloadType, {"ISAC", 16000, 1}}};
 
@@ -658,7 +658,6 @@ TEST_F(CallPerfTest, NoPadWithoutMinTransmitBitrate) {
 TEST_F(CallPerfTest, MAYBE_KeepsHighBitrateWhenReconfiguringSender) {
   static const uint32_t kInitialBitrateKbps = 400;
   static const uint32_t kReconfigureThresholdKbps = 600;
-  static const uint32_t kPermittedReconfiguredBitrateDiffKbps = 100;
 
   class VideoStreamFactory
       : public VideoEncoderConfig::VideoStreamFactoryInterface {
@@ -708,9 +707,7 @@ TEST_F(CallPerfTest, MAYBE_KeepsHighBitrateWhenReconfiguringSender) {
         EXPECT_EQ(2 * kDefaultWidth, config->width);
         EXPECT_EQ(2 * kDefaultHeight, config->height);
         EXPECT_GE(last_set_bitrate_kbps_, kReconfigureThresholdKbps);
-        EXPECT_GT(
-            config->startBitrate,
-            last_set_bitrate_kbps_ - kPermittedReconfiguredBitrateDiffKbps)
+        EXPECT_GT(config->startBitrate, kReconfigureThresholdKbps)
             << "Encoder reconfigured with bitrate too far away from last set.";
         observation_complete_.Set();
       }

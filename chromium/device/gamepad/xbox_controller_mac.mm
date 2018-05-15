@@ -11,6 +11,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOCFPlugIn.h>
 #include <IOKit/IOKitLib.h>
+#include <IOKit/IOMessage.h>
 #include <IOKit/usb/IOUSBLib.h>
 #include <IOKit/usb/USB.h>
 
@@ -33,6 +34,8 @@ const int kXbox360ControlEndpoint = 2;
 
 const int kXboxOneReadEndpoint = 2;
 const int kXboxOneControlEndpoint = 1;
+
+const double kXboxOneMaxEffectDurationMillis = 2500;  // 2.5 seconds
 
 enum {
   STATUS_MESSAGE_BUTTONS = 0,
@@ -150,8 +153,8 @@ struct XboxOneRumbleData {
   uint8_t rumble_mask;
   uint8_t trigger_left;
   uint8_t trigger_right;
-  uint8_t weak_magnitude;
   uint8_t strong_magnitude;
+  uint8_t weak_magnitude;
   uint8_t duration;
   uint8_t period;
   uint8_t extra;
@@ -295,19 +298,7 @@ XboxControllerMac::ControllerType ControllerTypeFromIds(int vendor_id,
 }  // namespace
 
 XboxControllerMac::XboxControllerMac(Delegate* delegate)
-    : device_(nullptr),
-      interface_(nullptr),
-      device_is_open_(false),
-      interface_is_open_(false),
-      read_buffer_size_(0),
-      led_pattern_(LED_NUM_PATTERNS),
-      location_id_(0),
-      delegate_(delegate),
-      controller_type_(UNKNOWN_CONTROLLER),
-      read_endpoint_(0),
-      control_endpoint_(0),
-      counter_(0),
-      sequence_id_(0) {}
+    : delegate_(delegate) {}
 
 XboxControllerMac::~XboxControllerMac() {
   if (playing_effect_callback_)
@@ -379,11 +370,24 @@ void XboxControllerMac::StartVibration(int sequence_id,
     return;
   SetVibration(strong_magnitude, weak_magnitude);
 
-  playing_effect_task_runner_->PostDelayedTask(
-      FROM_HERE,
-      base::BindOnce(&XboxControllerMac::StopVibration, base::Unretained(this),
-                     sequence_id),
-      base::TimeDelta::FromMillisecondsD(duration));
+  // The Xbox One controller rumble packet specifies a duration for the rumble
+  // effect with a maximum length of about 3 seconds. Support longer durations
+  // by sending a second rumble packet to extend the duration.
+  if (duration > kXboxOneMaxEffectDurationMillis) {
+    double remaining = duration - kXboxOneMaxEffectDurationMillis;
+    playing_effect_task_runner_->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&XboxControllerMac::StartVibration,
+                       base::Unretained(this), sequence_id, remaining,
+                       strong_magnitude, weak_magnitude),
+        base::TimeDelta::FromMillisecondsD(kXboxOneMaxEffectDurationMillis));
+  } else {
+    playing_effect_task_runner_->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&XboxControllerMac::StopVibration,
+                       base::Unretained(this), sequence_id),
+        base::TimeDelta::FromMillisecondsD(duration));
+  }
 }
 
 void XboxControllerMac::StopVibration(int sequence_id) {
@@ -414,31 +418,32 @@ void XboxControllerMac::SetVibration(double strong_magnitude,
   }
 }
 
-bool XboxControllerMac::OpenDevice(io_service_t service) {
+XboxControllerMac::OpenDeviceResult XboxControllerMac::OpenDevice(
+    io_service_t service) {
   IOCFPlugInInterface** plugin;
   SInt32 score;  // Unused, but required for IOCreatePlugInInterfaceForService.
   kern_return_t kr = IOCreatePlugInInterfaceForService(
       service, kIOUSBDeviceUserClientTypeID, kIOCFPlugInInterfaceID, &plugin,
       &score);
   if (kr != KERN_SUCCESS)
-    return false;
+    return OPEN_FAILED;
   base::mac::ScopedIOPluginInterface<IOCFPlugInInterface> plugin_ref(plugin);
 
   HRESULT res = (*plugin)->QueryInterface(
       plugin, CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID320),
       (LPVOID*)&device_);
   if (!SUCCEEDED(res) || !device_)
-    return false;
+    return OPEN_FAILED;
 
   UInt16 vendor_id;
   kr = (*device_)->GetDeviceVendor(device_, &vendor_id);
   if (kr != KERN_SUCCESS || vendor_id != kVendorMicrosoft)
-    return false;
+    return OPEN_FAILED;
 
   UInt16 product_id;
   kr = (*device_)->GetDeviceProduct(device_, &product_id);
   if (kr != KERN_SUCCESS)
-    return false;
+    return OPEN_FAILED;
 
   controller_type_ = ControllerTypeFromIds(vendor_id, product_id);
 
@@ -464,13 +469,20 @@ bool XboxControllerMac::OpenDevice(io_service_t service) {
       request.bAlternateSetting = kIOUSBFindInterfaceDontCare;
       break;
     default:
-      return false;
+      return OPEN_FAILED;
   }
 
   // Open the device and configure it.
   kr = (*device_)->USBDeviceOpen(device_);
-  if (kr != KERN_SUCCESS)
-    return false;
+  if (kr == kIOReturnExclusiveAccess) {
+    // USBDeviceOpen may fail with kIOReturnExclusiveAccess if the device has
+    // already been opened by another process. Usually this is temporary and
+    // the device will soon become available. Signal to the data fetcher that
+    // it should retry.
+    return OPEN_FAILED_EXCLUSIVE_ACCESS;
+  } else if (kr != KERN_SUCCESS) {
+    return OPEN_FAILED;
+  }
   device_is_open_ = true;
 
   // Xbox controllers have one configuration option which has configuration
@@ -478,10 +490,10 @@ bool XboxControllerMac::OpenDevice(io_service_t service) {
   IOUSBConfigurationDescriptorPtr config_desc;
   kr = (*device_)->GetConfigurationDescriptorPtr(device_, 0, &config_desc);
   if (kr != KERN_SUCCESS)
-    return false;
+    return OPEN_FAILED;
   kr = (*device_)->SetConfiguration(device_, config_desc->bConfigurationValue);
   if (kr != KERN_SUCCESS)
-    return false;
+    return OPEN_FAILED;
 
   // The device has 4 interfaces. They are as follows:
   // Protocol 1:
@@ -500,14 +512,14 @@ bool XboxControllerMac::OpenDevice(io_service_t service) {
   io_iterator_t iter;
   kr = (*device_)->CreateInterfaceIterator(device_, &request, &iter);
   if (kr != KERN_SUCCESS)
-    return false;
+    return OPEN_FAILED;
   base::mac::ScopedIOObject<io_iterator_t> iter_ref(iter);
 
   // There should be exactly one USB interface which matches the requested
   // settings.
   io_service_t usb_interface = IOIteratorNext(iter);
   if (!usb_interface)
-    return false;
+    return OPEN_FAILED;
 
   // We need to make an InterfaceInterface to communicate with the device
   // endpoint. This is the same process as earlier: first make a
@@ -518,7 +530,7 @@ bool XboxControllerMac::OpenDevice(io_service_t service) {
       usb_interface, kIOUSBInterfaceUserClientTypeID, kIOCFPlugInInterfaceID,
       &plugin_interface, &score);
   if (kr != KERN_SUCCESS || !plugin_interface)
-    return false;
+    return OPEN_FAILED;
   base::mac::ScopedIOPluginInterface<IOCFPlugInInterface> interface_ref(
       plugin_interface);
 
@@ -536,18 +548,18 @@ bool XboxControllerMac::OpenDevice(io_service_t service) {
                              (LPVOID*)&interface_);
 
   if (!SUCCEEDED(res) || !interface_)
-    return false;
+    return OPEN_FAILED;
 
   // Actually open the interface.
   kr = (*interface_)->USBInterfaceOpen(interface_);
   if (kr != KERN_SUCCESS)
-    return false;
+    return OPEN_FAILED;
   interface_is_open_ = true;
 
   CFRunLoopSourceRef source_ref;
   kr = (*interface_)->CreateInterfaceAsyncEventSource(interface_, &source_ref);
   if (kr != KERN_SUCCESS || !source_ref)
-    return false;
+    return OPEN_FAILED;
   source_.reset(source_ref);
   CFRunLoopAddSource(CFRunLoopGetCurrent(), source_, kCFRunLoopDefaultMode);
 
@@ -556,7 +568,7 @@ bool XboxControllerMac::OpenDevice(io_service_t service) {
   uint8_t num_endpoints;
   kr = (*interface_)->GetNumEndpoints(interface_, &num_endpoints);
   if (kr != KERN_SUCCESS || num_endpoints < 2)
-    return false;
+    return OPEN_FAILED;
 
   for (int i = 1; i <= 2; i++) {
     uint8_t direction;
@@ -569,16 +581,16 @@ bool XboxControllerMac::OpenDevice(io_service_t service) {
              ->GetPipeProperties(interface_, i, &direction, &number,
                                  &transfer_type, &max_packet_size, &interval);
     if (kr != KERN_SUCCESS || transfer_type != kUSBInterrupt)
-      return false;
+      return OPEN_FAILED;
     if (i == read_endpoint_) {
       if (direction != kUSBIn)
-        return false;
+        return OPEN_FAILED;
       read_buffer_.reset(new uint8_t[max_packet_size]);
       read_buffer_size_ = max_packet_size;
       QueueRead();
     } else if (i == control_endpoint_) {
       if (direction != kUSBOut)
-        return false;
+        return OPEN_FAILED;
       if (controller_type_ == XBOX_ONE_CONTROLLER_2013 ||
           controller_type_ == XBOX_ONE_CONTROLLER_2015 ||
           controller_type_ == XBOX_ONE_ELITE_CONTROLLER ||
@@ -592,9 +604,9 @@ bool XboxControllerMac::OpenDevice(io_service_t service) {
   // one USB hub and attached to another, the location ID will change).
   kr = (*device_)->GetLocationID(device_, &location_id_);
   if (kr != KERN_SUCCESS)
-    return false;
+    return OPEN_FAILED;
 
-  return true;
+  return OPEN_SUCCEEDED;
 }
 
 void XboxControllerMac::SetLEDPattern(LEDPattern pattern) {
@@ -873,8 +885,8 @@ void XboxControllerMac::WriteXboxOneRumble(uint8_t strong_magnitude,
   // Set rumble intensities.
   rumble_data->trigger_left = 0x00;
   rumble_data->trigger_right = 0x00;
-  rumble_data->weak_magnitude = weak_magnitude;
   rumble_data->strong_magnitude = strong_magnitude;
+  rumble_data->weak_magnitude = weak_magnitude;
 
   kern_return_t kr =
       (*interface_)

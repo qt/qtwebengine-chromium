@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/macros.h"
+#include "base/memory/scoped_refptr.h"
 #include "net/base/completion_callback.h"
 #include "net/base/completion_once_callback.h"
 #include "net/base/net_errors.h"
@@ -22,6 +23,7 @@
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/socket_tag.h"
 #include "net/socket/socket_test_util.h"
+#include "net/socket/websocket_endpoint_lock_manager.h"
 #include "net/spdy/chromium/spdy_session.h"
 #include "net/spdy/chromium/spdy_session_key.h"
 #include "net/spdy/chromium/spdy_test_util_common.h"
@@ -50,17 +52,6 @@ namespace net {
 namespace {
 
 enum HandshakeStreamType { BASIC_HANDSHAKE_STREAM, HTTP2_HANDSHAKE_STREAM };
-
-std::string WebSocketExtraHeadersToString(WebSocketExtraHeaders headers) {
-  std::string answer;
-  for (const auto& header : headers) {
-    answer.append(header.first);
-    answer.append(": ");
-    answer.append(header.second);
-    answer.append("\r\n");
-  }
-  return answer;
-}
 
 // This class encapsulates the details of creating a mock ClientSocketHandle.
 class MockClientSocketHandleFactory {
@@ -166,7 +157,8 @@ class WebSocketHandshakeStreamCreateHelperTest
                     WebSocketExtraHeadersToString(extra_response_headers)));
 
         std::unique_ptr<WebSocketHandshakeStreamBase> handshake =
-            create_helper.CreateBasicStream(std::move(socket_handle), false);
+            create_helper.CreateBasicStream(std::move(socket_handle), false,
+                                            &websocket_endpoint_lock_manager_);
 
         // If in future the implementation type returned by CreateBasicStream()
         // changes, this static_cast will be wrong. However, in that case the
@@ -196,7 +188,7 @@ class WebSocketHandshakeStreamCreateHelperTest
       case HTTP2_HANDSHAKE_STREAM: {
         SpdyTestUtil spdy_util;
         SpdyHeaderBlock request_header_block = WebSocketHttp2Request(
-            kPath, "www.example.org:443", kOrigin, extra_request_headers);
+            kPath, "www.example.org", kOrigin, extra_request_headers);
         SpdySerializedFrame request_headers(spdy_util.ConstructSpdyHeaders(
             1, std::move(request_header_block), DEFAULT_PRIORITY, false));
         MockWrite writes[] = {CreateMockWrite(request_headers, 0)};
@@ -214,7 +206,7 @@ class WebSocketHandshakeStreamCreateHelperTest
 
         SSLSocketDataProvider ssl(ASYNC, OK);
         ssl.ssl_info.cert =
-            ImportCertFromFile(GetTestCertsDirectory(), "spdy_pooling.pem");
+            ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem");
 
         SpdySessionDependencies session_deps;
         session_deps.socket_factory->AddSocketDataProvider(&data);
@@ -261,6 +253,7 @@ class WebSocketHandshakeStreamCreateHelperTest
   MockClientSocketHandleFactory socket_handle_factory_;
   TestConnectDelegate connect_delegate_;
   StrictMock<MockWebSocketStreamRequest> stream_request_;
+  WebSocketEndpointLockManager websocket_endpoint_lock_manager_;
 };
 
 INSTANTIATE_TEST_CASE_P(,

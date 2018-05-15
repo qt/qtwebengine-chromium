@@ -31,17 +31,16 @@ class TestClientSocketFactory : public ClientSocketFactory {
 
   std::unique_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
-      const RandIntCallback& rand_int_cb,
       NetLog* net_log,
       const NetLogSource& source) override;
 
-  std::unique_ptr<StreamSocket> CreateTransportClientSocket(
+  std::unique_ptr<TransportClientSocket> CreateTransportClientSocket(
       const AddressList& addresses,
       std::unique_ptr<SocketPerformanceWatcher>,
       NetLog*,
       const NetLogSource&) override {
     NOTIMPLEMENTED();
-    return std::unique_ptr<StreamSocket>();
+    return nullptr;
   }
 
   std::unique_ptr<SSLClientSocket> CreateSSLClientSocket(
@@ -181,7 +180,6 @@ bool DnsSessionTest::ExpectEvent(const PoolEvent& expected) {
 std::unique_ptr<DatagramClientSocket>
 TestClientSocketFactory::CreateDatagramClientSocket(
     DatagramSocket::BindType bind_type,
-    const RandIntCallback& rand_int_cb,
     NetLog* net_log,
     const NetLogSource& source) {
   // We're not actually expecting to send or receive any data, so use the

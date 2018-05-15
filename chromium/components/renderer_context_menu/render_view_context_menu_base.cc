@@ -16,8 +16,8 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/menu_item.h"
-#include "ppapi/features/features.h"
-#include "third_party/WebKit/public/web/WebContextMenuData.h"
+#include "ppapi/buildflags/buildflags.h"
+#include "third_party/blink/public/web/web_context_menu_data.h"
 
 using blink::WebContextMenuData;
 using blink::WebString;

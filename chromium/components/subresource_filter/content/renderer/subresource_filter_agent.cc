@@ -24,10 +24,10 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/render_frame.h"
 #include "ipc/ipc_message.h"
-#include "third_party/WebKit/public/platform/WebWorkerFetchContext.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebDocumentLoader.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/blink/public/platform/web_worker_fetch_context.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_document_loader.h"
+#include "third_party/blink/public/web/web_local_frame.h"
 #include "url/url_constants.h"
 
 namespace subresource_filter {
@@ -56,11 +56,6 @@ void SubresourceFilterAgent::SetSubresourceFilterForCommittedLoad(
     std::unique_ptr<blink::WebDocumentSubresourceFilter> filter) {
   blink::WebLocalFrame* web_frame = render_frame()->GetWebFrame();
   web_frame->GetDocumentLoader()->SetSubresourceFilter(filter.release());
-}
-
-void SubresourceFilterAgent::SetIsAdSubframeForDocument(bool is_ad_subframe) {
-  blink::WebLocalFrame* web_frame = render_frame()->GetWebFrame();
-  web_frame->GetDocumentLoader()->SetIsAdSubframe(is_ad_subframe);
 }
 
 void SubresourceFilterAgent::
@@ -207,12 +202,10 @@ void SubresourceFilterAgent::DidCommitProvisionalLoad(
       AsWeakPtr()));
   auto filter = std::make_unique<WebDocumentSubresourceFilterImpl>(
       url::Origin::Create(url), activation_state, std::move(ruleset),
-      std::move(first_disallowed_load_callback));
+      std::move(first_disallowed_load_callback), is_ad_subframe);
 
   filter_for_last_committed_load_ = filter->AsWeakPtr();
   SetSubresourceFilterForCommittedLoad(std::move(filter));
-  if (is_ad_subframe)
-    SetIsAdSubframeForDocument(true);
 }
 
 void SubresourceFilterAgent::DidFailProvisionalLoad(
@@ -246,6 +239,12 @@ void SubresourceFilterAgent::WillCreateWorkerFetchContext(
   base::File ruleset_file = ruleset_dealer_->DuplicateRulesetFile();
   if (!ruleset_file.IsValid())
     return;
+
+  // Propagate the information to the worker whether this is associated with an
+  // ad subframe.
+  bool is_ad_subframe =
+      render_frame()->GetWebFrame()->GetDocumentLoader()->GetIsAdSubframe();
+
   worker_fetch_context->SetSubresourceFilterBuilder(
       std::make_unique<WebDocumentSubresourceFilterImpl::BuilderImpl>(
           url::Origin::Create(GetDocumentURL()),
@@ -253,7 +252,8 @@ void SubresourceFilterAgent::WillCreateWorkerFetchContext(
           std::move(ruleset_file),
           base::BindOnce(&SubresourceFilterAgent::
                              SignalFirstSubresourceDisallowedForCommittedLoad,
-                         AsWeakPtr())));
+                         AsWeakPtr()),
+          is_ad_subframe));
 }
 
 }  // namespace subresource_filter

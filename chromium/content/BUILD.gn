@@ -4,7 +4,7 @@
 
 import("//tools/grit/grit_rule.gni")
 import("//build/config/nacl/config.gni")
-import("//ppapi/features/features.gni")
+import("//ppapi/buildflags/buildflags.gni")
 
 # Applied by targets internal to content.
 config("content_implementation") {
@@ -100,8 +100,8 @@ if (is_component_build) {
     set_sources_assignment_filter(sources_assignment_filter)
     deps = [
       "//base",
-      "//media:media_features",
-      "//sandbox:sandbox_features",
+      "//media:media_buildflags",
+      "//sandbox:sandbox_buildflags",
       "//sandbox/linux:sandbox",
       "//services/service_manager/sandbox",
     ]

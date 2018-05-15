@@ -15,7 +15,6 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
@@ -98,7 +97,8 @@ class StringUploadDataPipeGetter : public mojom::DataPipeGetter {
     std::move(callback).Run(net::OK, upload_string_.length());
     upload_body_pipe_ = std::move(pipe);
     handle_watcher_ = std::make_unique<mojo::SimpleWatcher>(
-        FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL);
+        FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL,
+        base::SequencedTaskRunnerHandle::Get());
     handle_watcher_->Watch(
         upload_body_pipe_.get(),
         // Don't bother watching for close - rely on read pipes for errors.
@@ -203,7 +203,7 @@ class SimpleURLLoaderImpl : public SimpleURLLoader,
   void SetOnRedirectCallback(
       const OnRedirectCallback& on_redirect_callback) override;
   void SetOnResponseStartedCallback(
-      const OnResponseStartedCallback& on_response_started_callback) override;
+      OnResponseStartedCallback on_response_started_callback) override;
   void SetAllowPartialResults(bool allow_partial_results) override;
   void SetAllowHttpErrorResults(bool allow_http_error_results) override;
   void AttachStringForUpload(const std::string& upload_data,
@@ -269,7 +269,6 @@ class SimpleURLLoaderImpl : public SimpleURLLoader,
 
   // mojom::URLLoaderClient implementation;
   void OnReceiveResponse(const ResourceResponseHead& response_head,
-                         const base::Optional<net::SSLInfo>& ssl_info,
                          mojom::DownloadedTempFilePtr downloaded_file) override;
   void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
                          const ResourceResponseHead& response_head) override;
@@ -395,7 +394,8 @@ class BodyReader {
     DCHECK(!body_data_pipe_.is_valid());
     body_data_pipe_ = std::move(body_data_pipe);
     handle_watcher_ = std::make_unique<mojo::SimpleWatcher>(
-        FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL);
+        FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL,
+        base::SequencedTaskRunnerHandle::Get());
     handle_watcher_->Watch(
         body_data_pipe_.get(),
         MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_PEER_CLOSED,
@@ -1093,8 +1093,8 @@ void SimpleURLLoaderImpl::SetOnRedirectCallback(
 }
 
 void SimpleURLLoaderImpl::SetOnResponseStartedCallback(
-    const OnResponseStartedCallback& on_response_started_callback) {
-  on_response_started_callback_ = on_response_started_callback;
+    OnResponseStartedCallback on_response_started_callback) {
+  on_response_started_callback_ = std::move(on_response_started_callback);
 }
 
 void SimpleURLLoaderImpl::SetAllowPartialResults(bool allow_partial_results) {
@@ -1302,7 +1302,6 @@ void SimpleURLLoaderImpl::Retry() {
 
 void SimpleURLLoaderImpl::OnReceiveResponse(
     const ResourceResponseHead& response_head,
-    const base::Optional<net::SSLInfo>& ssl_info,
     mojom::DownloadedTempFilePtr downloaded_file) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (request_state_->response_info) {
@@ -1333,7 +1332,7 @@ void SimpleURLLoaderImpl::OnReceiveResponse(
     // Copy |final_url_| to a stack allocated GURL so it remains valid even if
     // the callback deletes |this|.
     GURL final_url = final_url_;
-    on_response_started_callback_.Run(final_url, response_head);
+    std::move(on_response_started_callback_).Run(final_url, response_head);
     // If deleted by the callback, bail now.
     if (!weak_this)
       return;
@@ -1376,7 +1375,7 @@ void SimpleURLLoaderImpl::OnDataDownloaded(int64_t data_length,
 
 void SimpleURLLoaderImpl::OnReceiveCachedMetadata(
     const std::vector<uint8_t>& data) {
-  NOTREACHED();
+  // Ignored.
 }
 
 void SimpleURLLoaderImpl::OnTransferSizeUpdated(int32_t transfer_size_diff) {}

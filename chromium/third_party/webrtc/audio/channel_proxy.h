@@ -62,6 +62,7 @@ class ChannelProxy : public RtpPacketSinkInterface {
 
   virtual void SetRTCPStatus(bool enable);
   virtual void SetLocalSSRC(uint32_t ssrc);
+  virtual void SetMid(const std::string& mid, int extension_id);
   virtual void SetRTCP_CNAME(const std::string& c_name);
   virtual void SetNACKStatus(bool enable, int max_packets);
   virtual void SetSendAudioLevelIndicationStatus(bool enable, int id);
@@ -110,7 +111,6 @@ class ChannelProxy : public RtpPacketSinkInterface {
                           RtpReceiver** rtp_receiver) const;
   virtual uint32_t GetPlayoutTimestamp() const;
   virtual void SetMinimumPlayoutDelay(int delay_ms);
-  virtual void SetRtcpRttStats(RtcpRttStats* rtcp_rtt_stats);
   virtual bool GetRecCodec(CodecInst* codec_inst) const;
   virtual void OnTwccBasedUplinkPacketLossRate(float packet_loss_rate);
   virtual void OnRecoverableUplinkPacketLossRate(

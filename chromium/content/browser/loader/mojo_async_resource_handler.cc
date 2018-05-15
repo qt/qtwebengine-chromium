@@ -12,7 +12,6 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/time/time.h"
 #include "content/browser/loader/downloaded_temp_file_impl.h"
 #include "content/browser/loader/navigation_metrics.h"
@@ -104,7 +103,9 @@ MojoAsyncResourceHandler::MojoAsyncResourceHandler(
       rdh_(rdh),
       binding_(this, std::move(mojo_request)),
       url_loader_options_(url_loader_options),
-      handle_watcher_(FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL),
+      handle_watcher_(FROM_HERE,
+                      mojo::SimpleWatcher::ArmingPolicy::MANUAL,
+                      base::SequencedTaskRunnerHandle::Get()),
       url_loader_client_(std::move(url_loader_client)),
       weak_factory_(this) {
   DCHECK(IsResourceTypeFrame(resource_type) ||
@@ -192,12 +193,13 @@ void MojoAsyncResourceHandler::OnResponseStarted(
                                      response->head.download_file_path);
   }
 
-  base::Optional<net::SSLInfo> ssl_info;
-  if (url_loader_options_ &
-      network::mojom::kURLLoadOptionSendSSLInfoWithResponse)
-    ssl_info = request()->ssl_info();
+  if ((url_loader_options_ &
+       network::mojom::kURLLoadOptionSendSSLInfoWithResponse) &&
+      request()->ssl_info().cert) {
+    response->head.ssl_info = request()->ssl_info();
+  }
 
-  url_loader_client_->OnReceiveResponse(response->head, std::move(ssl_info),
+  url_loader_client_->OnReceiveResponse(response->head,
                                         std::move(downloaded_file_ptr));
 
   net::IOBufferWithSize* metadata = GetResponseMetadata(request());
@@ -486,6 +488,11 @@ void MojoAsyncResourceHandler::OnResponseCompleted(
 
   network::URLLoaderCompletionStatus loader_status;
   loader_status.error_code = error_code;
+  if (error_code == net::ERR_QUIC_PROTOCOL_ERROR) {
+    net::NetErrorDetails details;
+    request()->PopulateNetErrorDetails(&details);
+    loader_status.extended_error_code = details.quic_connection_error;
+  }
   loader_status.exists_in_cache = request()->response_info().was_cached;
   loader_status.completion_time = base::TimeTicks::Now();
   loader_status.encoded_data_length = request()->GetTotalReceivedBytes();

@@ -6,14 +6,13 @@
 
 #include "base/android/build_info.h"
 #include "base/command_line.h"
-#include "base/memory/ptr_util.h"
 #include "cc/layers/layer.h"
 #include "components/viz/common/quads/compositor_frame_metadata.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/use_zoom_for_dsf_policy.h"
-#include "third_party/WebKit/public/platform/WebGestureEvent.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/blink/public/platform/web_gesture_event.h"
+#include "third_party/blink/public/platform/web_input_event.h"
 #include "ui/android/edge_effect.h"
 #include "ui/android/edge_effect_l.h"
 #include "ui/android/resources/resource_manager.h"
@@ -33,18 +32,17 @@ using ui::OverscrollRefresh;
 namespace content {
 namespace {
 
-// Used for conditional creation of EdgeEffect types for the overscroll glow.
-const int kAndroidLSDKVersion = 21;
-
 // If the glow effect alpha is greater than this value, the refresh effect will
 // be suppressed. This value was experimentally determined to provide a
 // reasonable balance between avoiding accidental refresh activation and
 // minimizing the wait required to refresh after the glow has been triggered.
 const float kMinGlowAlphaToDisableRefreshOnL = 0.085f;
 
+// Used for conditional creation of EdgeEffect types for the overscroll glow.
 bool IsAndroidLOrNewer() {
   static bool android_l_or_newer =
-      base::android::BuildInfo::GetInstance()->sdk_int() >= kAndroidLSDKVersion;
+      base::android::BuildInfo::GetInstance()->sdk_int() >=
+      base::android::SDK_VERSION_LOLLIPOP;
   return android_l_or_newer;
 }
 

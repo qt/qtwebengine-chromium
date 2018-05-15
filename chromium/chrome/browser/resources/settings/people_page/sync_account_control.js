@@ -16,7 +16,7 @@ Polymer({
   behaviors: [WebUIListenerBehavior],
   properties: {
     /**
-     * The current sync status, supplied by SyncBrowserProxy.
+     * The current sync status, supplied by parent element.
      * @type {!settings.SyncStatus}
      */
     syncStatus: Object,
@@ -65,17 +65,37 @@ Polymer({
   /** @private {?settings.SyncBrowserProxy} */
   syncBrowserProxy_: null,
 
+  created: function() {
+    this.syncBrowserProxy_ = settings.SyncBrowserProxyImpl.getInstance();
+  },
+
   /** @override */
   attached: function() {
-    this.syncBrowserProxy_ = settings.SyncBrowserProxyImpl.getInstance();
-    this.syncBrowserProxy_.getSyncStatus().then(
-        this.handleSyncStatus_.bind(this));
     this.syncBrowserProxy_.getStoredAccounts().then(
         this.handleStoredAccounts_.bind(this));
     this.addWebUIListener(
-        'sync-status-changed', this.handleSyncStatus_.bind(this));
-    this.addWebUIListener(
         'stored-accounts-updated', this.handleStoredAccounts_.bind(this));
+  },
+
+  /**
+   * Records the following user actions:
+   * - Signin_Impression_FromSettings and
+   * - Signin_ImpressionWithAccount_FromSettings
+   * - Signin_ImpressionWithNoAccount_FromSettings
+   * @private
+   */
+  recordImpressionUserActions_: function() {
+    assert(!this.syncStatus.signedIn);
+    assert(this.shownAccount_ !== undefined);
+
+    chrome.metricsPrivate.recordUserAction('Signin_Impression_FromSettings');
+    if (this.shownAccount_) {
+      chrome.metricsPrivate.recordUserAction(
+          'Signin_ImpressionWithAccount_FromSettings');
+    } else {
+      chrome.metricsPrivate.recordUserAction(
+          'Signin_ImpressionWithNoAccount_FromSettings');
+    }
   },
 
   /**
@@ -97,6 +117,8 @@ Polymer({
       // Turn off the promo if the user is signed in.
       this.showingPromo = false;
     }
+    if (!this.syncStatus.signedIn && this.shownAccount_ !== undefined)
+      this.recordImpressionUserActions_();
   },
 
   /**
@@ -110,15 +132,34 @@ Polymer({
   },
 
   /**
-   * @param {string} label
-   * @param {string} name
+   * @param {string} syncErrorLabel
+   * @param {string} authErrorLabel
    * @return {string}
    * @private
    */
-  getNameDisplay_: function(label, name) {
-    return this.syncStatus.signedIn ?
-        loadTimeData.substituteString(label, name) :
-        name;
+  getErrorLabel_: function(syncErrorLabel, authErrorLabel) {
+    if (this.syncStatus.hasError) {
+      // Most of the time re-authenticate states are caused by intentional user
+      // action, so they will be displayed differently as other errors.
+      return this.syncStatus.statusAction ==
+              settings.StatusAction.REAUTHENTICATE ?
+          authErrorLabel :
+          syncErrorLabel;
+    }
+
+    return '';
+  },
+
+  /**
+   * @param {string} label
+   * @param {string} account
+   * @return {string}
+   * @private
+   */
+  getAccountLabel_: function(label, account) {
+    return this.syncStatus.signedIn && !this.syncStatus.hasError ?
+        loadTimeData.substituteString(label, account) :
+        account;
   },
 
   /**
@@ -132,20 +173,27 @@ Polymer({
   },
 
   /**
+   * Returned value must match one of iron-icon's settings:(*) icon name.
+   * @return {string}
+   * @private
+   */
+  getSyncIcon_: function() {
+    if (this.syncStatus.hasError) {
+      return this.syncStatus.statusAction ==
+              settings.StatusAction.REAUTHENTICATE ?
+          'sync-disabled' :
+          'sync-problem';
+    }
+
+    return 'sync';
+  },
+
+  /**
    * @param {!Array<!settings.StoredAccount>} accounts
    * @private
    */
   handleStoredAccounts_: function(accounts) {
     this.storedAccounts_ = accounts;
-  },
-
-  /**
-   * Handler for when the sync state is pushed from the browser.
-   * @param {!settings.SyncStatus} syncStatus
-   * @private
-   */
-  handleSyncStatus_: function(syncStatus) {
-    this.syncStatus = syncStatus;
   },
 
   /**
@@ -169,7 +217,12 @@ Polymer({
   /** @private */
   onSyncButtonTap_: function() {
     assert(this.shownAccount_);
-    this.syncBrowserProxy_.startSyncingWithEmail(this.shownAccount_.email);
+    assert(this.storedAccounts_.length > 0);
+    const isDefaultPromoAccount =
+        (this.shownAccount_.email == this.storedAccounts_[0].email);
+
+    this.syncBrowserProxy_.startSyncingWithEmail(
+        this.shownAccount_.email, isDefaultPromoAccount);
   },
 
   /** @private */
@@ -215,8 +268,23 @@ Polymer({
         }
       }
     } else {
-      this.shownAccount_ =
-          this.storedAccounts_ ? this.storedAccounts_[0] : null;
+      const firstStoredAccount =
+          (this.storedAccounts_.length > 0) ? this.storedAccounts_[0] : null;
+
+      // Sign-in impressions should be recorded in the following cases:
+      // 1. When the promo is first shown, i.e. when |shownAccount_| is
+      //   initialized;
+      // 2. When the impression account state changes, i.e. promo impression
+      //   state changes (WithAccount -> WithNoAccount) or
+      //   (WithNoAccount -> WithAccount).
+      const shouldRecordImpression = (this.shownAccount_ === undefined) ||
+          (!this.shownAccount_ && firstStoredAccount) ||
+          (this.shownAccount_ && !firstStoredAccount);
+
+      this.shownAccount_ = firstStoredAccount;
+
+      if (shouldRecordImpression)
+        this.recordImpressionUserActions_();
     }
   }
 });

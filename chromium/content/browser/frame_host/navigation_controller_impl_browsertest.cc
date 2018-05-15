@@ -11,6 +11,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
@@ -19,6 +20,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/histogram_tester.h"
 #include "base/threading/sequenced_task_runner_handle.h"
+#include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 #include "content/browser/frame_host/frame_navigation_entry.h"
 #include "content/browser/frame_host/frame_tree.h"
@@ -28,10 +30,13 @@
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/display_util.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/browser/web_contents/web_contents_view.h"
 #include "content/common/frame_messages.h"
 #include "content/common/page_state_serialization.h"
+#include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
@@ -49,9 +54,11 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/download_test_observer.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
+#include "content/shell/browser/shell_download_manager_delegate.h"
 #include "content/shell/common/shell_switches.h"
 #include "content/test/content_browser_test_utils_internal.h"
 #include "content/test/did_commit_provisional_load_interceptor.h"
@@ -4051,9 +4058,6 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 // replaced data.
 IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
                        ReplacedNavigationEntryData_ClientSideRedirect) {
-  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
-                            ->GetFrameTree()
-                            ->root();
   const NavigationControllerImpl& controller =
       static_cast<const NavigationControllerImpl&>(
           shell()->web_contents()->GetController());
@@ -4063,11 +4067,13 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
       "/navigation_controller/simple_page_1.html"));
 
   {
-    // Load the redirecting page.
-    FrameNavigateParamsCapturer capturer(root);
-    capturer.set_navigations_remaining(2);
-    ASSERT_TRUE(NavigateToURL(shell(), url1));
-    capturer.Wait();
+    TestNavigationManager navigation_manager_1(shell()->web_contents(), url1);
+    TestNavigationManager navigation_manager_2(shell()->web_contents(), url2);
+
+    shell()->LoadURL(url1);
+
+    navigation_manager_1.WaitForNavigationFinished();  // Initial navigation.
+    navigation_manager_2.WaitForNavigationFinished();  // Client-side redirect.
 
     ASSERT_EQ(1, controller.GetEntryCount());
     NavigationEntry* entry1 = controller.GetEntryAtIndex(0);
@@ -4591,7 +4597,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
       shell()->web_contents()->GetMainFrame()->GetProcess();
   RenderProcessHostWatcher crash_observer(
       process, RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
-  process->Shutdown(0, false);
+  process->Shutdown(0);
   crash_observer.Wait();
   {
     TestNavigationObserver back_load_observer(shell()->web_contents());
@@ -6853,7 +6859,7 @@ class AllowDialogIPCOnCommitFilter : public BrowserMessageFilter,
 
     using WebContentsObserver::Observe;
 
-    void SetCallback(Callback callback) { callback_ = callback; }
+    void SetCallback(Callback callback) { callback_ = std::move(callback); }
 
    private:
     void DidFinishNavigation(NavigationHandle* navigation_handle) override {
@@ -7812,6 +7818,79 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_EQ(0U, entry->root_node()->children[0]->children.size());
 }
 
+// This test supplements SpareRenderProcessHostUnitTest to verify that the spare
+// RenderProcessHost is actually used in cross-process navigations.
+IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
+                       UtilizationOfSpareRenderProcessHost) {
+  GURL first_url = embedded_test_server()->GetURL("a.com", "/title1.html");
+  GURL second_url = embedded_test_server()->GetURL("b.com", "/title2.html");
+  RenderProcessHost* prev_spare = nullptr;
+  RenderProcessHost* curr_spare = nullptr;
+  RenderProcessHost* prev_host = nullptr;
+  RenderProcessHost* curr_host = nullptr;
+
+  // In the current implementation the spare is not warmed-up until the first
+  // real navigation.  It might be okay to change that in the future.
+  curr_spare = RenderProcessHostImpl::GetSpareRenderProcessHostForTesting();
+  curr_host = shell()->web_contents()->GetMainFrame()->GetProcess();
+  EXPECT_FALSE(curr_spare);
+
+  // Navigate to the first URL.
+  prev_host = curr_host;
+  prev_spare = curr_spare;
+  EXPECT_TRUE(NavigateToURL(shell(), first_url));
+  curr_spare = RenderProcessHostImpl::GetSpareRenderProcessHostForTesting();
+  curr_host = shell()->web_contents()->GetMainFrame()->GetProcess();
+  EXPECT_NE(curr_spare, curr_host);
+  // No process swap when navigating away from the initial blank page.
+  EXPECT_EQ(prev_host, curr_host);
+  // We should always keep a spare RenderProcessHost around in site-per-process
+  // mode.  We don't assert what should happen in other scenarios (to give
+  // flexibility to platform-specific decisions - e.g. on the desktop there
+  // might be no spare outside of site-per-process, but on Android the spare
+  // might still be opportunistically warmed up).
+  if (AreAllSitesIsolatedForTesting())
+    EXPECT_TRUE(curr_spare);
+
+  // Perform a cross-site omnibox navigation.
+  prev_host = curr_host;
+  prev_spare = curr_spare;
+  EXPECT_TRUE(NavigateToURL(shell(), second_url));
+  curr_spare = RenderProcessHostImpl::GetSpareRenderProcessHostForTesting();
+  curr_host = shell()->web_contents()->GetMainFrame()->GetProcess();
+  // The cross-site omnibox navigation should swap processes.
+  EXPECT_NE(prev_host, curr_host);
+  // If present, the spare RenderProcessHost should have been be used.
+  if (prev_spare)
+    EXPECT_EQ(prev_spare, curr_host);
+  // A new spare should be warmed-up in site-per-process mode.
+  if (AreAllSitesIsolatedForTesting()) {
+    EXPECT_TRUE(curr_spare);
+    EXPECT_NE(prev_spare, curr_spare);
+  }
+
+  // Perform a back navigation.
+  prev_host = curr_host;
+  prev_spare = curr_spare;
+  TestNavigationObserver back_load_observer(shell()->web_contents());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
+  controller.GoBack();
+  back_load_observer.Wait();
+  curr_spare = RenderProcessHostImpl::GetSpareRenderProcessHostForTesting();
+  curr_host = shell()->web_contents()->GetMainFrame()->GetProcess();
+  // The cross-site back navigation should swap processes.
+  EXPECT_NE(prev_host, curr_host);
+  // If present, the spare RenderProcessHost should have been used.
+  if (prev_spare)
+    EXPECT_EQ(prev_spare, curr_host);
+  // A new spare should be warmed-up in site-per-process mode.
+  if (AreAllSitesIsolatedForTesting()) {
+    EXPECT_TRUE(curr_spare);
+    EXPECT_NE(prev_spare, curr_spare);
+  }
+}
+
 class NavigationControllerControllableResponseBrowserTest
     : public ContentBrowserTest {
  protected:
@@ -8022,6 +8101,41 @@ IN_PROC_BROWSER_TEST_F(ContentBrowserTest, DataURLSameDocumentNavigation) {
   shell()->LoadURL(url_second);
   capturer.Wait();
   EXPECT_TRUE(capturer.is_same_document());
+}
+
+IN_PROC_BROWSER_TEST_F(ContentBrowserTest, HideDownloadFromUnmodifiedNewTab) {
+  GURL url("data:application/octet-stream,");
+
+  const NavigationControllerImpl& controller =
+      static_cast<const NavigationControllerImpl&>(
+          shell()->web_contents()->GetController());
+
+  {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    base::ScopedTempDir downloads_directory;
+    ASSERT_TRUE(downloads_directory.CreateUniqueTempDir());
+    DownloadManager* download_manager = BrowserContext::GetDownloadManager(
+        shell()->web_contents()->GetBrowserContext());
+    ShellDownloadManagerDelegate* download_delegate =
+        static_cast<ShellDownloadManagerDelegate*>(
+            download_manager->GetDelegate());
+    download_delegate->SetDownloadBehaviorForTesting(
+        downloads_directory.GetPath());
+
+    DownloadTestObserverTerminal observer(
+        download_manager, 1, DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_FAIL);
+
+    OpenURLParams params(url, Referrer(), WindowOpenDisposition::CURRENT_TAB,
+                         ui::PAGE_TRANSITION_LINK, true);
+    params.suggested_filename = std::string("foo");
+
+    shell()->web_contents()->OpenURL(params);
+    WaitForLoadStop(shell()->web_contents());
+    observer.WaitForFinished();
+  }
+
+  EXPECT_FALSE(controller.GetPendingEntry());
+  EXPECT_FALSE(controller.GetVisibleEntry());
 }
 
 }  // namespace content

@@ -12,6 +12,11 @@
 #include "core/fxcrt/fx_extension.h"
 #include "third_party/base/ptr_util.h"
 
+#if _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
+static_assert(sizeof(FX_COLORREF) == sizeof(COLORREF),
+              "FX_COLORREF vs. COLORREF mismatch");
+#endif
+
 const int16_t SDP_Table[513] = {
     256, 256, 256, 256, 256, 256, 256, 256, 256, 255, 255, 255, 255, 255, 255,
     254, 254, 254, 254, 253, 253, 253, 252, 252, 252, 251, 251, 251, 250, 250,
@@ -50,7 +55,7 @@ const int16_t SDP_Table[513] = {
     0,   0,   0,
 };
 
-FX_RECT FXDIB_SwapClipBox(FX_RECT& clip,
+FX_RECT FXDIB_SwapClipBox(const FX_RECT& clip,
                           int width,
                           int height,
                           bool bFlipX,
@@ -79,30 +84,36 @@ std::tuple<int, int, int, int> ArgbDecode(FX_ARGB argb) {
                          FXARGB_B(argb));
 }
 
-std::pair<int, FX_COLORREF> ArgbToColorRef(FX_ARGB argb) {
-  return {FXARGB_A(argb),
-          FXSYS_RGB(FXARGB_R(argb), FXARGB_G(argb), FXARGB_B(argb))};
+std::pair<int, FX_COLORREF> ArgbToAlphaAndColorRef(FX_ARGB argb) {
+  return {FXARGB_A(argb), ArgbToColorRef(argb)};
 }
 
-uint32_t ArgbEncode(int a, FX_COLORREF rgb) {
-  return FXARGB_MAKE(a, FXSYS_GetRValue(rgb), FXSYS_GetGValue(rgb),
-                     FXSYS_GetBValue(rgb));
+FX_COLORREF ArgbToColorRef(FX_ARGB argb) {
+  return FXSYS_BGR(FXARGB_B(argb), FXARGB_G(argb), FXARGB_R(argb));
+}
+
+FX_ARGB AlphaAndColorRefToArgb(int a, FX_COLORREF colorref) {
+  return FXARGB_MAKE(a, FXSYS_GetRValue(colorref), FXSYS_GetGValue(colorref),
+                     FXSYS_GetBValue(colorref));
 }
 
 FX_ARGB StringToFXARGB(const WideStringView& wsValue) {
-  uint8_t r = 0, g = 0, b = 0;
+  static constexpr FX_ARGB kDefaultValue = 0xff000000;
   if (wsValue.GetLength() == 0)
-    return 0xff000000;
+    return kDefaultValue;
 
   int cc = 0;
   const wchar_t* str = wsValue.unterminated_c_str();
   int len = wsValue.GetLength();
-  while (FXSYS_iswspace(str[cc]) && cc < len)
+  while (cc < len && FXSYS_iswspace(str[cc]))
     cc++;
 
   if (cc >= len)
-    return 0xff000000;
+    return kDefaultValue;
 
+  uint8_t r = 0;
+  uint8_t g = 0;
+  uint8_t b = 0;
   while (cc < len) {
     if (str[cc] == ',' || !FXSYS_isDecimalDigit(str[cc]))
       break;
@@ -112,7 +123,7 @@ FX_ARGB StringToFXARGB(const WideStringView& wsValue) {
   }
   if (cc < len && str[cc] == ',') {
     cc++;
-    while (FXSYS_iswspace(str[cc]) && cc < len)
+    while (cc < len && FXSYS_iswspace(str[cc]))
       cc++;
 
     while (cc < len) {
@@ -124,7 +135,7 @@ FX_ARGB StringToFXARGB(const WideStringView& wsValue) {
     }
     if (cc < len && str[cc] == ',') {
       cc++;
-      while (FXSYS_iswspace(str[cc]) && cc < len)
+      while (cc < len && FXSYS_iswspace(str[cc]))
         cc++;
 
       while (cc < len) {

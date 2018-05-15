@@ -15,7 +15,9 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
+#include "base/test/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/simple_test_tick_clock.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
@@ -131,6 +133,7 @@ class MockInputRouter : public InputRouter {
                 bool frame_handler) override {}
   void ProgressFling(base::TimeTicks time) override {}
   void StopFling() override {}
+  bool FlingCancellationIsDeferred() override { return false; }
 
   // IPC::Listener
   bool OnMessageReceived(const IPC::Message& message) override {
@@ -217,6 +220,20 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
       legacy_widget_input_handler_ =
           std::make_unique<LegacyIPCWidgetInputHandler>(
               static_cast<LegacyInputRouterImpl*>(input_router_.get()));
+    }
+  }
+
+  void ExpectForceEnableZoom(bool enable) {
+    EXPECT_EQ(enable, force_enable_zoom_);
+
+    if (base::FeatureList::IsEnabled(features::kMojoInputMessages)) {
+      InputRouterImpl* input_router =
+          static_cast<InputRouterImpl*>(input_router_.get());
+      EXPECT_EQ(enable, input_router->touch_action_filter_.force_enable_zoom_);
+    } else {
+      LegacyInputRouterImpl* input_router =
+          static_cast<LegacyInputRouterImpl*>(input_router_.get());
+      EXPECT_EQ(enable, input_router->touch_action_filter_.force_enable_zoom_);
     }
   }
 
@@ -3054,6 +3071,26 @@ TEST_F(RenderWidgetHostTest, InflightEventCountResetsAfterRebind) {
   EXPECT_EQ(0u, host_->in_flight_event_count());
 }
 
+TEST_F(RenderWidgetHostTest, ForceEnableZoomShouldUpdateAfterRebind) {
+  SCOPED_TRACE("force_enable_zoom is false at start.");
+  host_->ExpectForceEnableZoom(false);
+
+  // Set force_enable_zoom true.
+  host_->SetForceEnableZoom(true);
+
+  SCOPED_TRACE("force_enable_zoom is true after set.");
+  host_->ExpectForceEnableZoom(true);
+
+  // Rebind should also update to the latest force_enable_zoom state.
+  mojom::WidgetPtr widget;
+  std::unique_ptr<MockWidgetImpl> widget_impl =
+      std::make_unique<MockWidgetImpl>(mojo::MakeRequest(&widget));
+  host_->SetWidget(std::move(widget));
+
+  SCOPED_TRACE("force_enable_zoom is true after rebind.");
+  host_->ExpectForceEnableZoom(true);
+}
+
 TEST_F(RenderWidgetHostTest, RenderWidgetSurfaceProperties) {
   RenderWidgetSurfaceProperties prop1;
   prop1.size = gfx::Size(200, 200);
@@ -3094,6 +3131,31 @@ TEST_F(RenderWidgetHostTest, NavigateInBackgroundShowsBlank) {
   host_->DidNavigate(6);
   host_->WasShown(ui::LatencyInfo());
   EXPECT_TRUE(host_->new_content_rendering_timeout_fired());
+}
+
+TEST_F(RenderWidgetHostTest, RendererHangRecordsMetrics) {
+  base::SimpleTestTickClock clock;
+  host_->set_clock_for_testing(&clock);
+  base::HistogramTester tester;
+
+  // RenderWidgetHost makes private the methods it overrides from
+  // InputRouterClient. Call them through the base class.
+  InputRouterClient* input_router_client = host_.get();
+
+  // Do a 3s hang. This shouldn't affect metrics.
+  input_router_client->IncrementInFlightEventCount();
+  clock.Advance(base::TimeDelta::FromSeconds(3));
+  input_router_client->DecrementInFlightEventCount(
+      InputEventAckSource::UNKNOWN);
+  tester.ExpectTotalCount("Renderer.Hung.Duration", 0u);
+
+  // Do a 17s hang. This should affect metrics.
+  input_router_client->IncrementInFlightEventCount();
+  clock.Advance(base::TimeDelta::FromSeconds(17));
+  input_router_client->DecrementInFlightEventCount(
+      InputEventAckSource::UNKNOWN);
+  tester.ExpectTotalCount("Renderer.Hung.Duration", 1u);
+  tester.ExpectUniqueSample("Renderer.Hung.Duration", 17000, 1);
 }
 
 }  // namespace content

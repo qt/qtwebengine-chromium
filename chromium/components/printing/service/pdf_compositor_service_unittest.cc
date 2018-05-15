@@ -7,7 +7,7 @@
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
-#include "base/memory/shared_memory.h"
+#include "base/memory/read_only_shared_memory_region.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/test/test_discardable_memory_allocator.h"
@@ -31,7 +31,8 @@ namespace printing {
 
 // In order to test PdfCompositorService, this class overrides PrepareToStart()
 // to do nothing. So the test discardable memory allocator set up by
-// PdfCompositorServiceTest will be used.
+// PdfCompositorServiceTest will be used. Also checks for the service setup are
+// skipped since we don't have those setups in unit tests.
 class PdfCompositorTestService : public printing::PdfCompositorService {
  public:
   explicit PdfCompositorTestService(const std::string& creator)
@@ -138,19 +139,11 @@ class PdfCompositorServiceTest : public service_manager::test::ServiceTest {
     doc->close();
 
     size_t len = stream.bytesWritten();
-    base::SharedMemoryCreateOptions options;
-    options.size = len;
-    options.share_read_only = true;
-
-    base::SharedMemory shared_memory;
-    if (shared_memory.Create(options) && shared_memory.Map(len)) {
-      stream.copyTo(shared_memory.memory());
-      auto handle = shared_memory.GetReadOnlyHandle();
-      return mojo::WrapSharedMemoryHandle(
-          handle, handle.GetSize(),
-          mojo::UnwrappedSharedMemoryHandleProtection::kReadOnly);
-    }
-    return mojo::ScopedSharedBufferHandle();
+    base::MappedReadOnlyRegion memory =
+        base::ReadOnlySharedMemoryRegion::Create(len);
+    CHECK(memory.mapping.IsValid());
+    stream.copyTo(memory.mapping.memory());
+    return mojo::WrapReadOnlySharedMemoryRegion(std::move(memory.region));
   }
 
   void CallCompositorWithSuccess(mojom::PdfCompositorPtr ptr) {

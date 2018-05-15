@@ -11,7 +11,7 @@
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -146,7 +146,7 @@ class ServiceWorkerContextWatcherTest : public testing::Test {
     int64_t registration_id = blink::mojom::kInvalidServiceWorkerRegistrationId;
     context()->RegisterServiceWorker(
         script_url, options,
-        base::Bind(&DidRegisterServiceWorker, &registration_id));
+        base::BindOnce(&DidRegisterServiceWorker, &registration_id));
     base::RunLoop().RunUntilIdle();
     return registration_id;
   }
@@ -154,7 +154,7 @@ class ServiceWorkerContextWatcherTest : public testing::Test {
   ServiceWorkerStatusCode UnregisterServiceWorker(const GURL& scope) {
     ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
     context()->UnregisterServiceWorker(
-        scope, base::Bind(&DidUnregisterServiceWorker, &status));
+        scope, base::BindOnce(&DidUnregisterServiceWorker, &status));
     base::RunLoop().RunUntilIdle();
     return status;
   }

@@ -176,9 +176,10 @@ FlashDOMHandler::~FlashDOMHandler() {
 }
 
 void FlashDOMHandler::RegisterMessages() {
-  web_ui()->RegisterMessageCallback("requestFlashInfo",
-      base::Bind(&FlashDOMHandler::HandleRequestFlashInfo,
-                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "requestFlashInfo",
+      base::BindRepeating(&FlashDOMHandler::HandleRequestFlashInfo,
+                          base::Unretained(this)));
 }
 
 void FlashDOMHandler::OnUploadListAvailable() {
@@ -244,9 +245,9 @@ void FlashDOMHandler::MaybeRespondToPage() {
   auto list = std::make_unique<base::ListValue>();
 
   // Chrome version information.
-  AddPair(list.get(), l10n_util::GetStringUTF16(IDS_PRODUCT_NAME),
-          version_info::GetVersionNumber() + " (" + chrome::GetChannelString() +
-              ")");
+  AddPair(
+      list.get(), l10n_util::GetStringUTF16(IDS_PRODUCT_NAME),
+      version_info::GetVersionNumber() + " (" + chrome::GetChannelName() + ")");
 
   // OS version information.
   std::string os_label = version_info::GetOSType();

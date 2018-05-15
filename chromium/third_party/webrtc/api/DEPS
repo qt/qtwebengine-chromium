@@ -5,6 +5,7 @@ include_rules = [
   "+p2p",
   "+pc",
   "+logging/rtc_event_log/rtc_event_log_factory_interface.h",
+  "+modules/audio_processing/include",
 ]
 
 specific_include_rules = {
@@ -22,14 +23,5 @@ specific_include_rules = {
   ".*\.cc": [
     "+modules/audio_coding",
     "+modules/audio_processing",
-  ],
-
-  ".*i420_buffer\.h": [
-    "+system_wrappers/include/aligned_malloc.h",
-  ],
-
-  # Needed to use the APM statistics.
-  "mediastreaminterface.h": [
-    "+modules/audio_processing/include/audio_processing_statistics.h",
   ],
 }

@@ -84,8 +84,14 @@ class NET_EXPORT TransportSecurityState {
     // Called by the TransportSecurityState, allows the Delegate to override
     // the default handling of Certificate Transparency requirements, if
     // desired.
+    // |hostname| contains the host being contacted, serving the certificate
+    // |chain|, with the set of hashesh |hashes|. Note that |hashes| and
+    // |chain| are not guaranteed to be in the same order - that is, the first
+    // hash in |hashes| is NOT guaranteed to be for the leaf cert in |chain|.
     virtual CTRequirementLevel IsCTRequiredForHost(
-        const std::string& hostname) = 0;
+        const std::string& hostname,
+        const X509Certificate* chain,
+        const HashValueVector& hashes) = 0;
 
    protected:
     virtual ~RequireCTDelegate() = default;
@@ -479,16 +485,27 @@ class NET_EXPORT TransportSecurityState {
   // the Delegate (if any).
   bool DeleteDynamicDataForHost(const std::string& host);
 
-  // Returns true and updates |*sts_result| and |*pkp_result| iff there is a
+  // Returns true and updates |*result| if |host| has dynamic or static
+  // HSTS/HPKP (respectively) state. If multiple entries match |host|, dynamic
+  // state is preferred over static state and other than that the most specific
+  // match determines the return value (both is in deviation of RFC6797, cf.
+  // https://crbug.com/821811).
+  //
+  // Note that these methods are not const because they opportunistically remove
+  // entries that have expired.
+  bool GetSTSState(const std::string& host, STSState* result);
+  bool GetPKPState(const std::string& host, PKPState* result);
+
+  // Returns true and updates |*sts_result| and/or |*pkp_result| if there is
   // static (built-in) state for |host|. If multiple entries match |host|,
   // the most specific match determines the return value.
   bool GetStaticDomainState(const std::string& host,
                             STSState* sts_result,
                             PKPState* pkp_result) const;
 
-  // Returns true and updates |*result| iff |host| has HSTS/HPKP/Expect-CT
-  // (respectively) state. If multiple entries match |host|, the most specific
-  // match determines the return value.
+  // Returns true and updates |*result| iff |host| has dynamic
+  // HSTS/HPKP/Expect-CT (respectively) state. If multiple entries match |host|,
+  // the most specific match determines the return value.
   //
   // Note that these methods are not const because they opportunistically remove
   // entries that have expired.

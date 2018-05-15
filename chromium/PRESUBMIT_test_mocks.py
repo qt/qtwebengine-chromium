@@ -51,6 +51,7 @@ class MockCannedChecks(object):
 
     return errors
 
+
 class MockInputApi(object):
   """Mock class for the InputApi class.
 
@@ -75,6 +76,9 @@ class MockInputApi(object):
     self.change = MockChange([])
     self.presubmit_local_path = os.path.dirname(__file__)
 
+  def CreateMockFileInPath(self, f_list):
+    self.os_path.exists = lambda x: x in f_list
+
   def AffectedFiles(self, file_filter=None, include_deletes=False):
     for file in self.files:
       if file_filter and not file_filter(file):
@@ -88,17 +92,19 @@ class MockInputApi(object):
 
   def FilterSourceFile(self, file, white_list=(), black_list=()):
     local_path = file.LocalPath()
+    found_in_white_list = not white_list
     if white_list:
       for pattern in white_list:
         compiled_pattern = re.compile(pattern)
         if compiled_pattern.search(local_path):
-          return True
+          found_in_white_list = True
+          break
     if black_list:
       for pattern in black_list:
         compiled_pattern = re.compile(pattern)
         if compiled_pattern.search(local_path):
           return False
-    return True
+    return found_in_white_list
 
   def LocalPaths(self):
     return self.files

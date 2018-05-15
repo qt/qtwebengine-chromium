@@ -22,7 +22,6 @@
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
@@ -64,10 +63,10 @@
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_navigation_handle_core.h"
 #include "content/browser/service_worker/service_worker_request_handler.h"
-#include "content/browser/site_isolation_policy.h"
 #include "content/browser/streams/stream.h"
 #include "content/browser/streams/stream_context.h"
 #include "content/browser/streams/stream_registry.h"
+#include "content/browser/web_package/signed_exchange_consts.h"
 #include "content/common/net/url_request_service_worker_data.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_child_process_host.h"
@@ -75,11 +74,12 @@
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/global_request_id.h"
+#include "content/public/browser/login_delegate.h"
 #include "content/public/browser/navigation_ui_data.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
-#include "content/public/browser/resource_dispatcher_host_login_delegate.h"
 #include "content/public/browser/resource_throttle.h"
+#include "content/public/browser/site_isolation_policy.h"
 #include "content/public/browser/stream_handle.h"
 #include "content/public/browser/stream_info.h"
 #include "content/public/common/browser_side_navigation_policy.h"
@@ -88,6 +88,7 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/origin_util.h"
+#include "content/public/common/resource_type.h"
 #include "net/base/auth.h"
 #include "net/base/load_flags.h"
 #include "net/base/mime_util.h"
@@ -107,13 +108,14 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_job_factory.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "services/network/loader_util.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/resource_request_body.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "services/network/resource_scheduler.h"
+#include "services/network/url_loader_factory.h"
 #include "storage/browser/blob/blob_data_handle.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/blob/blob_url_request_job_factory.h"
@@ -138,9 +140,6 @@ static ResourceDispatcherHostImpl* g_resource_dispatcher_host;
 
 // The interval for calls to ResourceDispatcherHostImpl::UpdateLoadStates
 const int kUpdateLoadStatesIntervalMsec = 250;
-
-// The interval for calls to RecordOutstandingRequestsStats.
-const int kRecordOutstandingRequestsStatsIntervalSec = 60;
 
 // Maximum byte "cost" of all the outstanding requests for a renderer.
 // See declaration of |max_outstanding_requests_cost_per_process_| for details.
@@ -276,11 +275,6 @@ void LogBackForwardNavigationFlagsHistogram(int load_flags) {
 
 }  // namespace
 
-constexpr int ResourceDispatcherHostImpl::kMaxKeepaliveConnections;
-constexpr int ResourceDispatcherHostImpl::kMaxKeepaliveConnectionsPerProcess;
-constexpr int
-    ResourceDispatcherHostImpl::kMaxKeepaliveConnectionsPerProcessForFetchAPI;
-
 class ResourceDispatcherHostImpl::ScheduledResourceRequestAdapter final
     : public ResourceThrottle {
  public:
@@ -340,7 +334,8 @@ ResourceDispatcherHostImpl::ResourceDispatcherHostImpl(
       allow_cross_origin_auth_prompt_(false),
       create_download_handler_intercept_(download_handler_intercept),
       main_thread_task_runner_(base::ThreadTaskRunnerHandle::Get()),
-      io_thread_task_runner_(io_thread_runner) {
+      io_thread_task_runner_(io_thread_runner),
+      weak_ptr_factory_(this) {
   DCHECK(main_thread_task_runner_->BelongsToCurrentThread());
   DCHECK(!g_resource_dispatcher_host);
   g_resource_dispatcher_host = this;
@@ -353,16 +348,7 @@ ResourceDispatcherHostImpl::ResourceDispatcherHostImpl(
       FROM_HERE, base::BindOnce(&ResourceDispatcherHostImpl::OnInit,
                                 base::Unretained(this)));
 
-  update_load_states_timer_ = std::make_unique<base::RepeatingTimer>();
-
-  // Monitor per-tab outstanding requests only if OOPIF is not enabled, because
-  // the routing id doesn't represent tabs in OOPIF modes.
-  if (!SiteIsolationPolicy::UseDedicatedProcessesForAllSites() &&
-      !SiteIsolationPolicy::IsTopDocumentIsolationEnabled() &&
-      !SiteIsolationPolicy::AreIsolatedOriginsEnabled()) {
-    record_outstanding_requests_stats_timer_ =
-        std::make_unique<base::RepeatingTimer>();
-  }
+  update_load_info_timer_ = std::make_unique<base::OneShotTimer>();
 }
 
 // The default ctor is only used by unittests. It is reasonable to assume that
@@ -374,7 +360,6 @@ ResourceDispatcherHostImpl::ResourceDispatcherHostImpl()
 
 ResourceDispatcherHostImpl::~ResourceDispatcherHostImpl() {
   DCHECK(outstanding_requests_stats_map_.empty());
-  DCHECK(outstanding_requests_per_tab_map_.empty());
   DCHECK(g_resource_dispatcher_host);
   DCHECK(main_thread_task_runner_->BelongsToCurrentThread());
   g_resource_dispatcher_host = nullptr;
@@ -556,8 +541,7 @@ ResourceDispatcherHostImpl::MaybeInterceptAsStream(
   return std::move(handler);
 }
 
-ResourceDispatcherHostLoginDelegate*
-ResourceDispatcherHostImpl::CreateLoginDelegate(
+scoped_refptr<LoginDelegate> ResourceDispatcherHostImpl::CreateLoginDelegate(
     ResourceLoader* loader,
     net::AuthChallengeInfo* auth_info) {
   if (!delegate_)
@@ -568,16 +552,18 @@ ResourceDispatcherHostImpl::CreateLoginDelegate(
   ResourceRequestInfoImpl* resource_request_info =
       ResourceRequestInfoImpl::ForRequest(request);
   DCHECK(resource_request_info);
-  bool is_main_frame = resource_request_info->IsMainFrame();
+  bool is_main_frame =
+      resource_request_info->GetResourceType() == RESOURCE_TYPE_MAIN_FRAME;
+  GlobalRequestID request_id = resource_request_info->GetGlobalRequestID();
 
   GURL url = request->url();
 
-  ResourceDispatcherHostLoginDelegate* login_delegate =
+  scoped_refptr<LoginDelegate> login_delegate =
       GetContentClient()->browser()->CreateLoginDelegate(
           auth_info, resource_request_info->GetWebContentsGetterForRequest(),
           is_main_frame, url, resource_request_info->first_auth_attempt(),
           base::Bind(&ResourceDispatcherHostImpl::RunAuthRequiredCallback,
-                     base::Unretained(this), request));
+                     base::Unretained(this), request_id));
 
   resource_request_info->set_first_auth_attempt(false);
 
@@ -586,9 +572,6 @@ ResourceDispatcherHostImpl::CreateLoginDelegate(
 
 bool ResourceDispatcherHostImpl::HandleExternalProtocol(ResourceLoader* loader,
                                                         const GURL& url) {
-  if (!delegate_)
-    return false;
-
   ResourceRequestInfoImpl* info = loader->GetRequestInfo();
 
   if (!IsResourceTypeFrame(info->GetResourceType()))
@@ -599,24 +582,15 @@ bool ResourceDispatcherHostImpl::HandleExternalProtocol(ResourceLoader* loader,
   if (!url.is_valid() || job_factory->IsHandledProtocol(url.scheme()))
     return false;
 
-  return delegate_->HandleExternalProtocol(url, info);
+  return GetContentClient()->browser()->HandleExternalProtocol(
+      url, info->GetWebContentsGetterForRequest(), info->GetChildID(),
+      info->GetNavigationUIData(), info->IsMainFrame(),
+      info->GetPageTransition(), info->HasUserGesture());
 }
 
 void ResourceDispatcherHostImpl::DidStartRequest(ResourceLoader* loader) {
   // Make sure we have the load state monitors running.
-  if (!update_load_states_timer_->IsRunning() &&
-      scheduler_->DeprecatedHasLoadingClients()) {
-    update_load_states_timer_->Start(
-        FROM_HERE, TimeDelta::FromMilliseconds(kUpdateLoadStatesIntervalMsec),
-        this, &ResourceDispatcherHostImpl::UpdateLoadInfo);
-  }
-  if (record_outstanding_requests_stats_timer_ &&
-      !record_outstanding_requests_stats_timer_->IsRunning()) {
-    record_outstanding_requests_stats_timer_->Start(
-        FROM_HERE,
-        TimeDelta::FromSeconds(kRecordOutstandingRequestsStatsIntervalSec),
-        this, &ResourceDispatcherHostImpl::RecordOutstandingRequestsStats);
-  }
+  MaybeStartUpdateLoadInfoTimer();
 }
 
 void ResourceDispatcherHostImpl::DidReceiveRedirect(
@@ -718,15 +692,13 @@ void ResourceDispatcherHostImpl::OnShutdown() {
   DCHECK(io_thread_task_runner_->BelongsToCurrentThread());
 
   is_shutdown_ = true;
-  keepalive_statistics_recorder_.Shutdown();
 
   pending_loaders_.clear();
 
-  // Make sure we shutdown the timers now, otherwise by the time our destructor
+  // Make sure we shutdown the timer now, otherwise by the time our destructor
   // runs if the timer is still running the Task is deleted twice (once by
   // the MessageLoop and the second time by RepeatingTimer).
-  update_load_states_timer_.reset();
-  record_outstanding_requests_stats_timer_.reset();
+  update_load_info_timer_.reset();
 
   // Clear blocked requests if any left.
   // Note that we have to do this in 2 passes as we cannot call
@@ -1120,6 +1092,8 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
 
     new_request->set_method(request_data.method);
     new_request->set_site_for_cookies(request_data.site_for_cookies);
+    new_request->set_attach_same_site_cookies(
+        request_data.attach_same_site_cookies);
 
     // The initiator should normally be present, unless this is a navigation.
     // Browser-initiated navigations don't have an initiator document, the
@@ -1269,14 +1243,11 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
         std::move(url_loader_client),
         static_cast<ResourceType>(request_data.resource_type));
   } else {
-    // Initialize the service worker handler for the request. We don't use
-    // ServiceWorker for synchronous loads to avoid renderer deadlocks.
-    const bool skip_service_worker =
-        is_sync_load || request_data.skip_service_worker;
+    // Initialize the service worker handler for the request.
     ServiceWorkerRequestHandler::InitializeHandler(
         new_request.get(), requester_info->service_worker_context(),
         blob_context, child_id, request_data.service_worker_provider_id,
-        skip_service_worker, request_data.fetch_request_mode,
+        request_data.skip_service_worker, request_data.fetch_request_mode,
         request_data.fetch_credentials_mode, request_data.fetch_redirect_mode,
         request_data.fetch_integrity, request_data.keepalive,
         static_cast<ResourceType>(request_data.resource_type),
@@ -1610,9 +1581,7 @@ void ResourceDispatcherHostImpl::CancelRequestsForRoute(
       any_requests_transferring = true;
     if (cancel_all_routes || route_id == info->GetRenderFrameID()) {
       if (info->detachable_handler()) {
-        if (base::FeatureList::IsEnabled(
-                features::kKeepAliveRendererForKeepaliveRequests) &&
-            info->keepalive()) {
+        if (info->keepalive()) {
           // If the feature is enabled, the renderer process's lifetime is
           // prolonged so there's no need to detach.
           if (cancel_all_routes) {
@@ -1737,18 +1706,6 @@ void ResourceDispatcherHostImpl::UpdateOutstandingRequestsStats(
     outstanding_requests_stats_map_[info.GetChildID()] = stats;
 }
 
-void ResourceDispatcherHostImpl::IncrementOutstandingRequestsPerTab(
-    int count,
-    const ResourceRequestInfoImpl& info) {
-  auto key = std::make_pair(info.GetChildID(), info.GetRouteID());
-  OutstandingRequestsPerTabMap::iterator entry =
-      outstanding_requests_per_tab_map_.insert(std::make_pair(key, 0)).first;
-  entry->second += count;
-  DCHECK_GE(entry->second, 0);
-  if (entry->second == 0)
-    outstanding_requests_per_tab_map_.erase(entry);
-}
-
 ResourceDispatcherHostImpl::OustandingRequestsStats
 ResourceDispatcherHostImpl::IncrementOutstandingRequestsMemory(
     int count,
@@ -1784,8 +1741,6 @@ ResourceDispatcherHostImpl::IncrementOutstandingRequestsCount(
   DCHECK_GE(stats.num_requests, 0);
   UpdateOutstandingRequestsStats(*info, stats);
 
-  IncrementOutstandingRequestsPerTab(count, *info);
-
   if (num_in_flight_requests_ > largest_outstanding_request_count_seen_) {
     largest_outstanding_request_count_seen_ = num_in_flight_requests_;
     UMA_HISTOGRAM_COUNTS_1M(
@@ -1799,14 +1754,6 @@ ResourceDispatcherHostImpl::IncrementOutstandingRequestsCount(
     UMA_HISTOGRAM_COUNTS_1M(
         "Net.ResourceDispatcherHost.OutstandingRequests.PerProcess",
         largest_outstanding_request_per_process_count_seen_);
-  }
-
-  if (num_in_flight_requests_ > peak_outstanding_request_count_)
-    peak_outstanding_request_count_ = num_in_flight_requests_;
-
-  if (HasRequestsFromMultipleActiveTabs() &&
-      num_in_flight_requests_ > peak_outstanding_request_count_multitab_) {
-    peak_outstanding_request_count_multitab_ = num_in_flight_requests_;
   }
 
   return stats;
@@ -1886,7 +1833,6 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
   }
 
   int load_flags = info.begin_params->load_flags;
-  load_flags |= net::LOAD_VERIFY_EV_CERT;
   if (info.is_main_frame)
     load_flags |= net::LOAD_MAIN_FRAME_DEPRECATED;
 
@@ -1916,7 +1862,14 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
 
   net::HttpRequestHeaders headers;
   headers.AddHeadersFromString(info.begin_params->headers);
-  headers.SetHeader(network::kAcceptHeader, network::kFrameAcceptHeader);
+
+  std::string accept_value = network::kFrameAcceptHeader;
+  if (base::FeatureList::IsEnabled(features::kSignedHTTPExchange)) {
+    DCHECK(!accept_value.empty());
+    accept_value.append(kAcceptHeaderSignedExchangeSuffix);
+  }
+
+  headers.SetHeader(network::kAcceptHeader, accept_value);
   new_request->SetExtraRequestHeaders(headers);
 
   new_request->SetLoadFlags(load_flags);
@@ -2142,6 +2095,14 @@ void ResourceDispatcherHostImpl::BeginRequestInternal(
 
   // requests with keepalive set have additional limitations.
   if (info->keepalive()) {
+    constexpr auto kMaxKeepaliveConnections =
+        network::URLLoaderFactory::kMaxKeepaliveConnections;
+    constexpr auto kMaxKeepaliveConnectionsPerProcess =
+        network::URLLoaderFactory::kMaxKeepaliveConnectionsPerProcess;
+    constexpr auto kMaxKeepaliveConnectionsPerProcessForFetchAPI = network::
+        URLLoaderFactory::kMaxKeepaliveConnectionsPerProcessForFetchAPI;
+    // URLLoaderFactory::CreateLoaderAndStart has the duplicate logic.
+    // Update there too when this logic is updated.
     const auto& recorder = keepalive_statistics_recorder_;
     if (recorder.num_inflight_requests() >= kMaxKeepaliveConnections)
       exhausted = true;
@@ -2330,8 +2291,7 @@ void ResourceDispatcherHostImpl::UpdateLoadStateOnUI(
       PickMoreInterestingLoadInfos(std::move(infos));
   for (const auto& load_info: *info_map) {
     loader_delegate->LoadStateChanged(
-        load_info.first,
-        load_info.second.url, load_info.second.load_state,
+        load_info.first, load_info.second.host, load_info.second.load_state,
         load_info.second.upload_position, load_info.second.upload_size);
   }
 }
@@ -2340,7 +2300,7 @@ void ResourceDispatcherHostImpl::UpdateLoadStateOnUI(
 std::unique_ptr<ResourceDispatcherHostImpl::LoadInfoMap>
 ResourceDispatcherHostImpl::PickMoreInterestingLoadInfos(
     std::unique_ptr<LoadInfoList> infos) {
-  std::unique_ptr<LoadInfoMap> info_map(new LoadInfoMap);
+  auto info_map = std::make_unique<LoadInfoMap>();
   for (const auto& load_info : *infos) {
     WebContents* web_contents = load_info.web_contents_getter.Run();
     if (!web_contents)
@@ -2356,61 +2316,74 @@ ResourceDispatcherHostImpl::PickMoreInterestingLoadInfos(
 }
 
 std::unique_ptr<ResourceDispatcherHostImpl::LoadInfoList>
-ResourceDispatcherHostImpl::GetLoadInfoForAllRoutes() {
-  std::unique_ptr<LoadInfoList> infos(new LoadInfoList);
-
+ResourceDispatcherHostImpl::GetInterestingPerFrameLoadInfos() {
+  auto infos = std::make_unique<LoadInfoList>();
+  std::map<GlobalFrameRoutingId, LoadInfo> frame_infos;
   for (const auto& loader : pending_loaders_) {
     net::URLRequest* request = loader.second->request();
     net::UploadProgress upload_progress = request->GetUploadProgress();
 
     LoadInfo load_info;
-    load_info.web_contents_getter =
-        loader.second->GetRequestInfo()->GetWebContentsGetterForRequest();
-    load_info.url = request->url();
+    load_info.host = request->url().host();
     load_info.load_state = request->GetLoadState();
     load_info.upload_size = upload_progress.size();
     load_info.upload_position = upload_progress.position();
-    infos->push_back(load_info);
+
+    ResourceRequestInfoImpl* request_info = loader.second->GetRequestInfo();
+    load_info.web_contents_getter =
+        request_info->GetWebContentsGetterForRequest();
+
+    // Navigation requests have frame_tree_node_ids, and may not have frame
+    // routing ids. Just include them unconditionally.
+    if (request_info->frame_tree_node_id() != -1) {
+      infos->push_back(load_info);
+    } else {
+      GlobalFrameRoutingId id(request_info->GetChildID(),
+                              request_info->GetRenderFrameID());
+      auto existing = frame_infos.find(id);
+      if (existing == frame_infos.end() ||
+          LoadInfoIsMoreInteresting(load_info, existing->second)) {
+        frame_infos[id] = std::move(load_info);
+      }
+    }
+  }
+
+  for (auto it : frame_infos) {
+    infos->push_back(std::move(it.second));
   }
   return infos;
 }
 
 void ResourceDispatcherHostImpl::UpdateLoadInfo() {
-  std::unique_ptr<LoadInfoList> infos(GetLoadInfoForAllRoutes());
-
-  // Stop the timer if there are no more pending requests. Future new requests
-  // will restart it as necessary.
-  // Also stop the timer if there are no loading clients, to avoid waking up
-  // unnecessarily when there is a long running (hanging get) request.
-  if (infos->empty() || !scheduler_->DeprecatedHasLoadingClients()) {
-    update_load_states_timer_->Stop();
-    return;
-  }
+  std::unique_ptr<LoadInfoList> infos(GetInterestingPerFrameLoadInfos());
 
   // We need to be able to compare all requests to find the most important one
   // per tab. Since some requests may be navigation requests and we don't have
   // their render frame routing IDs yet (which is what we have for subresource
   // requests), we must go to the UI thread and compare the requests using their
   // WebContents.
-  main_thread_task_runner_->PostTask(
+  waiting_on_load_state_ack_ = true;
+  main_thread_task_runner_->PostTaskAndReply(
       FROM_HERE,
-      base::BindOnce(UpdateLoadStateOnUI, loader_delegate_, std::move(infos)));
+      base::BindOnce(UpdateLoadStateOnUI, loader_delegate_, std::move(infos)),
+      base::BindOnce(&ResourceDispatcherHostImpl::AckUpdateLoadInfo,
+                     weak_ptr_factory_.GetWeakPtr()));
 }
 
-void ResourceDispatcherHostImpl::RecordOutstandingRequestsStats() {
-  if (peak_outstanding_request_count_ != 0) {
-    UMA_HISTOGRAM_COUNTS_1M(
-        "Net.ResourceDispatcherHost.PeakOutstandingRequests",
-        peak_outstanding_request_count_);
-    peak_outstanding_request_count_ = num_in_flight_requests_;
-  }
+void ResourceDispatcherHostImpl::AckUpdateLoadInfo() {
+  DCHECK(waiting_on_load_state_ack_);
+  waiting_on_load_state_ack_ = false;
+  MaybeStartUpdateLoadInfoTimer();
+}
 
-  if (peak_outstanding_request_count_multitab_ != 0) {
-    UMA_HISTOGRAM_COUNTS_1M(
-        "Net.ResourceDispatcherHost.PeakOutstandingRequests.MultiTabLoading",
-        peak_outstanding_request_count_multitab_);
-    peak_outstanding_request_count_multitab_ =
-        HasRequestsFromMultipleActiveTabs() ? num_in_flight_requests_ : 0;
+void ResourceDispatcherHostImpl::MaybeStartUpdateLoadInfoTimer() {
+  // If shutdown has occurred, |update_load_info_timer_| is nullptr.
+  if (!is_shutdown_ && !waiting_on_load_state_ack_ &&
+      !update_load_info_timer_->IsRunning() &&
+      scheduler_->DeprecatedHasLoadingClients() && !pending_loaders_.empty()) {
+    update_load_info_timer_->Start(
+        FROM_HERE, TimeDelta::FromMilliseconds(kUpdateLoadStatesIntervalMsec),
+        this, &ResourceDispatcherHostImpl::UpdateLoadInfo);
   }
 }
 
@@ -2592,26 +2565,18 @@ ResourceDispatcherHostImpl::HandleDownloadStarted(
   return handler;
 }
 
-bool ResourceDispatcherHostImpl::HasRequestsFromMultipleActiveTabs() {
-  if (outstanding_requests_per_tab_map_.size() < 2)
-    return false;
-
-  int active_tabs = 0;
-  for (auto iter = outstanding_requests_per_tab_map_.begin();
-       iter != outstanding_requests_per_tab_map_.end(); ++iter) {
-    if (iter->second > 2) {
-      active_tabs++;
-      if (active_tabs >= 2)
-        return true;
-    }
-  }
-  return false;
-}
-
 void ResourceDispatcherHostImpl::RunAuthRequiredCallback(
-    net::URLRequest* url_request,
+    GlobalRequestID request_id,
     const base::Optional<net::AuthCredentials>& credentials) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  ResourceLoader* loader = GetLoader(request_id);
+  if (!loader)
+    return;
+
+  net::URLRequest* url_request = loader->request();
+  if (!url_request)
+    return;
 
   if (!credentials.has_value()) {
     url_request->CancelAuth();
@@ -2619,14 +2584,8 @@ void ResourceDispatcherHostImpl::RunAuthRequiredCallback(
     url_request->SetAuth(credentials.value());
   }
 
-  // Clears the ResourceDispatcherHostLoginDelegate associated with the request.
-  ResourceRequestInfoImpl* info =
-      ResourceRequestInfoImpl::ForRequest(url_request);
-  if (info) {
-    ResourceLoader* loader = GetLoader(info->GetGlobalRequestID());
-    if (loader)
-      loader->ClearLoginDelegate();
-  }
+  // Clears the LoginDelegate associated with the request.
+  loader->ClearLoginDelegate();
 }
 
 // static

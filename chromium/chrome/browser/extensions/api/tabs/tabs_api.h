@@ -197,14 +197,14 @@ class TabsDetectLanguageFunction : public ChromeAsyncExtensionFunction,
 
 class TabsCaptureVisibleTabFunction
     : public extensions::WebContentsCaptureClient,
-      public AsyncExtensionFunction {
+      public UIThreadExtensionFunction {
  public:
   TabsCaptureVisibleTabFunction();
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // ExtensionFunction implementation.
   bool HasPermission() override;
-  bool RunAsync() override;
+  ResponseAction Run() override;
 
  protected:
   ~TabsCaptureVisibleTabFunction() override {}
@@ -212,7 +212,7 @@ class TabsCaptureVisibleTabFunction
  private:
   ChromeExtensionFunctionDetails chrome_details_;
 
-  content::WebContents* GetWebContentsForID(int window_id);
+  content::WebContents* GetWebContentsForID(int window_id, std::string* error);
 
   // extensions::WebContentsCaptureClient:
   bool IsScreenshotEnabled() const override;
@@ -221,9 +221,11 @@ class TabsCaptureVisibleTabFunction
   void OnCaptureFailure(CaptureResult result) override;
 
  private:
-  void SetErrorMessage(CaptureResult result);
-
   DECLARE_EXTENSION_FUNCTION("tabs.captureVisibleTab", TABS_CAPTUREVISIBLETAB)
+
+  static std::string CaptureResultToErrorMessage(CaptureResult result);
+
+  DISALLOW_COPY_AND_ASSIGN(TabsCaptureVisibleTabFunction);
 };
 
 // Implement API call tabs.executeScript and tabs.insertCSS.
@@ -239,8 +241,8 @@ class ExecuteCodeInTabFunction : public ExecuteCodeFunction {
 
   // Initializes |execute_tab_id_| and |details_|.
   InitResult Init() override;
-  bool CanExecuteScriptOnPage() override;
-  ScriptExecutor* GetScriptExecutor() override;
+  bool CanExecuteScriptOnPage(std::string* error) override;
+  ScriptExecutor* GetScriptExecutor(std::string* error) override;
   bool IsWebView() const override;
   const GURL& GetWebViewSrc() const override;
 
@@ -257,10 +259,6 @@ class TabsExecuteScriptFunction : public ExecuteCodeInTabFunction {
 
  private:
   ~TabsExecuteScriptFunction() override {}
-
-  void OnExecuteCodeFinished(const std::string& error,
-                             const GURL& on_url,
-                             const base::ListValue& script_result) override;
 
   DECLARE_EXTENSION_FUNCTION("tabs.executeScript", TABS_EXECUTESCRIPT)
 };

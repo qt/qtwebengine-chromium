@@ -7,10 +7,10 @@
 #include "base/bits.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
-#include "cc/resources/resource_util.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "components/viz/common/resources/platform_color.h"
 #include "components/viz/common/resources/resource_format_utils.h"
+#include "components/viz/common/resources/resource_sizes.h"
 #include "components/viz/common/resources/shared_bitmap_manager.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/context_support.h"
@@ -403,23 +403,25 @@ viz::ResourceId LayerTreeResourceProvider::CreateGpuMemoryBufferResource(
 
 viz::ResourceId LayerTreeResourceProvider::CreateBitmapResource(
     const gfx::Size& size,
-    const gfx::ColorSpace& color_space) {
+    const gfx::ColorSpace& color_space,
+    viz::ResourceFormat format) {
   DCHECK(!compositor_context_provider_);
   DCHECK(!size.IsEmpty());
+  DCHECK(viz::IsBitmapFormatSupported(format));
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   // TODO(danakj): Allocate this outside ResourceProvider.
   std::unique_ptr<viz::SharedBitmap> bitmap =
-      shared_bitmap_manager_->AllocateSharedBitmap(size);
+      shared_bitmap_manager_->AllocateSharedBitmap(size, format);
   DCHECK(bitmap);
   DCHECK(bitmap->pixels());
 
   viz::ResourceId id = next_id_++;
   viz::internal::Resource* resource = InsertResource(
-      id, viz::internal::Resource(size, viz::internal::Resource::INTERNAL,
-                                  viz::ResourceTextureHint::kDefault,
-                                  viz::ResourceType::kBitmap, viz::RGBA_8888,
-                                  color_space));
+      id,
+      viz::internal::Resource(size, viz::internal::Resource::INTERNAL,
+                              viz::ResourceTextureHint::kDefault,
+                              viz::ResourceType::kBitmap, format, color_space));
   resource->SetSharedBitmap(bitmap.get());
   resource->owned_shared_bitmap = std::move(bitmap);
   return id;
@@ -502,7 +504,7 @@ void LayerTreeResourceProvider::CopyToResource(viz::ResourceId id,
     if (resource->format == viz::ETC1) {
       DCHECK_EQ(resource->target, static_cast<GLenum>(GL_TEXTURE_2D));
       int image_bytes =
-          ResourceUtil::CheckedSizeInBytes<int>(image_size, viz::ETC1);
+          viz::ResourceSizes::CheckedSizeInBytes<int>(image_size, viz::ETC1);
       gl->CompressedTexImage2D(resource->target, 0, GLInternalFormat(viz::ETC1),
                                image_size.width(), image_size.height(), 0,
                                image_bytes, image);
@@ -790,6 +792,7 @@ LayerTreeResourceProvider::ScopedWriteLockGpu::ScopedWriteLockGpu(
   DCHECK_EQ(resource->type, viz::ResourceType::kTexture);
   resource_provider->CreateTexture(resource);
   size_ = resource->size;
+  usage_ = resource->usage;
   format_ = resource->format;
   color_space_ = resource_provider_->GetResourceColorSpaceForRaster(resource);
   texture_id_ = resource->gl_id;
@@ -892,7 +895,8 @@ GLuint LayerTreeResourceProvider::ScopedWriteLockRaster::ConsumeTexture(
   DCHECK(ri);
   DCHECK(!mailbox_.IsZero());
 
-  GLuint texture_id = ri->CreateAndConsumeTextureCHROMIUM(mailbox_.name);
+  GLuint texture_id =
+      ri->CreateAndConsumeTexture(is_overlay_, usage_, format_, mailbox_.name);
   DCHECK(texture_id);
 
   LazyAllocate(ri, texture_id);
@@ -911,13 +915,10 @@ void LayerTreeResourceProvider::ScopedWriteLockRaster::LazyAllocate(
     return;
   allocated_ = true;
 
-  ri->BindTexture(target_, texture_id);
-  ri->TexStorageForRaster(
-      target_, format_, size_.width(), size_.height(),
-      is_overlay_ ? gpu::raster::kOverlay : gpu::raster::kNone);
+  ri->TexStorage2D(texture_id, 1, size_.width(), size_.height());
   if (is_overlay_ && color_space_.IsValid()) {
-    ri->SetColorSpaceMetadataCHROMIUM(
-        texture_id, reinterpret_cast<GLColorSpace>(&color_space_));
+    ri->SetColorSpaceMetadata(texture_id,
+                              reinterpret_cast<GLColorSpace>(&color_space_));
   }
 }
 
@@ -987,7 +988,6 @@ LayerTreeResourceProvider::ScopedSkSurface::ScopedSkSurface(
     GLenum texture_target,
     const gfx::Size& size,
     viz::ResourceFormat format,
-    bool use_distance_field_text,
     bool can_use_lcd_text,
     int msaa_sample_count) {
   GrGLTextureInfo texture_info;
@@ -996,15 +996,7 @@ LayerTreeResourceProvider::ScopedSkSurface::ScopedSkSurface(
   texture_info.fFormat = TextureStorageFormat(format);
   GrBackendTexture backend_texture(size.width(), size.height(),
                                    GrMipMapped::kNo, texture_info);
-  uint32_t flags =
-      use_distance_field_text ? SkSurfaceProps::kUseDistanceFieldFonts_Flag : 0;
-  // Use unknown pixel geometry to disable LCD text.
-  SkSurfaceProps surface_props(flags, kUnknown_SkPixelGeometry);
-  if (can_use_lcd_text) {
-    // LegacyFontHost will get LCD text and skia figures out what type to use.
-    surface_props =
-        SkSurfaceProps(flags, SkSurfaceProps::kLegacyFontHost_InitType);
-  }
+  SkSurfaceProps surface_props = ComputeSurfaceProps(can_use_lcd_text);
   surface_ = SkSurface::MakeFromBackendTextureAsRenderTarget(
       gr_context, backend_texture, kTopLeft_GrSurfaceOrigin, msaa_sample_count,
       ResourceFormatToClosestSkColorType(format), nullptr, &surface_props);
@@ -1013,6 +1005,19 @@ LayerTreeResourceProvider::ScopedSkSurface::ScopedSkSurface(
 LayerTreeResourceProvider::ScopedSkSurface::~ScopedSkSurface() {
   if (surface_)
     surface_->prepareForExternalIO();
+}
+
+SkSurfaceProps LayerTreeResourceProvider::ScopedSkSurface::ComputeSurfaceProps(
+    bool can_use_lcd_text) {
+  uint32_t flags = 0;
+  // Use unknown pixel geometry to disable LCD text.
+  SkSurfaceProps surface_props(flags, kUnknown_SkPixelGeometry);
+  if (can_use_lcd_text) {
+    // LegacyFontHost will get LCD text and skia figures out what type to use.
+    surface_props =
+        SkSurfaceProps(flags, SkSurfaceProps::kLegacyFontHost_InitType);
+  }
+  return surface_props;
 }
 
 void LayerTreeResourceProvider::ValidateResource(viz::ResourceId id) const {

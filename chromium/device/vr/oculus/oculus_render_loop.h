@@ -20,6 +20,8 @@
 
 namespace device {
 
+const int kMaxOculusRenderLoopInputId = (ovrControllerType_Remote + 1);
+
 class OculusRenderLoop : public base::Thread, mojom::VRPresentationProvider {
  public:
   OculusRenderLoop(ovrSession session, ovrGraphicsLuid luid);
@@ -34,9 +36,13 @@ class OculusRenderLoop : public base::Thread, mojom::VRPresentationProvider {
   base::WeakPtr<OculusRenderLoop> GetWeakPtr();
 
   // VRPresentationProvider overrides:
+  void SubmitFrameMissing(int16_t frame_index, const gpu::SyncToken&) override;
   void SubmitFrame(int16_t frame_index,
                    const gpu::MailboxHolder& mailbox,
                    base::TimeDelta time_waited) override;
+  void SubmitFrameDrawnIntoTexture(int16_t frame_index,
+                                   const gpu::SyncToken&,
+                                   base::TimeDelta time_waited) override;
   void SubmitFrameWithTextureHandle(int16_t frame_index,
                                     mojo::ScopedHandle texture_handle) override;
   void UpdateLayerBounds(int16_t frame_id,
@@ -51,6 +57,15 @@ class OculusRenderLoop : public base::Thread, mojom::VRPresentationProvider {
   void CleanUp() override;
 
   mojom::VRPosePtr GetPose();
+
+  std::vector<mojom::XRInputSourceStatePtr> GetInputState(
+      const ovrTrackingState& tracking_state);
+
+  device::mojom::XRInputSourceStatePtr GetTouchData(
+      ovrControllerType type,
+      const ovrPoseStatef& pose,
+      const ovrInputState& input_state,
+      ovrHandType hand);
 
 #if defined(OS_WIN)
   D3D11TextureHelper texture_helper_;
@@ -70,6 +85,9 @@ class OculusRenderLoop : public base::Thread, mojom::VRPresentationProvider {
   ovrTextureSwapChain texture_swap_chain_ = 0;
   double sensor_time_;
   mojo::Binding<mojom::VRPresentationProvider> binding_;
+  bool report_webxr_input_ = false;
+  bool primary_input_pressed[kMaxOculusRenderLoopInputId];
+
   base::WeakPtrFactory<OculusRenderLoop> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(OculusRenderLoop);

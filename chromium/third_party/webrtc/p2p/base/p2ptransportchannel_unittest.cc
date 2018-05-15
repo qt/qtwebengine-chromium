@@ -113,7 +113,7 @@ enum { MSG_ADD_CANDIDATES, MSG_REMOVE_CANDIDATES };
 cricket::IceConfig CreateIceConfig(
     int receiving_timeout,
     cricket::ContinualGatheringPolicy continual_gathering_policy,
-    int backup_ping_interval = -1) {
+    rtc::Optional<int> backup_ping_interval = rtc::nullopt) {
   cricket::IceConfig config;
   config.receiving_timeout = receiving_timeout;
   config.continual_gathering_policy = continual_gathering_policy;
@@ -560,8 +560,8 @@ class P2PTransportChannelTestBase : public testing::Test,
     if (connect_time < expected.connect_wait) {
       RTC_LOG(LS_INFO) << "Connect time: " << connect_time << " ms";
     } else {
-      RTC_LOG(LS_INFO) << "Connect time: "
-                       << "TIMEOUT (" << expected.connect_wait << " ms)";
+      RTC_LOG(LS_INFO) << "Connect time: TIMEOUT ("
+                       << expected.connect_wait << " ms)";
     }
 
     // Allow a few turns of the crank for the selected connections to emerge.
@@ -585,8 +585,8 @@ class P2PTransportChannelTestBase : public testing::Test,
       if (converge_time < converge_wait) {
         RTC_LOG(LS_INFO) << "Converge time: " << converge_time << " ms";
       } else {
-        RTC_LOG(LS_INFO) << "Converge time: "
-                         << "TIMEOUT (" << converge_wait << " ms)";
+        RTC_LOG(LS_INFO) << "Converge time: TIMEOUT ("
+                         << converge_wait << " ms)";
       }
     }
     // Try sending some data to other end.
@@ -1488,14 +1488,14 @@ TEST_F(P2PTransportChannelTest, PeerReflexiveCandidateBeforeSignaling) {
   ASSERT_TRUE_WAIT(
       (selected_connection = ep1_ch1()->selected_connection()) != nullptr,
       kMediumTimeout);
-  EXPECT_EQ("prflx", selected_connection->remote_candidate().type());
+  EXPECT_EQ(PRFLX_PORT_TYPE, selected_connection->remote_candidate().type());
   EXPECT_EQ(kIceUfrag[1], selected_connection->remote_candidate().username());
   EXPECT_EQ(kIcePwd[1], selected_connection->remote_candidate().password());
   EXPECT_EQ(1u, selected_connection->remote_candidate().generation());
 
   ResumeCandidates(1);
   // Verify ep1's selected connection is updated to use the 'local' candidate.
-  EXPECT_EQ_WAIT("local",
+  EXPECT_EQ_WAIT(LOCAL_PORT_TYPE,
                  ep1_ch1()->selected_connection()->remote_candidate().type(),
                  kMediumTimeout);
   EXPECT_EQ(selected_connection, ep1_ch1()->selected_connection());
@@ -1530,14 +1530,14 @@ TEST_F(P2PTransportChannelTest, PeerReflexiveCandidateBeforeSignalingWithNAT) {
   ASSERT_TRUE_WAIT(
       (selected_connection = ep1_ch1()->selected_connection()) != nullptr,
       kMediumTimeout);
-  EXPECT_EQ("prflx", selected_connection->remote_candidate().type());
+  EXPECT_EQ(PRFLX_PORT_TYPE, selected_connection->remote_candidate().type());
   EXPECT_EQ(kIceUfrag[1], selected_connection->remote_candidate().username());
   EXPECT_EQ(kIcePwd[1], selected_connection->remote_candidate().password());
   EXPECT_EQ(1u, selected_connection->remote_candidate().generation());
 
   ResumeCandidates(1);
 
-  EXPECT_EQ_WAIT("prflx",
+  EXPECT_EQ_WAIT(PRFLX_PORT_TYPE,
                  ep1_ch1()->selected_connection()->remote_candidate().type(),
                  kMediumTimeout);
   EXPECT_EQ(selected_connection, ep1_ch1()->selected_connection());
@@ -1581,7 +1581,7 @@ TEST_F(P2PTransportChannelTest,
 
   // The caller should have the selected connection connected to the peer
   // reflexive candidate.
-  EXPECT_EQ_WAIT("prflx",
+  EXPECT_EQ_WAIT(PRFLX_PORT_TYPE,
                  ep1_ch1()->selected_connection()->remote_candidate().type(),
                  kDefaultTimeout);
   const Connection* prflx_selected_connection =
@@ -1597,7 +1597,7 @@ TEST_F(P2PTransportChannelTest,
   // their information to update the peer reflexive candidate.
   ResumeCandidates(1);
 
-  EXPECT_EQ_WAIT("relay",
+  EXPECT_EQ_WAIT(RELAY_PORT_TYPE,
                  ep1_ch1()->selected_connection()->remote_candidate().type(),
                  kDefaultTimeout);
   EXPECT_EQ(prflx_selected_connection, ep1_ch1()->selected_connection());
@@ -1875,10 +1875,10 @@ TEST_F(P2PTransportChannelTest, TestForceTurn) {
   EXPECT_TRUE(ep1_ch1()->selected_connection() &&
               ep2_ch1()->selected_connection());
 
-  EXPECT_EQ("relay", RemoteCandidate(ep1_ch1())->type());
-  EXPECT_EQ("relay", LocalCandidate(ep1_ch1())->type());
-  EXPECT_EQ("relay", RemoteCandidate(ep2_ch1())->type());
-  EXPECT_EQ("relay", LocalCandidate(ep2_ch1())->type());
+  EXPECT_EQ(RELAY_PORT_TYPE, RemoteCandidate(ep1_ch1())->type());
+  EXPECT_EQ(RELAY_PORT_TYPE, LocalCandidate(ep1_ch1())->type());
+  EXPECT_EQ(RELAY_PORT_TYPE, RemoteCandidate(ep2_ch1())->type());
+  EXPECT_EQ(RELAY_PORT_TYPE, LocalCandidate(ep2_ch1())->type());
 
   TestSendRecv(&clock);
   DestroyChannels();
@@ -2171,6 +2171,50 @@ TEST_F(P2PTransportChannelTest, SignalReadyToSendWithPresumedWritable) {
   virtual_socket_server()->SetSendingBlocked(false);
   EXPECT_TRUE(GetEndpoint(0)->ready_to_send_);
   EXPECT_EQ(len, SendData(ep1_ch1(), data, len));
+}
+
+// Test that role conflict error responses are sent as expected when receiving a
+// ping from an unknown address over a TURN connection. Regression test for
+// crbug.com/webrtc/9034.
+TEST_F(P2PTransportChannelTest,
+       TurnToPrflxSelectedAfterResolvingIceControllingRoleConflict) {
+  rtc::ScopedFakeClock clock;
+  // Gather only relay candidates.
+  ConfigureEndpoints(NAT_SYMMETRIC, NAT_SYMMETRIC,
+                     kDefaultPortAllocatorFlags | PORTALLOCATOR_DISABLE_UDP |
+                         PORTALLOCATOR_DISABLE_STUN | PORTALLOCATOR_DISABLE_TCP,
+                     kDefaultPortAllocatorFlags | PORTALLOCATOR_DISABLE_UDP |
+                         PORTALLOCATOR_DISABLE_STUN |
+                         PORTALLOCATOR_DISABLE_TCP);
+  // With conflicting ICE roles, endpoint 1 has the higher tie breaker and will
+  // send a binding error response.
+  SetIceRole(0, ICEROLE_CONTROLLING);
+  SetIceTiebreaker(0, kHighTiebreaker);
+  SetIceRole(1, ICEROLE_CONTROLLING);
+  SetIceTiebreaker(1, kLowTiebreaker);
+  // We want the remote TURN candidate to show up as prflx. To do this we need
+  // to configure the server to accept packets from an address we haven't
+  // explicitly installed permission for.
+  test_turn_server()->set_enable_permission_checks(false);
+  GetEndpoint(0)->cd1_.ch_.reset(CreateChannel(
+      0, ICE_CANDIDATE_COMPONENT_DEFAULT, kIceParams[0], kIceParams[1]));
+  GetEndpoint(1)->cd1_.ch_.reset(CreateChannel(
+      1, ICE_CANDIDATE_COMPONENT_DEFAULT, kIceParams[1], kIceParams[0]));
+  // Don't signal candidates from channel 2, so that channel 1 sees the TURN
+  // candidate as peer reflexive.
+  PauseCandidates(1);
+  ep1_ch1()->MaybeStartGathering();
+  ep2_ch1()->MaybeStartGathering();
+
+  EXPECT_TRUE_SIMULATED_WAIT(ep1_ch1()->receiving() && ep1_ch1()->writable(),
+                             kMediumTimeout, clock);
+
+  ASSERT_NE(nullptr, ep1_ch1()->selected_connection());
+
+  EXPECT_EQ(RELAY_PORT_TYPE, LocalCandidate(ep1_ch1())->type());
+  EXPECT_EQ(PRFLX_PORT_TYPE, RemoteCandidate(ep1_ch1())->type());
+
+  DestroyChannels();
 }
 
 // Test what happens when we have 2 users behind the same NAT. This can lead
@@ -3567,10 +3611,10 @@ TEST_F(P2PTransportChannelPingTest, TestReceivingStateChange) {
   PrepareChannel(&ch);
   // Default receiving timeout and checking receiving interval should not be too
   // small.
-  EXPECT_LE(1000, ch.receiving_timeout());
+  EXPECT_LE(1000, ch.config().receiving_timeout_or_default());
   EXPECT_LE(200, ch.check_receiving_interval());
   ch.SetIceConfig(CreateIceConfig(500, GATHER_ONCE));
-  EXPECT_EQ(500, ch.receiving_timeout());
+  EXPECT_EQ(500, ch.config().receiving_timeout_or_default());
   EXPECT_EQ(50, ch.check_receiving_interval());
   ch.MaybeStartGathering();
   ch.AddRemoteCandidate(CreateUdpCandidate(LOCAL_PORT_TYPE, "1.1.1.1", 1, 1));
@@ -4379,7 +4423,7 @@ class P2PTransportChannelMostLikelyToWorkFirstTest
 // we have a selected connection.
 TEST_F(P2PTransportChannelMostLikelyToWorkFirstTest,
        TestRelayRelayFirstWhenNothingPingedYet) {
-  const int max_strong_interval = 100;
+  const int max_strong_interval = 500;
   P2PTransportChannel& ch = StartTransportChannel(true, max_strong_interval);
   EXPECT_TRUE_WAIT(ch.ports().size() == 2, kDefaultTimeout);
   EXPECT_EQ(ch.ports()[0]->Type(), LOCAL_PORT_TYPE);
@@ -4436,7 +4480,7 @@ TEST_F(P2PTransportChannelMostLikelyToWorkFirstTest,
 // in the first round.
 TEST_F(P2PTransportChannelMostLikelyToWorkFirstTest,
        TestRelayRelayFirstWhenEverythingPinged) {
-  P2PTransportChannel& ch = StartTransportChannel(true, 100);
+  P2PTransportChannel& ch = StartTransportChannel(true, 500);
   EXPECT_TRUE_WAIT(ch.ports().size() == 2, kDefaultTimeout);
   EXPECT_EQ(ch.ports()[0]->Type(), LOCAL_PORT_TYPE);
   EXPECT_EQ(ch.ports()[1]->Type(), RELAY_PORT_TYPE);
@@ -4467,7 +4511,7 @@ TEST_F(P2PTransportChannelMostLikelyToWorkFirstTest,
 // before we re-ping Relay/Relay connections again.
 TEST_F(P2PTransportChannelMostLikelyToWorkFirstTest,
        TestNoStarvationOnNonRelayConnection) {
-  P2PTransportChannel& ch = StartTransportChannel(true, 100);
+  P2PTransportChannel& ch = StartTransportChannel(true, 500);
   EXPECT_TRUE_WAIT(ch.ports().size() == 2, kDefaultTimeout);
   EXPECT_EQ(ch.ports()[0]->Type(), LOCAL_PORT_TYPE);
   EXPECT_EQ(ch.ports()[1]->Type(), RELAY_PORT_TYPE);
@@ -4506,7 +4550,7 @@ TEST_F(P2PTransportChannelMostLikelyToWorkFirstTest, TestTcpTurn) {
   config.ports.push_back(ProtocolAddress(kTurnTcpIntAddr, PROTO_TCP));
   allocator()->AddTurnServer(config);
 
-  P2PTransportChannel& ch = StartTransportChannel(true, 100);
+  P2PTransportChannel& ch = StartTransportChannel(true, 500);
   EXPECT_TRUE_WAIT(ch.ports().size() == 3, kDefaultTimeout);
   EXPECT_EQ(ch.ports()[0]->Type(), LOCAL_PORT_TYPE);
   EXPECT_EQ(ch.ports()[1]->Type(), RELAY_PORT_TYPE);

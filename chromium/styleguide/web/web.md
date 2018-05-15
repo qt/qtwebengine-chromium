@@ -268,7 +268,7 @@ background-image: url(../path/to/image.svg);
 The contents of file.png are base64-encoded and the `url()` is replaced with
 
 ```css
-background-image: url(data:image/xml+svg;base64,...);
+background-image: url(data:image/svg+xml;base64,...);
 ```
 
 if `flattenhtml="true"` is specified in your .grd file.
@@ -399,6 +399,22 @@ fooChanged_: function() {
   this.bar = this.derive(this.foo);
 },
 ```
+
+* Make good use of the  [`dom-if` template](
+https://www.polymer-project.org/2.0/docs/devguide/templates#dom-if):
+  * Consider using `dom-if` to lazily render parts of the DOM that are hidden by
+  default. Also consider using [`cr-lazy-render`](
+  https://cs.chromium.org/chromium/src/ui/webui/resources/cr_elements/cr_lazy_render/cr_lazy_render.js)
+  instead.
+  * **Only use`dom-if`** if the DOM subtree is non-trivial, defined as:
+      * Contains more than 10 native elements, OR
+      * Contain **any** custom elements, OR
+      * Has many data bindings, OR
+      * Includes non-text content (e.g images).
+
+    For trivial DOM subtrees using the HTML [`hidden` attribute](
+    https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/hidden)
+    yields better performance, than adding a custom `dom-if` element.
 
 ## Grit processing
 

@@ -23,8 +23,8 @@
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
-#include "cc/resources/resource_util.h"
 #include "components/viz/common/gpu/context_provider.h"
+#include "components/viz/common/resources/resource_sizes.h"
 #include "components/viz/common/resources/returned_resource.h"
 #include "components/viz/common/resources/transferable_resource.h"
 #include "gpu/command_buffer/client/context_support.h"
@@ -149,21 +149,31 @@ viz::internal::Resource* ResourceProvider::InsertResource(
 
 viz::internal::Resource* ResourceProvider::GetResource(viz::ResourceId id) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  // TODO(ericrk): Changing the DCHECKs in this function to CHECKs to debug
-  // https://crbug.com/811858.
-  CHECK(id);
+  DCHECK(id);
   ResourceMap::iterator it = resources_.find(id);
-  CHECK(it != resources_.end());
+  DCHECK(it != resources_.end());
+  return &it->second;
+}
+
+viz::internal::Resource* ResourceProvider::TryGetResource(viz::ResourceId id) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  if (!id)
+    return nullptr;
+  ResourceMap::iterator it = resources_.find(id);
+  if (it == resources_.end())
+    return nullptr;
   return &it->second;
 }
 
 void ResourceProvider::PopulateSkBitmapWithResource(
     SkBitmap* sk_bitmap,
     const viz::internal::Resource* resource) {
-  DCHECK_EQ(viz::RGBA_8888, resource->format);
+  DCHECK(IsBitmapFormatSupported(resource->format));
   SkImageInfo info = SkImageInfo::MakeN32Premul(resource->size.width(),
                                                 resource->size.height());
-  sk_bitmap->installPixels(info, resource->pixels, info.minRowBytes());
+  bool pixels_installed =
+      sk_bitmap->installPixels(info, resource->pixels, info.minRowBytes());
+  DCHECK(pixels_installed);
 }
 
 void ResourceProvider::WaitSyncTokenInternal(
@@ -207,7 +217,7 @@ bool ResourceProvider::OnMemoryDump(
         backing_memory_allocated = !!resource.gl_id;
         break;
       case viz::ResourceType::kBitmap:
-        backing_memory_allocated = resource.has_shared_bitmap_id;
+        backing_memory_allocated = !!resource.shared_bitmap;
         break;
     }
 
@@ -224,11 +234,16 @@ bool ResourceProvider::OnMemoryDump(
     base::trace_event::MemoryAllocatorDump* dump =
         pmd->CreateAllocatorDump(dump_name);
 
-    uint64_t total_bytes = ResourceUtil::UncheckedSizeInBytesAligned<size_t>(
-        resource.size, resource.format);
-    dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
-                    base::trace_event::MemoryAllocatorDump::kUnitsBytes,
-                    static_cast<uint64_t>(total_bytes));
+    // Texture resources may not come with a size, in which case don't report
+    // one.
+    if (!resource.size.IsEmpty()) {
+      uint64_t total_bytes =
+          viz::ResourceSizes::UncheckedSizeInBytesAligned<size_t>(
+              resource.size, resource.format);
+      dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
+                      base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+                      static_cast<uint64_t>(total_bytes));
+    }
 
     // Resources may be shared across processes and require a shared GUID to
     // prevent double counting the memory.
@@ -236,10 +251,16 @@ bool ResourceProvider::OnMemoryDump(
     base::UnguessableToken shared_memory_guid;
     switch (resource.type) {
       case viz::ResourceType::kGpuMemoryBuffer:
-        guid =
-            resource.gpu_memory_buffer->GetGUIDForTracing(tracing_process_id);
+        // GpuMemoryBuffers may be backed by shared memory, and in that case we
+        // use the guid from there to attribute for the global shared memory
+        // dumps. Otherwise, they may be backed by native structures, and we
+        // fall back to that with GetGUIDForTracing.
         shared_memory_guid =
             resource.gpu_memory_buffer->GetHandle().handle.GetGUID();
+        if (shared_memory_guid.is_empty()) {
+          guid =
+              resource.gpu_memory_buffer->GetGUIDForTracing(tracing_process_id);
+        }
         break;
       case viz::ResourceType::kTexture:
         DCHECK(resource.gl_id);
@@ -249,24 +270,28 @@ bool ResourceProvider::OnMemoryDump(
             resource.gl_id);
         break;
       case viz::ResourceType::kBitmap:
-        DCHECK(resource.has_shared_bitmap_id);
-        guid = viz::GetSharedBitmapGUIDForTracing(resource.shared_bitmap_id);
-        if (resource.shared_bitmap) {
-          shared_memory_guid =
-              resource.shared_bitmap->GetSharedMemoryHandle().GetGUID();
-        }
+        // If the resource comes from out of process, it will have this id,
+        // which we prefer. Otherwise, we fall back to the SharedBitmapGUID
+        // which can be generated for in-process bitmaps.
+        shared_memory_guid = resource.shared_bitmap->GetCrossProcessGUID();
+        if (shared_memory_guid.is_empty())
+          guid = viz::GetSharedBitmapGUIDForTracing(resource.shared_bitmap_id);
         break;
     }
 
-    DCHECK(!guid.empty());
+    DCHECK(!shared_memory_guid.is_empty() || !guid.empty());
 
-    const int kImportance = 2;
+    const int kImportanceForInteral = 2;
+    const int kImportanceForExternal = 1;
+    int importance = resource.origin == viz::internal::Resource::INTERNAL
+                         ? kImportanceForInteral
+                         : kImportanceForExternal;
     if (!shared_memory_guid.is_empty()) {
       pmd->CreateSharedMemoryOwnershipEdge(dump->guid(), shared_memory_guid,
-                                           kImportance);
+                                           importance);
     } else {
       pmd->CreateSharedGlobalAllocatorDump(guid);
-      pmd->AddOwnershipEdge(dump->guid(), guid, kImportance);
+      pmd->AddOwnershipEdge(dump->guid(), guid, importance);
     }
   }
 

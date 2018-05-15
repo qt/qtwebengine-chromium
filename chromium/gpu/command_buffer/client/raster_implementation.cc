@@ -98,7 +98,6 @@ RasterImplementation::RasterImplementation(
       lose_context_when_out_of_memory_(lose_context_when_out_of_memory),
       use_count_(0),
       current_trace_stack_(0),
-      capabilities_(gpu_control->GetCapabilities()),
       aggressively_free_resources_(false),
       lost_(false) {
   DCHECK(helper);
@@ -143,8 +142,15 @@ RasterCmdHelper* RasterImplementation::helper() const {
 }
 
 IdAllocator* RasterImplementation::GetIdAllocator(IdNamespaces namespace_id) {
-  DCHECK_EQ(namespace_id, IdNamespaces::kQueries);
-  return &query_id_allocator_;
+  switch (namespace_id) {
+    case IdNamespaces::kQueries:
+      return &query_id_allocator_;
+    case IdNamespaces::kTextures:
+      return &texture_id_allocator_;
+    default:
+      DCHECK(false);
+      return nullptr;
+  }
 }
 
 void RasterImplementation::OnGpuControlLostContext() {
@@ -209,7 +215,8 @@ void RasterImplementation::ScheduleOverlayPlane(
     gfx::OverlayTransform /* plane_transform */,
     unsigned /* overlay_texture_id */,
     const gfx::Rect& /* display_bounds */,
-    const gfx::RectF& /* uv_rect */) {
+    const gfx::RectF& /* uv_rect */,
+    bool /* enable_blend */) {
   NOTREACHED();
 }
 
@@ -905,152 +912,42 @@ void RasterImplementation::UnmapRasterCHROMIUM(GLsizeiptr written_size) {
 // instead of having to edit some template or the code generator.
 #include "gpu/command_buffer/client/raster_implementation_impl_autogen.h"
 
-void RasterImplementation::GenTextures(GLsizei n, GLuint* textures) {
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glGenTextures(" << n << ", "
-                     << static_cast<const void*>(textures) << ")");
-  if (n < 0) {
-    SetGLError(GL_INVALID_VALUE, "glGenTextures", "n < 0");
-    return;
-  }
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  for (int ii = 0; ii < n; ++ii) {
-    textures[ii] = texture_id_allocator_.AllocateID();
-  }
-  // TODO(backer): Send some signal to service side.
-  // helper_->GenTexturesImmediate(n, textures);
-  // if (share_group_->bind_generates_resource())
-  //   helper_->CommandBufferHelper::Flush();
-
-  GPU_CLIENT_LOG_CODE_BLOCK({
-    for (GLsizei i = 0; i < n; ++i) {
-      GPU_CLIENT_LOG("  " << i << ": " << textures[i]);
-    }
-  });
-  CheckGLError();
-}
-
-void RasterImplementation::BindTexture(GLenum target, GLuint texture) {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glBindTexture("
-                     << GLES2Util::GetStringEnum(texture) << ")");
-  DCHECK_EQ(target, static_cast<GLenum>(GL_TEXTURE_2D));
-  if (target != GL_TEXTURE_2D) {
-    return;
-  }
-  TextureUnit& unit = texture_units_[active_texture_unit_];
-  unit.bound_texture_2d = texture;
-  // TODO(backer): Update bound texture on the server side.
-  // helper_->BindTexture(target, texture);
-  texture_id_allocator_.MarkAsUsed(texture);
-}
-
-void RasterImplementation::ActiveTexture(GLenum texture) {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glActiveTexture("
-                     << GLES2Util::GetStringEnum(texture) << ")");
-  GLuint texture_index = texture - GL_TEXTURE0;
-  if (texture_index >=
-      static_cast<GLuint>(capabilities_.max_combined_texture_image_units)) {
-    SetGLErrorInvalidEnum("glActiveTexture", texture, "texture");
-    return;
-  }
-
-  active_texture_unit_ = texture_index;
-  // TODO(backer): Update active texture on the server side.
-  // helper_->ActiveTexture(texture);
-  CheckGLError();
-}
-
-void RasterImplementation::GenerateMipmap(GLenum target) {
+void RasterImplementation::SetColorSpaceMetadata(GLuint texture_id,
+                                                 GLColorSpace color_space) {
   NOTIMPLEMENTED();
 }
-void RasterImplementation::SetColorSpaceMetadataCHROMIUM(
-    GLuint texture_id,
-    GLColorSpace color_space) {
+void RasterImplementation::GenMailbox(GLbyte* mailbox) {
   NOTIMPLEMENTED();
 }
-void RasterImplementation::GenMailboxCHROMIUM(GLbyte* mailbox) {
+void RasterImplementation::ProduceTextureDirect(GLuint texture,
+                                                const GLbyte* mailbox) {
   NOTIMPLEMENTED();
 }
-void RasterImplementation::ProduceTextureDirectCHROMIUM(GLuint texture,
-                                                        const GLbyte* mailbox) {
-  NOTIMPLEMENTED();
-}
-GLuint RasterImplementation::CreateAndConsumeTextureCHROMIUM(
+
+GLuint RasterImplementation::CreateAndConsumeTexture(
+    bool use_buffer,
+    gfx::BufferUsage buffer_usage,
+    viz::ResourceFormat format,
     const GLbyte* mailbox) {
-  NOTIMPLEMENTED();
-  return 0;
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glCreateAndConsumeTexture("
+                     << use_buffer << ", "
+                     << static_cast<uint32_t>(buffer_usage) << ", "
+                     << static_cast<uint32_t>(format) << ", "
+                     << static_cast<const void*>(mailbox) << ")");
+  GLuint client_id = texture_id_allocator_.AllocateID();
+  helper_->CreateAndConsumeTextureINTERNALImmediate(
+      client_id, use_buffer, buffer_usage, format, mailbox);
+  GPU_CLIENT_LOG("returned " << client_id);
+  CheckGLError();
+  return client_id;
 }
-void RasterImplementation::BindTexImage2DCHROMIUM(GLenum target,
-                                                  GLint imageId) {
-  NOTIMPLEMENTED();
-}
-void RasterImplementation::ReleaseTexImage2DCHROMIUM(GLenum target,
-                                                     GLint imageId) {
-  NOTIMPLEMENTED();
-}
-void RasterImplementation::TexImage2D(GLenum target,
-                                      GLint level,
-                                      GLint internalformat,
-                                      GLsizei width,
-                                      GLsizei height,
-                                      GLint border,
-                                      GLenum format,
-                                      GLenum type,
-                                      const void* pixels) {
-  NOTIMPLEMENTED();
-}
-void RasterImplementation::TexSubImage2D(GLenum target,
-                                         GLint level,
-                                         GLint xoffset,
-                                         GLint yoffset,
-                                         GLsizei width,
-                                         GLsizei height,
-                                         GLenum format,
-                                         GLenum type,
-                                         const void* pixels) {
-  NOTIMPLEMENTED();
-}
-void RasterImplementation::CompressedTexImage2D(GLenum target,
-                                                GLint level,
-                                                GLenum internalformat,
-                                                GLsizei width,
-                                                GLsizei height,
-                                                GLint border,
-                                                GLsizei imageSize,
-                                                const void* data) {
-  NOTIMPLEMENTED();
-}
-void RasterImplementation::TexStorageForRaster(GLenum target,
-                                               viz::ResourceFormat format,
-                                               GLsizei width,
-                                               GLsizei height,
-                                               RasterTexStorageFlags flags) {
-  NOTIMPLEMENTED();
-}
-void RasterImplementation::CopySubTextureCHROMIUM(
-    GLuint source_id,
-    GLint source_level,
-    GLenum dest_target,
-    GLuint dest_id,
-    GLint dest_level,
-    GLint xoffset,
-    GLint yoffset,
-    GLint x,
-    GLint y,
-    GLsizei width,
-    GLsizei height,
-    GLboolean unpack_flip_y,
-    GLboolean unpack_premultiply_alpha,
-    GLboolean unpack_unmultiply_alpha) {
-  NOTIMPLEMENTED();
-}
+
 void RasterImplementation::BeginRasterCHROMIUM(
     GLuint texture_id,
     GLuint sk_color,
     GLuint msaa_sample_count,
     GLboolean can_use_lcd_text,
-    GLboolean use_distance_field_text,
     GLint pixel_config,
     const cc::RasterColorSpace& raster_color_space) {
   NOTIMPLEMENTED();

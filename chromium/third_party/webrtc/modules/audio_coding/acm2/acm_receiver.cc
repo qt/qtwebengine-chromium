@@ -26,6 +26,7 @@
 #include "rtc_base/format_macros.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
+#include "rtc_base/strings/audio_format_to_string.h"
 #include "system_wrappers/include/clock.h"
 
 namespace webrtc {
@@ -38,7 +39,8 @@ AcmReceiver::AcmReceiver(const AudioCodingModule::Config& config)
       clock_(config.clock),
       resampled_last_output_frame_(true) {
   RTC_DCHECK(clock_);
-  memset(last_audio_buffer_.get(), 0, AudioFrame::kMaxDataSizeSamples);
+  memset(last_audio_buffer_.get(), 0,
+         sizeof(int16_t) * AudioFrame::kMaxDataSizeSamples);
 }
 
 AcmReceiver::~AcmReceiver() = default;
@@ -260,7 +262,8 @@ bool AcmReceiver::AddCodec(int rtp_payload_type,
       neteq_->RegisterPayloadType(rtp_payload_type, audio_format);
   if (!success) {
     RTC_LOG(LERROR) << "AcmReceiver::AddCodec failed for payload type "
-                    << rtp_payload_type << ", decoder format " << audio_format;
+                    << rtp_payload_type << ", decoder format "
+                    << rtc::ToString(audio_format);
   }
   return success;
 }

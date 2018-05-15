@@ -12,6 +12,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
+#include "components/viz/common/features.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/devtools/devtools_frame_trace_recorder.h"
@@ -42,17 +43,19 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/browser_side_navigation_policy.h"
+#include "content/public/common/content_features.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
 #include "services/network/public/cpp/features.h"
-#include "third_party/WebKit/public/common/associated_interfaces/associated_interface_provider.h"
+#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 
 #if defined(OS_ANDROID)
 #include "content/public/browser/render_widget_host_view.h"
@@ -272,6 +275,7 @@ void RenderFrameDevToolsAgentHost::ApplyOverrides(
   net::HttpRequestHeaders headers;
   headers.AddHeadersFromString(begin_params->headers);
   for (auto* network : protocol::NetworkHandler::ForAgentHost(agent_host)) {
+    // TODO(caseq): consider chaining intercepting proxies from multiple agents.
     if (!network->enabled())
       continue;
     *report_raw_headers = true;
@@ -286,6 +290,27 @@ void RenderFrameDevToolsAgentHost::ApplyOverrides(
   }
 
   begin_params->headers = headers.ToString();
+}
+
+// static
+bool RenderFrameDevToolsAgentHost::WillCreateURLLoaderFactory(
+    RenderFrameHostImpl* rfh,
+    bool is_navigation,
+    network::mojom::URLLoaderFactoryRequest* target_factory_request) {
+  FrameTreeNode* frame_tree_node = rfh->frame_tree_node();
+  base::UnguessableToken frame_token = frame_tree_node->devtools_frame_token();
+  frame_tree_node = GetFrameTreeNodeAncestor(frame_tree_node);
+  RenderFrameDevToolsAgentHost* agent_host = FindAgentHost(frame_tree_node);
+  if (!agent_host)
+    return false;
+  int process_id = is_navigation ? 0 : rfh->GetProcess()->GetID();
+  for (auto* network : protocol::NetworkHandler::ForAgentHost(agent_host)) {
+    if (network->MaybeCreateProxyForInterception(frame_token, process_id,
+                                                 target_factory_request)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // static
@@ -342,7 +367,9 @@ WebContents* RenderFrameDevToolsAgentHost::GetWebContents() {
   return web_contents();
 }
 
-void RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
+bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
+  if (session->restricted() && !IsFrameHostAllowedForRestrictedSessions())
+    return false;
   session->SetRenderer(frame_host_ ? frame_host_->GetProcess()->GetID()
                                    : ChildProcessHost::kInvalidUniqueID,
                        frame_host_);
@@ -361,26 +388,34 @@ void RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
   session->AddHandler(base::WrapUnique(new protocol::SchemaHandler()));
   session->AddHandler(base::WrapUnique(new protocol::ServiceWorkerHandler()));
   session->AddHandler(base::WrapUnique(new protocol::StorageHandler()));
-  session->AddHandler(
-      base::WrapUnique(new protocol::TargetHandler(false /* browser_only */)));
-  session->AddHandler(base::WrapUnique(new protocol::TracingHandler(
-      protocol::TracingHandler::Renderer,
-      frame_tree_node_ ? frame_tree_node_->frame_tree_node_id() : 0,
-      GetIOContext())));
+  if (!session->restricted()) {
+    session->AddHandler(base::WrapUnique(
+        new protocol::TargetHandler(false /* browser_only */)));
+  }
   session->AddHandler(
       base::WrapUnique(new protocol::PageHandler(emulation_handler)));
   session->AddHandler(base::WrapUnique(new protocol::SecurityHandler()));
+  if (!frame_tree_node_ || !frame_tree_node_->parent()) {
+    session->AddHandler(base::WrapUnique(
+        new protocol::TracingHandler(frame_tree_node_, GetIOContext())));
+  }
 
   if (EnsureAgent())
     session->AttachToAgent(agent_ptr_);
 
   if (sessions().size() == 1) {
-    frame_trace_recorder_.reset(new DevToolsFrameTraceRecorder());
+    // Taking screenshots using the video capture API is done in TracingHandler.
+    if (!base::FeatureList::IsEnabled(features::kVizDisplayCompositor) &&
+        !base::FeatureList::IsEnabled(
+            features::kUseVideoCaptureApiForDevToolsSnapshots)) {
+      frame_trace_recorder_.reset(new DevToolsFrameTraceRecorder());
+    }
     GrantPolicy();
 #if defined(OS_ANDROID)
     GetWakeLock()->RequestWakeLock();
 #endif
   }
+  return true;
 }
 
 void RenderFrameDevToolsAgentHost::DetachSession(DevToolsSession* session) {
@@ -431,6 +466,9 @@ void RenderFrameDevToolsAgentHost::ReadyToCommitNavigation(
     NavigationHandle* navigation_handle) {
   NavigationHandleImpl* handle =
       static_cast<NavigationHandleImpl*>(navigation_handle);
+  for (auto* tracing : protocol::TracingHandler::ForAgentHost(this))
+    tracing->ReadyToCommitNavigation(handle);
+
   if (handle->frame_tree_node() != frame_tree_node_) {
     if (ShouldForceCreation() && handle->GetRenderFrameHost() &&
         handle->GetRenderFrameHost()->IsCrossProcessSubframe()) {
@@ -487,13 +525,19 @@ void RenderFrameDevToolsAgentHost::UpdateFrameHost(
 
   if (IsAttached())
     RevokePolicy();
+
   frame_host_ = frame_host;
   agent_ptr_.reset();
+
+  if (!IsFrameHostAllowedForRestrictedSessions())
+    ForceDetachRestrictedSessions();
+
   if (!render_frame_alive_) {
     render_frame_alive_ = true;
     for (auto* inspector : protocol::InspectorHandler::ForAgentHost(this))
       inspector->TargetReloadedAfterCrash();
   }
+
   if (IsAttached()) {
     GrantPolicy();
     for (DevToolsSession* session : sessions()) {
@@ -570,9 +614,12 @@ void RenderFrameDevToolsAgentHost::RenderFrameHostChanged(
 }
 
 void RenderFrameDevToolsAgentHost::FrameDeleted(RenderFrameHost* rfh) {
-  if (static_cast<RenderFrameHostImpl*>(rfh)->frame_tree_node() ==
-      frame_tree_node_) {
-    DestroyOnRenderFrameGone();  // |this| may be deleted at this point.
+  RenderFrameHostImpl* host = static_cast<RenderFrameHostImpl*>(rfh);
+  for (auto* tracing : protocol::TracingHandler::ForAgentHost(this))
+    tracing->FrameDeleted(host);
+  if (host->frame_tree_node() == frame_tree_node_) {
+    DestroyOnRenderFrameGone();
+    // |this| may be deleted at this point.
   }
 }
 
@@ -587,7 +634,7 @@ void RenderFrameDevToolsAgentHost::DestroyOnRenderFrameGone() {
   scoped_refptr<RenderFrameDevToolsAgentHost> protect(this);
   if (IsAttached())
     RevokePolicy();
-  ForceDetachAllClients();
+  ForceDetachAllSessions();
   frame_host_ = nullptr;
   agent_ptr_.reset();
   SetFrameTreeNode(nullptr);
@@ -662,8 +709,6 @@ void RenderFrameDevToolsAgentHost::DidReceiveCompositorFrame() {
           ->last_frame_metadata();
   for (auto* page : protocol::PageHandler::ForAgentHost(this))
     page->OnSwapCompositorFrame(metadata.Clone());
-  for (auto* input : protocol::InputHandler::ForAgentHost(this))
-    input->OnSwapCompositorFrame(metadata);
 
   if (!frame_trace_recorder_)
     return;
@@ -672,6 +717,12 @@ void RenderFrameDevToolsAgentHost::DidReceiveCompositorFrame() {
     did_initiate_recording |= tracing->did_initiate_recording();
   if (did_initiate_recording)
     frame_trace_recorder_->OnSwapCompositorFrame(frame_host_, metadata);
+}
+
+void RenderFrameDevToolsAgentHost::OnPageScaleFactorChanged(
+    float page_scale_factor) {
+  for (auto* input : protocol::InputHandler::ForAgentHost(this))
+    input->OnPageScaleFactorChanged(page_scale_factor);
 }
 
 void RenderFrameDevToolsAgentHost::DisconnectWebContents() {
@@ -822,8 +873,6 @@ void RenderFrameDevToolsAgentHost::SynchronousSwapCompositorFrame(
     viz::CompositorFrameMetadata frame_metadata) {
   for (auto* page : protocol::PageHandler::ForAgentHost(this))
     page->OnSynchronousSwapCompositorFrame(frame_metadata.Clone());
-  for (auto* input : protocol::InputHandler::ForAgentHost(this))
-    input->OnSwapCompositorFrame(frame_metadata);
 
   if (!frame_trace_recorder_)
     return;
@@ -846,6 +895,11 @@ bool RenderFrameDevToolsAgentHost::EnsureAgent() {
 
 bool RenderFrameDevToolsAgentHost::IsChildFrame() {
   return frame_tree_node_ && frame_tree_node_->parent();
+}
+
+bool RenderFrameDevToolsAgentHost::IsFrameHostAllowedForRestrictedSessions() {
+  return !frame_host_ ||
+         (!frame_host_->web_ui() && !frame_host_->pending_web_ui());
 }
 
 }  // namespace content

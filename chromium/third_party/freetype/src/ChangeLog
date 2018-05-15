@@ -1,3 +1,135 @@
+2018-04-04  Ben Wagner  <bungeman@google.com>
+
+	* src/truetype/ttobjs.c (trick_names): Add 3 tricky fonts (#53554),
+	`DFHei-Md-HK-BF', `DFKaiShu-Md-HK-BF' and `DFMing-Bd-HK-BF'.
+	(tt_check_trickyness_sfnt_ids): Add checksums for 3 tricky fonts
+	in above.
+
+2018-04-01  Werner Lemberg  <wl@gnu.org>
+
+	* builds/toplevel.mk (work): Use $(SEP).
+
+	This fixes the `make refdoc' using Cygwin: $(CAT) is `type' on this
+	platform, and this program only understands backslashes in paths.
+
+	Reported by Nikhil Ramakrishnan <ramakrishnan.nikhil@gmail.com>.
+
+2018-03-30  Werner Lemberg  <wl@gnu.org>
+
+	[truetype] Fix memory leak (only if tracing is on).
+
+	* src/truetype/ttgxvar.c (TT_Get_MM_Var) [FT_DEBUG_LEVEL_TRACE}: Fix
+	it.
+
+2018-03-23  Ben Wagner  <bungeman@google.com>
+
+	[sfnt] Correctly handle missing bitmaps in sbix format (#53404).
+
+	* src/sfnt/ttfsbit.c (tt_face_load_sbix_image): Fix return value.
+
+2018-03-23  Ben Wagner  <bungeman@google.com>
+
+	[truetype] Fix advance of empty glyphs in bitmap fonts (#53393).
+
+	* src/truetype/ttgload.c (TT_Load_Glyph): Apply scaling to metrics
+	for empty bitmaps.
+
+2018-03-22  Werner Lemberg  <wl@gnu.org>
+
+	Remove `ftlcdfil.c' and `ftfntfmt.c' from build files (#53415).
+
+	builds/amiga/makefile, builds/amiga/makefile.os4,
+	builds/amiga/smakefile, builds/mac/FreeType.m68k_cfm.make.txt,
+	builds/mac/FreeType.m68k_far.make.txt,
+	builds/mac/FreeType.ppc_carbon.make.txt,
+	builds/mac/FreeType.ppc_classic.make.txt,
+	builds/symbian/freetype.mmp, builds/wince/vc2005-ce/freetype.vcproj,
+	builds/wince/vc2008-ce/freetype.vcproj,
+	builds/windows/vc2005/freetype.vcproj,
+	builds/windows/vc2008/freetype.vcproj,
+	builds/windows/vc2010/freetype.vcxproj,
+	builds/windows/vc2010/freetype.vcxproj.filters,
+	builds/windows/visualc/freetype.dsp,
+	builds/windows/visualc/freetype.vcproj,
+	builds/windows/visualce/freetype.dsp,
+	builds/windows/visualce/freetype.vcproj, vms_make.com: Do it.
+
+2018-03-13  Werner Lemberg  <wl@gnu.org>
+
+	* src/sfnt/ttcmap.c (tt_cmap2_validate): Fix potential numeric
+	overflow.
+
+2018-03-13  Werner Lemberg  <wl@gnu.org>
+
+	Fix cmap format 2 handling (#53320).
+
+	The patch introduced for #52646 was not correct.
+
+	* src/sfnt/ttcmap.c (tt_cmap2_char_next): Adjust condition.
+
+2018-03-10  Nikolaus Waxweiler  <madigens@gmail.com>
+
+	* CMakeLists.txt (BASE_SRCS): Update to changes from 2018-03-05.
+
+2018-03-09  Chun-wei Fan  <fanc999@yahoo.com.tw>
+
+	* CMakeLists.txt [win32]: Allow MSVC DLL builds (#53287).
+
+	Do not limit DLL builds to MinGW, since we already have
+	`__declspec(dllexport)' directives in `ftconfig.h'.
+	Also suppress more warnings for POSIX functions.
+
+2018-03-08  Hugh McMaster  <hugh.mcmaster@outlook.com>
+
+	Make installation of `freetype-config' optional (#53093).
+
+	* builds/unix/configure.raw: Add option `--enable-freetype-config'
+	and set `INSTALL_FT2_CONFIG'.
+	* builds/unix/unix-def.in (INSTALL_FT2_CONFIG): Define.
+	* builds/unix/install.mk (install): Handle it.
+
+2018-03-05  Werner Lemberg  <wl@gnu.org>
+
+	Make `ftlcdfil.c' part of the `base' module.
+
+	`ftobjs.c' needs `ft_lcd_padding'.
+
+	Problem reported by duhuanpeng <548708880@qq.com>.
+
+	* modules.cfg (BASE_EXTENSIONS): Don't include `ftlcdfil.c'.
+
+	* src/base/ftbase.c: Include `ftlcdfil.c'.
+	* src/base/rules.mk (BASE_SRC): Add `ftlcdfil.c'.
+	* src/base/Jamfile (_sources): Adjusted.
+
+	* docs/INSTALL.ANY: Updated.
+
+2018-03-05  Werner Lemberg  <wl@gnu.org>
+
+	Make `ftfntfmt.c' part of the `base' module.
+
+	`ftobjs.c' needs `FT_Get_Font_Format'.
+
+	Problem reported by duhuanpeng <548708880@qq.com>.
+
+	* modules.cfg (BASE_EXTENSIONS): Don't include `ftfntfmt.c'.
+
+	* src/base/ftbase.c: Include `ftfntfmt.c'.
+	* src/base/rules.mk (BASE_SRC): Add `ftfntfmt.c'.
+	* src/base/Jamfile (_sources): Adjusted.
+
+	* docs/INSTALL.ANY: Updated.
+
+2018-03-01  Werner Lemberg  <wl@gnu.org>
+
+	* src/truetype/ttinterp.c (TT_RunIns): Fix tracing arguments.
+
+2018-02-23  Werner Lemberg  <wl@gnu.org>
+
+	* builds/unix/configure.raw: Need HarfBuzz 1.3.0 or newer.
+
+	Problem reported by Alan Coopersmith <alan.coopersmith@oracle.com>.
+
 2018-02-17  Werner Lemberg  <wl@gnu.org>
 
 	[sfnt] Prefer `CBDT'/`CBLC' over `glyf' table (#53154).

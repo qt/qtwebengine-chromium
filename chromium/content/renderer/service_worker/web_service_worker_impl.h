@@ -13,9 +13,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorker.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker.h"
+#include "third_party/blink/public/web/web_frame.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -26,8 +26,6 @@ class WebServiceWorkerProxy;
 }
 
 namespace content {
-
-class ThreadSafeSender;
 
 // Each instance corresponds to one ServiceWorker object in JS context, and
 // is held by ServiceWorker object in Blink's C++ layer via
@@ -46,11 +44,9 @@ class CONTENT_EXPORT WebServiceWorkerImpl
   // interface and needs to be bound on either the main or IO thread.
   static scoped_refptr<WebServiceWorkerImpl> CreateForServiceWorkerGlobalScope(
       blink::mojom::ServiceWorkerObjectInfoPtr info,
-      ThreadSafeSender* thread_safe_sender,
       scoped_refptr<base::SingleThreadTaskRunner> io_task_runner);
   static scoped_refptr<WebServiceWorkerImpl> CreateForServiceWorkerClient(
-      blink::mojom::ServiceWorkerObjectInfoPtr info,
-      ThreadSafeSender* thread_safe_sender);
+      blink::mojom::ServiceWorkerObjectInfoPtr info);
 
   void OnStateChanged(blink::mojom::ServiceWorkerState new_state);
 
@@ -59,9 +55,7 @@ class CONTENT_EXPORT WebServiceWorkerImpl
   blink::WebServiceWorkerProxy* Proxy() override;
   blink::WebURL Url() const override;
   blink::mojom::ServiceWorkerState GetState() const override;
-  void PostMessageToServiceWorker(
-      blink::TransferableMessage message,
-      const blink::WebSecurityOrigin& source_origin) override;
+  void PostMessageToServiceWorker(blink::TransferableMessage message) override;
   void TerminateForTesting(
       std::unique_ptr<TerminateForTestingCallback> callback) override;
 
@@ -72,8 +66,7 @@ class CONTENT_EXPORT WebServiceWorkerImpl
 
  private:
   friend class base::RefCounted<WebServiceWorkerImpl>;
-  WebServiceWorkerImpl(blink::mojom::ServiceWorkerObjectInfoPtr info,
-                       ThreadSafeSender* thread_safe_sender);
+  explicit WebServiceWorkerImpl(blink::mojom::ServiceWorkerObjectInfoPtr info);
   ~WebServiceWorkerImpl() override;
 
   blink::mojom::ServiceWorkerObjectHost* GetObjectHost();
@@ -96,7 +89,6 @@ class CONTENT_EXPORT WebServiceWorkerImpl
 
   blink::mojom::ServiceWorkerObjectInfoPtr info_;
   blink::mojom::ServiceWorkerState state_;
-  scoped_refptr<ThreadSafeSender> thread_safe_sender_;
   blink::WebServiceWorkerProxy* proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(WebServiceWorkerImpl);

@@ -5,15 +5,17 @@
 #include "content/browser/network_service_client.h"
 
 #include "base/optional.h"
+#include "content/browser/devtools/devtools_url_loader_interceptor.h"
 #include "content/browser/ssl/ssl_client_auth_handler.h"
 #include "content/browser/ssl/ssl_error_handler.h"
 #include "content/browser/ssl/ssl_manager.h"
 #include "content/browser/ssl_private_key_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_context.h"
-#include "content/public/browser/render_frame_host.h"
-#include "content/public/browser/resource_dispatcher_host_login_delegate.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/login_delegate.h"
 #include "content/public/browser/resource_request_info.h"
+#include "content/public/common/resource_type.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/ssl/client_cert_store.h"
 
@@ -132,9 +134,9 @@ class SSLClientAuthDelegate : public SSLClientAuthHandler::Delegate {
       ResourceRequestInfo::WebContentsGetter web_contents_getter) {
     std::unique_ptr<net::ClientCertStore> client_cert_store =
         GetContentClient()->browser()->CreateClientCertStore(resource_context);
-    ssl_client_auth_handler_.reset(
-        new SSLClientAuthHandler(std::move(client_cert_store),
-                                 web_contents_getter, cert_info_.get(), this));
+    ssl_client_auth_handler_.reset(new SSLClientAuthHandler(
+        std::move(client_cert_store), std::move(web_contents_getter),
+        cert_info_.get(), this));
     ssl_client_auth_handler_->SelectCertificate();
   }
 
@@ -159,6 +161,9 @@ class LoginHandlerDelegate {
       ResourceRequestInfo::WebContentsGetter web_contents_getter,
       scoped_refptr<net::AuthChallengeInfo> auth_info,
       bool is_main_frame,
+      uint32_t process_id,
+      uint32_t routing_id,
+      uint32_t request_id,
       const GURL& url,
       bool first_auth_attempt)
       : callback_(std::move(callback)),
@@ -169,11 +174,31 @@ class LoginHandlerDelegate {
         web_contents_getter_(web_contents_getter) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        base::Bind(&LoginHandlerDelegate::CreateLoginDelegate,
-                   base::Unretained(this)));
+        base::BindOnce(&LoginHandlerDelegate::DispatchInterceptorHookAndStart,
+                       base::Unretained(this), process_id, routing_id,
+                       request_id));
   }
 
  private:
+  void DispatchInterceptorHookAndStart(uint32_t process_id,
+                                       uint32_t routing_id,
+                                       uint32_t request_id) {
+    DevToolsURLLoaderInterceptor::HandleAuthRequest(
+        process_id, routing_id, request_id, auth_info_,
+        base::BindOnce(&LoginHandlerDelegate::ContinueAfterInterceptor,
+                       base::Unretained(this)));
+  }
+
+  void ContinueAfterInterceptor(
+      bool use_fallback,
+      const base::Optional<net::AuthCredentials>& auth_credentials) {
+    DCHECK(!(use_fallback && auth_credentials.has_value()));
+    if (use_fallback)
+      CreateLoginDelegate();
+    else
+      RunAuthRequiredCallback(auth_credentials);
+  }
+
   void CreateLoginDelegate() {
     login_delegate_ = GetContentClient()->browser()->CreateLoginDelegate(
         auth_info_.get(), web_contents_getter_, is_main_frame_, url_,
@@ -191,14 +216,8 @@ class LoginHandlerDelegate {
       const base::Optional<net::AuthCredentials>& auth_credentials) {
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
-        base::Bind(&LoginHandlerDelegate::RunCallbackOnUI,
-                   base::Unretained(this), auth_credentials));
-  }
-
-  void RunCallbackOnUI(
-      const base::Optional<net::AuthCredentials>& auth_credentials) {
-    std::move(callback_).Run(auth_credentials);
-    BrowserThread::DeleteSoon(BrowserThread::IO, FROM_HERE, this);
+        base::BindOnce(std::move(callback_), auth_credentials));
+    delete this;
   }
 
   network::mojom::NetworkServiceClient::OnAuthRequiredCallback callback_;
@@ -207,7 +226,7 @@ class LoginHandlerDelegate {
   GURL url_;
   bool first_auth_attempt_;
   ResourceRequestInfo::WebContentsGetter web_contents_getter_;
-  scoped_refptr<ResourceDispatcherHostLoginDelegate> login_delegate_;
+  scoped_refptr<LoginDelegate> login_delegate_;
 };
 
 }  // namespace
@@ -221,6 +240,8 @@ NetworkServiceClient::~NetworkServiceClient() = default;
 void NetworkServiceClient::OnAuthRequired(
     uint32_t process_id,
     uint32_t routing_id,
+    uint32_t request_id,
+    int32_t resource_type,
     const GURL& url,
     bool first_auth_attempt,
     const scoped_refptr<net::AuthChallengeInfo>& auth_info,
@@ -235,19 +256,18 @@ void NetworkServiceClient::OnAuthRequired(
     return;
   }
 
-  RenderFrameHost* rfh =
-      process_id
-          ? RenderFrameHost::FromID(process_id, routing_id)
-          : FrameTreeNode::GloballyFindByID(routing_id)->current_frame_host();
-  bool is_main_frame = !rfh->GetParent();
-  new LoginHandlerDelegate(std::move(callback), web_contents_getter, auth_info,
-                           is_main_frame, url,
+  bool is_main_frame =
+      static_cast<ResourceType>(resource_type) == RESOURCE_TYPE_MAIN_FRAME;
+  new LoginHandlerDelegate(std::move(callback), std::move(web_contents_getter),
+                           auth_info, is_main_frame, process_id, routing_id,
+                           request_id, url,
                            first_auth_attempt);  // deletes self
 }
 
 void NetworkServiceClient::OnCertificateRequested(
     uint32_t process_id,
     uint32_t routing_id,
+    uint32_t request_id,
     const scoped_refptr<net::SSLCertRequestInfo>& cert_info,
     network::mojom::NetworkServiceClient::OnCertificateRequestedCallback
         callback) {
@@ -263,15 +283,16 @@ void NetworkServiceClient::OnCertificateRequested(
                             true /* cancel_certificate_selection */);
     return;
   }
-  new SSLClientAuthDelegate(std::move(callback), web_contents_getter,
+  new SSLClientAuthDelegate(std::move(callback), std::move(web_contents_getter),
                             cert_info);  // deletes self
 }
 
 void NetworkServiceClient::OnSSLCertificateError(
-    int32_t resource_type,
-    const GURL& url,
     uint32_t process_id,
     uint32_t routing_id,
+    uint32_t request_id,
+    int32_t resource_type,
+    const GURL& url,
     const net::SSLInfo& ssl_info,
     bool fatal,
     OnSSLCertificateErrorCallback response) {
@@ -281,9 +302,9 @@ void NetworkServiceClient::OnSSLCertificateError(
       process_id ? base::Bind(WebContentsImpl::FromRenderFrameHostID,
                               process_id, routing_id)
                  : base::Bind(WebContents::FromFrameTreeNodeId, routing_id);
-  SSLManager::OnSSLCertificateError(delegate->GetWeakPtr(),
-                                    static_cast<ResourceType>(resource_type),
-                                    url, web_contents_getter, ssl_info, fatal);
+  SSLManager::OnSSLCertificateError(
+      delegate->GetWeakPtr(), static_cast<ResourceType>(resource_type), url,
+      std::move(web_contents_getter), ssl_info, fatal);
 }
 
 }  // namespace content

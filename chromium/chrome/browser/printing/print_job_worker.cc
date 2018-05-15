@@ -13,7 +13,6 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -95,12 +94,13 @@ void NotificationCallback(PrintJobWorkerOwner* print_job,
                           JobEventDetails::Type detail_type,
                           int job_id,
                           PrintedDocument* document) {
-  JobEventDetails* details = new JobEventDetails(detail_type, job_id, document);
+  auto details =
+      base::MakeRefCounted<JobEventDetails>(detail_type, job_id, document);
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_PRINT_JOB_EVENT,
       // We know that is is a PrintJob object in this circumstance.
       content::Source<PrintJob>(static_cast<PrintJob*>(print_job)),
-      content::Details<JobEventDetails>(details));
+      content::Details<JobEventDetails>(details.get()));
 }
 
 void PostOnOwnerThread(scoped_refptr<PrintJobWorkerOwner> owner,
@@ -117,13 +117,13 @@ void PageNotificationCallback(PrintJobWorkerOwner* print_job,
                               int job_id,
                               PrintedDocument* document,
                               PrintedPage* page) {
-  JobEventDetails* details =
-      new JobEventDetails(detail_type, job_id, document, page);
+  auto details = base::MakeRefCounted<JobEventDetails>(detail_type, job_id,
+                                                       document, page);
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_PRINT_JOB_EVENT,
       // We know that is is a PrintJob object in this circumstance.
       content::Source<PrintJob>(static_cast<PrintJob*>(print_job)),
-      content::Details<JobEventDetails>(details));
+      content::Details<JobEventDetails>(details.get()));
 }
 #endif
 

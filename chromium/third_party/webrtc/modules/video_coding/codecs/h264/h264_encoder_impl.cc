@@ -465,6 +465,8 @@ SEncParamExt H264EncoderImpl::CreateEncoderParams() const {
           SM_SIZELIMITED_SLICE;
       encoder_params.sSpatialLayers[0].sSliceArgument.uiSliceSizeConstraint =
           static_cast<unsigned int>(max_payload_size_);
+      RTC_LOG(INFO) << "Encoder is configured with NALU constraint: "
+                    << max_payload_size_ << " bytes";
       break;
     case H264PacketizationMode::NonInterleaved:
       // When uiSliceMode = SM_FIXEDSLCNUM_SLICE, uiSliceNum = 0 means auto
@@ -499,10 +501,6 @@ void H264EncoderImpl::ReportError() {
 
 int32_t H264EncoderImpl::SetChannelParameters(
     uint32_t packet_loss, int64_t rtt) {
-  return WEBRTC_VIDEO_CODEC_OK;
-}
-
-int32_t H264EncoderImpl::SetPeriodicKeyFrames(bool enable) {
   return WEBRTC_VIDEO_CODEC_OK;
 }
 

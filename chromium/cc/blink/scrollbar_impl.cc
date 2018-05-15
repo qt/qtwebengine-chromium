@@ -5,8 +5,8 @@
 #include "cc/blink/scrollbar_impl.h"
 
 #include "base/logging.h"
-#include "third_party/WebKit/public/platform/WebScrollbar.h"
-#include "third_party/WebKit/public/platform/WebScrollbarThemeGeometry.h"
+#include "third_party/blink/public/platform/web_scrollbar.h"
+#include "third_party/blink/public/platform/web_scrollbar_theme_geometry.h"
 
 using blink::WebScrollbar;
 
@@ -84,11 +84,20 @@ gfx::Rect ScrollbarImpl::NinePatchThumbAperture() const {
   return geometry_->NinePatchThumbAperture(scrollbar_.get());
 }
 
+bool ScrollbarImpl::HasTickmarks() const {
+  return scrollbar_->HasTickmarks();
+}
+
 void ScrollbarImpl::PaintPart(cc::PaintCanvas* canvas,
                               cc::ScrollbarPart part,
                               const gfx::Rect& content_rect) {
   if (part == cc::THUMB) {
     painter_.PaintThumb(canvas, content_rect);
+    return;
+  }
+
+  if (part == cc::TICKMARKS) {
+    painter_.PaintTickmarks(canvas, content_rect);
     return;
   }
 

@@ -26,6 +26,7 @@ ImplementationBase::ImplementationBase(CommandBufferHelper* helper,
                                        GpuControl* gpu_control)
     : transfer_buffer_(transfer_buffer),
       gpu_control_(gpu_control),
+      capabilities_(gpu_control->GetCapabilities()),
       helper_(helper),
       transfer_cache_(this),
       weak_ptr_factory_(this) {}
@@ -335,6 +336,22 @@ void ImplementationBase::RunIfContextNotLost(base::OnceClosure callback) {
   if (!lost_context_callback_run_) {
     std::move(callback).Run();
   }
+}
+
+void ImplementationBase::SetGrContext(GrContext* gr) {}
+
+bool ImplementationBase::HasGrContextSupport() const {
+  return false;
+}
+
+void ImplementationBase::WillCallGLFromSkia() {
+  // Should only be called on subclasses that have GrContextSupport
+  NOTREACHED();
+}
+
+void ImplementationBase::DidCallGLFromSkia() {
+  // Should only be called on subclasses that have GrContextSupport
+  NOTREACHED();
 }
 
 }  // namespace gpu

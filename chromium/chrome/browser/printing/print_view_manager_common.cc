@@ -6,9 +6,9 @@
 
 #include "chrome/common/webui_url_constants.h"
 #include "content/public/browser/render_frame_host.h"
+#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
-#include "extensions/features/features.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 #include "url/gurl.h"
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
@@ -49,8 +49,7 @@ content::WebContents* GetWebContentsToUse(content::WebContents* contents) {
           contents->GetBrowserContext());
   if (guest_view_manager) {
     guest_view_manager->ForEachGuest(
-        contents,
-        base::Bind(&StoreFullPagePlugin, &contents));
+        contents, base::BindRepeating(&StoreFullPagePlugin, &contents));
   }
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
   return contents;

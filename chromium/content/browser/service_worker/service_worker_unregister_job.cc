@@ -11,7 +11,7 @@
 #include "content/browser/service_worker/service_worker_storage.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/common/service_worker/service_worker_utils.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -28,9 +28,8 @@ ServiceWorkerUnregisterJob::ServiceWorkerUnregisterJob(
 
 ServiceWorkerUnregisterJob::~ServiceWorkerUnregisterJob() {}
 
-void ServiceWorkerUnregisterJob::AddCallback(
-    const UnregistrationCallback& callback) {
-  callbacks_.push_back(callback);
+void ServiceWorkerUnregisterJob::AddCallback(UnregistrationCallback callback) {
+  callbacks_.emplace_back(std::move(callback));
 }
 
 void ServiceWorkerUnregisterJob::Start() {
@@ -98,11 +97,8 @@ void ServiceWorkerUnregisterJob::ResolvePromise(
     ServiceWorkerStatusCode status) {
   DCHECK(!is_promise_resolved_);
   is_promise_resolved_ = true;
-  for (std::vector<UnregistrationCallback>::iterator it = callbacks_.begin();
-       it != callbacks_.end();
-       ++it) {
-    it->Run(registration_id, status);
-  }
+  for (UnregistrationCallback& callback : callbacks_)
+    std::move(callback).Run(registration_id, status);
 }
 
 }  // namespace content

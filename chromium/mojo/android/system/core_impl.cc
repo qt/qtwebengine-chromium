@@ -7,8 +7,6 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_array.h"
-#include "base/android/jni_registrar.h"
-#include "base/android/library_loader/library_loader_hooks.h"
 #include "base/android/scoped_java_ref.h"
 #include "jni/CoreImpl_jni.h"
 #include "mojo/public/c/system/core.h"
@@ -146,7 +144,7 @@ static ScopedJavaLocalRef<jobject> JNI_CoreImpl_ReadMessage(
     return Java_CoreImpl_newReadMessageResult(env, result, nullptr, nullptr);
   DCHECK(message.is_valid());
 
-  result = MojoSerializeMessage(message->value());
+  result = MojoSerializeMessage(message->value(), nullptr);
   if (result != MOJO_RESULT_OK && result != MOJO_RESULT_FAILED_PRECONDITION) {
     return Java_CoreImpl_newReadMessageResult(env, MOJO_RESULT_ABORTED, nullptr,
                                               nullptr);
@@ -156,14 +154,12 @@ static ScopedJavaLocalRef<jobject> JNI_CoreImpl_ReadMessage(
   void* buffer;
   uint32_t num_handles = 0;
   std::vector<MojoHandle> handles;
-  result = MojoGetSerializedMessageContents(
-      message->value(), &buffer, &num_bytes, nullptr, &num_handles,
-      MOJO_GET_SERIALIZED_MESSAGE_CONTENTS_FLAG_NONE);
+  result = MojoGetMessageData(message->value(), nullptr, &buffer, &num_bytes,
+                              nullptr, &num_handles);
   if (result == MOJO_RESULT_RESOURCE_EXHAUSTED) {
     handles.resize(num_handles);
-    result = MojoGetSerializedMessageContents(
-        message->value(), &buffer, &num_bytes, handles.data(), &num_handles,
-        MOJO_GET_SERIALIZED_MESSAGE_CONTENTS_FLAG_NONE);
+    result = MojoGetMessageData(message->value(), nullptr, &buffer, &num_bytes,
+                                handles.data(), &num_handles);
   }
 
   if (result != MOJO_RESULT_OK)

@@ -19,6 +19,7 @@
 #include "core/fxcrt/cfx_bitstream.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "third_party/base/numerics/safe_conversions.h"
+#include "third_party/base/span.h"
 
 namespace {
 
@@ -418,8 +419,9 @@ CPDF_DataAvail::DocAvailStatus CPDF_HintTables::CheckPage(uint32_t index) {
     return CPDF_DataAvail::DataError;
 
   if (!m_pValidator->CheckDataRangeAndRequestIfUnavailable(
-          m_szPageOffsetArray[index], dwLength))
+          m_szPageOffsetArray[index], dwLength)) {
     return CPDF_DataAvail::DataNotAvailable;
+  }
 
   // Download data of shared objects in the page.
   uint32_t offset = 0;
@@ -435,7 +437,7 @@ CPDF_DataAvail::DocAvailStatus CPDF_HintTables::CheckPage(uint32_t index) {
   for (uint32_t j = 0; j < m_dwNSharedObjsArray[index]; ++j) {
     dwIndex = m_dwIdentifierArray[offset + j];
     if (dwIndex >= m_dwSharedObjNumArray.size())
-      return CPDF_DataAvail::DataNotAvailable;
+      continue;
 
     dwObjNum = m_dwSharedObjNumArray[dwIndex];
     if (dwObjNum >= static_cast<uint32_t>(nFirstPageObjNum) &&
@@ -487,7 +489,7 @@ bool CPDF_HintTables::LoadHintStream(CPDF_Stream* pHintStream) {
     return false;
   }
 
-  CFX_BitStream bs(pAcc->GetData(), size);
+  CFX_BitStream bs(pdfium::make_span(pAcc->GetData(), size));
   return ReadPageHintTable(&bs) &&
          ReadSharedObjHintTable(&bs, shared_hint_table_offset);
 }

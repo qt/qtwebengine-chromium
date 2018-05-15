@@ -91,7 +91,9 @@ FakeBluetoothGattCharacteristicClient::
   action_extra_requests_.clear();
 }
 
-void FakeBluetoothGattCharacteristicClient::Init(dbus::Bus* bus) {}
+void FakeBluetoothGattCharacteristicClient::Init(
+    dbus::Bus* bus,
+    const std::string& bluetooth_service_name) {}
 
 void FakeBluetoothGattCharacteristicClient::AddObserver(Observer* observer) {
   observers_.AddObserver(observer);
@@ -487,9 +489,10 @@ void FakeBluetoothGattCharacteristicClient::
   heart_rate_measurement_properties_->value.ReplaceValue(measurement);
 
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE, base::Bind(&FakeBluetoothGattCharacteristicClient::
-                                ScheduleHeartRateMeasurementValueChange,
-                            weak_ptr_factory_.GetWeakPtr()),
+      FROM_HERE,
+      base::BindOnce(&FakeBluetoothGattCharacteristicClient::
+                         ScheduleHeartRateMeasurementValueChange,
+                     weak_ptr_factory_.GetWeakPtr()),
       base::TimeDelta::FromMilliseconds(
           kHeartRateMeasurementNotificationIntervalMs));
 }

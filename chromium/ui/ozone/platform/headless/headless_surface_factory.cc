@@ -8,7 +8,6 @@
 #include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/task_scheduler/post_task.h"
 #include "build/build_config.h"
@@ -27,6 +26,8 @@
 namespace ui {
 
 namespace {
+
+const base::FilePath::CharType kDevNull[] = FILE_PATH_LITERAL("/dev/null");
 
 void WriteDataToFile(const base::FilePath& location, const SkBitmap& bitmap) {
   DCHECK(!location.empty());
@@ -60,7 +61,7 @@ class FileSurface : public SurfaceOzoneCanvas {
       base::PostTaskWithTraits(
           FROM_HERE,
           {base::MayBlock(), base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
-          base::Bind(&WriteDataToFile, base_path_, bitmap));
+          base::BindOnce(&WriteDataToFile, base_path_, bitmap));
     }
   }
   std::unique_ptr<gfx::VSyncProvider> CreateVSyncProvider() override {
@@ -90,7 +91,8 @@ class TestPixmap : public gfx::NativePixmap {
                             int plane_z_order,
                             gfx::OverlayTransform plane_transform,
                             const gfx::Rect& display_bounds,
-                            const gfx::RectF& crop_rect) override {
+                            const gfx::RectF& crop_rect,
+                            bool enable_blend) override {
     return true;
   }
   gfx::NativePixmapHandle ExportHandle() override {
@@ -137,7 +139,7 @@ HeadlessSurfaceFactory::~HeadlessSurfaceFactory() = default;
 
 base::FilePath HeadlessSurfaceFactory::GetPathForWidget(
     gfx::AcceleratedWidget widget) {
-  if (base_path_.empty() || base_path_ == base::FilePath("/dev/null"))
+  if (base_path_.empty() || base_path_ == base::FilePath(kDevNull))
     return base_path_;
 
   // Disambiguate multiple window output files with the window id.
@@ -177,7 +179,7 @@ void HeadlessSurfaceFactory::CheckBasePath() const {
     return;
 
   if (!DirectoryExists(base_path_) && !base::CreateDirectory(base_path_) &&
-      base_path_ != base::FilePath("/dev/null"))
+      base_path_ != base::FilePath(kDevNull))
     PLOG(FATAL) << "Unable to create output directory";
 
   if (!base::PathIsWritable(base_path_))

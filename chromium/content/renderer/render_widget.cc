@@ -69,33 +69,32 @@
 #include "ipc/ipc_message_start.h"
 #include "ipc/ipc_sync_message.h"
 #include "ipc/ipc_sync_message_filter.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/public/platform/FilePathConversion.h"
-#include "third_party/WebKit/public/platform/WebCursorInfo.h"
-#include "third_party/WebKit/public/platform/WebDragData.h"
-#include "third_party/WebKit/public/platform/WebDragOperation.h"
-#include "third_party/WebKit/public/platform/WebMouseEvent.h"
-#include "third_party/WebKit/public/platform/WebPoint.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/public/platform/WebRuntimeFeatures.h"
-#include "third_party/WebKit/public/platform/WebSize.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/scheduler/renderer/render_widget_scheduling_state.h"
-#include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
-#include "third_party/WebKit/public/web/WebAutofillClient.h"
-#include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
-#include "third_party/WebKit/public/web/WebFrameWidget.h"
-#include "third_party/WebKit/public/web/WebInputMethodController.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebNode.h"
-#include "third_party/WebKit/public/web/WebPagePopup.h"
-#include "third_party/WebKit/public/web/WebPopupMenuInfo.h"
-#include "third_party/WebKit/public/web/WebRange.h"
-#include "third_party/WebKit/public/web/WebSettings.h"
-#include "third_party/WebKit/public/web/WebTappedInfo.h"
-#include "third_party/WebKit/public/web/WebView.h"
-#include "third_party/WebKit/public/web/WebWidget.h"
+#include "third_party/blink/public/platform/file_path_conversion.h"
+#include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
+#include "third_party/blink/public/platform/scheduler/web_render_widget_scheduling_state.h"
+#include "third_party/blink/public/platform/web_cursor_info.h"
+#include "third_party/blink/public/platform/web_drag_data.h"
+#include "third_party/blink/public/platform/web_drag_operation.h"
+#include "third_party/blink/public/platform/web_mouse_event.h"
+#include "third_party/blink/public/platform/web_point.h"
+#include "third_party/blink/public/platform/web_rect.h"
+#include "third_party/blink/public/platform/web_runtime_features.h"
+#include "third_party/blink/public/platform/web_size.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/web/web_autofill_client.h"
+#include "third_party/blink/public/web/web_device_emulation_params.h"
+#include "third_party/blink/public/web/web_frame_widget.h"
+#include "third_party/blink/public/web/web_input_method_controller.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_node.h"
+#include "third_party/blink/public/web/web_page_popup.h"
+#include "third_party/blink/public/web/web_popup_menu_info.h"
+#include "third_party/blink/public/web/web_range.h"
+#include "third_party/blink/public/web/web_settings.h"
+#include "third_party/blink/public/web/web_view.h"
+#include "third_party/blink/public/web/web_widget.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/ui_base_features.h"
@@ -149,7 +148,6 @@ using blink::WebRange;
 using blink::WebRect;
 using blink::WebSize;
 using blink::WebString;
-using blink::WebTappedInfo;
 using blink::WebTextDirection;
 using blink::WebTouchEvent;
 using blink::WebTouchPoint;
@@ -393,7 +391,6 @@ RenderWidget::RenderWidget(
       closing_(false),
       host_closing_(false),
       is_swapped_out_(swapped_out),
-      for_oopif_(false),
       text_input_type_(ui::TEXT_INPUT_TYPE_NONE),
       text_input_mode_(ui::TEXT_INPUT_MODE_DEFAULT),
       text_input_flags_(0),
@@ -410,6 +407,7 @@ RenderWidget::RenderWidget(
       has_host_context_menu_location_(false),
       has_added_input_handler_(false),
       has_focus_(false),
+      for_oopif_(false),
 #if defined(OS_MACOSX)
       text_input_client_observer_(new TextInputClientObserver(this)),
 #endif
@@ -427,7 +425,7 @@ RenderWidget::RenderWidget(
   // In tests there may not be a RenderThreadImpl.
   if (RenderThreadImpl::current()) {
     render_widget_scheduling_state_ = RenderThreadImpl::current()
-                                          ->GetRendererScheduler()
+                                          ->GetWebMainThreadScheduler()
                                           ->NewRenderWidgetSchedulingState();
     render_widget_scheduling_state_->SetHidden(is_hidden_);
   }
@@ -488,7 +486,8 @@ RenderWidget* RenderWidget::CreateForPopup(
       task_runner, std::move(widget_channel_request)));
   ShowCallback opener_callback =
       base::Bind(&RenderViewImpl::ShowCreatedPopupWidget, opener->GetWeakPtr());
-  widget->Init(opener_callback, RenderWidget::CreateWebWidget(widget.get()));
+  widget->Init(std::move(opener_callback),
+               RenderWidget::CreateWebWidget(widget.get()));
   DCHECK(!widget->HasOneRef());  // RenderWidget::Init() adds a reference.
   return widget.get();
 }
@@ -586,7 +585,7 @@ void RenderWidget::Init(const ShowCallback& show_callback,
         render_thread_impl && compositor_
             ? render_thread_impl->compositor_task_runner()
             : nullptr,
-        render_thread_impl ? render_thread_impl->GetRendererScheduler()
+        render_thread_impl ? render_thread_impl->GetWebMainThreadScheduler()
                            : nullptr);
   }
 
@@ -639,29 +638,6 @@ void RenderWidget::SetExternalPopupOriginAdjustmentsForEmulation(
 }
 #endif
 
-void RenderWidget::SetLocalSurfaceIdForAutoResize(
-    uint64_t sequence_number,
-    const content::ScreenInfo& screen_info,
-    uint32_t content_source_id,
-    const viz::LocalSurfaceId& local_surface_id) {
-  // If the given LocalSurfaceId was generated before navigation, don't use it.
-  // We should receive a new LocalSurfaceId later.
-  viz::LocalSurfaceId new_local_surface_id =
-      content_source_id != current_content_source_id_ ? viz::LocalSurfaceId()
-                                                      : local_surface_id;
-  // TODO(ccameron): If there is a meaningful distinction between |size_| and
-  // |compositor_viewport_pixel_size_| is it okay to ignore that distinction
-  // here, and assume that |compositor_viewport_pixel_size_| is just |size_| in
-  // pixels? Also note that the computation of
-  // |new_compositor_viewport_pixel_size| does not appear to take into account
-  // device emulation.
-  float new_device_scale_factor = screen_info.device_scale_factor;
-  gfx::Size new_compositor_viewport_pixel_size =
-      gfx::ScaleToCeiledSize(size_, new_device_scale_factor);
-  UpdateSurfaceAndScreenInfo(new_local_surface_id,
-                             new_compositor_viewport_pixel_size, screen_info);
-}
-
 void RenderWidget::OnShowHostContextMenu(ContextMenuParams* params) {
   if (screen_metrics_emulator_)
     screen_metrics_emulator_->OnShowContextMenu(params);
@@ -692,8 +668,6 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_ShowContextMenu, OnShowContextMenu)
     IPC_MESSAGE_HANDLER(ViewMsg_Close, OnClose)
     IPC_MESSAGE_HANDLER(ViewMsg_Resize, OnResize)
-    IPC_MESSAGE_HANDLER(ViewMsg_SetLocalSurfaceIdForAutoResize,
-                        OnSetLocalSurfaceIdForAutoResize)
     IPC_MESSAGE_HANDLER(ViewMsg_EnableDeviceEmulation,
                         OnEnableDeviceEmulation)
     IPC_MESSAGE_HANDLER(ViewMsg_DisableDeviceEmulation,
@@ -831,23 +805,6 @@ void RenderWidget::OnResize(const ResizeParams& params) {
     for (auto& render_frame : render_frames_)
       render_frame.DidChangeVisibleViewport();
   }
-}
-
-void RenderWidget::OnSetLocalSurfaceIdForAutoResize(
-    uint64_t sequence_number,
-    const gfx::Size& min_size,
-    const gfx::Size& max_size,
-    const content::ScreenInfo& screen_info,
-    uint32_t content_source_id,
-    const viz::LocalSurfaceId& local_surface_id) {
-  if (!auto_resize_mode_ || auto_resize_sequence_number_ != sequence_number) {
-    DidResizeOrRepaintAck();
-    return;
-  }
-  // TODO(ccameron): This does not appear to interact correctly with device
-  // emulation (compare with the intercepting of ScreenInfo in OnResize).
-  SetLocalSurfaceIdForAutoResize(sequence_number, screen_info,
-                                 content_source_id, local_surface_id);
 }
 
 void RenderWidget::OnEnableDeviceEmulation(
@@ -1064,11 +1021,6 @@ void RenderWidget::DidCommitAndDrawCompositorFrame() {
   // tab_capture_performancetest.cc.
   TRACE_EVENT0("gpu", "RenderWidget::DidCommitAndDrawCompositorFrame");
 
-  // If we haven't commited yet, then this method was called as a response to a
-  // previous commit and should not be used to ack the resize.
-  if (did_commit_after_resize_)
-    DidResizeOrRepaintAck();
-
   for (auto& observer : render_frames_)
     observer.DidCommitAndDrawCompositorFrame();
 
@@ -1077,7 +1029,7 @@ void RenderWidget::DidCommitAndDrawCompositorFrame() {
 }
 
 void RenderWidget::DidCommitCompositorFrame() {
-  did_commit_after_resize_ = true;
+  DidResizeOrRepaintAck();
 }
 
 void RenderWidget::DidCompletePageScaleAnimation() {}
@@ -1320,7 +1272,7 @@ bool RenderWidget::WillHandleGestureEvent(const blink::WebGestureEvent& event) {
   possible_drag_event_info_.event_source =
       ui::DragDropTypes::DRAG_EVENT_SOURCE_TOUCH;
   possible_drag_event_info_.event_location =
-      gfx::Point(event.global_x, event.global_y);
+      gfx::ToFlooredPoint(event.PositionInScreen());
 
   return false;
 }
@@ -1363,15 +1315,16 @@ gfx::Size RenderWidget::GetSizeForWebWidget() const {
 }
 
 void RenderWidget::Resize(const ResizeParams& params) {
+  if (params.auto_resize_enabled && auto_resize_mode_ &&
+      (!params.auto_resize_sequence_number ||
+       auto_resize_sequence_number_ != params.auto_resize_sequence_number)) {
+    DidResizeOrRepaintAck();
+    return;
+  }
+
   // The content_source_id that the browser sends us should never be larger than
   // |current_content_source_id_|.
   DCHECK_GE(1u << 30, current_content_source_id_ - params.content_source_id);
-
-  // If this resize needs to be acked, make sure we ack it only after we commit.
-  // It is possible to get DidCommitAndDraw calls that belong to the previous
-  // commit, in which case we should not ack this resize.
-  if (params.needs_resize_ack)
-    did_commit_after_resize_ = false;
 
   // Inform the rendering thread of the color space indicate the presence of HDR
   // capabilities.
@@ -1399,8 +1352,13 @@ void RenderWidget::Resize(const ResizeParams& params) {
       params.content_source_id == current_content_source_id_) {
     new_local_surface_id = *params.local_surface_id;
   }
+  gfx::Size new_compositor_viewport_pixel_size =
+      params.auto_resize_enabled
+          ? gfx::ScaleToCeiledSize(size_,
+                                   params.screen_info.device_scale_factor)
+          : params.compositor_viewport_pixel_size;
   UpdateSurfaceAndScreenInfo(new_local_surface_id,
-                             params.compositor_viewport_pixel_size,
+                             new_compositor_viewport_pixel_size,
                              params.screen_info);
   if (compositor_) {
     // If surface synchronization is enabled, then this will use the provided
@@ -1417,6 +1375,9 @@ void RenderWidget::Resize(const ResizeParams& params) {
     compositor_->SetRasterColorSpace(
         screen_info_.color_space.GetRasterColorSpace());
   }
+
+  if (params.auto_resize_enabled)
+    return;
 
   visible_viewport_size_ = params.visible_viewport_size;
 
@@ -1530,8 +1491,8 @@ blink::WebLayerTreeView* RenderWidget::InitializeLayerTreeView() {
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
   if (render_thread) {
     input_event_queue_ = new MainThreadEventQueue(
-        this, render_thread->GetRendererScheduler()->InputTaskRunner(),
-        render_thread->GetRendererScheduler(), should_generate_frame_sink);
+        this, render_thread->GetWebMainThreadScheduler()->InputTaskRunner(),
+        render_thread->GetWebMainThreadScheduler(), should_generate_frame_sink);
 
     InputHandlerManager* input_handler_manager =
         render_thread->input_handler_manager();
@@ -1947,6 +1908,7 @@ void RenderWidget::UpdateSurfaceAndScreenInfo(
   screen_info_ = new_screen_info;
 
   if (compositor_) {
+    compositor_->SetViewportVisibleRect(ViewportVisibleRect());
     // Note carefully that the DSF specified in |new_screen_info| is not the
     // DSF used by the compositor during device emulation!
     compositor_->SetViewportSizeAndScale(
@@ -2011,10 +1973,13 @@ void RenderWidget::OnUpdateWindowScreenRect(
 }
 
 void RenderWidget::OnSetViewportIntersection(
-    const gfx::Rect& viewport_intersection) {
+    const gfx::Rect& viewport_intersection,
+    const gfx::Rect& compositor_visible_rect) {
   if (auto* frame_widget = GetFrameWidget()) {
     DCHECK_EQ(popup_type_, WebPopupType::kWebPopupTypeNone);
+    compositor_visible_rect_ = compositor_visible_rect;
     frame_widget->SetRemoteViewportIntersection(viewport_intersection);
+    compositor_->SetViewportVisibleRect(ViewportVisibleRect());
   }
 }
 
@@ -2505,30 +2470,6 @@ blink::WebScreenInfo RenderWidget::GetScreenInfo() {
   return web_screen_info;
 }
 
-#if defined(OS_ANDROID)
-void RenderWidget::ShowUnhandledTapUIIfNeeded(
-    const WebTappedInfo& tapped_info) {
-  // Unpack tapped_info. TODO(donnd): inline unpacking.
-  bool page_changed = tapped_info.PageChanged();
-  const WebNode& tapped_node = tapped_info.GetNode();
-  const WebPoint& tapped_position = tapped_info.Position();
-  bool should_trigger = !page_changed && tapped_node.IsTextNode() &&
-                        !tapped_node.IsContentEditable() &&
-                        !tapped_node.IsInsideFocusableElementOrARIAWidget();
-  if (should_trigger) {
-    float x_px =
-        IsUseZoomForDSFEnabled()
-            ? tapped_position.x
-            : tapped_position.x * GetWebScreenInfo().device_scale_factor;
-    float y_px =
-        IsUseZoomForDSFEnabled()
-            ? tapped_position.y
-            : tapped_position.y * GetWebScreenInfo().device_scale_factor;
-    Send(new ViewHostMsg_ShowUnhandledTapUIIfNeeded(routing_id_, x_px, y_px));
-  }
-}
-#endif
-
 void RenderWidget::DidHandleGestureEvent(const WebGestureEvent& event,
                                          bool event_cancelled) {
 #if defined(OS_ANDROID) || defined(USE_AURA)
@@ -2707,9 +2648,10 @@ uint32_t RenderWidget::GetContentSourceId() {
 }
 
 void RenderWidget::DidNavigate() {
+  ++current_content_source_id_;
   if (!compositor_)
     return;
-  compositor_->SetContentSourceId(++current_content_source_id_);
+  compositor_->SetContentSourceId(current_content_source_id_);
 
   UpdateSurfaceAndScreenInfo(viz::LocalSurfaceId(),
                              compositor_viewport_pixel_size_, screen_info_);
@@ -2809,6 +2751,11 @@ PepperPluginInstanceImpl* RenderWidget::GetFocusedPepperPluginInsideWidget() {
   return nullptr;
 }
 #endif
+
+gfx::Rect RenderWidget::ViewportVisibleRect() {
+  return for_oopif_ ? compositor_visible_rect_
+                    : gfx::Rect(compositor_viewport_pixel_size_);
+}
 
 base::WeakPtr<RenderWidget> RenderWidget::AsWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();

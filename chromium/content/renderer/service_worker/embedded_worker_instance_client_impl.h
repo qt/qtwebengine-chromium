@@ -12,8 +12,8 @@
 #include "content/child/scoped_child_process_reference.h"
 #include "content/common/service_worker/embedded_worker.mojom.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom.h"
-#include "third_party/WebKit/public/web/worker_content_settings_proxy.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom.h"
+#include "third_party/blink/public/web/worker_content_settings_proxy.mojom.h"
 
 namespace blink {
 
@@ -45,6 +45,13 @@ class ServiceWorkerContextClient;
 class EmbeddedWorkerInstanceClientImpl
     : public mojom::EmbeddedWorkerInstanceClient {
  public:
+  // Enum for UMA to record when StartWorker is received.
+  enum class StartWorkerHistogramEnum {
+    RECEIVED_ON_INSTALLED = 0,
+    RECEIVED_ON_UNINSTALLED = 1,
+    NUM_TYPES
+  };
+
   // Creates a new EmbeddedWorkerInstanceClientImpl instance bound to
   // |request|. The instance destroys itself when needed, see the class
   // documentation.

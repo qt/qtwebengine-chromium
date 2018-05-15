@@ -4,10 +4,7 @@
 
 #include "components/browser_sync/profile_sync_service.h"
 
-#include <stddef.h>
-
 #include <cstddef>
-#include <map>
 #include <utility>
 
 #include "base/bind.h"
@@ -15,30 +12,23 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
-#include "base/files/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/metrics/histogram.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/single_thread_task_runner.h"
-#include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/browser_sync/browser_sync_switches.h"
 #include "components/invalidation/impl/invalidation_prefs.h"
 #include "components/invalidation/public/invalidation_service.h"
 #include "components/pref_registry/pref_registry_syncable.h"
-#include "components/prefs/json_pref_store.h"
 #include "components/reading_list/features/reading_list_buildflags.h"
-#include "components/signin/core/browser/about_signin_internals.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/browser/signin_metrics.h"
 #include "components/sync/base/bind_to_task_runner.h"
 #include "components/sync/base/cryptographer.h"
 #include "components/sync/base/passphrase_type.h"
-#include "components/sync/base/pref_names.h"
 #include "components/sync/base/report_unrecoverable_error.h"
 #include "components/sync/base/stop_source.h"
 #include "components/sync/base/system_encryptor.h"
@@ -66,6 +56,7 @@
 #include "components/sync/model/change_processor.h"
 #include "components/sync/model/model_type_change_processor.h"
 #include "components/sync/model/sync_error.h"
+#include "components/sync/model_impl/client_tag_based_model_type_processor.h"
 #include "components/sync/protocol/sync.pb.h"
 #include "components/sync/syncable/directory.h"
 #include "components/sync/syncable/sync_db_util.h"
@@ -86,6 +77,7 @@
 using sync_sessions::SessionsSyncManager;
 using syncer::BackendMigrator;
 using syncer::ChangeProcessor;
+using syncer::ClientTagBasedModelTypeProcessor;
 using syncer::DataTypeController;
 using syncer::DataTypeManager;
 using syncer::DataTypeStatusTable;
@@ -108,8 +100,6 @@ using syncer::WeakHandle;
 namespace browser_sync {
 
 namespace {
-
-using AuthError = GoogleServiceAuthError;
 
 const char kSyncUnrecoverableErrorHistogram[] = "Sync.UnrecoverableErrors";
 
@@ -154,7 +144,9 @@ ProfileSyncService::ProfileSyncService(InitParams init_params)
                       init_params.base_directory,
                       init_params.debug_identifier),
       OAuth2TokenService::Consumer("sync"),
-      last_auth_error_(AuthError::AuthErrorNone()),
+      signin_scoped_device_id_callback_(
+          init_params.signin_scoped_device_id_callback),
+      last_auth_error_(GoogleServiceAuthError::AuthErrorNone()),
       sync_service_url_(
           syncer::GetSyncServiceURL(*base::CommandLine::ForCurrentProcess(),
                                     init_params.channel)),
@@ -179,6 +171,7 @@ ProfileSyncService::ProfileSyncService(InitParams init_params)
       sync_enabled_weak_factory_(this),
       weak_factory_(this) {
   DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(signin_scoped_device_id_callback_);
   DCHECK(sync_client_);
   std::string last_version = sync_prefs_.GetLastRunVersion();
   std::string current_version = PRODUCT_VERSION;
@@ -224,8 +217,6 @@ void ProfileSyncService::Initialize() {
       base::Bind(&ProfileSyncService::CanEngineStart, base::Unretained(this)),
       base::Bind(&ProfileSyncService::StartUpSlowEngineComponents,
                  weak_factory_.GetWeakPtr()));
-  sync_sessions::LocalSessionEventRouter* router =
-      sync_client_->GetSyncSessionsClient()->GetLocalSessionEventRouter();
   local_device_ = sync_client_->GetSyncApiComponentFactory()
                       ->CreateLocalDeviceInfoProvider();
   sync_stopped_reporter_ = std::make_unique<syncer::SyncStoppedReporter>(
@@ -233,15 +224,15 @@ void ProfileSyncService::Initialize() {
       url_request_context_, syncer::SyncStoppedReporter::ResultCallback());
   sessions_sync_manager_ = std::make_unique<SessionsSyncManager>(
       sync_client_->GetSyncSessionsClient(), &sync_prefs_, local_device_.get(),
-      router,
       base::Bind(&ProfileSyncService::NotifyForeignSessionUpdated,
                  sync_enabled_weak_factory_.GetWeakPtr()));
 
   device_info_sync_bridge_ = std::make_unique<DeviceInfoSyncBridge>(
       local_device_.get(), model_type_store_factory_,
-      base::BindRepeating(
-          &ModelTypeChangeProcessor::Create,
-          base::BindRepeating(&syncer::ReportUnrecoverableError, channel_)));
+      std::make_unique<ClientTagBasedModelTypeProcessor>(
+          syncer::DEVICE_INFO,
+          /*dump_stack=*/base::BindRepeating(&syncer::ReportUnrecoverableError,
+                                             channel_)));
 
   syncer::SyncApiComponentFactory::RegisterDataTypesMethod
       register_platform_types_callback =
@@ -346,14 +337,14 @@ void ProfileSyncService::StartSyncingWithServer() {
 void ProfileSyncService::RegisterAuthNotifications() {
   DCHECK(thread_checker_.CalledOnValidThread());
   oauth2_token_service_->AddObserver(this);
-  if (signin())
-    signin()->AddObserver(this);
+  if (signin_)
+    signin_->GetSigninManager()->AddObserver(this);
 }
 
 void ProfileSyncService::UnregisterAuthNotifications() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (signin())
-    signin()->RemoveObserver(this);
+  if (signin_)
+    signin_->GetSigninManager()->RemoveObserver(this);
   if (oauth2_token_service_)
     oauth2_token_service_->RemoveObserver(this);
 }
@@ -572,6 +563,8 @@ void ProfileSyncService::OnGetTokenSuccess(
     engine_->UpdateCredentials(GetCredentials());
   else
     startup_controller_->TryStart();
+
+  UpdateAuthErrorState(GoogleServiceAuthError(GoogleServiceAuthError::NONE));
 }
 
 void ProfileSyncService::OnGetTokenFailure(
@@ -635,6 +628,31 @@ void ProfileSyncService::OnRefreshTokenRevoked(const std::string& account_id) {
 
 void ProfileSyncService::OnRefreshTokensLoaded() {
   DCHECK(thread_checker_.CalledOnValidThread());
+
+  GoogleServiceAuthError token_error =
+      oauth2_token_service_->GetAuthError(signin_->GetAccountIdToUse());
+  if (token_error == GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
+                         GoogleServiceAuthError::InvalidGaiaCredentialsReason::
+                             CREDENTIALS_REJECTED_BY_CLIENT)) {
+    // When the refresh token is replaced by a new token with a
+    // CREDENTIALS_REJECTED_BY_CLIENT error, Sync must be stopped immediately,
+    // even if the current access token is still valid. This happens e.g. when
+    // the user signs out of the web with Dice enabled.
+    // It is not necessary to do this when the refresh token is
+    // CREDENTIALS_REJECTED_BY_SERVER, because in that case the access token
+    // will be rejected by the server too.
+    // We only do this in OnRefreshTokensLoaded(), as opposed to
+    // OAuth2TokenService::Observer::OnAuthErrorChanged(), because
+    // CREDENTIALS_REJECTED_BY_CLIENT is only set by the signin component when
+    // the refresh token is created.
+    access_token_.clear();
+    request_access_token_retry_timer_.Stop();
+    access_token_request_.reset();
+    is_auth_in_progress_ = false;
+    if (HasSyncingEngine())
+      engine_->InvalidateCredentials();
+  }
+
   // This notification gets fired when OAuth2TokenService loads the tokens from
   // storage. Initialize the engine if sync is enabled. If the sync token was
   // not loaded, GetCredentials() will generate invalid credentials to cause the
@@ -657,6 +675,8 @@ void ProfileSyncService::Shutdown() {
     RemoveObserver(sync_error_controller_.get());
     sync_error_controller_.reset();
   }
+
+  signin_scoped_device_id_callback_.Reset();
 
   if (sync_thread_)
     sync_thread_->Stop();
@@ -897,17 +917,9 @@ void ProfileSyncService::OnEngineInitialized(
   sync_js_controller_.AttachJsBackend(js_backend);
   debug_info_listener_ = debug_info_listener;
 
-  std::string signin_scoped_device_id;
-  if (IsLocalSyncEnabled()) {
-    signin_scoped_device_id = "local_device";
-  } else {
-    SigninClient* signin_client = signin_->GetOriginal()->signin_client();
-    DCHECK(signin_client);
-    signin_scoped_device_id = signin_client->GetSigninScopedDeviceId();
-  }
-
   // Initialize local device info.
-  local_device_->Initialize(cache_guid, signin_scoped_device_id);
+  local_device_->Initialize(cache_guid,
+                            signin_scoped_device_id_callback_.Run());
 
   if (protocol_event_observers_.might_have_observers()) {
     engine_->RequestBufferedProtocolEventsAndEnableForwarding();
@@ -994,7 +1006,8 @@ void ProfileSyncService::OnExperimentsChanged(
       experiments.gcm_invalidations_enabled);
 }
 
-void ProfileSyncService::UpdateAuthErrorState(const AuthError& error) {
+void ProfileSyncService::UpdateAuthErrorState(
+    const GoogleServiceAuthError& error) {
   is_auth_in_progress_ = false;
   last_auth_error_ = error;
 
@@ -1003,20 +1016,23 @@ void ProfileSyncService::UpdateAuthErrorState(const AuthError& error) {
 
 namespace {
 
-AuthError ConnectionStatusToAuthError(syncer::ConnectionStatus status) {
+GoogleServiceAuthError ConnectionStatusToAuthError(
+    syncer::ConnectionStatus status) {
   switch (status) {
     case syncer::CONNECTION_OK:
-      return AuthError::AuthErrorNone();
+      return GoogleServiceAuthError::AuthErrorNone();
       break;
     case syncer::CONNECTION_AUTH_ERROR:
-      return AuthError(AuthError::INVALID_GAIA_CREDENTIALS);
+      return GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
+          GoogleServiceAuthError::InvalidGaiaCredentialsReason::
+              CREDENTIALS_REJECTED_BY_SERVER);
       break;
     case syncer::CONNECTION_SERVER_ERROR:
-      return AuthError(AuthError::CONNECTION_FAILED);
+      return GoogleServiceAuthError(GoogleServiceAuthError::CONNECTION_FAILED);
       break;
     default:
       NOTREACHED();
-      return AuthError(AuthError::CONNECTION_FAILED);
+      return GoogleServiceAuthError(GoogleServiceAuthError::CONNECTION_FAILED);
   }
 }
 
@@ -1062,6 +1078,9 @@ void ProfileSyncService::OnConnectionStatusChange(
           base::Bind(&ProfileSyncService::RequestAccessToken,
                      sync_enabled_weak_factory_.GetWeakPtr()));
     }
+    // Make observers aware of the change. This call is unnecessary in the
+    // block below because UpdateAuthErrorState() will notify observers.
+    NotifyObservers();
   } else {
     // Reset backoff time after successful connection.
     if (status == syncer::CONNECTION_OK) {
@@ -1122,7 +1141,7 @@ void ProfileSyncService::OnActionableError(const SyncProtocolError& error) {
       // On every platform except ChromeOS, sign out the user after a dashboard
       // clear.
       if (!IsLocalSyncEnabled()) {
-        SigninManager::FromSigninManagerBase(signin_->GetOriginal())
+        SigninManager::FromSigninManagerBase(signin_->GetSigninManager())
             ->SignOut(signin_metrics::SERVER_FORCED_DISABLE,
                       signin_metrics::SignoutDelete::IGNORE_METRIC);
       }
@@ -1347,7 +1366,7 @@ bool ProfileSyncService::QueryDetailedSyncStatus(SyncEngine::Status* result) {
   return false;
 }
 
-const AuthError& ProfileSyncService::GetAuthError() const {
+const GoogleServiceAuthError& ProfileSyncService::GetAuthError() const {
   DCHECK(thread_checker_.CalledOnValidThread());
   return last_auth_error_;
 }
@@ -1528,6 +1547,20 @@ void ProfileSyncService::OnUserChoseDatatypes(
   if (data_type_manager_)
     data_type_manager_->ResetDataTypeErrors();
   ChangePreferredDataTypes(chosen_types);
+}
+
+void ProfileSyncService::OnUserChangedSyncEverythingOnly(bool sync_everything) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (!engine_ && !HasUnrecoverableError()) {
+    NOTREACHED();
+    return;
+  }
+
+  sync_prefs_.SetKeepEverythingSynced(sync_everything);
+  UpdateSelectedTypesHistogram(sync_everything, GetPreferredDataTypes());
+  if (data_type_manager_)
+    data_type_manager_->ResetDataTypeErrors();
+  ReconfigureDatatypeManager();
 }
 
 void ProfileSyncService::ChangePreferredDataTypes(
@@ -1884,7 +1917,8 @@ void ProfileSyncService::OnSyncManagedPrefChange(bool is_sync_managed) {
 void ProfileSyncService::GoogleSigninSucceeded(const std::string& account_id,
                                                const std::string& username) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!IsEngineInitialized() || GetAuthError().state() != AuthError::NONE) {
+  if (!IsEngineInitialized() ||
+      GetAuthError().state() != GoogleServiceAuthError::NONE) {
     // Track the fact that we're still waiting for auth to complete.
     is_auth_in_progress_ = true;
   }
@@ -2351,4 +2385,5 @@ void ProfileSyncService::OnSetupInProgressHandleDestroyed() {
     ReconfigureDatatypeManager();
   NotifyObservers();
 }
+
 }  // namespace browser_sync

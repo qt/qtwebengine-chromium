@@ -18,7 +18,7 @@ void PreviewModeClient::Invalidate(const pp::Rect& rect) {
   NOTREACHED();
 }
 
-void PreviewModeClient::Scroll(const pp::Point& point) {
+void PreviewModeClient::DidScroll(const pp::Point& point) {
   NOTREACHED();
 }
 
@@ -28,6 +28,10 @@ void PreviewModeClient::ScrollToX(int x_in_screen_coords) {
 
 void PreviewModeClient::ScrollToY(int y_in_screen_coords,
                                   bool compensate_for_toolbar) {
+  NOTREACHED();
+}
+
+void PreviewModeClient::ScrollBy(const pp::Point& point) {
   NOTREACHED();
 }
 
@@ -132,7 +136,8 @@ void PreviewModeClient::DocumentPaintOccurred() {
 }
 
 void PreviewModeClient::DocumentLoadComplete(
-    const PDFEngine::DocumentFeatures& document_features) {
+    const PDFEngine::DocumentFeatures& document_features,
+    uint32_t file_size) {
   client_->PreviewDocumentLoadComplete();
 }
 
@@ -166,6 +171,10 @@ bool PreviewModeClient::IsPrintPreview() {
 }
 
 void PreviewModeClient::CancelBrowserDownload() {}
+
+float PreviewModeClient::GetToolbarHeightInScreenCoords() {
+  return 0.0f;
+}
 
 uint32_t PreviewModeClient::GetBackgroundColor() {
   NOTREACHED();

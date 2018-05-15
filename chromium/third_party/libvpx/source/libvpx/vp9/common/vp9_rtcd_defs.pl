@@ -68,8 +68,8 @@ if (vpx_config("CONFIG_EMULATE_HARDWARE") ne "yes") {
   # Note that there are more specializations appended when
   # CONFIG_VP9_HIGHBITDEPTH is off.
   specialize qw/vp9_iht4x4_16_add neon sse2/;
-  specialize qw/vp9_iht8x8_64_add sse2/;
-  specialize qw/vp9_iht16x16_256_add sse2/;
+  specialize qw/vp9_iht8x8_64_add neon sse2/;
+  specialize qw/vp9_iht16x16_256_add neon sse2/;
   if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") ne "yes") {
     # Note that these specializations are appended to the above ones.
     specialize qw/vp9_iht4x4_16_add dspr2 msa/;
@@ -104,8 +104,8 @@ if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
 
   if (vpx_config("CONFIG_EMULATE_HARDWARE") ne "yes") {
     specialize qw/vp9_highbd_iht4x4_16_add neon sse4_1/;
-    specialize qw/vp9_highbd_iht8x8_64_add sse4_1/;
-    specialize qw/vp9_highbd_iht16x16_256_add sse4_1/;
+    specialize qw/vp9_highbd_iht8x8_64_add neon sse4_1/;
+    specialize qw/vp9_highbd_iht16x16_256_add neon sse4_1/;
   }
 }
 

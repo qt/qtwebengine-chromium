@@ -83,6 +83,9 @@
     "includes": [11000],
     "structures": [11470],
   },
+  "chrome/browser/resources/chromeos/multidevice_setup/multidevice_setup_resources.grd": {
+    "structures": [11515],
+  },
   "chrome/browser/resources/component_extension_resources.grd": {
     "includes": [11560],
     "structures": [11810],
@@ -99,47 +102,56 @@
   "chrome/browser/resources/net_internals_resources.grd": {
     "includes": [12000],
   },
+  "chrome/browser/resources/print_preview/print_preview_resources_vulcanized.grd": {
+    "includes": [12010],
+  },
   "chrome/browser/resources/print_preview/print_preview_resources.grd": {
-    "structures": [12010],
+    "structures": [12020],
   },
   "chrome/browser/resources/quota_internals_resources.grd": {
-    "includes": [12110],
+    "includes": [12210],
   },
   "chrome/browser/resources/settings/settings_resources_vulcanized.grd": {
-    "includes": [12130],
+    "includes": [12230],
   },
   "chrome/browser/resources/settings/settings_resources.grd": {
-    "structures": [12140],
+    "structures": [12240],
   },
   "chrome/browser/resources/sync_file_system_internals_resources.grd": {
-    "includes": [12640],
+    "includes": [12740],
   },
   "chrome/browser/resources/task_scheduler_internals/resources.grd": {
-    "includes": [12670],
+    "includes": [12770],
   },
   "chrome/browser/resources/translate_internals_resources.grd": {
-    "includes": [12680],
+    "includes": [12780],
   },
   "chrome/browser/resources/webapks_ui_resources.grd": {
-    "includes": [12700],
+    "includes": [12800],
   },
   "chrome/browser/vr/testapp/vr_testapp_resources.grd": {
-    "includes": [12710],
+    "includes": [12810],
   },
   # END chrome/browser section.
 
   # START chrome/ miscellaneous section.
   "chrome/common/common_resources.grd": {
-    "includes": [12750],
-  },
-  "chrome/renderer/resources/renderer_resources.grd": {
-    "includes": [12760],
-    "structures": [12840],
-  },
-  "chrome/test/data/webui_test_resources.grd": {
     "includes": [12850],
   },
+  "chrome/renderer/resources/renderer_resources.grd": {
+    "includes": [12860],
+    "structures": [12940],
+  },
+  "chrome/test/data/webui_test_resources.grd": {
+    "includes": [12950],
+  },
   # END chrome/ miscellaneous section.
+
+  # START chromeos/ section.
+  "chromeos/resources/chromeos_resources.grd": {
+    "includes": [14000],
+  },
+  # END chromeos/ section.
 
   # START components/ section.
   "components/autofill/android/autofill_strings.grd": {
@@ -328,13 +340,13 @@
     "messages": [24800],
   },
 
-  "third_party/WebKit/public/blink_image_resources.grd": {
+  "third_party/blink/public/blink_image_resources.grd": {
     "structures": [25300],
   },
-  "third_party/WebKit/public/blink_resources.grd": {
+  "third_party/blink/public/blink_resources.grd": {
     "includes": [25400],
   },
-  "third_party/WebKit/Source/modules/media_controls/resources/media_controls_resources.grd": {
+  "third_party/blink/renderer/modules/media_controls/resources/media_controls_resources.grd": {
     "includes": [25500],
     "structures": [25600],
   },

@@ -73,7 +73,7 @@ base::HistogramBase::Sample GetDelaySample(const base::TimeDelta& delay) {
 // Synthesizes a fake std::unique_ptr<DataUse> with the given |url|, |tab_id|,
 // |tx_bytes| and |rx_bytes|, using arbitrary values for all other fields.
 std::unique_ptr<DataUse> CreateDataUseWithURLAndTab(const GURL& url,
-                                                    int32_t tab_id,
+                                                    SessionID tab_id,
                                                     int64_t tx_bytes,
                                                     int64_t rx_bytes) {
   return std::unique_ptr<DataUse>(
@@ -89,13 +89,14 @@ std::unique_ptr<DataUse> CreateDataUseWithURLAndTab(const GURL& url,
 std::unique_ptr<DataUse> CreateDataUseWithURL(const GURL& url,
                                               int64_t tx_bytes,
                                               int64_t rx_bytes) {
-  return CreateDataUseWithURLAndTab(url, 10, tx_bytes, rx_bytes);
+  return CreateDataUseWithURLAndTab(url, SessionID::FromSerializedValue(10),
+                                    tx_bytes, rx_bytes);
 }
 
 // Synthesizes a fake std::unique_ptr<DataUse> with the given |tab_id|,
 // |tx_bytes|
 // and |rx_bytes|, using arbitrary values for all other fields.
-std::unique_ptr<DataUse> CreateDataUseWithTab(int32_t tab_id,
+std::unique_ptr<DataUse> CreateDataUseWithTab(SessionID tab_id,
                                               int64_t tx_bytes,
                                               int64_t rx_bytes) {
   return CreateDataUseWithURLAndTab(GURL("http://example.com"), tab_id,
@@ -123,7 +124,7 @@ class MockTimerWithTickClock : public base::MockTimer {
  public:
   MockTimerWithTickClock(bool retain_user_task,
                          bool is_repeating,
-                         base::TickClock* tick_clock)
+                         const base::TickClock* tick_clock)
       : base::MockTimer(retain_user_task, is_repeating),
         tick_clock_(tick_clock) {}
 
@@ -135,7 +136,7 @@ class MockTimerWithTickClock : public base::MockTimer {
   }
 
  private:
-  base::TickClock* tick_clock_;
+  const base::TickClock* tick_clock_;
 
   DISALLOW_COPY_AND_ASSIGN(MockTimerWithTickClock);
 };
@@ -145,9 +146,9 @@ class MockTimerWithTickClock : public base::MockTimer {
 class TestTrafficStatsAmortizer : public TrafficStatsAmortizer {
  public:
   TestTrafficStatsAmortizer(
-      std::unique_ptr<base::TickClock> tick_clock,
+      const base::TickClock* tick_clock,
       std::unique_ptr<base::Timer> traffic_stats_query_timer)
-      : TrafficStatsAmortizer(std::move(tick_clock),
+      : TrafficStatsAmortizer(tick_clock,
                               std::move(traffic_stats_query_timer),
                               kTrafficStatsQueryDelay,
                               kMaxAmortizationDelay,
@@ -187,9 +188,9 @@ class TestTrafficStatsAmortizer : public TrafficStatsAmortizer {
 class TrafficStatsAmortizerTest : public testing::Test {
  public:
   TrafficStatsAmortizerTest()
-      : test_tick_clock_(new base::SimpleTestTickClock()),
-        mock_timer_(new MockTimerWithTickClock(false, false, test_tick_clock_)),
-        amortizer_(std::unique_ptr<base::TickClock>(test_tick_clock_),
+      : mock_timer_(
+            new MockTimerWithTickClock(false, false, &test_tick_clock_)),
+        amortizer_(&test_tick_clock_,
                    std::unique_ptr<base::Timer>(mock_timer_)),
         data_use_callback_call_count_(0) {}
 
@@ -199,21 +200,21 @@ class TrafficStatsAmortizerTest : public testing::Test {
 
   // Simulates the passage of time by |delta|, firing timers when appropriate.
   void AdvanceTime(const base::TimeDelta& delta) {
-    const base::TimeTicks end_time = test_tick_clock_->NowTicks() + delta;
+    const base::TimeTicks end_time = test_tick_clock_.NowTicks() + delta;
     base::RunLoop().RunUntilIdle();
 
-    while (test_tick_clock_->NowTicks() < end_time) {
+    while (test_tick_clock_.NowTicks() < end_time) {
       PumpMockTimer();
 
       // If |mock_timer_| is scheduled to fire in the future before |end_time|,
       // advance to that time.
       if (mock_timer_->IsRunning() &&
           mock_timer_->desired_run_time() < end_time) {
-        test_tick_clock_->Advance(mock_timer_->desired_run_time() -
-                                  test_tick_clock_->NowTicks());
+        test_tick_clock_.Advance(mock_timer_->desired_run_time() -
+                                 test_tick_clock_.NowTicks());
       } else {
         // Otherwise, advance to |end_time|.
-        test_tick_clock_->Advance(end_time - test_tick_clock_->NowTicks());
+        test_tick_clock_.Advance(end_time - test_tick_clock_.NowTicks());
       }
     }
     PumpMockTimer();
@@ -258,7 +259,7 @@ class TrafficStatsAmortizerTest : public testing::Test {
                       base::Unretained(this), base::Passed(&expected));
   }
 
-  base::TimeTicks NowTicks() const { return test_tick_clock_->NowTicks(); }
+  base::TimeTicks NowTicks() { return test_tick_clock_.NowTicks(); }
 
   TestTrafficStatsAmortizer* amortizer() { return &amortizer_; }
 
@@ -274,7 +275,7 @@ class TrafficStatsAmortizerTest : public testing::Test {
     // Fire the |mock_timer_| if the time has come up. Use a while loop in case
     // the fired task started the timer again to fire immediately.
     while (mock_timer_->IsRunning() &&
-           mock_timer_->desired_run_time() <= test_tick_clock_->NowTicks()) {
+           mock_timer_->desired_run_time() <= test_tick_clock_.NowTicks()) {
       mock_timer_->Fire();
       base::RunLoop().RunUntilIdle();
     }
@@ -282,8 +283,7 @@ class TrafficStatsAmortizerTest : public testing::Test {
 
   base::MessageLoop message_loop_;
 
-  // Weak, owned by |amortizer_|.
-  base::SimpleTestTickClock* test_tick_clock_;
+  base::SimpleTestTickClock test_tick_clock_;
 
   // Weak, owned by |amortizer_|.
   MockTimerWithTickClock* mock_timer_;
@@ -796,6 +796,9 @@ TEST_F(TrafficStatsAmortizerTest, AmortizeCombinedDataUse) {
 }
 
 TEST_F(TrafficStatsAmortizerTest, ConcurrentTabsHistogram) {
+  SessionID kTabId1 = SessionID::FromSerializedValue(1);
+  SessionID kTabId2 = SessionID::FromSerializedValue(2);
+
   SkipFirstAmortizationRun();
 
   {
@@ -803,17 +806,17 @@ TEST_F(TrafficStatsAmortizerTest, ConcurrentTabsHistogram) {
     base::HistogramTester histogram_tester;
     amortizer()->SetNextTrafficStats(true, 0, 0);
     amortizer()->AmortizeDataUse(
-        CreateDataUseWithTab(1, 50, 500),
-        ExpectDataUseCallback(CreateDataUseWithTab(1, 100, 1000)));
+        CreateDataUseWithTab(kTabId1, 50, 500),
+        ExpectDataUseCallback(CreateDataUseWithTab(kTabId1, 100, 1000)));
     amortizer()->AmortizeDataUse(
-        CreateDataUseWithTab(2, 100, 1000),
-        ExpectDataUseCallback(CreateDataUseWithTab(2, 200, 2000)));
+        CreateDataUseWithTab(kTabId2, 100, 1000),
+        ExpectDataUseCallback(CreateDataUseWithTab(kTabId2, 200, 2000)));
     amortizer()->AmortizeDataUse(
-        CreateDataUseWithTab(1, 50, 500),
-        ExpectDataUseCallback(CreateDataUseWithTab(1, 100, 1000)));
+        CreateDataUseWithTab(kTabId1, 50, 500),
+        ExpectDataUseCallback(CreateDataUseWithTab(kTabId1, 100, 1000)));
     amortizer()->AmortizeDataUse(
-        CreateDataUseWithTab(2, 100, 1000),
-        ExpectDataUseCallback(CreateDataUseWithTab(2, 200, 2000)));
+        CreateDataUseWithTab(kTabId2, 100, 1000),
+        ExpectDataUseCallback(CreateDataUseWithTab(kTabId2, 200, 2000)));
     amortizer()->SetNextTrafficStats(true, 600, 6000);
     AdvanceTime(kTrafficStatsQueryDelay);
     histogram_tester.ExpectUniqueSample(kConcurrentTabs, 2, 1);
@@ -828,9 +831,10 @@ TEST_F(TrafficStatsAmortizerTest, ConcurrentTabsHistogram) {
     base::HistogramTester histogram_tester;
 
     for (int32_t i = 1; i <= total_tabs; ++i) {
+      SessionID tab_id = SessionID::FromSerializedValue(i);
       amortizer()->AmortizeDataUse(
-          CreateDataUseWithTab(i, 100, 1000),
-          ExpectDataUseCallback(CreateDataUseWithTab(i, 200, 2000)));
+          CreateDataUseWithTab(tab_id, 100, 1000),
+          ExpectDataUseCallback(CreateDataUseWithTab(tab_id, 200, 2000)));
     }
     amortizer()->AddTrafficStats(total_tabs * 200, total_tabs * 2000);
     AdvanceTime(kTrafficStatsQueryDelay);

@@ -107,14 +107,16 @@
               </span>
             </div>
             <template is="dom-if" if="[[item.metadata.isLocal]]">
-              <button is="paper-icon-button-light" id="addressMenu"
-                  class="icon-more-vert" on-click="onAddressMenuTap_"
-                  title="$i18n{moreActions}">
-              </button>
+              <paper-icon-button-light class="icon-more-vert">
+                <button id="addressMenu"
+                    on-click="onAddressMenuTap_" title="$i18n{moreActions}">
+                </button>
+              </paper-icon-button-light>
             </template>
             <template is="dom-if" if="[[!item.metadata.isLocal]]">
-              <button is="paper-icon-button-light" class="icon-external"
-                  on-click="onRemoteEditAddressTap_" actionable></button>
+              <paper-icon-button-light actionable class="icon-external">
+                <button on-click="onRemoteEditAddressTap_"></button>
+              </paper-icon-button-light>
             </template>
           </div>
         </template>
@@ -124,12 +126,12 @@
         $i18n{noAddressesFound}
       </div>
     </div>
-    <dialog is="cr-action-menu" id="addressSharedMenu">
+    <cr-action-menu id="addressSharedMenu">
       <button id="menuEditAddress" slot="item" class="dropdown-item"
           on-click="onMenuEditAddressTap_">$i18n{edit}</button>
       <button id="menuRemoveAddress" slot="item" class="dropdown-item"
           on-click="onMenuRemoveAddressTap_">$i18n{removeAddress}</button>
-    </dialog>
+    </cr-action-menu>
     <template is="dom-if" if="[[showAddressDialog_]]" restamp>
       <settings-address-edit-dialog address="[[activeAddress]]"
           on-close="onAddressDialogClosed_">
@@ -171,15 +173,18 @@
                 <div id="creditCardExpiration"
                     class="expiration-date">[[expiration_(item)]]</div>
                 <template is="dom-if" if="[[showDots_(item.metadata)]]">
-                  <button is="paper-icon-button-light" id="creditCardMenu"
-                      class="icon-more-vert" title="$i18n{moreActions}"
-                      on-click="onCreditCardMenuTap_">
-                  </button>
+                  <paper-icon-button-light class="icon-more-vert">
+                    <button id="creditCardMenu" title="$i18n{moreActions}"
+                        on-click="onCreditCardMenuTap_">
+                    </button>
+                  </paper-icon-button-light>
                 </template>
                 <template is="dom-if" if="[[!showDots_(item.metadata)]]">
-                  <button is="paper-icon-button-light" id="remoteCreditCardLink"
-                      class="icon-external"
-                      on-click="onRemoteEditCreditCardTap_" actionable></button>
+                  <paper-icon-button-light actionable class="icon-external">
+                    <button id="remoteCreditCardLink"
+                        on-click="onRemoteEditCreditCardTap_">
+                    </button>
+                  </paper-icon-button-light>
                 </template>
               </div>
             </div>
@@ -197,7 +202,7 @@
         $i18n{noCreditCardsPolicy}
       </div>
     </div>
-    <dialog is="cr-action-menu" id="creditCardSharedMenu">
+    <cr-action-menu id="creditCardSharedMenu">
       <button id="menuEditCreditCard" slot="item" class="dropdown-item"
           on-click="onMenuEditCreditCardTap_">$i18n{edit}</button>
       <button id="menuRemoveCreditCard" slot="item" class="dropdown-item"
@@ -208,7 +213,7 @@
           hidden$="[[!activeCreditCard.metadata.isCached]]">
         $i18n{clearCreditCard}
       </button>
-    </dialog>
+    </cr-action-menu>
     <template is="dom-if" if="[[showCreditCardDialog_]]" restamp>
       <settings-credit-card-edit-dialog credit-card="[[activeCreditCard]]"
           on-close="onCreditCardDialogClosed_">

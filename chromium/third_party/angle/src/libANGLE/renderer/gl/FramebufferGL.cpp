@@ -49,22 +49,22 @@ void BindFramebufferAttachment(const FunctionsGL *functions,
             const Texture *texture     = attachment->getTexture();
             const TextureGL *textureGL = GetImplAs<TextureGL>(texture);
 
-            if (texture->getTarget() == GL_TEXTURE_2D ||
-                texture->getTarget() == GL_TEXTURE_2D_MULTISAMPLE ||
-                texture->getTarget() == GL_TEXTURE_RECTANGLE_ANGLE)
+            if (texture->getType() == TextureType::_2D ||
+                texture->getType() == TextureType::_2DMultisample ||
+                texture->getType() == TextureType::Rectangle)
             {
                 functions->framebufferTexture2D(GL_FRAMEBUFFER, attachmentPoint,
-                                                texture->getTarget(), textureGL->getTextureID(),
-                                                attachment->mipLevel());
-            }
-            else if (texture->getTarget() == GL_TEXTURE_CUBE_MAP)
-            {
-                functions->framebufferTexture2D(GL_FRAMEBUFFER, attachmentPoint,
-                                                attachment->cubeMapFace(),
+                                                ToGLenum(texture->getType()),
                                                 textureGL->getTextureID(), attachment->mipLevel());
             }
-            else if (texture->getTarget() == GL_TEXTURE_2D_ARRAY ||
-                     texture->getTarget() == GL_TEXTURE_3D)
+            else if (texture->getType() == TextureType::CubeMap)
+            {
+                functions->framebufferTexture2D(GL_FRAMEBUFFER, attachmentPoint,
+                                                ToGLenum(attachment->cubeMapFace()),
+                                                textureGL->getTextureID(), attachment->mipLevel());
+            }
+            else if (texture->getType() == TextureType::_2DArray ||
+                     texture->getType() == TextureType::_3D)
             {
                 if (attachment->getMultiviewLayout() == GL_FRAMEBUFFER_MULTIVIEW_LAYERED_ANGLE)
                 {
@@ -606,12 +606,13 @@ bool FramebufferGL::checkStatus(const gl::Context *context) const
     return (status == GL_FRAMEBUFFER_COMPLETE);
 }
 
-void FramebufferGL::syncState(const gl::Context *context, const Framebuffer::DirtyBits &dirtyBits)
+gl::Error FramebufferGL::syncState(const gl::Context *context,
+                                   const Framebuffer::DirtyBits &dirtyBits)
 {
     // Don't need to sync state for the default FBO.
     if (mIsDefault)
     {
-        return;
+        return gl::NoError();
     }
 
     mStateManager->bindFramebuffer(GL_FRAMEBUFFER, mFramebufferID);
@@ -698,6 +699,8 @@ void FramebufferGL::syncState(const gl::Context *context, const Framebuffer::Dir
         mStateManager->updateMultiviewBaseViewLayerIndexUniform(context->getGLState().getProgram(),
                                                                 getState());
     }
+
+    return gl::NoError();
 }
 
 GLuint FramebufferGL::getFramebufferID() const

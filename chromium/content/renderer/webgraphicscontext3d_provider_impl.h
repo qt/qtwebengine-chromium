@@ -9,7 +9,7 @@
 #include "base/memory/ref_counted.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "content/common/content_export.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3DProvider.h"
+#include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
 
 namespace cc {
 class ImageDecodeCache;
@@ -44,7 +44,6 @@ class CONTENT_EXPORT WebGraphicsContext3DProviderImpl
   bool BindToCurrentThread() override;
   gpu::gles2::GLES2Interface* ContextGL() override;
   GrContext* GetGrContext() override;
-  void InvalidateGrContext(uint32_t state) override;
   const gpu::Capabilities& GetCapabilities() const override;
   const gpu::GpuFeatureInfo& GetGpuFeatureInfo() const override;
   viz::GLHelper* GetGLHelper() override;

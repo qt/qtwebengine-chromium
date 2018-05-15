@@ -40,7 +40,7 @@
 #include "net/quic/core/crypto/quic_decrypter.h"
 #include "net/quic/core/crypto/quic_encrypter.h"
 #include "net/quic/core/quic_client_promised_info.h"
-#include "net/quic/platform/impl/quic_test_impl.h"
+#include "net/quic/platform/api/quic_test.h"
 #include "net/quic/test_tools/mock_clock.h"
 #include "net/quic/test_tools/mock_random.h"
 #include "net/quic/test_tools/quic_config_peer.h"
@@ -49,6 +49,7 @@
 #include "net/socket/next_proto.h"
 #include "net/socket/socket_test_util.h"
 #include "net/spdy/chromium/spdy_session_test_util.h"
+#include "net/spdy/chromium/spdy_test_util_common.h"
 #include "net/spdy/core/spdy_test_utils.h"
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/default_channel_id_store.h"
@@ -189,7 +190,6 @@ class TestConnectionMigrationSocketFactory : public MockClientSocketFactory {
 
   std::unique_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
-      const RandIntCallback& rand_int_cb,
       NetLog* net_log,
       const NetLogSource& source) override {
     SocketDataProvider* data_provider = mock_data().GetNext();
@@ -2067,11 +2067,7 @@ void QuicStreamFactoryTestBase::OnNetworkMadeDefault(bool async_write_before) {
 
   // Do an async write to leave writer blocked.
   if (async_write_before) {
-    if (session->use_control_frame_manager()) {
-      session->SendPing();
-    } else {
-      session->connection()->SendPing();
-    }
+    session->SendPing();
   }
 
   // Set up second socket data provider that is used after migration.
@@ -2206,11 +2202,7 @@ void QuicStreamFactoryTestBase::OnNetworkDisconnected(bool async_write_before) {
 
   // Do an async write to leave writer blocked.
   if (async_write_before) {
-    if (session->use_control_frame_manager()) {
-      session->SendPing();
-    } else {
-      session->connection()->SendPing();
-    }
+    session->SendPing();
   }
 
   // Set up second socket data provider that is used after migration.

@@ -13,8 +13,7 @@
 #include <vulkan/vulkan.h>
 
 #include "libANGLE/renderer/ContextImpl.h"
-#include "libANGLE/renderer/vulkan/StreamingBuffer.h"
-#include "libANGLE/renderer/vulkan/vk_cache_utils.h"
+#include "libANGLE/renderer/vulkan/vk_helpers.h"
 
 namespace rx
 {
@@ -154,21 +153,21 @@ class ContextVk : public ContextImpl
     RendererVk *getRenderer() { return mRenderer; }
 
     void invalidateCurrentPipeline();
-    void onVertexArrayChange();
 
-    vk::DescriptorPool *getDescriptorPool();
+    vk::DynamicDescriptorPool *getDynamicDescriptorPool();
 
     const VkClearValue &getClearColorValue() const;
     const VkClearValue &getClearDepthStencilValue() const;
+    const VkRect2D &getScissor() const { return mPipelineDesc->getScissor(); }
 
   private:
     gl::Error initPipeline(const gl::Context *context);
     gl::Error setupDraw(const gl::Context *context,
-                        GLenum mode,
-                        DrawType drawType,
-                        int firstVertex,
-                        int lastVertex,
-                        vk::CommandBuffer **commandBuffer);
+                        const gl::DrawCallParams &drawCallParams,
+                        vk::CommandGraphNode **drawNodeOut,
+                        bool *newCommandBufferOut);
+
+    void updateScissor(const gl::State &glState);
 
     RendererVk *mRenderer;
     vk::PipelineAndSerial *mCurrentPipeline;
@@ -178,23 +177,18 @@ class ContextVk : public ContextImpl
     // Kept in a pointer so allocations can be aligned, and structs can be portably packed.
     std::unique_ptr<vk::PipelineDesc> mPipelineDesc;
 
-    // The descriptor pool is externally sychronized, so cannot be accessed from different threads
-    // simultaneously. Hence, we keep it in the ContextVk instead of the RendererVk.
-    vk::DescriptorPool mDescriptorPool;
+    // The dynamic descriptor pool is externally sychronized, so cannot be accessed from different
+    // threads simultaneously. Hence, we keep it in the ContextVk instead of the RendererVk.
+    vk::DynamicDescriptorPool mDynamicDescriptorPool;
 
     // Triggers adding dependencies to the command graph.
-    bool mVertexArrayDirty;
     bool mTexturesDirty;
+    bool mVertexArrayBindingHasChanged;
 
     // Cached clear value for color and depth/stencil.
     VkClearValue mClearColorValue;
     VkClearValue mClearDepthStencilValue;
-
-    StreamingBuffer mStreamingVertexData;
-
-    vk::LineLoopHandler mLineLoopHandler;
 };
-
 }  // namespace rx
 
 #endif  // LIBANGLE_RENDERER_VULKAN_CONTEXTVK_H_

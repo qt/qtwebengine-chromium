@@ -8,14 +8,13 @@
 #include <utility>
 
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #include "content/renderer/media/webrtc/rtc_certificate.h"
 #include "content/renderer/render_thread_impl.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "third_party/webrtc/rtc_base/rtccertificate.h"
 #include "third_party/webrtc/rtc_base/rtccertificategenerator.h"
 #include "third_party/webrtc/rtc_base/scoped_ref_ptr.h"
@@ -93,7 +92,9 @@ class RTCCertificateGeneratorRequest
         FROM_HERE,
         base::BindOnce(&RTCCertificateGeneratorRequest::DoCallbackOnMainThread,
                        this, std::move(observer),
-                       std::make_unique<RTCCertificate>(certificate)));
+                       certificate
+                           ? std::make_unique<RTCCertificate>(certificate)
+                           : nullptr));
   }
 
   void DoCallbackOnMainThread(

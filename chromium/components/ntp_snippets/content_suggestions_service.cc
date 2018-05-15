@@ -11,7 +11,6 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -160,6 +159,20 @@ void ContentSuggestionsService::FetchSuggestionImage(
     return;
   }
   providers_by_category_[suggestion_id.category()]->FetchSuggestionImage(
+      suggestion_id, std::move(callback));
+}
+
+void ContentSuggestionsService::FetchSuggestionImageData(
+    const ContentSuggestion::ID& suggestion_id,
+    ImageDataFetchedCallback callback) {
+  if (!providers_by_category_.count(suggestion_id.category())) {
+    LOG(WARNING) << "Requested image for suggestion " << suggestion_id
+                 << " for unavailable category " << suggestion_id.category();
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::BindOnce(std::move(callback), std::string()));
+    return;
+  }
+  providers_by_category_[suggestion_id.category()]->FetchSuggestionImageData(
       suggestion_id, std::move(callback));
 }
 

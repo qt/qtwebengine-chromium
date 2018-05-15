@@ -15,9 +15,9 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
+#include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
@@ -30,6 +30,7 @@
 #include "build/build_config.h"
 #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
 #include "components/tracing/common/tracing_switches.h"
+#include "components/viz/common/features.h"
 #include "components/viz/common/switches.h"
 #include "content/browser/browser_child_process_host_impl.h"
 #include "content/browser/browser_main_loop.h"
@@ -61,7 +62,7 @@
 #include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "gpu/ipc/host/shader_disk_cache.h"
 #include "media/base/media_switches.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/cpp/connector.h"
@@ -106,12 +107,13 @@
 
 namespace content {
 
-bool GpuProcessHost::gpu_enabled_ = true;
-bool GpuProcessHost::hardware_gpu_enabled_ = true;
 base::subtle::Atomic32 GpuProcessHost::gpu_crash_count_ = 0;
 int GpuProcessHost::gpu_recent_crash_count_ = 0;
 bool GpuProcessHost::crashed_before_ = false;
 int GpuProcessHost::swiftshader_crash_count_ = 0;
+int GpuProcessHost::swiftshader_recent_crash_count_ = 0;
+int GpuProcessHost::display_compositor_crash_count_ = 0;
+int GpuProcessHost::display_compositor_recent_crash_count_ = 0;
 
 namespace {
 
@@ -142,14 +144,14 @@ static const char* const kSwitchNames[] = {
     switches::kEnableHeapProfiling,
     switches::kEnableLogging,
     switches::kEnableOOPRasterization,
+    switches::kEnableVizDevTools,
     switches::kHeadless,
     switches::kLoggingLevel,
     switches::kEnableLowEndDeviceMode,
     switches::kDisableLowEndDeviceMode,
     switches::kNoSandbox,
+    switches::kRunAllCompositorStagesBeforeDraw,
     switches::kTestGLLib,
-    switches::kTraceConfigFile,
-    switches::kTraceStartup,
     switches::kTraceToConsole,
     switches::kUseFakeJpegDecodeAccelerator,
     switches::kUseGpuInTests,
@@ -461,8 +463,8 @@ GpuProcessHost* GpuProcessHost::Get(GpuProcessKind kind, bool force_create) {
   // Don't grant further access to GPU if it is not allowed.
   GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
   DCHECK(gpu_data_manager);
-  if (!gpu_data_manager->GpuAccessAllowed(nullptr)) {
-    DLOG(ERROR) << "!GpuDataManagerImpl::GpuAccessAllowed()";
+  if (!gpu_data_manager->GpuProcessStartAllowed()) {
+    DLOG(ERROR) << "!GpuDataManagerImpl::GpuProcessStartAllowed()";
     return nullptr;
   }
 
@@ -552,11 +554,29 @@ int GpuProcessHost::GetGpuCrashCount() {
   return static_cast<int>(base::subtle::NoBarrier_Load(&gpu_crash_count_));
 }
 
+// static
+void GpuProcessHost::IncrementCrashCount(int* crash_count) {
+  // Last time the process crashed.
+  static base::Time last_crash_time;
+
+  // Allow about 1 crash per hour to be removed from the crash count, so very
+  // occasional crashes won't eventually add up and prevent the process from
+  // launching.
+  base::Time current_time = base::Time::Now();
+  if (crashed_before_) {
+    int hours_different = (current_time - last_crash_time).InHours();
+    *crash_count = std::max(0, *crash_count - hours_different);
+  }
+  ++(*crash_count);
+
+  crashed_before_ = true;
+  last_crash_time = current_time;
+}
+
 GpuProcessHost::GpuProcessHost(int host_id, GpuProcessKind kind)
     : host_id_(host_id),
       valid_(true),
       in_process_(false),
-      swiftshader_rendering_(false),
       kind_(kind),
       process_launched_(false),
       status_(UNKNOWN),
@@ -864,11 +884,11 @@ void GpuProcessHost::CreateGpuMemoryBuffer(
     gfx::BufferUsage usage,
     int client_id,
     gpu::SurfaceHandle surface_handle,
-    const CreateGpuMemoryBufferCallback& callback) {
+    CreateGpuMemoryBufferCallback callback) {
   TRACE_EVENT0("gpu", "GpuProcessHost::CreateGpuMemoryBuffer");
 
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  create_gpu_memory_buffer_requests_.push(callback);
+  create_gpu_memory_buffer_requests_.push(std::move(callback));
   gpu_service_ptr_->CreateGpuMemoryBuffer(
       id, size, format, usage, client_id, surface_handle,
       base::BindOnce(&GpuProcessHost::OnGpuMemoryBufferCreated,
@@ -884,8 +904,7 @@ void GpuProcessHost::DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
 
 void GpuProcessHost::ConnectFrameSinkManager(
     viz::mojom::FrameSinkManagerRequest request,
-    viz::mojom::FrameSinkManagerClientPtrInfo client,
-    viz::mojom::CompositingModeWatcherPtrInfo mode_watcher) {
+    viz::mojom::FrameSinkManagerClientPtrInfo client) {
   TRACE_EVENT0("gpu", "GpuProcessHost::ConnectFrameSinkManager");
   viz::mojom::FrameSinkManagerParamsPtr params =
       viz::mojom::FrameSinkManagerParams::New();
@@ -897,7 +916,6 @@ void GpuProcessHost::ConnectFrameSinkManager(
       activation_deadline_in_frames.value_or(0u);
   params->frame_sink_manager = std::move(request);
   params->frame_sink_manager_client = std::move(client);
-  params->compositing_mode_watcher = std::move(mode_watcher);
   gpu_main_ptr_->CreateFrameSinkManager(std::move(params));
 }
 
@@ -960,9 +978,9 @@ void GpuProcessHost::OnGpuMemoryBufferCreated(
   TRACE_EVENT0("gpu", "GpuProcessHost::OnGpuMemoryBufferCreated");
 
   DCHECK(!create_gpu_memory_buffer_requests_.empty());
-  auto callback = create_gpu_memory_buffer_requests_.front();
+  auto callback = std::move(create_gpu_memory_buffer_requests_.front());
   create_gpu_memory_buffer_requests_.pop();
-  callback.Run(handle, BufferCreationStatus::SUCCESS);
+  std::move(callback).Run(handle, BufferCreationStatus::SUCCESS);
 }
 
 #if defined(OS_ANDROID)
@@ -1056,7 +1074,12 @@ void GpuProcessHost::DidCreateOffscreenContext(const GURL& url) {
 }
 
 void GpuProcessHost::DidDestroyOffscreenContext(const GURL& url) {
-  urls_with_live_offscreen_contexts_.erase(url);
+  // We only want to remove *one* of the entries in the multiset for
+  // this particular URL, so can't use the erase method taking a key.
+  auto candidate = urls_with_live_offscreen_contexts_.find(url);
+  if (candidate != urls_with_live_offscreen_contexts_.end()) {
+    urls_with_live_offscreen_contexts_.erase(candidate);
+  }
 }
 
 void GpuProcessHost::DidDestroyChannel(int32_t client_id) {
@@ -1203,6 +1226,7 @@ bool GpuProcessHost::LaunchGpuProcess() {
   cmd_line->AppendSwitchASCII(switches::kProcessType, switches::kGpuProcess);
 
   BrowserChildProcessHostImpl::CopyFeatureAndFieldTrialFlags(cmd_line.get());
+  BrowserChildProcessHostImpl::CopyTraceStartupFlags(cmd_line.get());
 
 #if defined(OS_WIN)
   cmd_line->AppendArg(switches::kPrefetchArgumentGpu);
@@ -1230,20 +1254,12 @@ bool GpuProcessHost::LaunchGpuProcess() {
       cmd_line.get(), process_->GetData().id);
 
   GpuDataManagerImpl::GetInstance()->AppendGpuCommandLine(cmd_line.get());
-  if (cmd_line->HasSwitch(switches::kUseGL)) {
-    swiftshader_rendering_ = (cmd_line->GetSwitchValueASCII(switches::kUseGL) ==
-                              gl::kGLImplementationSwiftShaderForWebGLName);
-  }
-
-  bool current_gpu_type_enabled =
-      swiftshader_rendering_ ? gpu_enabled_ : hardware_gpu_enabled_;
-  if (!current_gpu_type_enabled) {
-    SendOutstandingReplies(EstablishChannelStatus::GPU_ACCESS_DENIED);
-    return false;
-  }
+  bool swiftshader_rendering =
+      (cmd_line->GetSwitchValueASCII(switches::kUseGL) ==
+       gl::kGLImplementationSwiftShaderForWebGLName);
 
   UMA_HISTOGRAM_BOOLEAN("GPU.GPUProcessSoftwareRendering",
-                        swiftshader_rendering_);
+                        swiftshader_rendering);
 
   // If specified, prepend a launcher program to the command line.
   if (!gpu_launcher.empty())
@@ -1272,15 +1288,15 @@ void GpuProcessHost::SendOutstandingReplies(
   while (!channel_requests_.empty()) {
     auto callback = channel_requests_.front();
     channel_requests_.pop();
-    callback.Run(mojo::ScopedMessagePipeHandle(), gpu::GPUInfo(),
-                 gpu::GpuFeatureInfo(), failure_status);
+    std::move(callback).Run(mojo::ScopedMessagePipeHandle(), gpu::GPUInfo(),
+                            gpu::GpuFeatureInfo(), failure_status);
   }
 
   while (!create_gpu_memory_buffer_requests_.empty()) {
-    auto callback = create_gpu_memory_buffer_requests_.front();
+    auto callback = std::move(create_gpu_memory_buffer_requests_.front());
     create_gpu_memory_buffer_requests_.pop();
-    callback.Run(gfx::GpuMemoryBufferHandle(),
-                 BufferCreationStatus::GPU_HOST_INVALID);
+    std::move(callback).Run(gfx::GpuMemoryBufferHandle(),
+                            BufferCreationStatus::GPU_HOST_INVALID);
   }
 
   if (!send_destroying_video_surface_done_cb_.is_null())
@@ -1315,9 +1331,6 @@ void GpuProcessHost::RecordProcessCrash() {
   const int kGpuMaxCrashCount = 6;
 #endif
 
-  // Last time the GPU process crashed.
-  static base::Time last_gpu_crash_time;
-
   bool disable_crash_limit = base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableGpuProcessCrashLimit);
 
@@ -1325,19 +1338,7 @@ void GpuProcessHost::RecordProcessCrash() {
   // was intended for actual rendering (and not just checking caps or other
   // options).
   if (process_launched_ && kind_ == GPU_PROCESS_KIND_SANDBOXED) {
-    if (swiftshader_rendering_) {
-      UMA_HISTOGRAM_EXACT_LINEAR(
-          "GPU.SwiftShaderLifetimeEvents",
-          DIED_FIRST_TIME + swiftshader_crash_count_,
-          static_cast<int>(GPU_PROCESS_LIFETIME_EVENT_MAX));
-
-      if (++swiftshader_crash_count_ >= kGpuMaxCrashCount &&
-          !disable_crash_limit) {
-        // SwiftShader is too unstable to use. Disable it for current session.
-        gpu_enabled_ = false;
-        GpuDataManagerImpl::GetInstance()->BlockSwiftShader();
-      }
-    } else {
+    if (GpuDataManagerImpl::GetInstance()->HardwareAccelerationEnabled()) {
       int count = static_cast<int>(
           base::subtle::NoBarrier_AtomicIncrement(&gpu_crash_count_, 1));
       UMA_HISTOGRAM_EXACT_LINEAR(
@@ -1345,20 +1346,7 @@ void GpuProcessHost::RecordProcessCrash() {
           std::min(DIED_FIRST_TIME + count, GPU_PROCESS_LIFETIME_EVENT_MAX - 1),
           static_cast<int>(GPU_PROCESS_LIFETIME_EVENT_MAX));
 
-      // Allow about 1 GPU crash per hour to be removed from the crash count,
-      // so very occasional crashes won't eventually add up and prevent the
-      // GPU process from launching.
-      ++gpu_recent_crash_count_;
-      base::Time current_time = base::Time::Now();
-      if (crashed_before_) {
-        int hours_different = (current_time - last_gpu_crash_time).InHours();
-        gpu_recent_crash_count_ =
-            std::max(0, gpu_recent_crash_count_ - hours_different);
-      }
-
-      crashed_before_ = true;
-      last_gpu_crash_time = current_time;
-
+      IncrementCrashCount(&gpu_recent_crash_count_);
       if ((gpu_recent_crash_count_ >= kGpuMaxCrashCount ||
            status_ == FAILURE) &&
           !disable_crash_limit) {
@@ -1374,9 +1362,35 @@ void GpuProcessHost::RecordProcessCrash() {
 #else
         // The GPU process is too unstable to use. Disable it for current
         // session.
-        hardware_gpu_enabled_ = false;
         GpuDataManagerImpl::GetInstance()->DisableHardwareAcceleration();
 #endif
+      }
+    } else if (GpuDataManagerImpl::GetInstance()->SwiftShaderAllowed()) {
+      UMA_HISTOGRAM_EXACT_LINEAR(
+          "GPU.SwiftShaderLifetimeEvents",
+          DIED_FIRST_TIME + swiftshader_crash_count_,
+          static_cast<int>(GPU_PROCESS_LIFETIME_EVENT_MAX));
+      ++swiftshader_crash_count_;
+
+      IncrementCrashCount(&swiftshader_recent_crash_count_);
+      if (swiftshader_recent_crash_count_ >= kGpuMaxCrashCount &&
+          !disable_crash_limit) {
+        // SwiftShader is too unstable to use. Disable it for current session.
+        GpuDataManagerImpl::GetInstance()->BlockSwiftShader();
+      }
+    } else {
+      UMA_HISTOGRAM_EXACT_LINEAR(
+          "GPU.DisplayCompositorLifetimeEvents",
+          DIED_FIRST_TIME + display_compositor_crash_count_,
+          static_cast<int>(GPU_PROCESS_LIFETIME_EVENT_MAX));
+      ++display_compositor_crash_count_;
+
+      IncrementCrashCount(&display_compositor_recent_crash_count_);
+      if (display_compositor_recent_crash_count_ >= kGpuMaxCrashCount &&
+          !disable_crash_limit) {
+        // Viz display compositor is too unstable. Crash chrome to reset
+        // everything.
+        LOG(FATAL) << "Unable to start viz process, giving up.";
       }
     }
   }

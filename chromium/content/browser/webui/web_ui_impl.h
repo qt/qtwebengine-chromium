@@ -22,11 +22,12 @@ class Message;
 
 namespace content {
 class RenderFrameHost;
+class WebContentsImpl;
 
 class CONTENT_EXPORT WebUIImpl : public WebUI,
                                  public base::SupportsWeakPtr<WebUIImpl> {
  public:
-  WebUIImpl(WebContents* contents);
+  explicit WebUIImpl(WebContentsImpl* contents);
   ~WebUIImpl() override;
 
   // Called when a RenderFrame is created for a WebUI (reload after a renderer
@@ -51,8 +52,7 @@ class CONTENT_EXPORT WebUIImpl : public WebUI,
   int GetBindings() const override;
   void SetBindings(int bindings) override;
   void AddMessageHandler(std::unique_ptr<WebUIMessageHandler> handler) override;
-  typedef base::Callback<void(const base::ListValue*)> MessageCallback;
-  void RegisterMessageCallback(const std::string& message,
+  void RegisterMessageCallback(base::StringPiece message,
                                const MessageCallback& callback) override;
   void ProcessWebUIMessage(const GURL& source_url,
                            const std::string& message,
@@ -97,8 +97,7 @@ class CONTENT_EXPORT WebUIImpl : public WebUI,
   void DisallowJavascriptOnAllHandlers();
 
   // A map of message name -> message handling callback.
-  typedef std::map<std::string, MessageCallback> MessageCallbackMap;
-  MessageCallbackMap message_callbacks_;
+  std::map<std::string, MessageCallback> message_callbacks_;
 
   // Options that may be overridden by individual Web UI implementations. The
   // bool options default to false. See the public getters for more information.
@@ -109,8 +108,8 @@ class CONTENT_EXPORT WebUIImpl : public WebUI,
   // The WebUIMessageHandlers we own.
   std::vector<std::unique_ptr<WebUIMessageHandler>> handlers_;
 
-  // Non-owning pointer to the WebContents this WebUI is associated with.
-  WebContents* web_contents_;
+  // Non-owning pointer to the WebContentsImpl this WebUI is associated with.
+  WebContentsImpl* web_contents_;
 
   // Notifies this WebUI about notifications in the main frame.
   std::unique_ptr<MainFrameNavigationObserver> web_contents_observer_;

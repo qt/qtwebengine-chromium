@@ -18,7 +18,8 @@ namespace content {
 
 ServiceWorkerFetchContextImpl::ServiceWorkerFetchContextImpl(
     const GURL& worker_script_url,
-    std::unique_ptr<SharedURLLoaderFactoryInfo> url_loader_factory_info,
+    std::unique_ptr<network::SharedURLLoaderFactoryInfo>
+        url_loader_factory_info,
     int service_worker_provider_id,
     std::unique_ptr<URLLoaderThrottleProvider> throttle_provider)
     : worker_script_url_(worker_script_url),
@@ -28,11 +29,19 @@ ServiceWorkerFetchContextImpl::ServiceWorkerFetchContextImpl(
 
 ServiceWorkerFetchContextImpl::~ServiceWorkerFetchContextImpl() {}
 
+void ServiceWorkerFetchContextImpl::SetTerminateSyncLoadEvent(
+    base::WaitableEvent* terminate_sync_load_event) {
+  DCHECK(!terminate_sync_load_event_);
+  terminate_sync_load_event_ = terminate_sync_load_event;
+}
+
 void ServiceWorkerFetchContextImpl::InitializeOnWorkerThread() {
   resource_dispatcher_ = std::make_unique<ResourceDispatcher>();
+  resource_dispatcher_->set_terminate_sync_load_event(
+      terminate_sync_load_event_);
 
-  url_loader_factory_ =
-      SharedURLLoaderFactory::Create(std::move(url_loader_factory_info_));
+  url_loader_factory_ = network::SharedURLLoaderFactory::Create(
+      std::move(url_loader_factory_info_));
 }
 
 std::unique_ptr<blink::WebURLLoaderFactory>
@@ -61,7 +70,7 @@ void ServiceWorkerFetchContextImpl::WillSendRequest(
   extra_data->set_initiated_in_secure_context(true);
   if (throttle_provider_) {
     extra_data->set_url_loader_throttles(throttle_provider_->CreateThrottles(
-        MSG_ROUTING_NONE, request.Url(), WebURLRequestToResourceType(request)));
+        MSG_ROUTING_NONE, request, WebURLRequestToResourceType(request)));
   }
   request.SetExtraData(std::move(extra_data));
 }

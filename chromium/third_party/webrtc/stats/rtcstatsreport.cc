@@ -69,6 +69,14 @@ RTCStatsReport::RTCStatsReport(int64_t timestamp_us)
 RTCStatsReport::~RTCStatsReport() {
 }
 
+rtc::scoped_refptr<RTCStatsReport> RTCStatsReport::Copy() const {
+  rtc::scoped_refptr<RTCStatsReport> copy = Create(timestamp_us_);
+  for (auto it = stats_.begin(); it != stats_.end(); ++it) {
+    copy->AddStats(it->second->copy());
+  }
+  return copy;
+}
+
 void RTCStatsReport::AddStats(std::unique_ptr<const RTCStats> stats) {
   auto result = stats_.insert(std::make_pair(std::string(stats->id()),
                               std::move(stats)));
@@ -82,6 +90,15 @@ const RTCStats* RTCStatsReport::Get(const std::string& id) const {
   if (it != stats_.cend())
     return it->second.get();
   return nullptr;
+}
+
+std::unique_ptr<const RTCStats> RTCStatsReport::Take(const std::string& id) {
+  StatsMap::iterator it = stats_.find(id);
+  if (it == stats_.end())
+    return nullptr;
+  std::unique_ptr<const RTCStats> stats = std::move(it->second);
+  stats_.erase(it);
+  return stats;
 }
 
 void RTCStatsReport::TakeMembersFrom(

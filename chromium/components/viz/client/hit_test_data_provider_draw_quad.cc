@@ -23,8 +23,28 @@ mojom::HitTestRegionListPtr HitTestDataProviderDrawQuad::GetHitTestData(
   hit_test_region_list->bounds.set_size(compositor_frame.size_in_pixels());
 
   for (const auto& render_pass : compositor_frame.render_pass_list) {
+    // Skip the render_pass if the transform is not invertible (i.e. it will not
+    // be able to receive events).
+    gfx::Transform transform_from_root_target;
+    if (!render_pass->transform_to_root_target.GetInverse(
+            &transform_from_root_target)) {
+      continue;
+    }
+
     for (const DrawQuad* quad : render_pass->quad_list) {
       if (quad->material == DrawQuad::SURFACE_CONTENT) {
+        const SurfaceDrawQuad* surface_quad =
+            SurfaceDrawQuad::MaterialCast(quad);
+
+        // Skip the quad if the FrameSinkId between fallback and primary is not
+        // the same, because we don't know which FrameSinkId would be used to
+        // draw this quad.
+        if (surface_quad->fallback_surface_id.has_value() &&
+            surface_quad->fallback_surface_id->frame_sink_id() !=
+                surface_quad->primary_surface_id.frame_sink_id()) {
+          continue;
+        }
+
         // Skip the quad if the transform is not invertible (i.e. it will not
         // be able to receive events).
         gfx::Transform target_to_quad_transform;
@@ -33,18 +53,16 @@ mojom::HitTestRegionListPtr HitTestDataProviderDrawQuad::GetHitTestData(
           continue;
         }
 
-        const SurfaceDrawQuad* surface_quad =
-            SurfaceDrawQuad::MaterialCast(quad);
         auto hit_test_region = mojom::HitTestRegion::New();
-        const SurfaceId& surface_id = surface_quad->primary_surface_id;
-        hit_test_region->frame_sink_id = surface_id.frame_sink_id();
-        hit_test_region->local_surface_id = surface_id.local_surface_id();
+        hit_test_region->frame_sink_id =
+            surface_quad->primary_surface_id.frame_sink_id();
         hit_test_region->flags = mojom::kHitTestMouse | mojom::kHitTestTouch |
                                  mojom::kHitTestChildSurface;
         if (should_ask_for_child_region_)
           hit_test_region->flags |= mojom::kHitTestAsk;
         hit_test_region->rect = surface_quad->rect;
-        hit_test_region->transform = target_to_quad_transform;
+        hit_test_region->transform =
+            target_to_quad_transform * transform_from_root_target;
         hit_test_region_list->regions.push_back(std::move(hit_test_region));
       }
     }

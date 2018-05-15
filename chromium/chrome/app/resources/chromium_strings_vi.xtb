@@ -29,7 +29,6 @@
 <translation id="1966382378801805537">Chromium không thể xác định hoặc đặt trình duyệt mặc định</translation>
 <translation id="1967743265616885482">Một mô-đun có cùng tên đã được xác định là xung đột với Chromium.</translation>
 <translation id="2008474315282236005">Thao tác này sẽ xóa 1 mục khỏi thiết bị này. Để truy xuất dữ liệu của bạn sau, hãy đăng nhập vào Chromium dưới dạng <ph name="USER_EMAIL" />.</translation>
-<translation id="2077129598763517140">Sử dụng chế độ tăng tốc phần cứng khi khả dụng</translation>
 <translation id="2117378023188580026">Quản trị viên của bạn yêu cầu bạn chạy lại Chromium để áp dụng bản cập nhật này</translation>
 <translation id="2119636228670142020">Giới thiệu về &amp;Chromium OS</translation>
 <translation id="2158734852934720349">Giấy phép nguồn mở Chromium OS</translation>
@@ -77,7 +76,6 @@
 <translation id="3479552764303398839">Không phải bây giờ</translation>
 <translation id="3509308970982693815">Hãy đóng tất cả cửa sổ Chromium và thử lại.</translation>
 <translation id="352783484088404971">Xóa khỏi Chromium...</translation>
-<translation id="3549345495227188780">Bắt đầu với Chromium OS</translation>
 <translation id="3582788516608077514">Đang cập nhật Chromium...</translation>
 <translation id="358997566136285270">Biểu trưng Chromium</translation>
 <translation id="3713809861844741608">Mở liên kết trong tab mới của Chromium</translation>
@@ -87,15 +85,14 @@
 <translation id="3852700440713538496">Ghim Chromium vào thanh tác vụ của bạn</translation>
 <translation id="3889543394854987837">Nhấp vào tên của bạn để mở Chromium và bắt đầu duyệt web.</translation>
 <translation id="3898493977366060150">Duyệt web bằng Google smarts</translation>
-<translation id="390894725198123737">Trên máy Mac, mật khẩu có thể được lưu vào Keychain và được truy cập hoặc đồng bộ hóa bởi những người dùng Chromium khác dùng chung tài khoản OS X này.</translation>
 <translation id="4036079820698952681">Giúp cải thiện Chromium bằng cách báo cáo <ph name="BEGIN_LINK" />cài đặt hiện tại<ph name="END_LINK" /></translation>
 <translation id="4050175100176540509">Cải thiện bảo mật quan trọng và tính năng mới có trong phiên bản mới nhất.</translation>
 <translation id="407254336480250557">Chọn <ph name="SMALL_PRODUCT_LOGO" /> <ph name="BEGIN_BOLD" />Chromium<ph name="END_BOLD" /></translation>
-<translation id="4077262827416206768">Hãy đóng tất cả cửa sổ Chromium và chạy lại Chromium để thay đổi này có hiệu lực.</translation>
 <translation id="421369550622382712">Khám phá các ứng dụng, trò chơi, tiện ích và chủ đề tuyệt vời cho Chromium.</translation>
 <translation id="4222580632002216401">Bạn hiện đã đăng nhập vào Chromium! Quản trị viên của bạn đã tắt tính năng Đồng bộ hóa.</translation>
 <translation id="4224199872375172890">Chromium đã được cập nhật.</translation>
 <translation id="4230135487732243613">Bạn muốn liên kết dữ liệu Chromium của bạn với tài khoản này?</translation>
+<translation id="4260985389288095068">Có phần mềm độc hại trên máy tính của bạn. Chromium có thể xóa phần mềm này và khôi phục cài đặt của bạn để trình duyệt có thể hoạt động bình thường trở lại.</translation>
 <translation id="4271805377592243930">Nhận trợ giúp về Chromium</translation>
 <translation id="4285930937574705105">Không thể cài đặt do lỗi chưa xác định. Nếu Chromium hiện đang chạy, hãy đóng Chromium và thử lại.</translation>
 <translation id="4330585738697551178">Mô-đun này được xác định xung đột với Chromium.</translation>
@@ -104,7 +101,6 @@
 <translation id="4421155425831608516">Quản trị viên của thiết bị này đã tắt tính năng đăng nhập vào Chromium.</translation>
 <translation id="4423735387467980091">Tùy chỉnh và điều khiển Chromium</translation>
 <translation id="4449801103833300785">{0,plural, =1{Chromium sẽ khởi động lại sau một giờ}other{Chromium sẽ khởi động lại sau # giờ}}</translation>
-<translation id="4458285410772214805">Vui lòng đăng xuất và đăng nhập lại để thay đổi này có hiệu lực.</translation>
 <translation id="4469812139324097969">Chromium đã lỗi thời vì ứng dụng này chưa được chạy lại trong một thời gian. Đã có bản cập nhật và bản cập nhật này sẽ được áp dụng ngay khi bạn chạy lại.</translation>
 <translation id="4488554488975128561">Bạn có thể giúp Chromium an toàn và dễ sử dụng hơn bằng cách tự động gửi một số thông tin hệ thống và nội dung trang cho Google để giúp phát hiện các ứng dụng và trang web nguy hiểm.</translation>
 <translation id="4567424176335768812">Bạn đã đăng nhập với tên <ph name="USER_EMAIL_ADDRESS" />. Bây giờ, bạn có thể truy cập dấu trang, lịch sử và các cài đặt khác trên tất cả những thiết bị đã đăng nhập của bạn.</translation>
@@ -139,7 +135,6 @@
 <translation id="5698481217667032250">Hiển thị Chromium bằng ngôn ngữ này</translation>
 <translation id="5726838626470692954">Người quản lý của bạn phải xóa và thêm lại bạn vào Chromium.</translation>
 <translation id="5768914737813585044">Hiển thị Chromium OS bằng ngôn ngữ này</translation>
-<translation id="5772805321386874569">(yêu cầu Chromium <ph name="BEGIN_BUTTON" />khởi động lại<ph name="END_BUTTON" />)</translation>
 <translation id="5796460469508169315">Chromium gần như đã sẵn sàng.</translation>
 <translation id="5820394555380036790">Hệ điều hành Chromium</translation>
 <translation id="5862307444128926510">Chào mừng bạn đến với Chromium</translation>
@@ -239,7 +234,6 @@ Vui lòng xem email của bạn tại <ph name="ACCOUNT_EMAIL" /> để được
 <translation id="8563206822260884157">Sử dụng mật khẩu mạnh do Chromium tạo</translation>
 <translation id="85843667276690461">Nhận trợ giúp về cách sử dụng Chromium</translation>
 <translation id="8586442755830160949">Bản quyền <ph name="YEAR" /> Tác giả Chromium. Mọi quyền được bảo lưu.</translation>
-<translation id="8590769996813453836">Chromium đã tìm thấy phần mềm độc hại trên máy tính của bạn. Chromium có thể xóa phần mềm này và khôi phục cài đặt của bạn để làm cho trình duyệt hoạt động bình thường trở lại.</translation>
 <translation id="8621669128220841554">Không thể cài đặt do xảy ra lỗi không xác định. Hãy tải xuống Chromium lại lần nữa.</translation>
 <translation id="8628626585870903697">Chromium không bao gồm trình xem PDF được yêu cầu để tính năng xem trước bản in hoạt động.</translation>
 <translation id="8667808506758191620"><ph name="DEVICE_TYPE" /> của bạn đã cập nhật.</translation>

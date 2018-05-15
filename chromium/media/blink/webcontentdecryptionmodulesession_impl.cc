@@ -24,12 +24,12 @@
 #include "media/blink/cdm_session_adapter.h"
 #include "media/blink/webmediaplayer_util.h"
 #include "media/cdm/json_web_key.h"
-#include "media/media_features.h"
-#include "third_party/WebKit/public/platform/WebData.h"
-#include "third_party/WebKit/public/platform/WebEncryptedMediaKeyInformation.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/WebKit/public/platform/WebVector.h"
+#include "media/media_buildflags.h"
+#include "third_party/blink/public/platform/web_data.h"
+#include "third_party/blink/public/platform/web_encrypted_media_key_information.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_url.h"
+#include "third_party/blink/public/platform/web_vector.h"
 
 #if BUILDFLAG(USE_PROPRIETARY_CODECS)
 #include "media/cdm/cenc_utils.h"
@@ -349,7 +349,8 @@ void WebContentDecryptionModuleSessionImpl::InitializeNewSession(
           result, adapter_->GetKeySystemUMAPrefix(), kGenerateRequestUMAName,
           base::Bind(
               &WebContentDecryptionModuleSessionImpl::OnSessionInitialized,
-              weak_ptr_factory_.GetWeakPtr()))));
+              weak_ptr_factory_.GetWeakPtr()),
+          {SessionInitStatus::NEW_SESSION})));
 }
 
 void WebContentDecryptionModuleSessionImpl::Load(
@@ -384,7 +385,9 @@ void WebContentDecryptionModuleSessionImpl::Load(
           result, adapter_->GetKeySystemUMAPrefix(), kLoadSessionUMAName,
           base::Bind(
               &WebContentDecryptionModuleSessionImpl::OnSessionInitialized,
-              weak_ptr_factory_.GetWeakPtr()))));
+              weak_ptr_factory_.GetWeakPtr()),
+          {SessionInitStatus::NEW_SESSION,
+           SessionInitStatus::SESSION_NOT_FOUND})));
 }
 
 void WebContentDecryptionModuleSessionImpl::Update(

@@ -13,11 +13,14 @@ namespace net {
 class URLRequestContextGetter;
 }
 
+namespace network {
+class SharedURLLoaderFactory;
+}
+
 namespace content {
 
 class ResourceContext;
 class URLLoaderThrottle;
-class SharedURLLoaderFactory;
 class WebPackageLoader;
 
 // Attached to each PrefetchURLLoader if the prefetch is for a signed exchange.
@@ -34,10 +37,11 @@ class WebPackagePrefetchHandler final : public network::mojom::URLLoaderClient {
   // |forwarding_client| is a pointer to the downstream client (typically who
   // creates this handler).
   WebPackagePrefetchHandler(
+      int frame_tree_node_id,
       const network::ResourceResponseHead& response,
       network::mojom::URLLoaderPtr network_loader,
       network::mojom::URLLoaderClientRequest network_client_request,
-      scoped_refptr<SharedURLLoaderFactory> network_loader_factory,
+      scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory,
       url::Origin request_initiator,
       URLLoaderThrottlesGetter loader_throttles_getter,
       ResourceContext* resource_context,
@@ -58,7 +62,6 @@ class WebPackagePrefetchHandler final : public network::mojom::URLLoaderClient {
   // network::mojom::URLLoaderClient overrides:
   void OnReceiveResponse(
       const network::ResourceResponseHead& head,
-      const base::Optional<net::SSLInfo>& ssl_info,
       network::mojom::DownloadedTempFilePtr downloaded_file) override;
   void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
                          const network::ResourceResponseHead& head) override;

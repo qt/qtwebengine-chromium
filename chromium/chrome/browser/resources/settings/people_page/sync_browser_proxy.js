@@ -180,8 +180,9 @@ cr.define('settings', function() {
     /**
      * Function to invoke when leaving the sync page so that the C++ layer can
      * be notified that the sync UI is no longer open.
+     * @param {boolean} didAbort
      */
-    didNavigateAwayFromSyncPage() {}
+    didNavigateAwayFromSyncPage(didAbort) {}
 
     /**
      * Sets which types of data to sync.
@@ -189,6 +190,13 @@ cr.define('settings', function() {
      * @return {!Promise<!settings.PageStatus>}
      */
     setSyncDatatypes(syncPrefs) {}
+
+    /**
+     * Sets the syncAllDataTypes pref.
+     * @param {boolean} syncEverything
+     * @return {!Promise<!settings.PageStatus>}
+     */
+    setSyncEverything(syncEverything) {}
 
     /**
      * Sets the sync encryption options.
@@ -199,9 +207,12 @@ cr.define('settings', function() {
 
     /**
      * Start syncing with an account, specified by its email.
+     * |isDefaultPromoAccount| is true if |email| is the email of the default
+     * account displayed in the promo.
      * @param {string} email
+     * @param {boolean} isDefaultPromoAccount
      */
-    startSyncingWithEmail(email) {}
+    startSyncingWithEmail(email, isDefaultPromoAccount) {}
 
     /**
      * Opens the Google Activity Controls url in a new tab.
@@ -267,8 +278,8 @@ cr.define('settings', function() {
     }
 
     /** @override */
-    didNavigateAwayFromSyncPage() {
-      chrome.send('SyncSetupDidClosePage');
+    didNavigateAwayFromSyncPage(didAbort) {
+      chrome.send('SyncSetupDidClosePage', [didAbort]);
     }
 
     /** @override */
@@ -278,14 +289,20 @@ cr.define('settings', function() {
     }
 
     /** @override */
+    setSyncEverything(syncEverything) {
+      return cr.sendWithPromise('SyncSetupSetSyncEverything', syncEverything);
+    }
+
+    /** @override */
     setSyncEncryption(syncPrefs) {
       return cr.sendWithPromise(
           'SyncSetupSetEncryption', JSON.stringify(syncPrefs));
     }
 
     /** @override */
-    startSyncingWithEmail(email) {
-      chrome.send('SyncSetupStartSyncingWithEmail', [email]);
+    startSyncingWithEmail(email, isDefaultPromoAccount) {
+      chrome.send(
+          'SyncSetupStartSyncingWithEmail', [email, isDefaultPromoAccount]);
     }
 
     /** @override */

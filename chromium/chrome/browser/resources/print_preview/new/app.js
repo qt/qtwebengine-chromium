@@ -36,6 +36,13 @@ Polymer({
       notify: true,
     },
 
+    /** @private {?print_preview.InvitationStore} */
+    invitationStore_: {
+      type: Object,
+      notify: true,
+      value: null,
+    },
+
     /** @private {!Array<print_preview.RecentDestination>} */
     recentDestinations_: {
       type: Array,
@@ -67,15 +74,25 @@ Polymer({
       type: Boolean,
       notify: true,
       computed: 'computeControlsDisabled_(state)',
-    }
+    },
+
+    /** @private {?print_preview.MeasurementSystem} */
+    measurementSystem_: {
+      type: Object,
+      notify: true,
+      value: null,
+    },
+
+    /** @private {boolean} */
+    isInAppKioskMode_: {
+      type: Boolean,
+      notify: true,
+      value: false,
+    },
   },
 
   /** @private {?WebUIListenerTracker} */
   listenerTracker_: null,
-
-  /** @type {!print_preview.MeasurementSystem} */
-  measurementSystem_: new print_preview.MeasurementSystem(
-      ',', '.', print_preview.MeasurementSystemUnitType.IMPERIAL),
 
   /** @private {?print_preview.NativeLayer} */
   nativeLayer_: null,
@@ -90,7 +107,10 @@ Polymer({
   cancelled_: false,
 
   /** @private {boolean} */
-  isInAppKioskMode_: false,
+  showSystemDialogBeforePrint_: false,
+
+  /** @private {boolean} */
+  openPdfInPreview_: false,
 
   /** @override */
   attached: function() {
@@ -102,6 +122,9 @@ Polymer({
         'use-cloud-print', this.onCloudPrintEnable_.bind(this));
     this.destinationStore_ = new print_preview.DestinationStore(
         this.userInfo_, this.listenerTracker_);
+    this.invitationStore_ = new print_preview.InvitationStore(this.userInfo_);
+    this.tracker_.add(window, 'keydown', this.onKeyDown_.bind(this));
+    this.$.previewArea.setPluginKeyEventCallback(this.onKeyDown_.bind(this));
     this.tracker_.add(
         this.destinationStore_,
         print_preview.DestinationStore.EventType.DESTINATION_SELECT,
@@ -111,6 +134,11 @@ Polymer({
         print_preview.DestinationStore.EventType
             .SELECTED_DESTINATION_CAPABILITIES_READY,
         this.onDestinationUpdated_.bind(this));
+    this.tracker_.add(
+        this.destinationStore_,
+        print_preview.DestinationStore.EventType
+            .SELECTED_DESTINATION_UNSUPPORTED,
+        this.onInvalidPrinter_.bind(this));
     this.nativeLayer_.getInitialSettings().then(
         this.onInitialSettingsSet_.bind(this));
   },
@@ -130,6 +158,59 @@ Polymer({
   },
 
   /**
+   * Consume escape and enter key presses and ctrl + shift + p. Delegate
+   * everything else to the preview area.
+   * @param {!KeyboardEvent} e The keyboard event.
+   * @private
+   */
+  onKeyDown_: function(e) {
+    // Escape key closes the dialog.
+    if (e.code == 'Escape' && !hasKeyModifiers(e)) {
+      // On non-mac with toolkit-views, ESC key is handled by C++-side instead
+      // of JS-side.
+      if (cr.isMac) {
+        this.close_();
+        e.preventDefault();
+      }
+      return;
+    }
+
+    // On Mac, Cmd-. should close the print dialog.
+    if (cr.isMac && e.code == 'Minus' && e.metaKey) {
+      this.close_();
+      e.preventDefault();
+      return;
+    }
+
+    // Ctrl + Shift + p / Mac equivalent.
+    if (e.code == 'KeyP') {
+      if ((cr.isMac && e.metaKey && e.altKey && !e.shiftKey && !e.ctrlKey) ||
+          (!cr.isMac && e.shiftKey && e.ctrlKey && !e.altKey && !e.metaKey)) {
+        // Don't try to print with system dialog on Windows if the document is
+        // not ready, because we send the preview document to the printer on
+        // Windows.
+        if (!cr.isWin || this.state == print_preview_new.State.READY)
+          this.onPrintWithSystemDialog_();
+        e.preventDefault();
+        return;
+      }
+    }
+
+    if (e.code == 'Enter' && this.state == print_preview_new.State.READY) {
+      const activeElementTag = e.path[0].tagName;
+      if (['BUTTON', 'SELECT', 'A'].includes(activeElementTag))
+        return;
+
+      this.onPrintRequested_();
+      e.preventDefault();
+      return;
+    }
+
+    // Pass certain directional keyboard events to the PDF viewer.
+    this.$.previewArea.handleDirectionalKeyEvent(e);
+  },
+
+  /**
    * @param {!print_preview.NativeInitialSettings} settings
    * @private
    */
@@ -142,7 +223,7 @@ Polymer({
     this.notifyPath('documentInfo_.title');
     this.notifyPath('documentInfo_.pageCount');
     this.$.model.setStickySettings(settings.serializedAppStateStr);
-    this.measurementSystem_.setSystem(
+    this.measurementSystem_ = new print_preview.MeasurementSystem(
         settings.thousandsDelimeter, settings.decimalDelimeter,
         settings.unitType);
     this.setSetting('selectionOnly', settings.shouldPrintSelectionOnly);
@@ -150,6 +231,7 @@ Polymer({
         settings.isInAppKioskMode, settings.printerName,
         settings.serializedDefaultDestinationSelectionRulesStr,
         this.recentDestinations_);
+    this.isInAppKioskMode_ = settings.isInAppKioskMode;
   },
 
   /**
@@ -180,14 +262,17 @@ Polymer({
     });
 
     this.destinationStore_.setCloudPrintInterface(this.cloudPrintInterface_);
-    if (this.$.destinationSettings.isDialogOpen())
+    this.invitationStore_.setCloudPrintInterface(this.cloudPrintInterface_);
+    if (this.$.destinationSettings.isDialogOpen()) {
       this.destinationStore_.startLoadCloudDestinations();
+      this.invitationStore_.startLoadingInvitations();
+    }
   },
 
   /** @private */
   onDestinationSelect_: function() {
-    this.destination_ = this.destinationStore_.selectedDestination;
     this.$.state.transitTo(print_preview_new.State.NOT_READY);
+    this.destination_ = this.destinationStore_.selectedDestination;
   },
 
   /** @private */
@@ -219,7 +304,9 @@ Polymer({
     } else if (this.state == print_preview_new.State.PRINTING) {
       const destination = assert(this.destinationStore_.selectedDestination);
       const whenPrintDone =
-          this.nativeLayer_.print(this.$.model.createPrintTicket(destination));
+          this.nativeLayer_.print(this.$.model.createPrintTicket(
+              destination, this.openPdfInPreview_,
+              this.showSystemDialogBeforePrint_));
       if (destination.isLocal) {
         const onError = destination.id ==
                 print_preview.Destination.GooglePromotedId.SAVE_AS_PDF ?
@@ -286,6 +373,29 @@ Polymer({
         assert(this.documentInfo_), data);
   },
 
+  // <if expr="not chromeos">
+  /** @private */
+  onPrintWithSystemDialog_: function() {
+    assert(!cr.isChromeOS);
+    if (cr.isWindows) {
+      this.showSystemDialogBeforePrint_ = true;
+      this.onPrintRequested_();
+      return;
+    }
+    this.nativeLayer_.showSystemDialog();
+    this.$.state.transitTo(print_preview_new.State.SYSTEM_DIALOG);
+  },
+  // </if>
+
+  // <if expr="is_macosx">
+  /** @private */
+  onOpenPdfInPreview_: function() {
+    this.openPdfInPreview_ = true;
+    this.$.previewArea.setOpeningPdfInPreview();
+    this.onPrintRequested_();
+  },
+  // </if>
+
   /**
    * Called when printing to a privet, cloud, or extension printer fails.
    * @param {*} httpError The HTTP error code, or -1 or a string describing
@@ -301,6 +411,11 @@ Polymer({
   /** @private */
   onPreviewFailed_: function() {
     this.$.state.transitTo(print_preview_new.State.FATAL_ERROR);
+  },
+
+  /** @private */
+  onInvalidPrinter_: function() {
+    this.$.state.transitTo(print_preview_new.State.INVALID_PRINTER);
   },
 
   /**

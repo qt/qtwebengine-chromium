@@ -44,7 +44,7 @@ class MockAcceleratedVideoDecoder : public AcceleratedVideoDecoder {
   MockAcceleratedVideoDecoder() = default;
   ~MockAcceleratedVideoDecoder() override = default;
 
-  MOCK_METHOD2(SetStream, void(const uint8_t* ptr, size_t size));
+  MOCK_METHOD3(SetStream, void(int32_t id, const uint8_t* ptr, size_t size));
   MOCK_METHOD0(Flush, bool());
   MOCK_METHOD0(Reset, void());
   MOCK_METHOD0(Decode, DecodeResult());
@@ -230,7 +230,7 @@ TEST_P(VaapiVideoDecodeAcceleratorTest, QueueInputBufferAndDecodeError) {
 
   base::RunLoop run_loop;
   base::Closure quit_closure = run_loop.QuitClosure();
-  EXPECT_CALL(*mock_decoder_, SetStream(_, kInputSize));
+  EXPECT_CALL(*mock_decoder_, SetStream(_, _, kInputSize));
   EXPECT_CALL(*mock_decoder_, Decode())
       .WillOnce(Return(AcceleratedVideoDecoder::kDecodeError));
   EXPECT_CALL(*this, NotifyError(VaapiVideoDecodeAccelerator::PLATFORM_FAILURE))
@@ -255,7 +255,7 @@ TEST_P(VaapiVideoDecodeAcceleratorTest,
 
     base::RunLoop run_loop;
     base::Closure quit_closure = run_loop.QuitClosure();
-    EXPECT_CALL(*mock_decoder_, SetStream(_, kInputSize));
+    EXPECT_CALL(*mock_decoder_, SetStream(_, _, kInputSize));
     EXPECT_CALL(*mock_decoder_, Decode())
         .WillOnce(Return(AcceleratedVideoDecoder::kAllocateNewSurfaces));
 
@@ -320,7 +320,7 @@ TEST_P(VaapiVideoDecodeAcceleratorTest, QueueInputBufferAndDecodeFinished) {
   {
     base::RunLoop run_loop;
     base::Closure quit_closure = run_loop.QuitClosure();
-    EXPECT_CALL(*mock_decoder_, SetStream(_, kInputSize));
+    EXPECT_CALL(*mock_decoder_, SetStream(_, _, kInputSize));
     EXPECT_CALL(*mock_decoder_, Decode())
         .WillOnce(Return(AcceleratedVideoDecoder::kRanOutOfStreamData));
     EXPECT_CALL(*this, NotifyEndOfBitstreamBuffer(kBitstreamId))
@@ -347,19 +347,6 @@ TEST_P(VaapiVideoDecodeAcceleratorTest, SupportedPlatforms) {
             mock_vaapi_picture_factory_->GetVaapiImplementation(
                 gl::kGLImplementationDesktopGL));
 #endif
-}
-
-// Verifies the expected buffer format.
-TEST_P(VaapiVideoDecodeAcceleratorTest, PictureBufferFormat) {
-  gfx::BufferFormat format = mock_vaapi_picture_factory_->GetBufferFormat();
-
-#if defined(USE_OZONE)
-  EXPECT_EQ(gfx::BufferFormat::BGRX_8888, format);
-#else
-  EXPECT_EQ(gfx::BufferFormat::RGBX_8888, format);
-#endif  // USE_OZONE
-
-  EXPECT_EQ(PIXEL_FORMAT_XRGB, GfxBufferFormatToVideoPixelFormat(format));
 }
 
 INSTANTIATE_TEST_CASE_P(/* No prefix. */,

@@ -183,34 +183,33 @@ CdmKeyInformation::KeyStatus ToCdmKeyInformationKeyStatus(
   return CdmKeyInformation::INTERNAL_ERROR;
 }
 
-cdm::AudioDecoderConfig::AudioCodec ToCdmAudioCodec(AudioCodec codec) {
+cdm::AudioCodec ToCdmAudioCodec(AudioCodec codec) {
   switch (codec) {
     case kCodecVorbis:
-      return cdm::AudioDecoderConfig::kCodecVorbis;
+      return cdm::kCodecVorbis;
     case kCodecAAC:
-      return cdm::AudioDecoderConfig::kCodecAac;
+      return cdm::kCodecAac;
     default:
       DVLOG(1) << "Unsupported AudioCodec " << codec;
-      return cdm::AudioDecoderConfig::kUnknownAudioCodec;
+      return cdm::kUnknownAudioCodec;
   }
 }
 
-cdm::VideoDecoderConfig::VideoCodec ToCdmVideoCodec(VideoCodec codec) {
+cdm::VideoCodec ToCdmVideoCodec(VideoCodec codec) {
   switch (codec) {
     case kCodecVP8:
-      return cdm::VideoDecoderConfig::kCodecVp8;
+      return cdm::kCodecVp8;
     case kCodecH264:
-      return cdm::VideoDecoderConfig::kCodecH264;
+      return cdm::kCodecH264;
     case kCodecVP9:
-      return cdm::VideoDecoderConfig::kCodecVp9;
+      return cdm::kCodecVp9;
     default:
       DVLOG(1) << "Unsupported VideoCodec " << codec;
-      return cdm::VideoDecoderConfig::kUnknownVideoCodec;
+      return cdm::kUnknownVideoCodec;
   }
 }
 
-cdm::VideoDecoderConfig::VideoCodecProfile ToCdmVideoCodecProfile(
-    VideoCodecProfile profile) {
+cdm::VideoCodecProfile ToCdmVideoCodecProfile(VideoCodecProfile profile) {
   switch (profile) {
     case VP8PROFILE_ANY:
     // TODO(servolk): See crbug.com/592074. We'll need to update this code to
@@ -221,24 +220,24 @@ cdm::VideoDecoderConfig::VideoCodecProfile ToCdmVideoCodecProfile(
     case VP9PROFILE_PROFILE1:
     case VP9PROFILE_PROFILE2:
     case VP9PROFILE_PROFILE3:
-      return cdm::VideoDecoderConfig::kProfileNotNeeded;
+      return cdm::kProfileNotNeeded;
     case H264PROFILE_BASELINE:
-      return cdm::VideoDecoderConfig::kH264ProfileBaseline;
+      return cdm::kH264ProfileBaseline;
     case H264PROFILE_MAIN:
-      return cdm::VideoDecoderConfig::kH264ProfileMain;
+      return cdm::kH264ProfileMain;
     case H264PROFILE_EXTENDED:
-      return cdm::VideoDecoderConfig::kH264ProfileExtended;
+      return cdm::kH264ProfileExtended;
     case H264PROFILE_HIGH:
-      return cdm::VideoDecoderConfig::kH264ProfileHigh;
+      return cdm::kH264ProfileHigh;
     case H264PROFILE_HIGH10PROFILE:
-      return cdm::VideoDecoderConfig::kH264ProfileHigh10;
+      return cdm::kH264ProfileHigh10;
     case H264PROFILE_HIGH422PROFILE:
-      return cdm::VideoDecoderConfig::kH264ProfileHigh422;
+      return cdm::kH264ProfileHigh422;
     case H264PROFILE_HIGH444PREDICTIVEPROFILE:
-      return cdm::VideoDecoderConfig::kH264ProfileHigh444Predictive;
+      return cdm::kH264ProfileHigh444Predictive;
     default:
       DVLOG(1) << "Unsupported VideoCodecProfile " << profile;
-      return cdm::VideoDecoderConfig::kUnknownVideoCodecProfile;
+      return cdm::kUnknownVideoCodecProfile;
   }
 }
 
@@ -330,6 +329,24 @@ SampleFormat ToMediaSampleFormat(cdm::AudioFormat format) {
   return kUnknownSampleFormat;
 }
 
+cdm::EncryptionScheme ToCdmEncryptionScheme(const EncryptionScheme& scheme) {
+  switch (scheme.mode()) {
+    case EncryptionScheme::CIPHER_MODE_UNENCRYPTED:
+      return cdm::EncryptionScheme::kUnencrypted;
+    case EncryptionScheme::CIPHER_MODE_AES_CTR:
+      if (!scheme.pattern().IsInEffect())
+        return cdm::EncryptionScheme::kCenc;
+      break;
+    case EncryptionScheme::CIPHER_MODE_AES_CBC:
+      if (scheme.pattern().IsInEffect())
+        return cdm::EncryptionScheme::kCbcs;
+      break;
+  }
+
+  NOTREACHED();
+  return cdm::EncryptionScheme::kUnencrypted;
+}
+
 // Verify that OutputProtection types matches those in CDM interface.
 // Cannot use conversion function because these are used in bit masks.
 #define ASSERT_ENUM_EQ(media_enum, cdm_enum)                              \
@@ -353,19 +370,19 @@ ASSERT_ENUM_EQ(OutputProtection::ProtectionType::HDCP, cdm::kProtectionHDCP);
 // is used to hold some of the data. |input_buffer| will contain pointers
 // to data contained in |encrypted| and |subsamples|, so the lifetime of
 // |input_buffer| must be <= the lifetime of |encrypted| and |subsamples|.
-void ToCdmInputBuffer(const scoped_refptr<DecoderBuffer>& encrypted_buffer,
+void ToCdmInputBuffer(const DecoderBuffer& encrypted_buffer,
                       std::vector<cdm::SubsampleEntry>* subsamples,
-                      cdm::InputBuffer* input_buffer) {
+                      cdm::InputBuffer_2* input_buffer) {
   // End of stream buffers are represented as empty resources.
   DCHECK(!input_buffer->data);
-  if (encrypted_buffer->end_of_stream())
+  if (encrypted_buffer.end_of_stream())
     return;
 
-  input_buffer->data = encrypted_buffer->data();
-  input_buffer->data_size = encrypted_buffer->data_size();
-  input_buffer->timestamp = encrypted_buffer->timestamp().InMicroseconds();
+  input_buffer->data = encrypted_buffer.data();
+  input_buffer->data_size = encrypted_buffer.data_size();
+  input_buffer->timestamp = encrypted_buffer.timestamp().InMicroseconds();
 
-  const DecryptConfig* decrypt_config = encrypted_buffer->decrypt_config();
+  const DecryptConfig* decrypt_config = encrypted_buffer.decrypt_config();
   if (!decrypt_config) {
     DVLOG(2) << __func__ << ": Clear buffer.";
     return;
@@ -389,6 +406,12 @@ void ToCdmInputBuffer(const scoped_refptr<DecoderBuffer>& encrypted_buffer,
 
   input_buffer->subsamples = subsamples->data();
   input_buffer->num_subsamples = num_subsamples;
+
+  // TODO(crbug.com/658026): Add encryption scheme to DecoderBuffer.
+  input_buffer->encryption_scheme = (decrypt_config->is_encrypted())
+                                        ? cdm::EncryptionScheme::kCenc
+                                        : cdm::EncryptionScheme::kUnencrypted;
+  input_buffer->pattern = {0, 0};
 }
 
 void* GetCdmHost(int host_interface_version, void* user_data) {
@@ -687,7 +710,7 @@ void CdmAdapter::RegisterNewKeyCB(StreamType stream_type,
 }
 
 void CdmAdapter::Decrypt(StreamType stream_type,
-                         const scoped_refptr<DecoderBuffer>& encrypted,
+                         scoped_refptr<DecoderBuffer> encrypted,
                          const DecryptCB& decrypt_cb) {
   DVLOG(3) << __func__ << ": " << encrypted->AsHumanReadableString();
   DCHECK(task_runner_->BelongsToCurrentThread());
@@ -695,11 +718,11 @@ void CdmAdapter::Decrypt(StreamType stream_type,
   TRACE_EVENT0("media", "CdmAdapter::Decrypt");
   ScopedCrashKeyString scoped_crash_key(&g_origin_crash_key, origin_string_);
 
-  cdm::InputBuffer input_buffer = {};
+  cdm::InputBuffer_2 input_buffer = {};
   std::vector<cdm::SubsampleEntry> subsamples;
   std::unique_ptr<DecryptedBlockImpl> decrypted_block(new DecryptedBlockImpl());
 
-  ToCdmInputBuffer(encrypted, &subsamples, &input_buffer);
+  ToCdmInputBuffer(*encrypted, &subsamples, &input_buffer);
   cdm::Status status = cdm_->Decrypt(input_buffer, decrypted_block.get());
 
   if (status != cdm::kSuccess) {
@@ -713,7 +736,7 @@ void CdmAdapter::Decrypt(StreamType stream_type,
                               decrypted_block->DecryptedBuffer()->Size()));
   decrypted_buffer->set_timestamp(
       base::TimeDelta::FromMicroseconds(decrypted_block->Timestamp()));
-  decrypt_cb.Run(Decryptor::kSuccess, decrypted_buffer);
+  decrypt_cb.Run(Decryptor::kSuccess, std::move(decrypted_buffer));
 }
 
 void CdmAdapter::CancelDecrypt(StreamType stream_type) {
@@ -726,7 +749,7 @@ void CdmAdapter::InitializeAudioDecoder(const AudioDecoderConfig& config,
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(audio_init_cb_.is_null());
 
-  cdm::AudioDecoderConfig cdm_decoder_config = {};
+  cdm::AudioDecoderConfig_2 cdm_decoder_config = {};
   cdm_decoder_config.codec = ToCdmAudioCodec(config.codec());
   cdm_decoder_config.channel_count =
       ChannelLayoutToChannelCount(config.channel_layout());
@@ -735,6 +758,8 @@ void CdmAdapter::InitializeAudioDecoder(const AudioDecoderConfig& config,
   cdm_decoder_config.extra_data =
       const_cast<uint8_t*>(config.extra_data().data());
   cdm_decoder_config.extra_data_size = config.extra_data().size();
+  cdm_decoder_config.encryption_scheme =
+      ToCdmEncryptionScheme(config.encryption_scheme());
 
   cdm::Status status = cdm_->InitializeAudioDecoder(cdm_decoder_config);
   if (status != cdm::kSuccess && status != cdm::kDeferredInitialization) {
@@ -761,7 +786,7 @@ void CdmAdapter::InitializeVideoDecoder(const VideoDecoderConfig& config,
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(video_init_cb_.is_null());
 
-  cdm::VideoDecoderConfig cdm_decoder_config = {};
+  cdm::VideoDecoderConfig_2 cdm_decoder_config = {};
   cdm_decoder_config.codec = ToCdmVideoCodec(config.codec());
   cdm_decoder_config.profile = ToCdmVideoCodecProfile(config.profile());
   cdm_decoder_config.format = ToCdmVideoFormat(config.format());
@@ -770,6 +795,8 @@ void CdmAdapter::InitializeVideoDecoder(const VideoDecoderConfig& config,
   cdm_decoder_config.extra_data =
       const_cast<uint8_t*>(config.extra_data().data());
   cdm_decoder_config.extra_data_size = config.extra_data().size();
+  cdm_decoder_config.encryption_scheme =
+      ToCdmEncryptionScheme(config.encryption_scheme());
 
   cdm::Status status = cdm_->InitializeVideoDecoder(cdm_decoder_config);
   if (status != cdm::kSuccess && status != cdm::kDeferredInitialization) {
@@ -790,20 +817,19 @@ void CdmAdapter::InitializeVideoDecoder(const VideoDecoderConfig& config,
   init_cb.Run(true);
 }
 
-void CdmAdapter::DecryptAndDecodeAudio(
-    const scoped_refptr<DecoderBuffer>& encrypted,
-    const AudioDecodeCB& audio_decode_cb) {
+void CdmAdapter::DecryptAndDecodeAudio(scoped_refptr<DecoderBuffer> encrypted,
+                                       const AudioDecodeCB& audio_decode_cb) {
   DVLOG(3) << __func__ << ": " << encrypted->AsHumanReadableString();
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   TRACE_EVENT0("media", "CdmAdapter::DecryptAndDecodeAudio");
   ScopedCrashKeyString scoped_crash_key(&g_origin_crash_key, origin_string_);
 
-  cdm::InputBuffer input_buffer = {};
+  cdm::InputBuffer_2 input_buffer = {};
   std::vector<cdm::SubsampleEntry> subsamples;
   std::unique_ptr<AudioFramesImpl> audio_frames(new AudioFramesImpl());
 
-  ToCdmInputBuffer(encrypted, &subsamples, &input_buffer);
+  ToCdmInputBuffer(*encrypted, &subsamples, &input_buffer);
   cdm::Status status =
       cdm_->DecryptAndDecodeSamples(input_buffer, audio_frames.get());
 
@@ -826,20 +852,19 @@ void CdmAdapter::DecryptAndDecodeAudio(
   audio_decode_cb.Run(Decryptor::kSuccess, audio_frame_list);
 }
 
-void CdmAdapter::DecryptAndDecodeVideo(
-    const scoped_refptr<DecoderBuffer>& encrypted,
-    const VideoDecodeCB& video_decode_cb) {
+void CdmAdapter::DecryptAndDecodeVideo(scoped_refptr<DecoderBuffer> encrypted,
+                                       const VideoDecodeCB& video_decode_cb) {
   DVLOG(3) << __func__ << ": " << encrypted->AsHumanReadableString();
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   TRACE_EVENT0("media", "CdmAdapter::DecryptAndDecodeVideo");
   ScopedCrashKeyString scoped_crash_key(&g_origin_crash_key, origin_string_);
 
-  cdm::InputBuffer input_buffer = {};
+  cdm::InputBuffer_2 input_buffer = {};
   std::vector<cdm::SubsampleEntry> subsamples;
   std::unique_ptr<VideoFrameImpl> video_frame = helper_->CreateCdmVideoFrame();
 
-  ToCdmInputBuffer(encrypted, &subsamples, &input_buffer);
+  ToCdmInputBuffer(*encrypted, &subsamples, &input_buffer);
   cdm::Status status =
       cdm_->DecryptAndDecodeFrame(input_buffer, video_frame.get());
 
@@ -851,6 +876,12 @@ void CdmAdapter::DecryptAndDecodeVideo(
 
   scoped_refptr<VideoFrame> decoded_frame =
       video_frame->TransformToVideoFrame(natural_size_);
+  if (!decoded_frame) {
+    DLOG(ERROR) << __func__ << ": TransformToVideoFrame failed.";
+    video_decode_cb.Run(Decryptor::kError, nullptr);
+    return;
+  }
+
   video_decode_cb.Run(Decryptor::kSuccess, decoded_frame);
 }
 

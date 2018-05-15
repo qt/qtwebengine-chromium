@@ -16,10 +16,11 @@
 #include "content/common/storage_partition_service.mojom.h"
 #include "content/renderer/dom_storage/local_storage_area.h"
 #include "content/renderer/dom_storage/local_storage_cached_areas.h"
+#include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "mojo/public/cpp/bindings/strong_associated_binding.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/WebKit/public/web/WebStorageEventDispatcher.h"
+#include "third_party/blink/public/platform/web_url.h"
+#include "third_party/blink/public/web/web_storage_event_dispatcher.h"
 
 namespace content {
 
@@ -32,20 +33,21 @@ enum class StorageFormat : uint8_t { UTF16 = 0, Latin1 = 1 };
 class GetAllCallback : public mojom::LevelDBWrapperGetAllCallback {
  public:
   static mojom::LevelDBWrapperGetAllCallbackAssociatedPtrInfo CreateAndBind(
-      const base::Callback<void(bool)>& callback) {
+      base::OnceCallback<void(bool)> callback) {
     mojom::LevelDBWrapperGetAllCallbackAssociatedPtrInfo ptr_info;
     auto request = mojo::MakeRequest(&ptr_info);
     mojo::MakeStrongAssociatedBinding(
-        base::WrapUnique(new GetAllCallback(callback)), std::move(request));
+        base::WrapUnique(new GetAllCallback(std::move(callback))),
+        std::move(request));
     return ptr_info;
   }
 
  private:
-  explicit GetAllCallback(const base::Callback<void(bool)>& callback)
-      : m_callback(callback) {}
-  void Complete(bool success) override { m_callback.Run(success); }
+  explicit GetAllCallback(base::OnceCallback<void(bool)> callback)
+      : m_callback(std::move(callback)) {}
+  void Complete(bool success) override { std::move(m_callback).Run(success); }
 
-  base::Callback<void(bool)> m_callback;
+  base::OnceCallback<void(bool)> m_callback;
 };
 
 }  // namespace
@@ -72,20 +74,22 @@ LocalStorageCachedArea::LocalStorageCachedArea(
     const url::Origin& origin,
     mojom::SessionStorageNamespace* session_namespace,
     LocalStorageCachedAreas* cached_areas,
-    blink::scheduler::RendererScheduler* renderer_scheduler)
+    blink::scheduler::WebMainThreadScheduler* main_thread_scheduler)
     : namespace_id_(namespace_id),
       origin_(origin),
       binding_(this),
       cached_areas_(cached_areas),
-      renderer_scheduler_(renderer_scheduler),
+      main_thread_scheduler_(main_thread_scheduler),
       weak_factory_(this) {
   DCHECK(!namespace_id_.empty());
 
   mojom::LevelDBWrapperAssociatedPtrInfo wrapper_ptr_info;
   session_namespace->OpenArea(origin_, mojo::MakeRequest(&wrapper_ptr_info));
-  leveldb_.Bind(std::move(wrapper_ptr_info));
+  leveldb_.Bind(std::move(wrapper_ptr_info),
+                main_thread_scheduler->IPCTaskRunner());
   mojom::LevelDBObserverAssociatedPtrInfo ptr_info;
-  binding_.Bind(mojo::MakeRequest(&ptr_info));
+  binding_.Bind(mojo::MakeRequest(&ptr_info),
+                main_thread_scheduler->IPCTaskRunner());
   leveldb_->AddObserver(std::move(ptr_info));
 }
 
@@ -93,19 +97,21 @@ LocalStorageCachedArea::LocalStorageCachedArea(
     const url::Origin& origin,
     mojom::StoragePartitionService* storage_partition_service,
     LocalStorageCachedAreas* cached_areas,
-    blink::scheduler::RendererScheduler* renderer_scheduler)
+    blink::scheduler::WebMainThreadScheduler* main_thread_scheduler)
     : origin_(origin),
       binding_(this),
       cached_areas_(cached_areas),
-      renderer_scheduler_(renderer_scheduler),
+      main_thread_scheduler_(main_thread_scheduler),
       weak_factory_(this) {
   DCHECK(namespace_id_.empty());
   mojom::LevelDBWrapperPtrInfo wrapper_ptr_info;
   storage_partition_service->OpenLocalStorage(
       origin_, mojo::MakeRequest(&wrapper_ptr_info));
-  leveldb_.Bind(std::move(wrapper_ptr_info));
+  leveldb_.Bind(std::move(wrapper_ptr_info),
+                main_thread_scheduler->IPCTaskRunner());
   mojom::LevelDBObserverAssociatedPtrInfo ptr_info;
-  binding_.Bind(mojo::MakeRequest(&ptr_info));
+  binding_.Bind(mojo::MakeRequest(&ptr_info),
+                main_thread_scheduler->IPCTaskRunner());
   leveldb_->AddObserver(std::move(ptr_info));
 }
 
@@ -156,8 +162,9 @@ bool LocalStorageCachedArea::SetItem(const base::string16& key,
         String16ToUint8Vector(old_nullable_value.string(), is_session_storage);
 
   blink::WebScopedVirtualTimePauser virtual_time_pauser =
-      renderer_scheduler_->CreateWebScopedVirtualTimePauser();
-  virtual_time_pauser.PauseVirtualTime(true);
+      main_thread_scheduler_->CreateWebScopedVirtualTimePauser(
+          "LocalStorageCachedArea");
+  virtual_time_pauser.PauseVirtualTime();
   leveldb_->Put(String16ToUint8Vector(key, is_session_storage),
                 String16ToUint8Vector(value, is_session_storage),
                 optional_old_value, PackSource(page_url, storage_area_id),
@@ -188,8 +195,9 @@ void LocalStorageCachedArea::RemoveItem(const base::string16& key,
     optional_old_value = String16ToUint8Vector(old_value, is_session_storage);
 
   blink::WebScopedVirtualTimePauser virtual_time_pauser =
-      renderer_scheduler_->CreateWebScopedVirtualTimePauser();
-  virtual_time_pauser.PauseVirtualTime(true);
+      main_thread_scheduler_->CreateWebScopedVirtualTimePauser(
+          "LocalStorageCachedArea");
+  virtual_time_pauser.PauseVirtualTime();
   leveldb_->Delete(String16ToUint8Vector(key, is_session_storage),
                    optional_old_value, PackSource(page_url, storage_area_id),
                    base::BindOnce(&LocalStorageCachedArea::OnRemoveItemComplete,
@@ -205,8 +213,9 @@ void LocalStorageCachedArea::Clear(const GURL& page_url,
   ignore_all_mutations_ = true;
 
   blink::WebScopedVirtualTimePauser virtual_time_pauser =
-      renderer_scheduler_->CreateWebScopedVirtualTimePauser();
-  virtual_time_pauser.PauseVirtualTime(true);
+      main_thread_scheduler_->CreateWebScopedVirtualTimePauser(
+          "LocalStorageCachedArea");
+  virtual_time_pauser.PauseVirtualTime();
   leveldb_->DeleteAll(PackSource(page_url, storage_area_id),
                       base::BindOnce(&LocalStorageCachedArea::OnClearComplete,
                                      weak_factory_.GetWeakPtr(),
@@ -341,11 +350,21 @@ void LocalStorageCachedArea::KeyDeleted(const std::vector<uint8_t>& key,
       map_->RemoveItem(key_string, nullptr);
   }
 
-  blink::WebStorageEventDispatcher::DispatchLocalStorageEvent(
-      blink::WebString::FromUTF16(key_string),
-      blink::WebString::FromUTF16(
-          Uint8VectorToString16(old_value, IsSessionStorage())),
-      blink::WebString(), origin_.GetURL(), page_url, originating_area);
+  if (IsSessionStorage()) {
+    WebStorageNamespaceImpl session_namespace_for_event_dispatch(namespace_id_);
+    blink::WebStorageEventDispatcher::DispatchSessionStorageEvent(
+        blink::WebString::FromUTF16(key_string),
+        blink::WebString::FromUTF16(
+            Uint8VectorToString16(old_value, IsSessionStorage())),
+        blink::WebString(), origin_.GetURL(), page_url,
+        session_namespace_for_event_dispatch, originating_area);
+  } else {
+    blink::WebStorageEventDispatcher::DispatchLocalStorageEvent(
+        blink::WebString::FromUTF16(key_string),
+        blink::WebString::FromUTF16(
+            Uint8VectorToString16(old_value, IsSessionStorage())),
+        blink::WebString(), origin_.GetURL(), page_url, originating_area);
+  }
 }
 
 void LocalStorageCachedArea::AllDeleted(const std::string& source) {
@@ -372,9 +391,18 @@ void LocalStorageCachedArea::AllDeleted(const std::string& source) {
     }
   }
 
-  blink::WebStorageEventDispatcher::DispatchLocalStorageEvent(
-      blink::WebString(), blink::WebString(), blink::WebString(),
-      origin_.GetURL(), page_url, originating_area);
+  if (IsSessionStorage()) {
+    WebStorageNamespaceImpl session_namespace_for_event_dispatch(namespace_id_);
+    blink::WebStorageEventDispatcher::DispatchSessionStorageEvent(
+        blink::WebString(), blink::WebString(), blink::WebString(),
+        origin_.GetURL(), page_url, session_namespace_for_event_dispatch,
+        originating_area);
+
+  } else {
+    blink::WebStorageEventDispatcher::DispatchLocalStorageEvent(
+        blink::WebString(), blink::WebString(), blink::WebString(),
+        origin_.GetURL(), page_url, originating_area);
+  }
 }
 
 void LocalStorageCachedArea::ShouldSendOldValueOnMutations(bool value) {
@@ -412,11 +440,21 @@ void LocalStorageCachedArea::KeyAddedOrChanged(
     }
   }
 
-  blink::WebStorageEventDispatcher::DispatchLocalStorageEvent(
-      blink::WebString::FromUTF16(key_string),
-      blink::WebString::FromUTF16(old_value),
-      blink::WebString::FromUTF16(new_value_string), origin_.GetURL(), page_url,
-      originating_area);
+  if (IsSessionStorage()) {
+    WebStorageNamespaceImpl session_namespace_for_event_dispatch(namespace_id_);
+    blink::WebStorageEventDispatcher::DispatchSessionStorageEvent(
+        blink::WebString::FromUTF16(key_string),
+        blink::WebString::FromUTF16(old_value),
+        blink::WebString::FromUTF16(new_value_string), origin_.GetURL(),
+        page_url, session_namespace_for_event_dispatch, originating_area);
+
+  } else {
+    blink::WebStorageEventDispatcher::DispatchLocalStorageEvent(
+        blink::WebString::FromUTF16(key_string),
+        blink::WebString::FromUTF16(old_value),
+        blink::WebString::FromUTF16(new_value_string), origin_.GetURL(),
+        page_url, originating_area);
+  }
 }
 
 void LocalStorageCachedArea::EnsureLoaded() {
@@ -428,8 +466,8 @@ void LocalStorageCachedArea::EnsureLoaded() {
   leveldb::mojom::DatabaseError status = leveldb::mojom::DatabaseError::OK;
   std::vector<content::mojom::KeyValuePtr> data;
   leveldb_->GetAll(GetAllCallback::CreateAndBind(
-                       base::Bind(&LocalStorageCachedArea::OnGetAllComplete,
-                                  weak_factory_.GetWeakPtr())),
+                       base::BindOnce(&LocalStorageCachedArea::OnGetAllComplete,
+                                      weak_factory_.GetWeakPtr())),
                    &status, &data);
 
   DOMStorageValuesMap values;

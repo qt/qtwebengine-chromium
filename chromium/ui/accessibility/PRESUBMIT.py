@@ -115,12 +115,16 @@ def CheckEnumsMatch(input_api, output_api):
                     output_api)
   CheckMatchingEnum(ax_enums, 'State', automation_enums, 'StateType', errs,
                     output_api)
+  CheckMatchingEnum(ax_enums, 'Action', automation_enums, 'ActionType', errs,
+                    output_api)
   CheckMatchingEnum(ax_enums, 'Event', automation_enums, 'EventType', errs,
                     output_api)
   CheckMatchingEnum(ax_enums, 'NameFrom', automation_enums, 'NameFromType',
                     errs, output_api)
   CheckMatchingEnum(ax_enums, 'Restriction', automation_enums,
                    'Restriction', errs, output_api)
+  CheckMatchingEnum(ax_enums, 'DefaultActionVerb', automation_enums,
+                   'DefaultActionVerb', errs, output_api)
   return errs
 
 # Given a full path to c++ header, return an array of the first static

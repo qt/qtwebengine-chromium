@@ -24,6 +24,7 @@
 #include "ui/display/types/display_mode.h"
 #include "ui/display/types/display_snapshot.h"
 #include "ui/display/util/display_util.h"
+#include "ui/display/util/edid_parser.h"
 #include "ui/events/devices/input_device_manager.h"
 #include "ui/events/devices/touchscreen_device.h"
 #include "ui/strings/grit/ui_strings.h"
@@ -64,6 +65,12 @@ DisplayChangeObserver::GetInternalManagedDisplayModeList(
                                  ui_native_mode->refresh_rate(),
                                  ui_native_mode->is_interlaced(), true, 1.0,
                                  display_info.device_scale_factor());
+  // When display zoom option is available, we cannot change the mode for
+  // internal displays.
+  if (features::IsDisplayZoomSettingEnabled()) {
+    native_mode.set_is_default(true);
+    return ManagedDisplayInfo::ManagedDisplayModeList{native_mode};
+  }
   return CreateInternalManagedDisplayModeList(native_mode);
 }
 
@@ -86,13 +93,21 @@ DisplayChangeObserver::GetExternalManagedDisplayModeList(
       native_mode = display_mode;
 
     // Add the display mode if it isn't already present and override interlaced
-    // display modes with non-interlaced ones.
+    // display modes with non-interlaced ones. We prioritize having non
+    // interlaced mode over refresh rate. A mode having lower refresh rate
+    // but is not interlaced will be picked over a mode having high refresh
+    // rate but is interlaced.
     auto display_mode_it = display_mode_map.find(size);
-    if (display_mode_it == display_mode_map.end())
+    if (display_mode_it == display_mode_map.end()) {
       display_mode_map.insert(std::make_pair(size, display_mode));
-    else if (display_mode_it->second.is_interlaced() &&
-             !display_mode.is_interlaced())
+    } else if (display_mode_it->second.is_interlaced() &&
+               !display_mode.is_interlaced()) {
       display_mode_it->second = std::move(display_mode);
+    } else if (!display_mode.is_interlaced() &&
+               display_mode_it->second.refresh_rate() <
+                   display_mode.refresh_rate()) {
+      display_mode_it->second = std::move(display_mode);
+    }
   }
 
   ManagedDisplayInfo::ManagedDisplayModeList display_mode_list;
@@ -110,6 +125,11 @@ DisplayChangeObserver::GetExternalManagedDisplayModeList(
     if (!it->second.native())
       display_mode_list.push_back(native_mode);
   }
+
+  // If we are using display zoom mode, we no longer have to add additional
+  // display modes for ultra high resolution displays.
+  if (features::IsDisplayZoomSettingEnabled())
+    return display_mode_list;
 
   if (native_mode.size().width() >= kMinimumWidthFor4K) {
     for (size_t i = 0; i < arraysize(kAdditionalDeviceScaleFactorsFor4k); ++i) {
@@ -247,21 +267,21 @@ void DisplayChangeObserver::UpdateInternalDisplay(
 }
 
 ManagedDisplayInfo DisplayChangeObserver::CreateManagedDisplayInfo(
-    const DisplaySnapshot* state,
+    const DisplaySnapshot* snapshot,
     const DisplayMode* mode_info) {
   float device_scale_factor = 1.0f;
   // Sets dpi only if the screen size is not blacklisted.
-  float dpi = IsDisplaySizeBlackListed(state->physical_size())
+  float dpi = IsDisplaySizeBlackListed(snapshot->physical_size())
                   ? 0
                   : kInchInMm * mode_info->size().width() /
-                        state->physical_size().width();
+                        snapshot->physical_size().width();
 
-  if (state->type() == DISPLAY_CONNECTION_TYPE_INTERNAL) {
+  if (snapshot->type() == DISPLAY_CONNECTION_TYPE_INTERNAL) {
     if (dpi)
       device_scale_factor = FindDeviceScaleFactor(dpi);
   } else {
     ManagedDisplayMode mode;
-    if (display_manager_->GetSelectedModeForDisplayId(state->display_id(),
+    if (display_manager_->GetSelectedModeForDisplayId(snapshot->display_id(),
                                                       &mode)) {
       device_scale_factor = mode.device_scale_factor();
     } else {
@@ -270,8 +290,8 @@ ManagedDisplayInfo DisplayChangeObserver::CreateManagedDisplayInfo(
       // from the value of |k2xThreshouldSizeSquaredFor4KInMm|
       const int k2xThreshouldSizeSquaredFor4KInMm =
           (40 * 40 * kInchInMm * kInchInMm) - 100;
-      gfx::Vector2d size_in_vec(state->physical_size().width(),
-                                state->physical_size().height());
+      gfx::Vector2d size_in_vec(snapshot->physical_size().width(),
+                                snapshot->physical_size().height());
       if (size_in_vec.LengthSquared() > k2xThreshouldSizeSquaredFor4KInMm &&
           mode_info->size().width() >= kMinimumWidthFor4K) {
         // Make sure that additional device scale factors table has 2x.
@@ -281,35 +301,47 @@ ManagedDisplayInfo DisplayChangeObserver::CreateManagedDisplayInfo(
     }
   }
 
-  std::string name = (state->type() == DISPLAY_CONNECTION_TYPE_INTERNAL)
+  std::string name = (snapshot->type() == DISPLAY_CONNECTION_TYPE_INTERNAL)
                          ? l10n_util::GetStringUTF8(IDS_DISPLAY_NAME_INTERNAL)
-                         : state->display_name();
+                         : snapshot->display_name();
 
   if (name.empty())
     name = l10n_util::GetStringUTF8(IDS_DISPLAY_NAME_UNKNOWN);
 
-  const bool has_overscan = state->has_overscan();
-  const int64_t id = state->display_id();
+  const bool has_overscan = snapshot->has_overscan();
+  const int64_t id = snapshot->display_id();
 
   ManagedDisplayInfo new_info = ManagedDisplayInfo(id, name, has_overscan);
-  new_info.set_sys_path(state->sys_path());
+
+  if (snapshot->product_code() != DisplaySnapshot::kInvalidProductCode) {
+    uint16_t manufacturer_id = 0;
+    uint16_t product_id = 0;
+    EdidParser::SplitProductCodeInManufacturerIdAndProductId(
+        snapshot->product_code(), &manufacturer_id, &product_id);
+    new_info.set_manufacturer_id(
+        EdidParser::ManufacturerIdToString(manufacturer_id));
+    new_info.set_product_id(EdidParser::ProductIdToString(product_id));
+  }
+  new_info.set_year_of_manufacture(snapshot->year_of_manufacture());
+
+  new_info.set_sys_path(snapshot->sys_path());
   new_info.set_device_scale_factor(device_scale_factor);
-  const gfx::Rect display_bounds(state->origin(), mode_info->size());
+  const gfx::Rect display_bounds(snapshot->origin(), mode_info->size());
   new_info.SetBounds(display_bounds);
   new_info.set_native(true);
   new_info.set_is_aspect_preserving_scaling(
-      state->is_aspect_preserving_scaling());
+      snapshot->is_aspect_preserving_scaling());
   if (dpi)
     new_info.set_device_dpi(dpi);
-  new_info.set_color_space(state->color_space());
+  new_info.set_color_space(snapshot->color_space());
 
   ManagedDisplayInfo::ManagedDisplayModeList display_modes =
-      (state->type() == DISPLAY_CONNECTION_TYPE_INTERNAL)
-          ? GetInternalManagedDisplayModeList(new_info, *state)
-          : GetExternalManagedDisplayModeList(*state);
+      (snapshot->type() == DISPLAY_CONNECTION_TYPE_INTERNAL)
+          ? GetInternalManagedDisplayModeList(new_info, *snapshot)
+          : GetExternalManagedDisplayModeList(*snapshot);
   new_info.SetManagedDisplayModes(display_modes);
 
-  new_info.set_maximum_cursor_size(state->maximum_cursor_size());
+  new_info.set_maximum_cursor_size(snapshot->maximum_cursor_size());
   return new_info;
 }
 

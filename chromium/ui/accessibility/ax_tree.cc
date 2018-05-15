@@ -269,8 +269,8 @@ gfx::RectF AXTree::RelativeToTreeBounds(const AXNode* node,
       // Here we are extending the definition of offscreen to include elements
       // that are clipped by their parents in addition to those clipped by
       // the rootWebArea.
-      // No need to update |offscreen| if |clipped| is not empty, because it
-      // should be false by default.
+      // No need to update |offscreen| if |intersection| is not empty, because
+      // it should be false by default.
       if (offscreen != nullptr)
         *offscreen |= true;
     }
@@ -544,7 +544,7 @@ void AXTree::CallNodeChangeCallbacks(AXNode* node, const AXNodeData& new_data) {
 
   if (old_data.state != new_data.state) {
     for (int32_t i = static_cast<int32_t>(ax::mojom::State::kNone) + 1;
-         i <= static_cast<int32_t>(ax::mojom::State::kLast); ++i) {
+         i <= static_cast<int32_t>(ax::mojom::State::kMaxValue); ++i) {
       ax::mojom::State state = static_cast<ax::mojom::State>(i);
       if (old_data.HasState(state) != new_data.HasState(state))
         delegate_->OnStateChanged(this, node, state, new_data.HasState(state));

@@ -10,16 +10,15 @@
 #include <utility>
 #include <vector>
 
-#include "base/memory/ptr_util.h"
 #include "content/common/input/input_event.h"
 #include "content/common/input_messages.h"
 #include "ipc/ipc_message.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebGestureEvent.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
-#include "third_party/WebKit/public/platform/WebKeyboardEvent.h"
-#include "third_party/WebKit/public/platform/WebMouseWheelEvent.h"
-#include "third_party/WebKit/public/platform/WebTouchEvent.h"
+#include "third_party/blink/public/platform/web_gesture_event.h"
+#include "third_party/blink/public/platform/web_input_event.h"
+#include "third_party/blink/public/platform/web_keyboard_event.h"
+#include "third_party/blink/public/platform/web_mouse_wheel_event.h"
+#include "third_party/blink/public/platform/web_touch_event.h"
 
 namespace content {
 namespace {
@@ -105,7 +104,7 @@ TEST_F(InputParamTraitsTest, InitializedEvents) {
       blink::WebInputEvent::kGestureScrollBegin,
       blink::WebInputEvent::kNoModifiers,
       blink::WebInputEvent::GetStaticTimeStampForTests());
-  gesture_event.x = -1;
+  gesture_event.SetPositionInWidget(gfx::PointF(-1, 0));
   events.push_back(std::make_unique<InputEvent>(gesture_event, latency));
 
   blink::WebTouchEvent touch_event(

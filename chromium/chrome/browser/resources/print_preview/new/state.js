@@ -10,10 +10,11 @@ print_preview_new.State = {
   READY: 1,
   HIDDEN: 2,
   PRINTING: 3,
-  INVALID_TICKET: 4,
-  INVALID_PRINTER: 5,
-  FATAL_ERROR: 6,
-  CLOSING: 7,
+  SYSTEM_DIALOG: 4,
+  INVALID_TICKET: 5,
+  INVALID_PRINTER: 6,
+  FATAL_ERROR: 7,
+  CLOSING: 8,
 };
 
 Polymer({
@@ -51,11 +52,18 @@ Polymer({
             this.state == print_preview_new.State.READY ||
             this.state == print_preview_new.State.HIDDEN);
         break;
+      case (print_preview_new.State.SYSTEM_DIALOG):
+        assert(
+            this.state != print_preview_new.State.HIDDEN &&
+            this.state != print_preview_new.State.PRINTING &&
+            this.state != print_preview_new.State.CLOSING);
+        break;
       case (print_preview_new.State.INVALID_TICKET):
         assert(this.state == print_preview_new.State.READY);
         break;
       case (print_preview_new.State.INVALID_PRINTER):
         assert(
+            this.state == print_preview_new.State.INVALID_PRINTER ||
             this.state == print_preview_new.State.NOT_READY ||
             this.state == print_preview_new.State.READY);
         break;

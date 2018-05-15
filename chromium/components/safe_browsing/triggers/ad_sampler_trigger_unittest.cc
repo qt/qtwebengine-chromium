@@ -10,7 +10,7 @@
 #include "base/test/test_simple_task_runner.h"
 #include "components/prefs/testing_pref_service.h"
 #include "components/safe_browsing/features.h"
-#include "components/safe_browsing/triggers/trigger_manager.h"
+#include "components/safe_browsing/triggers/mock_trigger_manager.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/navigation_simulator.h"
@@ -35,27 +35,6 @@ const char kNonAdUrl[] = "https://foo.com/";
 const char kAdName[] = "google_ads_iframe_1";
 const char kNonAdName[] = "foo";
 }  // namespace
-
-class MockTriggerManager : public TriggerManager {
- public:
-  MockTriggerManager() : TriggerManager(nullptr) {}
-
-  MOCK_METHOD6(StartCollectingThreatDetails,
-               bool(TriggerType trigger_type,
-                    content::WebContents* web_contents,
-                    const security_interstitials::UnsafeResource& resource,
-                    net::URLRequestContextGetter* request_context_getter,
-                    history::HistoryService* history_service,
-                    const SBErrorOptions& error_display_options));
-
-  MOCK_METHOD6(FinishCollectingThreatDetails,
-               bool(TriggerType trigger_type,
-                    content::WebContents* web_contents,
-                    const base::TimeDelta& delay,
-                    bool did_proceed,
-                    int num_visits,
-                    const SBErrorOptions& error_display_options));
-};
 
 class AdSamplerTriggerTest : public content::RenderViewHostTestHarness {
  public:
@@ -132,7 +111,7 @@ class AdSamplerTriggerTest : public content::RenderViewHostTestHarness {
 TEST_F(AdSamplerTriggerTest, TriggerDisabledBySamplingFrequency) {
   // Make sure the trigger doesn't fire when the sampling frequency is set to
   // zero, which disables the trigger.
-  CreateTriggerWithFrequency(kSamplerFrequencyDisabled);
+  CreateTriggerWithFrequency(kAdSamplerFrequencyDisabled);
   EXPECT_CALL(*get_trigger_manager(),
               StartCollectingThreatDetails(_, _, _, _, _, _))
       .Times(0);
@@ -245,7 +224,12 @@ TEST_F(AdSamplerTriggerTest, ReportRejectedByTriggerManager) {
 
 TEST(AdSamplerTriggerTestFinch, FrequencyDenominatorFeature) {
   // Make sure that setting the frequency denominator via Finch params works as
-  // expected.
+  // expected, and that the default frequency is used when no Finch config is
+  // given.
+  AdSamplerTrigger trigger_default(nullptr, nullptr, nullptr, nullptr, nullptr);
+  EXPECT_EQ(kAdSamplerDefaultFrequency,
+            trigger_default.sampler_frequency_denominator_);
+
   const size_t kDenominatorInt = 12345;
   base::FieldTrialList field_trial_list(nullptr);
 
@@ -266,7 +250,7 @@ TEST(AdSamplerTriggerTestFinch, FrequencyDenominatorFeature) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitWithFeatureList(std::move(feature_list));
 
-  AdSamplerTrigger trigger(nullptr, nullptr, nullptr, nullptr, nullptr);
-  EXPECT_EQ(kDenominatorInt, trigger.sampler_frequency_denominator_);
+  AdSamplerTrigger trigger_finch(nullptr, nullptr, nullptr, nullptr, nullptr);
+  EXPECT_EQ(kDenominatorInt, trigger_finch.sampler_frequency_denominator_);
 }
 }  // namespace safe_browsing

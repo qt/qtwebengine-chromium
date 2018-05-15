@@ -52,6 +52,7 @@ enum FieldTypeGroupForMetrics {
   GROUP_USERNAME,
   GROUP_STREET_ADDRESS,
   GROUP_CREDIT_CARD_VERIFICATION,
+  GROUP_UNFILLABLE,
   NUM_FIELD_TYPE_GROUPS_FOR_METRICS
 };
 
@@ -65,14 +66,16 @@ std::string PreviousSaveCreditCardPromptUserDecisionToString(
             prefs::NUM_PREVIOUS_SAVE_CREDIT_CARD_PROMPT_USER_DECISIONS);
   std::string previous_response;
   if (previous_save_credit_card_prompt_user_decision ==
-      prefs::PREVIOUS_SAVE_CREDIT_CARD_PROMPT_USER_DECISION_ACCEPTED)
+      prefs::PREVIOUS_SAVE_CREDIT_CARD_PROMPT_USER_DECISION_ACCEPTED) {
     previous_response = ".PreviouslyAccepted";
-  else if (previous_save_credit_card_prompt_user_decision ==
-           prefs::PREVIOUS_SAVE_CREDIT_CARD_PROMPT_USER_DECISION_DENIED)
+  } else if (previous_save_credit_card_prompt_user_decision ==
+             prefs::PREVIOUS_SAVE_CREDIT_CARD_PROMPT_USER_DECISION_DENIED) {
     previous_response = ".PreviouslyDenied";
-  else
+  } else {
     DCHECK_EQ(previous_save_credit_card_prompt_user_decision,
               prefs::PREVIOUS_SAVE_CREDIT_CARD_PROMPT_USER_DECISION_NONE);
+    previous_response = ".NoPreviousDecision";
+  }
   return previous_response;
 }
 
@@ -81,6 +84,16 @@ ukm::SourceId NewUkmSourceWithUrl(ukm::UkmRecorder* ukm_recorder,
   ukm::SourceId source_id = ukm::UkmRecorder::GetNewSourceID();
   AutofillMetrics::UpdateSourceURL(ukm_recorder, source_id, url);
   return source_id;
+}
+
+// Reduce FormSignature space (in UKM) to a small range for privacy reasons.
+int64_t HashFormSignature(autofill::FormSignature form_signature) {
+  return static_cast<uint64_t>(form_signature) % 1021;
+}
+
+// Reduce FieldSignature space (in UKM) to a small range for privacy reasons.
+int64_t HashFieldSignature(autofill::FieldSignature field_signature) {
+  return static_cast<uint64_t>(field_signature) % 1021;
 }
 
 }  // namespace
@@ -208,6 +221,10 @@ int GetFieldTypeGroupMetric(ServerFieldType field_type,
 
     case USERNAME_FIELD:
       group = GROUP_USERNAME;
+      break;
+
+    case UNFILLABLE:
+      group = GROUP_UNFILLABLE;
       break;
 
     case TRANSACTION:
@@ -624,6 +641,14 @@ void AutofillMetrics::UpdateSourceURL(ukm::UkmRecorder* ukm_recorder,
 }
 
 // static
+void AutofillMetrics::LogSubmittedCardStateMetric(
+    SubmittedCardStateMetric metric) {
+  DCHECK_LT(metric, NUM_SUBMITTED_CARD_STATE_METRICS);
+  UMA_HISTOGRAM_ENUMERATION("Autofill.SubmittedCardState", metric,
+                            NUM_SUBMITTED_CARD_STATE_METRICS);
+}
+
+// static
 void AutofillMetrics::LogSubmittedServerCardExpirationStatusMetric(
     SubmittedServerCardExpirationStatusMetric metric) {
   DCHECK_LT(metric, NUM_SUBMITTED_SERVER_CARD_EXPIRATION_STATUS_METRICS);
@@ -633,11 +658,19 @@ void AutofillMetrics::LogSubmittedServerCardExpirationStatusMetric(
 }
 
 // static
-void AutofillMetrics::LogSubmittedCardStateMetric(
-    SubmittedCardStateMetric metric) {
-  DCHECK_LT(metric, NUM_SUBMITTED_CARD_STATE_METRICS);
-  UMA_HISTOGRAM_ENUMERATION("Autofill.SubmittedCardState", metric,
-                            NUM_SUBMITTED_CARD_STATE_METRICS);
+void AutofillMetrics::LogUploadOfferedCardOriginMetric(
+    UploadOfferedCardOriginMetric metric) {
+  DCHECK_LT(metric, NUM_UPLOAD_OFFERED_CARD_ORIGIN_METRICS);
+  UMA_HISTOGRAM_ENUMERATION("Autofill.UploadOfferedCardOrigin", metric,
+                            NUM_UPLOAD_OFFERED_CARD_ORIGIN_METRICS);
+}
+
+// static
+void AutofillMetrics::LogUploadAcceptedCardOriginMetric(
+    UploadAcceptedCardOriginMetric metric) {
+  DCHECK_LT(metric, NUM_UPLOAD_ACCEPTED_CARD_ORIGIN_METRICS);
+  UMA_HISTOGRAM_ENUMERATION("Autofill.UploadAcceptedCardOrigin", metric,
+                            NUM_UPLOAD_ACCEPTED_CARD_ORIGIN_METRICS);
 }
 
 // static
@@ -660,6 +693,8 @@ void AutofillMetrics::LogCreditCardInfoBarMetric(
   DCHECK_LT(metric, NUM_INFO_BAR_METRICS);
 
   std::string destination = is_uploading ? ".Server" : ".Local";
+  LogUMAHistogramEnumeration("Autofill.CreditCardInfoBar" + destination, metric,
+                             NUM_INFO_BAR_METRICS);
   LogUMAHistogramEnumeration(
       "Autofill.CreditCardInfoBar" + destination +
           PreviousSaveCreditCardPromptUserDecisionToString(
@@ -683,6 +718,9 @@ void AutofillMetrics::LogSaveCardPromptMetric(
   DCHECK_LT(metric, NUM_SAVE_CARD_PROMPT_METRICS);
   std::string destination = is_uploading ? ".Upload" : ".Local";
   std::string show = is_reshow ? ".Reshows" : ".FirstShow";
+  LogUMAHistogramEnumeration(
+      "Autofill.SaveCreditCardPrompt" + destination + show, metric,
+      NUM_SAVE_CARD_PROMPT_METRICS);
   LogUMAHistogramEnumeration(
       "Autofill.SaveCreditCardPrompt" + destination + show +
           PreviousSaveCreditCardPromptUserDecisionToString(
@@ -1189,6 +1227,8 @@ void AutofillMetrics::LogProfileActionOnFormSubmitted(
 // static
 void AutofillMetrics::LogAutofillFormSubmittedState(
     AutofillFormSubmittedState state,
+    bool is_for_credit_card,
+    const std::set<FormType>& form_types,
     const base::TimeTicks& form_parsed_timestamp,
     AutofillMetrics::FormInteractionsUkmLogger* form_interactions_ukm_logger) {
   UMA_HISTOGRAM_ENUMERATION("Autofill.FormSubmittedState", state,
@@ -1224,7 +1264,8 @@ void AutofillMetrics::LogAutofillFormSubmittedState(
       NOTREACHED();
       break;
   }
-  form_interactions_ukm_logger->LogFormSubmitted(state, form_parsed_timestamp);
+  form_interactions_ukm_logger->LogFormSubmitted(is_for_credit_card, form_types,
+                                                 state, form_parsed_timestamp);
 }
 
 // static
@@ -1291,6 +1332,8 @@ void AutofillMetrics::LogCardUploadDecisionsUkm(ukm::UkmRecorder* ukm_recorder,
 void AutofillMetrics::LogDeveloperEngagementUkm(
     ukm::UkmRecorder* ukm_recorder,
     const GURL& url,
+    bool is_for_credit_card,
+    std::set<FormType> form_types,
     int developer_engagement_metrics) {
   DCHECK(developer_engagement_metrics);
   DCHECK_LT(developer_engagement_metrics,
@@ -1300,6 +1343,8 @@ void AutofillMetrics::LogDeveloperEngagementUkm(
   ukm::SourceId source_id = NewUkmSourceWithUrl(ukm_recorder, url);
   ukm::builders::Autofill_DeveloperEngagement(source_id)
       .SetDeveloperEngagement(developer_engagement_metrics)
+      .SetIsForCreditCard(is_for_credit_card)
+      .SetFormTypes(FormTypesToBitVector(form_types))
       .Record(ukm_recorder);
 }
 
@@ -1413,6 +1458,10 @@ void AutofillMetrics::FormEventLogger::OnDidFillSuggestion(
     if (credit_card.record_type() == CreditCard::MASKED_SERVER_CARD) {
       Log(AutofillMetrics::
               FORM_EVENT_MASKED_SERVER_CARD_SUGGESTION_FILLED_ONCE);
+      if (has_logged_bank_name_available_) {
+        Log(AutofillMetrics::
+                FORM_EVENT_SERVER_SUGGESTION_FILLED_WITH_BANK_NAME_AVAILABLE_ONCE);
+      }
     } else if (credit_card.record_type() == CreditCard::FULL_SERVER_CARD) {
       Log(AutofillMetrics::FORM_EVENT_SERVER_SUGGESTION_FILLED_ONCE);
       if (has_logged_bank_name_available_) {
@@ -1664,8 +1713,8 @@ void AutofillMetrics::FormInteractionsUkmLogger::LogFieldFillStatus(
   ukm::builders::Autofill_FieldFillStatus(source_id_)
       .SetMillisecondsSinceFormParsed(
           MillisecondsSinceFormParsed(form.form_parsed_timestamp()))
-      .SetFormSignature(static_cast<int64_t>(form.form_signature()))
-      .SetFieldSignature(static_cast<int64_t>(field.GetFieldSignature()))
+      .SetFormSignature(HashFormSignature(form.form_signature()))
+      .SetFieldSignature(HashFieldSignature(field.GetFieldSignature()))
       .SetValidationEvent(static_cast<int64_t>(metric_type))
       .SetIsAutofilled(static_cast<int64_t>(field.is_autofilled))
       .SetWasPreviouslyAutofilled(
@@ -1692,8 +1741,8 @@ void AutofillMetrics::FormInteractionsUkmLogger::LogFieldType(
   ukm::builders::Autofill_FieldTypeValidation(source_id_)
       .SetMillisecondsSinceFormParsed(
           MillisecondsSinceFormParsed(form_parsed_timestamp))
-      .SetFormSignature(static_cast<int64_t>(form_signature))
-      .SetFieldSignature(static_cast<int64_t>(field_signature))
+      .SetFormSignature(HashFormSignature(form_signature))
+      .SetFieldSignature(HashFieldSignature(field_signature))
       .SetValidationEvent(static_cast<int64_t>(metric_type))
       .SetPredictionSource(static_cast<int64_t>(prediction_source))
       .SetPredictedType(static_cast<int64_t>(predicted_type))
@@ -1701,7 +1750,19 @@ void AutofillMetrics::FormInteractionsUkmLogger::LogFieldType(
       .Record(ukm_recorder_);
 }
 
+int64_t AutofillMetrics::FormTypesToBitVector(
+    const std::set<FormType>& form_types) {
+  int64_t form_type_bv = 0;
+  for (const FormType& form_type : form_types) {
+    DCHECK_LT(static_cast<int64_t>(form_type), 63);
+    form_type_bv |= 1LL << static_cast<int64_t>(form_type);
+  }
+  return form_type_bv;
+}
+
 void AutofillMetrics::FormInteractionsUkmLogger::LogFormSubmitted(
+    bool is_for_credit_card,
+    const std::set<FormType>& form_types,
     AutofillFormSubmittedState state,
     const base::TimeTicks& form_parsed_timestamp) {
   if (!CanLog())
@@ -1711,7 +1772,9 @@ void AutofillMetrics::FormInteractionsUkmLogger::LogFormSubmitted(
     GetNewSourceID();
 
   ukm::builders::Autofill_FormSubmitted builder(source_id_);
-  builder.SetAutofillFormSubmittedState(static_cast<int>(state));
+  builder.SetAutofillFormSubmittedState(static_cast<int>(state))
+      .SetIsForCreditCard(is_for_credit_card)
+      .SetFormTypes(FormTypesToBitVector(form_types));
   if (form_parsed_timestamp.is_null())
     DCHECK(state == NON_FILLABLE_FORM_OR_NEW_DATA ||
            state == FILLABLE_FORM_AUTOFILLED_NONE_DID_NOT_SHOW_SUGGESTIONS)

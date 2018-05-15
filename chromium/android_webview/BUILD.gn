@@ -11,6 +11,7 @@ import("//build/config/locales.gni")
 import("//components/spellcheck/spellcheck_build_features.gni")
 import("//tools/grit/repack.gni")
 import("//tools/resources/generate_resource_whitelist.gni")
+import("//tools/v8_context_snapshot/v8_context_snapshot.gni")
 
 declare_args() {
   # Package name of the system_webview_apk target.
@@ -133,9 +134,9 @@ android_assets("locale_pak_assets") {
 
 repack("repack_pack") {
   sources = [
-    "$root_gen_dir/blink/public/resources/blink_resources.pak",
     "$root_gen_dir/content/content_resources.pak",
     "$root_gen_dir/net/net_resources.pak",
+    "$root_gen_dir/third_party/blink/public/resources/blink_resources.pak",
     "$target_gen_dir/aw_resources.pak",
     "$target_gen_dir/components_resources.pak",
     "$target_gen_dir/webui_resources.pak",
@@ -146,7 +147,7 @@ repack("repack_pack") {
     ":generate_webui_resources",
     "//content:resources",
     "//net:net_resources",
-    "//third_party/WebKit/public:resources",
+    "//third_party/blink/public:resources",
   ]
   output = "$target_gen_dir/resources.pak"
 
@@ -158,13 +159,13 @@ repack("repack_pack") {
 
 repack("repack_100_percent") {
   sources = [
-    "$root_gen_dir/blink/public/resources/blink_scaled_resources_100_percent.pak",
     "$root_gen_dir/content/app/resources/content_resources_100_percent.pak",
+    "$root_gen_dir/third_party/blink/public/resources/blink_scaled_resources_100_percent.pak",
     "$root_gen_dir/ui/resources/ui_resources_100_percent.pak",
   ]
   deps = [
     "//content/app/resources",
-    "//third_party/WebKit/public:scaled_resources_100_percent",
+    "//third_party/blink/public:scaled_resources_100_percent",
     "//ui/resources",
   ]
   output = "$target_gen_dir/chrome_100_percent.pak"
@@ -192,8 +193,12 @@ android_assets("pak_file_assets") {
 android_assets("monochrome_webview_assets") {
   deps = [
     "//third_party/icu:icu_assets",
-    "//v8:v8_external_startup_data_assets",
   ]
+  if (use_v8_context_snapshot) {
+    deps += [ "//tools/v8_context_snapshot:v8_context_snapshot_assets" ]
+  } else {
+    deps += [ "//v8:v8_external_startup_data_assets" ]
+  }
   if (android_64bit_target_cpu && build_apk_secondary_abi) {
     deps += [ ":v8_snapshot_secondary_abi_assets" ]
   }
@@ -396,10 +401,16 @@ if (android_64bit_target_cpu) {
     assert(android_64bit_target_cpu,
            "32-bit targets shouldn't have secondary abi")
     arch_suffix = "32"
-    renaming_sources = [ "$_secondary_abi_out_dir/snapshot_blob.bin" ]
-    renaming_destinations = [ "snapshot_blob_$arch_suffix.bin" ]
+    if (use_v8_context_snapshot) {
+      renaming_sources = [ "$_secondary_abi_out_dir/v8_context_snapshot.bin" ]
+      renaming_destinations = [ "v8_context_snapshot_$arch_suffix.bin" ]
+    } else {
+      renaming_sources = [ "$_secondary_abi_out_dir/snapshot_blob.bin" ]
+      renaming_destinations = [ "snapshot_blob_$arch_suffix.bin" ]
+    }
     disable_compression = true
     deps = [
+      "//tools/v8_context_snapshot($android_secondary_abi_toolchain)",
       "//v8($android_secondary_abi_toolchain)",
     ]
   }
@@ -413,6 +424,15 @@ if (android_64bit_target_cpu) {
     if (use_lld) {
       configs += [ "//build/config/android:lld_pack_relocations" ]
     }
+
+    if (target_cpu != "mipsel" && target_cpu != "mips64el") {
+      # .gnu.hash support added in Android M. Without this flag, library will also
+      # contain an unused .hash section. (http://crbug.com/742525#c28)
+      # Not to be used for MIPS arhitecture since MIPS does not
+      # support hashstyle gnu: http://crbug.com/811306
+      ldflags = [ "-Wl,--hash-style=gnu" ]
+    }
+
     public_configs = extra_chrome_shared_library_configs
     deps += extra_chrome_shared_library_deps
   }
@@ -674,6 +694,8 @@ source_set("common") {
     "renderer/aw_url_loader_throttle_provider.h",
     "renderer/print_render_frame_observer.cc",
     "renderer/print_render_frame_observer.h",
+    "utility/aw_content_utility_client.cc",
+    "utility/aw_content_utility_client.h",
   ]
 
   deps = [
@@ -714,7 +736,10 @@ source_set("common") {
     "//components/safe_browsing/renderer:throttles",
     "//components/safe_browsing/triggers",
     "//components/safe_browsing/web_ui",
-    "//components/spellcheck:build_features",
+    "//components/services/heap_profiling",
+    "//components/services/heap_profiling/public/cpp",
+    "//components/services/heap_profiling/public/mojom",
+    "//components/spellcheck:buildflags",
     "//components/supervised_user_error_page",
     "//components/supervised_user_error_page:gin",
     "//components/url_matcher",
@@ -747,7 +772,7 @@ source_set("common") {
     "//skia",
     "//storage/browser",
     "//storage/common",
-    "//third_party/WebKit/public:blink",
+    "//third_party/blink/public:blink",
     "//ui/base",
     "//ui/events:gesture_detection",
     "//ui/gfx",
@@ -764,7 +789,10 @@ source_set("common") {
     ]
   }
 
-  configs += [ "//v8:external_startup_data" ]
+  configs += [
+    "//tools/v8_context_snapshot:use_v8_context_snapshot",
+    "//v8:external_startup_data",
+  ]
 
   libs = [ "jnigraphics" ]
 }
@@ -842,6 +870,7 @@ android_library("android_webview_java") {
     "java/src/org/chromium/android_webview/ResourcesContextWrapperFactory.java",
     "java/src/org/chromium/android_webview/ScrollAccessibilityHelper.java",
     "java/src/org/chromium/android_webview/SslUtil.java",
+    "java/src/org/chromium/android_webview/VariationsSeedLoader.java",
     "java/src/org/chromium/android_webview/WebViewChromiumRunQueue.java",
     "java/src/org/chromium/android_webview/permission/AwGeolocationCallback.java",
     "java/src/org/chromium/android_webview/permission/AwPermissionRequest.java",
@@ -851,6 +880,7 @@ android_library("android_webview_java") {
     ":android_webview_commandline_java",
     ":android_webview_platform_services_java",
     ":android_webview_services_java",
+    ":android_webview_variations_utils_java",
     ":resources",
     ":strings_grd",
     ":system_webview_manifest",
@@ -863,6 +893,8 @@ android_library("android_webview_java") {
     "//components/navigation_interception/android:navigation_interception_java",
     "//components/policy/android:policy_java",
     "//components/safe_browsing/android:safe_browsing_java",
+    "//components/variations:load_seed_result_enum_java",
+    "//components/variations/android:variations_java",
     "//components/version_info/android:version_constants_java",
     "//components/web_contents_delegate_android:web_contents_delegate_android_java",
     "//components/web_restrictions:client_java",
@@ -870,8 +902,8 @@ android_library("android_webview_java") {
     "//device/gamepad:java",
     "//device/geolocation:geolocation_java",
     "//net/android:net_java",
-    "//third_party/WebKit/public:blink_headers_java",
     "//third_party/android_tools:android_support_annotations_java",
+    "//third_party/blink/public:blink_headers_java",
     "//ui/android:ui_java",
   ]
 
@@ -888,6 +920,13 @@ android_library("android_webview_java") {
   ]
 
   android_manifest_for_lint = system_webview_android_manifest
+}
+
+android_library("android_webview_variations_utils_java") {
+  java_files = [ "java/src/org/chromium/android_webview/VariationsUtils.java" ]
+  deps = [
+    "//components/variations/android:variations_java",
+  ]
 }
 
 java_strings_grd("strings_grd") {
@@ -941,15 +980,23 @@ java_strings_grd("strings_grd") {
 }
 
 # Separate target to allow for a dependency on GmsCore without pulling in all of
-# android_webview_java.
+# android_webview_java. It compiles the abstract class; implementations are
+# compiled separately.
 android_library("android_webview_platform_services_java") {
-  java_files =
-      [ "java/src/org/chromium/android_webview/PlatformServiceBridge.java" ]
+  java_files = [
+    "java/src/org/chromium/android_webview/PlatformServiceBridge.java",
+    "java/src/org/chromium/android_webview/PlatformServiceBridgeImpl.java",
+  ]
 
   deps = [
     "//base:base_java",
     "//third_party/android_tools:android_support_annotations_java",
   ]
+
+  # The appropriate .class file will be loaded via a dependency to a library
+  # like :platform_service_bridge_upstream_implementation_java below. We only include the
+  # .java file because other files in the target depend on it.
+  jar_excluded_patterns = [ "*/PlatformServiceBridgeImpl.class" ]
 }
 
 # This target compiles the implementation of PlatformServiceBridge for AOSP targets.
@@ -977,24 +1024,23 @@ android_library("android_webview_services_java") {
   java_files = [
     "java/src/org/chromium/android_webview/services/AwMinidumpUploadJobService.java",
     "java/src/org/chromium/android_webview/services/AwMinidumpUploaderDelegate.java",
-    "java/src/org/chromium/android_webview/services/AwVariationsConfigurationService.java",
-    "java/src/org/chromium/android_webview/services/AwVariationsSeedFetchService.java",
-    "java/src/org/chromium/android_webview/services/AwVariationsSeedHandler.java",
-    "java/src/org/chromium/android_webview/services/AwVariationsUtils.java",
     "java/src/org/chromium/android_webview/services/CrashReceiverService.java",
     "java/src/org/chromium/android_webview/services/ServiceInit.java",
+    "java/src/org/chromium/android_webview/services/VariationsSeedServer.java",
   ]
   deps = [
     ":android_webview_commandline_java",
     ":android_webview_platform_services_java",
+    ":android_webview_variations_utils_java",
     ":system_webview_manifest",
     "//base:base_java",
     "//components/background_task_scheduler:background_task_scheduler_java",
     "//components/minidump_uploader:minidump_uploader_java",
-    "//components/variations/android:variations_java",
   ]
-
-  srcjar_deps = [ ":crash_receiver_aidl" ]
+  srcjar_deps = [
+    ":crash_receiver_aidl",
+    ":aw_variations_seed_server_aidl",
+  ]
   android_manifest_for_lint = system_webview_android_manifest
 }
 
@@ -1005,11 +1051,19 @@ android_aidl("crash_receiver_aidl") {
   ]
 }
 
+android_aidl("aw_variations_seed_server_aidl") {
+  import_include = [ "java/src" ]
+  sources = [
+    "java/src/org/chromium/android_webview/services/IVariationsSeedServer.aidl",
+  ]
+}
+
 if (public_android_sdk) {
   system_webview_apk_tmpl("system_webview_apk") {
     android_manifest = system_webview_android_manifest
     android_manifest_dep = ":system_webview_manifest"
     deps = [
+      ":platform_service_bridge_upstream_implementation_java",
       ":system_webview_resources",
       "//android_webview/glue",
       "//android_webview/support_library:support_lib_glue_java",

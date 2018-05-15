@@ -14,6 +14,7 @@
 #include "components/download/public/common/download_request_handle_interface.h"
 #include "components/download/public/common/download_url_parameters.h"
 #include "content/browser/byte_stream.h"
+#include "content/browser/download/byte_stream_input_stream.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
@@ -63,7 +64,7 @@ class UrlDownloader::RequestHandle
 
 // static
 std::unique_ptr<UrlDownloader> UrlDownloader::BeginDownload(
-    base::WeakPtr<UrlDownloadHandler::Delegate> delegate,
+    base::WeakPtr<download::UrlDownloadHandler::Delegate> delegate,
     std::unique_ptr<net::URLRequest> request,
     download::DownloadUrlParameters* params,
     bool is_parallel_request) {
@@ -89,7 +90,7 @@ std::unique_ptr<UrlDownloader> UrlDownloader::BeginDownload(
 
 UrlDownloader::UrlDownloader(
     std::unique_ptr<net::URLRequest> request,
-    base::WeakPtr<UrlDownloadHandler::Delegate> delegate,
+    base::WeakPtr<download::UrlDownloadHandler::Delegate> delegate,
     bool is_parallel_request,
     const std::string& request_origin,
     download::DownloadSource download_source)
@@ -225,11 +226,11 @@ void UrlDownloader::OnStart(
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::BindOnce(&UrlDownloadHandler::Delegate::OnUrlDownloadStarted,
-                     delegate_, std::move(create_info),
-                     std::make_unique<DownloadManager::InputStream>(
-                         std::move(stream_reader)),
-                     callback));
+      base::BindOnce(
+          &download::UrlDownloadHandler::Delegate::OnUrlDownloadStarted,
+          delegate_, std::move(create_info),
+          std::make_unique<ByteStreamInputStream>(std::move(stream_reader)),
+          nullptr, callback));
 }
 
 void UrlDownloader::OnReadyToRead() {
@@ -251,8 +252,9 @@ void UrlDownloader::CancelRequest() {
 void UrlDownloader::Destroy() {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::BindOnce(&UrlDownloadHandler::Delegate::OnUrlDownloadStopped,
-                     delegate_, this));
+      base::BindOnce(
+          &download::UrlDownloadHandler::Delegate::OnUrlDownloadStopped,
+          delegate_, this));
 }
 
 }  // namespace content

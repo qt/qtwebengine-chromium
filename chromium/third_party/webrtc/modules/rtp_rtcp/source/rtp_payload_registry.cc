@@ -31,7 +31,8 @@ bool PayloadIsCompatible(const RtpUtility::Payload& payload,
 bool PayloadIsCompatible(const RtpUtility::Payload& payload,
                          const VideoCodec& video_codec) {
   if (!payload.typeSpecific.is_video() ||
-      _stricmp(payload.name, video_codec.plName) != 0)
+      _stricmp(payload.name,
+               CodecTypeToPayloadString(video_codec.codecType)) != 0)
     return false;
   // For H264, profiles must match as well.
   if (video_codec.codecType == kVideoCodecH264) {
@@ -73,7 +74,7 @@ RtpUtility::Payload CreatePayloadType(const VideoCodec& video_codec) {
   p.videoCodecType = ConvertToRtpVideoCodecType(video_codec.codecType);
   if (video_codec.codecType == kVideoCodecH264)
     p.h264_profile = video_codec.H264().profile;
-  return {video_codec.plName, PayloadUnion(p)};
+  return {CodecTypeToPayloadString(video_codec.codecType), PayloadUnion(p)};
 }
 
 bool IsPayloadTypeValid(int8_t payload_type) {
@@ -102,11 +103,7 @@ bool IsPayloadTypeValid(int8_t payload_type) {
 }  // namespace
 
 RTPPayloadRegistry::RTPPayloadRegistry()
-    : incoming_payload_type_(-1),
-      last_received_payload_type_(-1),
-      last_received_media_payload_type_(-1),
-      rtx_(false),
-      ssrc_rtx_(0) {}
+    : last_received_payload_type_(-1) {}
 
 RTPPayloadRegistry::~RTPPayloadRegistry() = default;
 
@@ -131,7 +128,6 @@ void RTPPayloadRegistry::SetAudioReceivePayloads(
   // Clear the value of last received payload type since it might mean
   // something else now.
   last_received_payload_type_ = -1;
-  last_received_media_payload_type_ = -1;
 }
 
 int32_t RTPPayloadRegistry::RegisterReceivePayload(
@@ -172,7 +168,6 @@ int32_t RTPPayloadRegistry::RegisterReceivePayload(
   // Successful set of payload type, clear the value of last received payload
   // type since it might mean something else.
   last_received_payload_type_ = -1;
-  last_received_media_payload_type_ = -1;
   return 0;
 }
 
@@ -206,7 +201,6 @@ int32_t RTPPayloadRegistry::RegisterReceivePayload(
   // Successful set of payload type, clear the value of last received payload
   // type since it might mean something else.
   last_received_payload_type_ = -1;
-  last_received_media_payload_type_ = -1;
   return 0;
 }
 
@@ -261,45 +255,6 @@ int32_t RTPPayloadRegistry::ReceivePayloadType(const VideoCodec& video_codec,
   return -1;
 }
 
-bool RTPPayloadRegistry::RtxEnabled() const {
-  rtc::CritScope cs(&crit_sect_);
-  return rtx_;
-}
-
-bool RTPPayloadRegistry::IsRtxInternal(const RTPHeader& header) const {
-  return rtx_ && ssrc_rtx_ == header.ssrc;
-}
-
-void RTPPayloadRegistry::SetRtxSsrc(uint32_t ssrc) {
-  rtc::CritScope cs(&crit_sect_);
-  ssrc_rtx_ = ssrc;
-  rtx_ = true;
-}
-
-bool RTPPayloadRegistry::GetRtxSsrc(uint32_t* ssrc) const {
-  rtc::CritScope cs(&crit_sect_);
-  *ssrc = ssrc_rtx_;
-  return rtx_;
-}
-
-void RTPPayloadRegistry::SetRtxPayloadType(int payload_type,
-                                           int associated_payload_type) {
-  rtc::CritScope cs(&crit_sect_);
-  if (payload_type < 0) {
-    RTC_LOG(LS_ERROR) << "Invalid RTX payload type: " << payload_type;
-    return;
-  }
-
-  rtx_payload_type_map_[payload_type] = associated_payload_type;
-  rtx_ = true;
-}
-
-bool RTPPayloadRegistry::IsRed(const RTPHeader& header) const {
-  rtc::CritScope cs(&crit_sect_);
-  auto it = payload_type_map_.find(header.payloadType);
-  return it != payload_type_map_.end() && _stricmp(it->second.name, "red") == 0;
-}
-
 int RTPPayloadRegistry::GetPayloadTypeFrequency(
     uint8_t payload_type) const {
   const auto payload = PayloadTypeToPayload(payload_type);
@@ -319,33 +274,6 @@ rtc::Optional<RtpUtility::Payload> RTPPayloadRegistry::PayloadTypeToPayload(
   return it == payload_type_map_.end()
              ? rtc::nullopt
              : rtc::Optional<RtpUtility::Payload>(it->second);
-}
-
-void RTPPayloadRegistry::SetIncomingPayloadType(const RTPHeader& header) {
-  rtc::CritScope cs(&crit_sect_);
-  if (!IsRtxInternal(header))
-    incoming_payload_type_ = header.payloadType;
-}
-
-bool RTPPayloadRegistry::ReportMediaPayloadType(uint8_t media_payload_type) {
-  rtc::CritScope cs(&crit_sect_);
-  if (last_received_media_payload_type_ == media_payload_type) {
-    // Media type unchanged.
-    return true;
-  }
-  last_received_media_payload_type_ = media_payload_type;
-  return false;
-}
-
-// Returns -1 if a payload with name |payload_name| is not registered.
-int8_t RTPPayloadRegistry::GetPayloadTypeWithName(
-    const char* payload_name) const {
-  rtc::CritScope cs(&crit_sect_);
-  for (const auto& it : payload_type_map_) {
-    if (_stricmp(it.second.name, payload_name) == 0)
-      return it.first;
-  }
-  return -1;
 }
 
 }  // namespace webrtc

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "cc/paint/paint_op_buffer.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/stringprintf.h"
 #include "cc/paint/decoded_draw_image.h"
 #include "cc/paint/display_item_list.h"
@@ -19,7 +18,7 @@
 #include "cc/test/test_skcanvas.h"
 #include "cc/test/transfer_cache_test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/skia/include/effects/SkBlurMaskFilter.h"
+#include "third_party/skia/include/core/SkMaskFilter.h"
 #include "third_party/skia/include/effects/SkColorMatrixFilter.h"
 #include "third_party/skia/include/effects/SkDashPathEffect.h"
 #include "third_party/skia/include/effects/SkLayerDrawLooper.h"
@@ -1134,9 +1133,8 @@ std::vector<PaintFlags> test_flags = {
 
       SkScalar intervals[] = {1.f, 1.f};
       flags.setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
-      flags.setMaskFilter(
-          SkBlurMaskFilter::Make(SkBlurStyle::kOuter_SkBlurStyle, 4.3f,
-                                 test_rects[0], kHigh_SkBlurQuality));
+      flags.setMaskFilter(SkMaskFilter::MakeBlur(
+          SkBlurStyle::kOuter_SkBlurStyle, 4.3f, test_rects[0]));
       flags.setColorFilter(SkColorMatrixFilter::MakeLightingFilter(
           SK_ColorYELLOW, SK_ColorGREEN));
 
@@ -1956,7 +1954,7 @@ TEST_P(PaintOpSerializationTest, UsesOverridenFlags) {
     PaintOp* written = PaintOp::Deserialize(
         output_.get(), bytes_written, deserialized.get(), deserialized_size,
         &bytes_read, options_provider.deserialize_options());
-    ASSERT_TRUE(written);
+    ASSERT_TRUE(written) << PaintOpTypeToString(GetParamType());
     EXPECT_EQ(*op, *written);
     written->DestroyThis();
     written = nullptr;
@@ -3102,7 +3100,7 @@ TEST(PaintOpBufferTest, RecordShadersSerializeScaledImages) {
       record_buffer, SkRect::MakeWH(10.f, 10.f),
       SkShader::TileMode::kRepeat_TileMode,
       SkShader::TileMode::kRepeat_TileMode, nullptr);
-  shader->set_has_animated_images();
+  shader->set_has_animated_images(true);
   auto buffer = sk_make_sp<PaintOpBuffer>();
   buffer->push<ScaleOp>(0.5f, 0.8f);
   PaintFlags flags;
@@ -3123,6 +3121,22 @@ TEST(PaintOpBufferTest, RecordShadersSerializeScaledImages) {
   auto scale = options_provider.decoded_images().at(0).scale();
   EXPECT_EQ(scale.width(), 0.5f);
   EXPECT_EQ(scale.height(), 0.8f);
+}
+
+TEST(PaintOpBufferTest, TotalOpCount) {
+  auto record_buffer = sk_make_sp<PaintOpBuffer>();
+  auto sub_record_buffer = sk_make_sp<PaintOpBuffer>();
+  auto sub_sub_record_buffer = sk_make_sp<PaintOpBuffer>();
+  PushDrawRectOps(sub_sub_record_buffer.get());
+  PushDrawRectOps(sub_record_buffer.get());
+  PushDrawRectOps(record_buffer.get());
+  sub_record_buffer->push<DrawRecordOp>(sub_sub_record_buffer);
+  record_buffer->push<DrawRecordOp>(sub_record_buffer);
+
+  size_t len = std::min(test_rects.size(), test_flags.size());
+  EXPECT_EQ(len, sub_sub_record_buffer->total_op_count());
+  EXPECT_EQ(2 * len + 1, sub_record_buffer->total_op_count());
+  EXPECT_EQ(3 * len + 2, record_buffer->total_op_count());
 }
 
 }  // namespace cc

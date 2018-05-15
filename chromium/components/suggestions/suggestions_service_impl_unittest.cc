@@ -87,7 +87,11 @@ class MockSyncService : public syncer::FakeSyncService {
   MOCK_CONST_METHOD0(CanSyncStart, bool());
   MOCK_CONST_METHOD0(IsSyncActive, bool());
   MOCK_CONST_METHOD0(ConfigurationDone, bool());
+  MOCK_CONST_METHOD0(IsLocalSyncEnabled, bool());
+  MOCK_CONST_METHOD0(IsUsingSecondaryPassphrase, bool());
+  MOCK_CONST_METHOD0(GetPreferredDataTypes, syncer::ModelTypeSet());
   MOCK_CONST_METHOD0(GetActiveDataTypes, syncer::ModelTypeSet());
+  MOCK_CONST_METHOD0(GetLastCycleSnapshot, syncer::SyncCycleSnapshot());
 };
 
 class TestSuggestionsStore : public suggestions::SuggestionsStore {
@@ -157,10 +161,28 @@ class SuggestionsServiceTest : public testing::Test {
     EXPECT_CALL(*sync_service(), ConfigurationDone())
         .Times(AnyNumber())
         .WillRepeatedly(Return(true));
+    EXPECT_CALL(*sync_service(), IsLocalSyncEnabled())
+        .Times(AnyNumber())
+        .WillRepeatedly(Return(false));
+    EXPECT_CALL(*sync_service(), IsUsingSecondaryPassphrase())
+        .Times(AnyNumber())
+        .WillRepeatedly(Return(false));
+    EXPECT_CALL(*sync_service(), GetPreferredDataTypes())
+        .Times(AnyNumber())
+        .WillRepeatedly(
+            Return(syncer::ModelTypeSet(syncer::HISTORY_DELETE_DIRECTIVES)));
     EXPECT_CALL(*sync_service(), GetActiveDataTypes())
         .Times(AnyNumber())
         .WillRepeatedly(
             Return(syncer::ModelTypeSet(syncer::HISTORY_DELETE_DIRECTIVES)));
+    EXPECT_CALL(*sync_service(), GetLastCycleSnapshot())
+        .Times(AnyNumber())
+        .WillRepeatedly(Return(syncer::SyncCycleSnapshot(
+            syncer::ModelNeutralState(), syncer::ProgressMarkerMap(), false, 5,
+            2, 7, false, 0, base::Time::Now(), base::Time::Now(),
+            std::vector<int>(syncer::MODEL_TYPE_COUNT, 0),
+            std::vector<int>(syncer::MODEL_TYPE_COUNT, 0),
+            sync_pb::SyncEnums::UNKNOWN_ORIGIN)));
     // These objects are owned by the SuggestionsService, but we keep the
     // pointers around for testing.
     test_suggestions_store_ = new TestSuggestionsStore();
@@ -273,6 +295,25 @@ TEST_F(SuggestionsServiceTest, IgnoresNoopSyncChange) {
   // Wait for eventual (but unexpected) network requests.
   task_runner()->RunUntilIdle();
   EXPECT_FALSE(suggestions_service()->HasPendingRequestForTesting());
+}
+
+TEST_F(SuggestionsServiceTest, PersistentAuthErrorState) {
+  // Put some suggestions in.
+  suggestions_store()->StoreSuggestions(CreateSuggestionsProfile());
+
+  GoogleServiceAuthError error =
+      GoogleServiceAuthError(GoogleServiceAuthError::SERVICE_ERROR);
+  sync_service()->set_auth_error(std::move(error));
+  // An no-op change should not result in a suggestions refresh.
+  static_cast<SyncServiceObserver*>(suggestions_service())
+      ->OnStateChanged(sync_service());
+
+  // Wait for eventual (but unexpected) network requests.
+  task_runner()->RunUntilIdle();
+  EXPECT_FALSE(suggestions_service()->HasPendingRequestForTesting());
+
+  SuggestionsProfile empty_suggestions;
+  EXPECT_FALSE(suggestions_store()->LoadSuggestions(&empty_suggestions));
 }
 
 TEST_F(SuggestionsServiceTest, IgnoresUninterestingSyncChange) {

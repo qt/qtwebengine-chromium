@@ -21,9 +21,9 @@
 #include "content/renderer/render_thread_impl.h"
 #include "media/base/limits.h"
 #include "skia/ext/texture_handle.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3DProvider.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
-#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
+#include "third_party/blink/public/platform/web_media_stream_source.h"
+#include "third_party/blink/public/platform/web_string.h"
 #include "third_party/libyuv/include/libyuv.h"
 #include "third_party/skia/include/core/SkImage.h"
 
@@ -145,7 +145,7 @@ CanvasCaptureHandler::CreateCanvasCaptureHandler(
     blink::WebMediaStreamTrack* track) {
   // Save histogram data so we can see how much CanvasCapture is used.
   // The histogram counts the number of calls to the JS API.
-  UpdateWebRTCMethodCount(WEBKIT_CANVAS_CAPTURE_STREAM);
+  UpdateWebRTCMethodCount(blink::WebRTCAPIName::kCanvasCaptureStream);
 
   return std::unique_ptr<CanvasCaptureHandler>(new CanvasCaptureHandler(
       size, frame_rate, std::move(io_task_runner), track));
@@ -290,7 +290,6 @@ void CanvasCaptureHandler::ReadARGBPixelsAsync(
       base::Bind(&CanvasCaptureHandler::OnARGBPixelsReadAsync,
                  weak_ptr_factory_.GetWeakPtr(), image, temp_argb_frame,
                  timestamp, surface_origin != kTopLeft_GrSurfaceOrigin));
-  context_provider->InvalidateGrContext(kTextureBinding_GrGLBackendState);
 }
 
 void CanvasCaptureHandler::ReadYUVPixelsAsync(
@@ -331,8 +330,6 @@ void CanvasCaptureHandler::ReadYUVPixelsAsync(
       base::Bind(&CanvasCaptureHandler::OnYUVPixelsReadAsync,
                  weak_ptr_factory_.GetWeakPtr(), image, output_frame,
                  timestamp));
-  context_provider->InvalidateGrContext(
-      viz::ReadbackYUVInterface::GetGrGLBackendStateChanges());
 }
 
 void CanvasCaptureHandler::OnARGBPixelsReadAsync(

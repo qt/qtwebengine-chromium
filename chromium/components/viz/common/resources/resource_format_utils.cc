@@ -160,9 +160,10 @@ gfx::BufferFormat BufferFormat(ResourceFormat format) {
     case LUMINANCE_8:
     case RGB_565:
     case LUMINANCE_F16:
+      // These types not allowed by IsGpuMemoryBufferFormatSupported(), so
+      // give a default value that will not be used.
       break;
   }
-  NOTREACHED();
   return gfx::BufferFormat::RGBA_8888;
 }
 
@@ -234,6 +235,26 @@ bool IsGpuMemoryBufferFormatSupported(ResourceFormat format) {
     case LUMINANCE_8:
     case RGB_565:
     case LUMINANCE_F16:
+      return false;
+  }
+  NOTREACHED();
+  return false;
+}
+
+bool IsBitmapFormatSupported(ResourceFormat format) {
+  switch (format) {
+    case RGBA_8888:
+      return true;
+    case RGBA_4444:
+    case BGRA_8888:
+    case ALPHA_8:
+    case LUMINANCE_8:
+    case RGB_565:
+    case ETC1:
+    case RED_8:
+    case LUMINANCE_F16:
+    case RGBA_F16:
+    case R16_EXT:
       return false;
   }
   NOTREACHED();

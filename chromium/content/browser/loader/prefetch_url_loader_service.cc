@@ -7,16 +7,16 @@
 #include "base/feature_list.h"
 #include "content/browser/loader/prefetch_url_loader.h"
 #include "content/browser/url_loader_factory_getter.h"
-#include "content/common/weak_wrapper_shared_url_loader_factory.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/resource_type.h"
-#include "content/public/common/shared_url_loader_factory.h"
 #include "content/public/common/url_loader_throttle.h"
+#include "content/public/common/weak_wrapper_shared_url_loader_factory.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "services/network/public/cpp/features.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 
 namespace content {
 
@@ -55,7 +55,7 @@ void PrefetchURLLoaderService::CreateLoaderAndStart(
     const network::ResourceRequest& resource_request,
     network::mojom::URLLoaderClientPtr client,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
-    scoped_refptr<SharedURLLoaderFactory> network_loader_factory,
+    scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory,
     int frame_tree_node_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK_EQ(RESOURCE_TYPE_PREFETCH, resource_request.resource_type);
@@ -70,8 +70,9 @@ void PrefetchURLLoaderService::CreateLoaderAndStart(
   // TODO(kinuko): Revisit this.
   mojo::MakeStrongBinding(
       std::make_unique<PrefetchURLLoader>(
-          routing_id, request_id, options, resource_request, std::move(client),
-          traffic_annotation, std::move(network_loader_factory),
+          routing_id, request_id, options, frame_tree_node_id, resource_request,
+          std::move(client), traffic_annotation,
+          std::move(network_loader_factory),
           base::BindRepeating(
               &PrefetchURLLoaderService::CreateURLLoaderThrottles, this,
               resource_request, frame_tree_node_id),
@@ -98,23 +99,11 @@ void PrefetchURLLoaderService::CreateLoaderAndStart(
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(base::FeatureList::IsEnabled(network::features::kNetworkService));
-  if (!network_loader_factory_ || network_loader_factory_.encountered_error()) {
-    loader_factory_getter_->GetNetworkFactory()->Clone(
-        mojo::MakeRequest(&network_loader_factory_));
-  }
   int frame_tree_node_id = loader_factory_bindings_.dispatch_context();
-  CreateLoaderAndStart(
-      std::move(request), routing_id, request_id, options, resource_request,
-      std::move(client), traffic_annotation,
-      // NOTE: This should be fine in most cases, where the loader
-      // factory may become invalid if Network Service process is killed
-      // and restarted. The load can just fail in the case here, but if
-      // we want to be extra sure this should create a SharedURLLoaderFactory
-      // that internally holds a ref to the URLLoaderFactoryGetter so that
-      // it can re-obtain the factory if necessary.
-      base::MakeRefCounted<WeakWrapperSharedURLLoaderFactory>(
-          network_loader_factory_.get()),
-      frame_tree_node_id);
+  CreateLoaderAndStart(std::move(request), routing_id, request_id, options,
+                       resource_request, std::move(client), traffic_annotation,
+                       loader_factory_getter_->GetNetworkFactory(),
+                       frame_tree_node_id);
 }
 
 void PrefetchURLLoaderService::Clone(

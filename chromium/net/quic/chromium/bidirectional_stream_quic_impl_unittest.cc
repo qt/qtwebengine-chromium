@@ -28,6 +28,7 @@
 #include "net/quic/chromium/quic_chromium_packet_writer.h"
 #include "net/quic/chromium/quic_http_utils.h"
 #include "net/quic/chromium/quic_server_info.h"
+#include "net/quic/chromium/quic_stream_factory.h"
 #include "net/quic/chromium/quic_test_packet_maker.h"
 #include "net/quic/chromium/test_task_runner.h"
 #include "net/quic/core/crypto/crypto_protocol.h"
@@ -46,6 +47,7 @@
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/socket/socket_test_util.h"
 #include "net/test/gtest_util.h"
+#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -167,7 +169,7 @@ class TestDelegateBase : public BidirectionalStreamImpl::Delegate {
     not_expect_callback_ = true;
     stream_ = std::make_unique<BidirectionalStreamQuicImpl>(std::move(session));
     stream_->Start(request_info, net_log, send_request_headers_automatically_,
-                   this, nullptr);
+                   this, nullptr, TRAFFIC_ANNOTATION_FOR_TESTS);
     not_expect_callback_ = false;
   }
 
@@ -990,28 +992,16 @@ TEST_P(BidirectionalStreamQuicImplTest, CoalesceDataBuffersNotHeadersFrame) {
   AddWrite(ConstructRequestHeadersPacketInner(
       2, GetNthClientInitiatedStreamId(0), !kFin, DEFAULT_PRIORITY,
       &spdy_request_headers_frame_length, &header_stream_offset));
-  if (FLAGS_quic_reloadable_flag_quic_use_mem_slices) {
-    AddWrite(ConstructDataPacket(3, kIncludeVersion, !kFin, 0,
-                                 "here are some datadata keep coming",
-                                 &client_maker_));
-  } else {
     AddWrite(ConstructClientMultipleDataFramesPacket(3, kIncludeVersion, !kFin,
                                                      0, {kBody1, kBody2}));
-  }
   // Ack server's data packet.
   AddWrite(ConstructClientAckPacket(4, 3, 1, 1));
   const char kBody3[] = "hello there";
   const char kBody4[] = "another piece of small data";
   const char kBody5[] = "really small";
   QuicStreamOffset data_offset = strlen(kBody1) + strlen(kBody2);
-  if (FLAGS_quic_reloadable_flag_quic_use_mem_slices) {
-    AddWrite(ConstructDataPacket(
-        5, !kIncludeVersion, kFin, data_offset,
-        "hello thereanother piece of small datareally small", &client_maker_));
-  } else {
     AddWrite(ConstructClientMultipleDataFramesPacket(
         5, !kIncludeVersion, kFin, data_offset, {kBody3, kBody4, kBody5}));
-  }
   Initialize();
 
   BidirectionalStreamRequestInfo request;
@@ -1207,27 +1197,18 @@ TEST_P(BidirectionalStreamQuicImplTest,
   AddWrite(ConstructInitialSettingsPacket(1, &header_stream_offset));
   const char kBody1[] = "here are some data";
   const char kBody2[] = "data keep coming";
-  const char kBody1And2[] = "here are some datadata keep coming";
   std::vector<std::string> two_writes = {kBody1, kBody2};
-  std::vector<std::string> one_write = {kBody1And2};
   AddWrite(ConstructRequestHeadersAndMultipleDataFramesPacket(
       2, !kFin, DEFAULT_PRIORITY, &header_stream_offset,
-      &spdy_request_headers_frame_length,
-      FLAGS_quic_reloadable_flag_quic_use_mem_slices ? one_write : two_writes));
+      &spdy_request_headers_frame_length, two_writes));
   // Ack server's data packet.
   AddWrite(ConstructClientAckPacket(3, 3, 1, 1));
   const char kBody3[] = "hello there";
   const char kBody4[] = "another piece of small data";
   const char kBody5[] = "really small";
   QuicStreamOffset data_offset = strlen(kBody1) + strlen(kBody2);
-  if (FLAGS_quic_reloadable_flag_quic_use_mem_slices) {
-    AddWrite(ConstructDataPacket(
-        4, !kIncludeVersion, kFin, data_offset,
-        "hello thereanother piece of small datareally small", &client_maker_));
-  } else {
     AddWrite(ConstructClientMultipleDataFramesPacket(
         4, !kIncludeVersion, kFin, data_offset, {kBody3, kBody4, kBody5}));
-  }
   Initialize();
 
   BidirectionalStreamRequestInfo request;
@@ -1409,84 +1390,6 @@ TEST_P(BidirectionalStreamQuicImplTest, PostRequest) {
   delegate->Start(&request, net_log().bound(),
                   session()->CreateHandle(destination_));
   ConfirmHandshake();
-  delegate->WaitUntilNextCallback(kOnStreamReady);
-
-  // Send a DATA frame.
-  scoped_refptr<StringIOBuffer> buf(new StringIOBuffer(kUploadData));
-
-  delegate->SendData(buf, buf->size(), true);
-  delegate->WaitUntilNextCallback(kOnDataSent);
-
-  // Server acks the request.
-  ProcessPacket(ConstructServerAckPacket(1, 0, 0, 0));
-
-  // Server sends the response headers.
-  SpdyHeaderBlock response_headers = ConstructResponseHeaders("200");
-  size_t spdy_response_headers_frame_length;
-  QuicStreamOffset offset = 0;
-  ProcessPacket(ConstructResponseHeadersPacket(
-      2, !kFin, std::move(response_headers),
-      &spdy_response_headers_frame_length, &offset));
-
-  delegate->WaitUntilNextCallback(kOnHeadersReceived);
-  TestCompletionCallback cb;
-  int rv = delegate->ReadData(cb.callback());
-  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
-  EXPECT_EQ("200", delegate->response_headers().find(":status")->second);
-  const char kResponseBody[] = "Hello world!";
-  // Server sends data.
-  ProcessPacket(
-      ConstructServerDataPacket(3, !kIncludeVersion, !kFin, 0, kResponseBody));
-
-  EXPECT_EQ(static_cast<int>(strlen(kResponseBody)), cb.WaitForResult());
-
-  size_t spdy_trailers_frame_length;
-  SpdyHeaderBlock trailers;
-  trailers["foo"] = "bar";
-  trailers[kFinalOffsetHeaderKey] = base::IntToString(strlen(kResponseBody));
-  // Server sends trailers.
-  ProcessPacket(ConstructResponseTrailersPacket(
-      4, kFin, trailers.Clone(), &spdy_trailers_frame_length, &offset));
-
-  delegate->WaitUntilNextCallback(kOnTrailersReceived);
-  trailers.erase(kFinalOffsetHeaderKey);
-  EXPECT_EQ(trailers, delegate->trailers());
-  EXPECT_THAT(delegate->ReadData(cb.callback()), IsOk());
-
-  EXPECT_EQ(1, delegate->on_data_read_count());
-  EXPECT_EQ(1, delegate->on_data_sent_count());
-  EXPECT_EQ(kProtoQUIC, delegate->GetProtocol());
-  EXPECT_EQ(static_cast<int64_t>(spdy_request_headers_frame_length +
-                                 strlen(kUploadData)),
-            delegate->GetTotalSentBytes());
-  EXPECT_EQ(
-      static_cast<int64_t>(spdy_response_headers_frame_length +
-                           strlen(kResponseBody) + spdy_trailers_frame_length),
-      delegate->GetTotalReceivedBytes());
-}
-
-TEST_P(BidirectionalStreamQuicImplTest, PutRequest) {
-  SetRequest("PUT", "/", DEFAULT_PRIORITY);
-  size_t spdy_request_headers_frame_length;
-  AddWrite(ConstructRequestHeadersPacket(1, !kFin, DEFAULT_PRIORITY,
-                                         &spdy_request_headers_frame_length));
-  AddWrite(ConstructDataPacket(2, kIncludeVersion, kFin, 0, kUploadData,
-                               &client_maker_));
-  AddWrite(ConstructClientAckPacket(3, 3, 1, 1));
-
-  Initialize();
-
-  BidirectionalStreamRequestInfo request;
-  request.method = "PUT";
-  request.url = GURL("http://www.google.com/");
-  request.end_stream_on_headers = false;
-  request.priority = DEFAULT_PRIORITY;
-
-  scoped_refptr<IOBuffer> read_buffer(new IOBuffer(kReadBufferSize));
-  std::unique_ptr<TestDelegateBase> delegate(
-      new TestDelegateBase(read_buffer.get(), kReadBufferSize));
-  delegate->Start(&request, net_log().bound(),
-                  session()->CreateHandle(destination_));
   delegate->WaitUntilNextCallback(kOnStreamReady);
 
   // Send a DATA frame.

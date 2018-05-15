@@ -194,14 +194,17 @@ bool FindMatchingCrypto(const CryptoParamsVec& cryptos,
   return false;
 }
 
-// For audio, HMAC 32 is prefered over HMAC 80 because of the low overhead.
+// For audio, HMAC 32 (if enabled) is prefered over HMAC 80 because of the
+// low overhead.
 void GetSupportedAudioSdesCryptoSuites(const rtc::CryptoOptions& crypto_options,
                                        std::vector<int>* crypto_suites) {
   if (crypto_options.enable_gcm_crypto_suites) {
     crypto_suites->push_back(rtc::SRTP_AEAD_AES_256_GCM);
     crypto_suites->push_back(rtc::SRTP_AEAD_AES_128_GCM);
   }
-  crypto_suites->push_back(rtc::SRTP_AES128_CM_SHA1_32);
+  if (crypto_options.enable_aes128_sha1_32_crypto_cipher) {
+    crypto_suites->push_back(rtc::SRTP_AES128_CM_SHA1_32);
+  }
   crypto_suites->push_back(rtc::SRTP_AES128_CM_SHA1_80);
 }
 
@@ -245,8 +248,8 @@ void GetSupportedDataSdesCryptoSuiteNames(
 }
 
 // Support any GCM cipher (if enabled through options). For video support only
-// 80-bit SHA1 HMAC. For audio 32-bit HMAC is tolerated unless bundle is enabled
-// because it is low overhead.
+// 80-bit SHA1 HMAC. For audio 32-bit HMAC is tolerated (if enabled) unless
+// bundle is enabled because it is low overhead.
 // Pick the crypto in the list that is supported.
 static bool SelectCrypto(const MediaContentDescription* offer,
                          bool bundle,
@@ -261,7 +264,7 @@ static bool SelectCrypto(const MediaContentDescription* offer,
          rtc::IsGcmCryptoSuiteName(i->cipher_suite)) ||
         rtc::CS_AES_CM_128_HMAC_SHA1_80 == i->cipher_suite ||
         (rtc::CS_AES_CM_128_HMAC_SHA1_32 == i->cipher_suite && audio &&
-         !bundle)) {
+         !bundle && crypto_options.enable_aes128_sha1_32_crypto_cipher)) {
       return CreateCryptoParams(i->tag, i->cipher_suite, crypto);
     }
   }
@@ -473,9 +476,7 @@ static bool AddStreamParams(
         }
       }
       stream_param.cname = rtcp_cname;
-      // TODO(steveanton): Support any number of stream ids.
-      RTC_CHECK(sender.stream_ids.size() == 1U);
-      stream_param.sync_label = sender.stream_ids[0];
+      stream_param.set_stream_ids(sender.stream_ids);
       content_description->AddStream(stream_param);
 
       // Store the new StreamParams in current_streams.
@@ -485,9 +486,7 @@ static bool AddStreamParams(
       // Use existing generated SSRCs/groups, but update the sync_label if
       // necessary. This may be needed if a MediaStreamTrack was moved from one
       // MediaStream to another.
-      // TODO(steveanton): Support any number of stream ids.
-      RTC_CHECK(sender.stream_ids.size() == 1U);
-      param->sync_label = sender.stream_ids[0];
+      param->set_stream_ids(sender.stream_ids);
       content_description->AddStream(*param);
     }
   }
@@ -1298,8 +1297,8 @@ SessionDescription* MediaSessionDescriptionFactory::CreateOffer(
 
   RtpHeaderExtensions audio_rtp_extensions;
   RtpHeaderExtensions video_rtp_extensions;
-  GetRtpHdrExtsToOffer(current_description, &audio_rtp_extensions,
-                       &video_rtp_extensions);
+  GetRtpHdrExtsToOffer(session_options, current_description,
+                       &audio_rtp_extensions, &video_rtp_extensions);
 
   // Must have options for each existing section.
   if (current_description) {
@@ -1495,10 +1494,17 @@ SessionDescription* MediaSessionDescriptionFactory::CreateAnswer(
     }
   }
 
-  // Only put BUNDLE group in answer if nonempty.
-  if (answer_bundle.FirstContentName()) {
+  // If a BUNDLE group was offered, put a BUNDLE group in the answer even if
+  // it's empty. RFC5888 says:
+  //
+  //   A SIP entity that receives an offer that contains an "a=group" line
+  //   with semantics that are understood MUST return an answer that
+  //   contains an "a=group" line with the same semantics.
+  if (offer_bundle) {
     answer->AddGroup(answer_bundle);
+  }
 
+  if (answer_bundle.FirstContentName()) {
     // Share the same ICE credentials and crypto params across all contents,
     // as BUNDLE requires.
     if (!UpdateTransportInfoForBundle(answer_bundle, answer.get())) {
@@ -1719,6 +1725,7 @@ void MediaSessionDescriptionFactory::GetCodecsForAnswer(
 }
 
 void MediaSessionDescriptionFactory::GetRtpHdrExtsToOffer(
+    const MediaSessionOptions& session_options,
     const SessionDescription* current_description,
     RtpHeaderExtensions* offer_audio_extensions,
     RtpHeaderExtensions* offer_video_extensions) const {
@@ -1754,12 +1761,12 @@ void MediaSessionDescriptionFactory::GetRtpHdrExtsToOffer(
 
   // Add our default RTP header extensions that are not in
   // |current_description|.
-  MergeRtpHdrExts(audio_rtp_header_extensions(), offer_audio_extensions,
-                  &all_regular_extensions, &all_encrypted_extensions,
-                  &used_ids);
-  MergeRtpHdrExts(video_rtp_header_extensions(), offer_video_extensions,
-                  &all_regular_extensions, &all_encrypted_extensions,
-                  &used_ids);
+  MergeRtpHdrExts(audio_rtp_header_extensions(session_options.is_unified_plan),
+                  offer_audio_extensions, &all_regular_extensions,
+                  &all_encrypted_extensions, &used_ids);
+  MergeRtpHdrExts(video_rtp_header_extensions(session_options.is_unified_plan),
+                  offer_video_extensions, &all_regular_extensions,
+                  &all_encrypted_extensions, &used_ids);
 
   // TODO(jbauch): Support adding encrypted header extensions to existing
   // sessions.
@@ -2118,8 +2125,9 @@ bool MediaSessionDescriptionFactory::AddAudioContentForAnswer(
   if (!CreateMediaContentAnswer(
           offer_audio_description, media_description_options, session_options,
           filtered_codecs, sdes_policy, GetCryptos(current_content),
-          audio_rtp_extensions_, enable_encrypted_rtp_header_extensions_,
-          current_streams, bundle_enabled, audio_answer.get())) {
+          audio_rtp_header_extensions(session_options.is_unified_plan),
+          enable_encrypted_rtp_header_extensions_, current_streams,
+          bundle_enabled, audio_answer.get())) {
     return false;  // Fails the session setup.
   }
 
@@ -2203,8 +2211,9 @@ bool MediaSessionDescriptionFactory::AddVideoContentForAnswer(
   if (!CreateMediaContentAnswer(
           offer_video_description, media_description_options, session_options,
           filtered_codecs, sdes_policy, GetCryptos(current_content),
-          video_rtp_extensions_, enable_encrypted_rtp_header_extensions_,
-          current_streams, bundle_enabled, video_answer.get())) {
+          video_rtp_header_extensions(session_options.is_unified_plan),
+          enable_encrypted_rtp_header_extensions_, current_streams,
+          bundle_enabled, video_answer.get())) {
     return false;  // Failed the sessin setup.
   }
   bool secure = bundle_transport ? bundle_transport->description.secure()

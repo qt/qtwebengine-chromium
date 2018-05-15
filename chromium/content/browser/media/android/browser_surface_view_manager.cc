@@ -6,10 +6,10 @@
 
 #include "base/android/build_info.h"
 #include "base/trace_event/trace_event.h"
-#include "content/browser/android/content_view_core.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/media/surface_view_manager_messages_android.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "gpu/ipc/common/gpu_surface_tracker.h"
@@ -96,11 +96,10 @@ void BrowserSurfaceViewManager::OnCreateFullscreenSurface(
     SendSurfaceID(media::SurfaceManager::kNoSurfaceID);
     return;
   }
-  ContentViewCore* cvc = ContentViewCore::FromWebContents(web_contents);
-  content_video_view_.reset(
-      new ContentVideoView(this, cvc,
-          web_contents->GetDelegate()->GetContentVideoViewEmbedder(),
-          video_natural_size));
+  content_video_view_.reset(new ContentVideoView(
+      this, web_contents,
+      web_contents->GetDelegate()->GetContentVideoViewEmbedder(),
+      video_natural_size));
 }
 
 void BrowserSurfaceViewManager::OnNaturalSizeChanged(const gfx::Size& size) {

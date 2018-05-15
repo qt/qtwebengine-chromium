@@ -28,8 +28,13 @@
 #include "net/spdy/core/spdy_protocol.h"
 #include "net/spdy/platform/api/spdy_string.h"
 #include "net/ssl/ssl_client_cert_type.h"
+#include "net/ssl/token_binding.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "url/gurl.h"
+
+namespace crypto {
+class ECPrivateKey;
+}
 
 namespace net {
 
@@ -329,6 +334,13 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // Fills SSL info in |ssl_info| and returns true when SSL is in use.
   bool GetSSLInfo(SSLInfo* ssl_info) const;
 
+  // Generates the signature used in Token Binding using |*key| and for a Token
+  // Binding of type |tb_type|, putting the signature in |*out|. Returns OK or
+  // ERR_FAILED.
+  Error GetTokenBindingSignature(crypto::ECPrivateKey* key,
+                                 TokenBindingType tb_type,
+                                 std::vector<uint8_t>* out) const;
+
   // Returns true if ALPN was negotiated for the underlying socket.
   bool WasAlpnNegotiated() const;
 
@@ -378,10 +390,6 @@ class NET_EXPORT_PRIVATE SpdyStream {
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const;
 
   const SpdyHeaderBlock& request_headers() { return request_headers_; }
-
-  // Get the URL from the appropriate stream headers, or the empty
-  // GURL() if it is unknown.
-  const GURL& GetUrlFromHeaders() const { return url_from_header_block_; }
 
   // Returns the estimate of dynamically allocated memory in bytes.
   size_t EstimateMemoryUsage() const;
@@ -483,9 +491,6 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // The headers for the request to send.
   bool request_headers_valid_;
   SpdyHeaderBlock request_headers_;
-
-  // The URL from the request headers.
-  GURL url_from_header_block_;
 
   // Data waiting to be sent, and the close state of the local endpoint
   // after the data is fully written.

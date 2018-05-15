@@ -88,8 +88,8 @@
 #include "net/log/test_net_log.h"
 #include "net/log/test_net_log_entry.h"
 #include "net/log/test_net_log_util.h"
-#include "net/net_features.h"
-#include "net/proxy_resolution/proxy_service.h"
+#include "net/net_buildflags.h"
+#include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/quic/chromium/mock_crypto_client_stream_factory.h"
 #include "net/quic/chromium/quic_server_info.h"
 #include "net/socket/socket_test_util.h"
@@ -115,6 +115,7 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_filter.h"
 #include "net/url_request/url_request_http_job.h"
+#include "net/url_request/url_request_http_job_histogram.h"
 #include "net/url_request/url_request_intercepting_job_factory.h"
 #include "net/url_request/url_request_interceptor.h"
 #include "net/url_request/url_request_job_factory_impl.h"
@@ -422,17 +423,7 @@ class BlockingNetworkDelegate : public TestNetworkDelegate {
     USER_CALLBACK,  // User takes care of doing a callback.  |retval_| and
                     // |auth_retval_| are ignored. In every blocking stage the
                     // message loop is quit.
-    USER_NOTIFY,    // User is notified by a provided callback of the
-                    // blocking, and synchronously returns instructions
-                    // for handling it.
   };
-
-  using NotificationCallback =
-      base::Callback<Error(const CompletionCallback&, const URLRequest*)>;
-
-  using NotificationAuthCallback =
-      base::Callback<NetworkDelegate::AuthRequiredResponse(const AuthCallback&,
-                                                           const URLRequest*)>;
 
   // Creates a delegate which does not block at all.
   explicit BlockingNetworkDelegate(BlockMode block_mode);
@@ -468,17 +459,6 @@ class BlockingNetworkDelegate : public TestNetworkDelegate {
 
   void set_block_on(int block_on) {
     block_on_ = block_on;
-  }
-
-  // Only valid if |block_mode_| == USER_NOTIFY
-  void set_notification_callback(
-      const NotificationCallback& notification_callback) {
-    notification_callback_ = notification_callback;
-  }
-
-  void set_notification_auth_callback(
-      const NotificationAuthCallback& notification_auth_callback) {
-    notification_auth_callback_ = notification_auth_callback;
   }
 
   // Allows the user to check in which state did we block.
@@ -520,7 +500,6 @@ class BlockingNetworkDelegate : public TestNetworkDelegate {
   // Checks whether we should block in |stage|. If yes, returns an error code
   // and optionally sets up callback based on |block_mode_|. If no, returns OK.
   int MaybeBlockStage(Stage stage,
-                      const URLRequest* request,
                       const CompletionCallback& callback);
 
   // Configuration parameters, can be adjusted by public methods:
@@ -547,10 +526,6 @@ class BlockingNetworkDelegate : public TestNetworkDelegate {
   // Callback objects stored during blocking stages.
   CompletionCallback callback_;
   AuthCallback auth_callback_;
-
-  // Callback to request user instructions for blocking.
-  NotificationCallback notification_callback_;
-  NotificationAuthCallback notification_auth_callback_;
 
   base::WeakPtrFactory<BlockingNetworkDelegate> weak_factory_;
 
@@ -611,7 +586,7 @@ int BlockingNetworkDelegate::OnBeforeURLRequest(
   if (!redirect_url_.is_empty())
     *new_url = redirect_url_;
 
-  return MaybeBlockStage(ON_BEFORE_URL_REQUEST, request, callback);
+  return MaybeBlockStage(ON_BEFORE_URL_REQUEST, callback);
 }
 
 int BlockingNetworkDelegate::OnBeforeStartTransaction(
@@ -620,7 +595,7 @@ int BlockingNetworkDelegate::OnBeforeStartTransaction(
     HttpRequestHeaders* headers) {
   TestNetworkDelegate::OnBeforeStartTransaction(request, callback, headers);
 
-  return MaybeBlockStage(ON_BEFORE_SEND_HEADERS, request, callback);
+  return MaybeBlockStage(ON_BEFORE_SEND_HEADERS, callback);
 }
 
 int BlockingNetworkDelegate::OnHeadersReceived(
@@ -635,7 +610,7 @@ int BlockingNetworkDelegate::OnHeadersReceived(
                                          override_response_headers,
                                          allowed_unsafe_redirect_url);
 
-  return MaybeBlockStage(ON_HEADERS_RECEIVED, request, callback);
+  return MaybeBlockStage(ON_HEADERS_RECEIVED, callback);
 }
 
 NetworkDelegate::AuthRequiredResponse BlockingNetworkDelegate::OnAuthRequired(
@@ -673,11 +648,6 @@ NetworkDelegate::AuthRequiredResponse BlockingNetworkDelegate::OnAuthRequired(
       base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
       return AUTH_REQUIRED_RESPONSE_IO_PENDING;
-
-    case USER_NOTIFY:
-      // If the callback returns ERR_IO_PENDING, the user has accepted
-      // responsibility for running the callback in the future.
-      return notification_auth_callback_.Run(callback, request);
   }
   NOTREACHED();
   return AUTH_REQUIRED_RESPONSE_NO_ACTION;  // Dummy value.
@@ -692,7 +662,6 @@ void BlockingNetworkDelegate::Reset() {
 
 int BlockingNetworkDelegate::MaybeBlockStage(
     BlockingNetworkDelegate::Stage stage,
-    const URLRequest* request,
     const CompletionCallback& callback) {
   // Check that the user has provided callback for the previous blocked stage.
   EXPECT_EQ(NOT_BLOCKED, stage_blocked_for_callback_);
@@ -718,11 +687,6 @@ int BlockingNetworkDelegate::MaybeBlockStage(
       base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
       return ERR_IO_PENDING;
-
-    case USER_NOTIFY:
-      // If the callback returns ERR_IO_PENDING, the user has accepted
-      // responsibility for running the callback in the future.
-      return notification_callback_.Run(callback, request);
   }
   NOTREACHED();
   return 0;
@@ -735,7 +699,8 @@ class TestURLRequestContextWithProxy : public TestURLRequestContext {
                                  NetworkDelegate* delegate)
       : TestURLRequestContext(true) {
     context_storage_.set_proxy_resolution_service(
-        ProxyResolutionService::CreateFixed(proxy));
+        ProxyResolutionService::CreateFixed(proxy,
+                                            TRAFFIC_ANNOTATION_FOR_TESTS));
     set_network_delegate(delegate);
     Init();
   }
@@ -3155,6 +3120,7 @@ TEST_F(URLRequestTest, SecureCookiePrefixNonsecure) {
         TRAFFIC_ANNOTATION_FOR_TESTS));
     req->Start();
     base::RunLoop().Run();
+    EXPECT_EQ(0, network_delegate.set_cookie_count());
     EXPECT_EQ(0, network_delegate.blocked_get_cookies_count());
     EXPECT_EQ(0, network_delegate.blocked_set_cookie_count());
   }
@@ -3296,73 +3262,473 @@ TEST_F(URLRequestTest, StrictSecureCookiesOnSecureOrigin) {
   }
 }
 
-TEST_F(URLRequestTest, CookieAgeMetrics) {
+// The parameter is true for same-site and false for cross-site requests.
+class URLRequestTestParameterizedSameSite
+    : public URLRequestTest,
+      public ::testing::WithParamInterface<bool> {
+ protected:
+  URLRequestTestParameterizedSameSite() {
+    auto params = std::make_unique<HttpNetworkSession::Params>();
+    params->ignore_certificate_errors = true;
+    context_.set_http_network_session_params(std::move(params));
+    context_.set_network_delegate(&network_delegate_);
+    https_server_.AddDefaultHandlers(
+        base::FilePath(FILE_PATH_LITERAL("net/data/ssl")));
+    EXPECT_TRUE(https_server_.Start());
+  }
+
+  // To be called after configuration of |context_| has been finalized.
+  void InitContext() { context_.Init(); }
+
+  const std::string kHost_ = "example.test";
+  const std::string kCrossHost_ = "cross-site.test";
+  TestURLRequestContext context_{true};
+  TestNetworkDelegate network_delegate_;
+  base::HistogramTester histograms_;
+  EmbeddedTestServer https_server_{EmbeddedTestServer::TYPE_HTTPS};
+};
+
+INSTANTIATE_TEST_CASE_P(URLRequestTest,
+                        URLRequestTestParameterizedSameSite,
+                        ::testing::Bool());
+
+TEST_P(URLRequestTestParameterizedSameSite, CookieAgeMetrics) {
+  const bool same_site = GetParam();
+  const std::string kInitiatingHost = same_site ? kHost_ : kCrossHost_;
+  InitContext();
+
   EmbeddedTestServer http_server;
   http_server.AddDefaultHandlers(
       base::FilePath(FILE_PATH_LITERAL("net/data/ssl")));
-  EmbeddedTestServer https_server(EmbeddedTestServer::TYPE_HTTPS);
-  https_server.AddDefaultHandlers(
+  ASSERT_TRUE(http_server.Start());
+
+  // Set two test cookies.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        http_server.GetURL(kHost_, "/set-cookie?cookie=value&cookie2=value2"),
+        DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->Start();
+    base::RunLoop().Run();
+    ASSERT_EQ(2, network_delegate_.set_cookie_count());
+    histograms_.ExpectTotalCount("Cookie.AgeForNonSecureCrossSiteRequest", 0);
+    histograms_.ExpectTotalCount("Cookie.AgeForNonSecureSameSiteRequest", 0);
+    histograms_.ExpectTotalCount("Cookie.AgeForSecureCrossSiteRequest", 0);
+    histograms_.ExpectTotalCount("Cookie.AgeForSecureSameSiteRequest", 0);
+    histograms_.ExpectTotalCount("Cookie.AllAgesForNonSecureCrossSiteRequest",
+                                 0);
+    histograms_.ExpectTotalCount("Cookie.AllAgesForNonSecureSameSiteRequest",
+                                 0);
+    histograms_.ExpectTotalCount("Cookie.AllAgesForSecureCrossSiteRequest", 0);
+    histograms_.ExpectTotalCount("Cookie.AllAgesForSecureSameSiteRequest", 0);
+  }
+
+  // Make a secure request.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        https_server_.GetURL(kHost_, "/echoheader?Cookie"), DEFAULT_PRIORITY,
+        &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->set_site_for_cookies(https_server_.GetURL(kInitiatingHost, "/"));
+    req->set_initiator(
+        url::Origin::Create(https_server_.GetURL(kInitiatingHost, "/")));
+    req->Start();
+    base::RunLoop().Run();
+    histograms_.ExpectTotalCount("Cookie.AgeForNonSecureCrossSiteRequest", 0);
+    histograms_.ExpectTotalCount("Cookie.AgeForNonSecureSameSiteRequest", 0);
+    histograms_.ExpectTotalCount("Cookie.AgeForSecureCrossSiteRequest",
+                                 !same_site);
+    histograms_.ExpectTotalCount("Cookie.AgeForSecureSameSiteRequest",
+                                 same_site);
+    histograms_.ExpectTotalCount("Cookie.AllAgesForNonSecureCrossSiteRequest",
+                                 0);
+    histograms_.ExpectTotalCount("Cookie.AllAgesForNonSecureSameSiteRequest",
+                                 0);
+    histograms_.ExpectTotalCount("Cookie.AllAgesForSecureCrossSiteRequest",
+                                 same_site ? 0 : 2);
+    histograms_.ExpectTotalCount("Cookie.AllAgesForSecureSameSiteRequest",
+                                 same_site ? 2 : 0);
+    EXPECT_TRUE(d.data_received().find("cookie=value") != std::string::npos);
+    EXPECT_TRUE(d.data_received().find("cookie2=value2") != std::string::npos);
+  }
+
+  // Make a non-secure request.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        http_server.GetURL(kHost_, "/echoheader?Cookie"), DEFAULT_PRIORITY, &d,
+        TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->set_site_for_cookies(http_server.GetURL(kInitiatingHost, "/"));
+    req->set_initiator(
+        url::Origin::Create(http_server.GetURL(kInitiatingHost, "/")));
+    req->Start();
+    base::RunLoop().Run();
+    histograms_.ExpectTotalCount("Cookie.AgeForNonSecureCrossSiteRequest",
+                                 !same_site);
+    histograms_.ExpectTotalCount("Cookie.AgeForNonSecureSameSiteRequest",
+                                 same_site);
+    histograms_.ExpectTotalCount("Cookie.AgeForSecureCrossSiteRequest",
+                                 !same_site);
+    histograms_.ExpectTotalCount("Cookie.AgeForSecureSameSiteRequest",
+                                 same_site);
+    histograms_.ExpectTotalCount("Cookie.AllAgesForNonSecureCrossSiteRequest",
+                                 same_site ? 0 : 2);
+    histograms_.ExpectTotalCount("Cookie.AllAgesForNonSecureSameSiteRequest",
+                                 same_site ? 2 : 0);
+    histograms_.ExpectTotalCount("Cookie.AllAgesForSecureCrossSiteRequest",
+                                 same_site ? 0 : 2);
+    histograms_.ExpectTotalCount("Cookie.AllAgesForSecureSameSiteRequest",
+                                 same_site ? 2 : 0);
+    EXPECT_TRUE(d.data_received().find("cookie=value") != std::string::npos);
+    EXPECT_TRUE(d.data_received().find("cookie2=value2") != std::string::npos);
+  }
+}
+
+// Cookies with secure attribute (no HSTS) --> k1pSecureAttribute
+TEST_P(URLRequestTestParameterizedSameSite,
+       CookieNetworkSecurityMetricSecureAttribute) {
+  const bool same_site = GetParam();
+  const std::string kInitiatingHost = same_site ? kHost_ : kCrossHost_;
+  InitContext();
+
+  // Set cookies.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        https_server_.GetURL(kHost_,
+                             "/set-cookie?session-cookie=value;Secure&"
+                             "longlived-cookie=value;Secure;domain=" +
+                                 kHost_ + ";Max-Age=360000"),
+        DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->Start();
+    base::RunLoop().Run();
+    ASSERT_EQ(2, network_delegate_.set_cookie_count());
+    histograms_.ExpectTotalCount("Cookie.NetworkSecurity", 0);
+  }
+
+  // Verify that the cookies fall into the correct metrics bucket.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        https_server_.GetURL(kHost_, "/echoheader?Cookie"), DEFAULT_PRIORITY,
+        &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->set_site_for_cookies(https_server_.GetURL(kInitiatingHost, "/"));
+    req->set_initiator(url::Origin::Create(https_server_.GetURL(kHost_, "/")));
+    req->Start();
+    base::RunLoop().Run();
+    histograms_.ExpectTotalCount("Cookie.NetworkSecurity", 2);
+    // Static cast of boolean required for MSVC 1911.
+    histograms_.ExpectBucketCount(
+        "Cookie.NetworkSecurity",
+        static_cast<int>(CookieNetworkSecurity::k1pSecureAttribute) |
+            static_cast<int>(!same_site),
+        2);
+  }
+}
+
+// Short-lived host cookie --> k1pHSTSHostCookie
+TEST_P(URLRequestTestParameterizedSameSite,
+       CookieNetworkSecurityMetricShortlivedHostCookie) {
+  const bool same_site = GetParam();
+  const std::string kInitiatingHost = same_site ? kHost_ : kCrossHost_;
+
+  TransportSecurityState transport_security_state;
+  transport_security_state.AddHSTS(
+      kHost_, base::Time::Now() + base::TimeDelta::FromHours(10),
+      false /* include_subdomains */);
+  context_.set_transport_security_state(&transport_security_state);
+  InitContext();
+
+  // Set cookie.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        https_server_.GetURL(kHost_, "/set-cookie?cookie=value;Max-Age=3600"),
+        DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->Start();
+    base::RunLoop().Run();
+    ASSERT_EQ(1, network_delegate_.set_cookie_count());
+    histograms_.ExpectTotalCount("Cookie.NetworkSecurity", 0);
+  }
+
+  // Verify that the cookie falls into the correct metrics bucket.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        https_server_.GetURL(kHost_, "/echoheader?Cookie"), DEFAULT_PRIORITY,
+        &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->set_site_for_cookies(https_server_.GetURL(kInitiatingHost, "/"));
+    req->set_initiator(url::Origin::Create(https_server_.GetURL(kHost_, "/")));
+    req->Start();
+    base::RunLoop().Run();
+    histograms_.ExpectTotalCount("Cookie.NetworkSecurity", 1);
+    // Static cast of boolean required for MSVC 1911.
+    histograms_.ExpectBucketCount(
+        "Cookie.NetworkSecurity",
+        static_cast<int>(CookieNetworkSecurity::k1pHSTSHostCookie) |
+            static_cast<int>(!same_site),
+        1);
+  }
+}
+
+// Long-lived (either due to expiry or due to being a session cookie) host
+// cookies --> k1pExpiringHSTSHostCookie
+TEST_P(URLRequestTestParameterizedSameSite,
+       CookieNetworkSecurityMetricLonglivedHostCookie) {
+  const bool same_site = GetParam();
+  const std::string kInitiatingHost = same_site ? kHost_ : kCrossHost_;
+
+  TransportSecurityState transport_security_state;
+  transport_security_state.AddHSTS(
+      kHost_, base::Time::Now() + base::TimeDelta::FromHours(10),
+      false /* include_subdomains */);
+  context_.set_transport_security_state(&transport_security_state);
+  InitContext();
+
+  // Set cookies.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        https_server_.GetURL(kHost_,
+                             "/set-cookie?session-cookie=value&"
+                             "longlived-cookie=value;Max-Age=360000"),
+        DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->Start();
+    base::RunLoop().Run();
+    ASSERT_EQ(2, network_delegate_.set_cookie_count());
+    histograms_.ExpectTotalCount("Cookie.NetworkSecurity", 0);
+  }
+
+  // Verify that the cookies fall into the correct metrics bucket.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        https_server_.GetURL(kHost_, "/echoheader?Cookie"), DEFAULT_PRIORITY,
+        &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->set_site_for_cookies(https_server_.GetURL(kInitiatingHost, "/"));
+    req->set_initiator(url::Origin::Create(https_server_.GetURL(kHost_, "/")));
+    req->Start();
+    base::RunLoop().Run();
+    histograms_.ExpectTotalCount("Cookie.NetworkSecurity", 2);
+    // Static cast of boolean required for MSVC 1911.
+    histograms_.ExpectBucketCount(
+        "Cookie.NetworkSecurity",
+        static_cast<int>(CookieNetworkSecurity::k1pExpiringHSTSHostCookie) |
+            static_cast<int>(!same_site),
+        2);
+  }
+}
+
+// Domain cookie with HSTS subdomains with cookie expiry before HSTS expiry -->
+// k1pHSTSSubdomainsIncluded
+TEST_P(URLRequestTestParameterizedSameSite,
+       CookieNetworkSecurityMetricShortlivedDomainCookie) {
+  const bool same_site = GetParam();
+  const std::string kInitiatingHost = same_site ? kHost_ : kCrossHost_;
+
+  TransportSecurityState transport_security_state;
+  transport_security_state.AddHSTS(
+      kHost_, base::Time::Now() + base::TimeDelta::FromHours(10),
+      true /* include_subdomains */);
+  context_.set_transport_security_state(&transport_security_state);
+  InitContext();
+
+  // Set cookie.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        https_server_.GetURL(kHost_, "/set-cookie?cookie=value;domain=" +
+                                         kHost_ + ";Max-Age=3600"),
+        DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->Start();
+    base::RunLoop().Run();
+    ASSERT_EQ(1, network_delegate_.set_cookie_count());
+    histograms_.ExpectTotalCount("Cookie.NetworkSecurity", 0);
+  }
+
+  // Verify that the cookie falls into the correct metrics bucket.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        https_server_.GetURL(kHost_, "/echoheader?Cookie"), DEFAULT_PRIORITY,
+        &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->set_site_for_cookies(https_server_.GetURL(kInitiatingHost, "/"));
+    req->set_initiator(url::Origin::Create(https_server_.GetURL(kHost_, "/")));
+    req->Start();
+    base::RunLoop().Run();
+    histograms_.ExpectTotalCount("Cookie.NetworkSecurity", 1);
+    // Static cast of boolean required for MSVC 1911.
+    histograms_.ExpectBucketCount(
+        "Cookie.NetworkSecurity",
+        static_cast<int>(CookieNetworkSecurity::k1pHSTSSubdomainsIncluded) |
+            static_cast<int>(!same_site),
+        1);
+  }
+}
+
+// Long-lived (either due to expiry or due to being a session cookie) domain
+// cookies with HSTS subdomains --> k1pExpiringHSTSSubdomainsIncluded
+TEST_P(URLRequestTestParameterizedSameSite,
+       CookieNetworkSecurityMetricLonglivedDomainCookie) {
+  const bool same_site = GetParam();
+  const std::string kInitiatingHost = same_site ? kHost_ : kCrossHost_;
+
+  TransportSecurityState transport_security_state;
+  transport_security_state.AddHSTS(
+      kHost_, base::Time::Now() + base::TimeDelta::FromHours(10),
+      true /* include_subdomains */);
+  context_.set_transport_security_state(&transport_security_state);
+  InitContext();
+
+  // Set cookies.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        https_server_.GetURL(
+            kHost_, "/set-cookie?session-cookie=value;domain=" + kHost_ + "&" +
+                        "longlived-cookie=value;domain=" + kHost_ +
+                        ";Max-Age=360000"),
+        DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->Start();
+    base::RunLoop().Run();
+    ASSERT_EQ(2, network_delegate_.set_cookie_count());
+    histograms_.ExpectTotalCount("Cookie.NetworkSecurity", 0);
+  }
+
+  // Verify that the cookies fall into the correct metrics bucket.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        https_server_.GetURL(kHost_, "/echoheader?Cookie"), DEFAULT_PRIORITY,
+        &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->set_site_for_cookies(https_server_.GetURL(kInitiatingHost, "/"));
+    req->set_initiator(url::Origin::Create(https_server_.GetURL(kHost_, "/")));
+    req->Start();
+    base::RunLoop().Run();
+    histograms_.ExpectTotalCount("Cookie.NetworkSecurity", 2);
+    // Static cast of boolean required for MSVC 1911.
+    histograms_.ExpectBucketCount(
+        "Cookie.NetworkSecurity",
+        static_cast<int>(
+            CookieNetworkSecurity::k1pExpiringHSTSSubdomainsIncluded) |
+            static_cast<int>(!same_site),
+        2);
+  }
+}
+
+// Domain cookie with HSTS subdomains not included --> k1pHSTSSpoofable
+TEST_P(URLRequestTestParameterizedSameSite,
+       CookieNetworkSecurityMetricSpoofableDomainCookie) {
+  const bool same_site = GetParam();
+  const std::string kInitiatingHost = same_site ? kHost_ : kCrossHost_;
+
+  TransportSecurityState transport_security_state;
+  transport_security_state.AddHSTS(
+      kHost_, base::Time::Now() + base::TimeDelta::FromHours(10),
+      false /* include_subdomains */);
+  context_.set_transport_security_state(&transport_security_state);
+  InitContext();
+
+  // Set cookie.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        https_server_.GetURL(kHost_, "/set-cookie?cookie=value;domain=" +
+                                         kHost_ + ";Max-Age=3600"),
+        DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->Start();
+    base::RunLoop().Run();
+    ASSERT_EQ(1, network_delegate_.set_cookie_count());
+    histograms_.ExpectTotalCount("Cookie.NetworkSecurity", 0);
+  }
+
+  // Verify that the cookie falls into the correct metrics bucket.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        https_server_.GetURL(kHost_, "/echoheader?Cookie"), DEFAULT_PRIORITY,
+        &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->set_site_for_cookies(https_server_.GetURL(kInitiatingHost, "/"));
+    req->set_initiator(url::Origin::Create(https_server_.GetURL(kHost_, "/")));
+    req->Start();
+    base::RunLoop().Run();
+    histograms_.ExpectTotalCount("Cookie.NetworkSecurity", 1);
+    // Static cast of boolean required for MSVC 1911.
+    histograms_.ExpectBucketCount(
+        "Cookie.NetworkSecurity",
+        static_cast<int>(CookieNetworkSecurity::k1pHSTSSpoofable) |
+            static_cast<int>(!same_site),
+        1);
+  }
+}
+
+// Cookie without HSTS --> k1p(Non)SecureConnection
+TEST_P(URLRequestTestParameterizedSameSite, CookieNetworkSecurityMetricNoHSTS) {
+  const bool same_site = GetParam();
+  const std::string kInitiatingHost = same_site ? kHost_ : kCrossHost_;
+  InitContext();
+
+  EmbeddedTestServer http_server;
+  http_server.AddDefaultHandlers(
       base::FilePath(FILE_PATH_LITERAL("net/data/ssl")));
   ASSERT_TRUE(http_server.Start());
-  ASSERT_TRUE(https_server.Start());
 
-  TestNetworkDelegate network_delegate;
-  default_context_.set_network_delegate(&network_delegate);
-  base::HistogramTester histograms;
-
-  const std::string kHost = "example.test";
-  const std::string kCrossHost = "cross-origin.test";
-
-  // Set a test cookie.
+  // Set cookies.
   {
     TestDelegate d;
-    std::unique_ptr<URLRequest> req(default_context_.CreateRequest(
-        http_server.GetURL(kHost, "/set-cookie?cookie=value"), DEFAULT_PRIORITY,
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        https_server_.GetURL(kHost_,
+                             "/set-cookie?cookie=value;domain=" + kHost_ +
+                                 ";Max-Age=3600&host-cookie=value"),
+        DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->Start();
+    base::RunLoop().Run();
+    ASSERT_EQ(2, network_delegate_.set_cookie_count());
+    histograms_.ExpectTotalCount("Cookie.NetworkSecurity", 0);
+  }
+
+  // Verify that the cookie falls into the correct metrics bucket.
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        https_server_.GetURL(kHost_, "/echoheader?Cookie"), DEFAULT_PRIORITY,
         &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->set_site_for_cookies(https_server_.GetURL(kInitiatingHost, "/"));
+    req->set_initiator(url::Origin::Create(https_server_.GetURL(kHost_, "/")));
     req->Start();
     base::RunLoop().Run();
-    ASSERT_EQ(1, network_delegate.set_cookie_count());
+    histograms_.ExpectTotalCount("Cookie.NetworkSecurity", 2);
+    // Static cast of boolean required for MSVC 1911.
+    histograms_.ExpectBucketCount(
+        "Cookie.NetworkSecurity",
+        static_cast<int>(CookieNetworkSecurity::k1pSecureConnection) |
+            static_cast<int>(!same_site),
+        2);
   }
 
-  // Make a secure request to `example.test`: we shouldn't record data.
+  // Verify that the cookie falls into the correct metrics bucket.
   {
     TestDelegate d;
-    std::unique_ptr<URLRequest> req(default_context_.CreateRequest(
-        https_server.GetURL(kHost, "/echoheader?Cookie"), DEFAULT_PRIORITY, &d,
+    std::unique_ptr<URLRequest> req(context_.CreateRequest(
+        http_server.GetURL(kHost_, "/echoheader?Cookie"), DEFAULT_PRIORITY, &d,
         TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->set_site_for_cookies(https_server_.GetURL(kInitiatingHost, "/"));
+    req->set_initiator(url::Origin::Create(https_server_.GetURL(kHost_, "/")));
     req->Start();
     base::RunLoop().Run();
-    histograms.ExpectTotalCount("Cookie.AgeForNonSecureCrossSiteRequest", 0);
-    histograms.ExpectTotalCount("Cookie.AgeForNonSecureSameSiteRequest", 0);
-  }
-
-  // Make a non-secure same-site request.
-  {
-    TestDelegate d;
-    std::unique_ptr<URLRequest> req(default_context_.CreateRequest(
-        http_server.GetURL(kHost, "/echoheader?Cookie"), DEFAULT_PRIORITY, &d,
-        TRAFFIC_ANNOTATION_FOR_TESTS));
-    req->set_site_for_cookies(http_server.GetURL(kHost, "/"));
-    req->set_initiator(url::Origin::Create(http_server.GetURL(kHost, "/")));
-    req->Start();
-    base::RunLoop().Run();
-    histograms.ExpectTotalCount("Cookie.AgeForNonSecureCrossSiteRequest", 0);
-    histograms.ExpectTotalCount("Cookie.AgeForNonSecureSameSiteRequest", 1);
-  }
-
-  // Make a non-secure cross-site request.
-  {
-    TestDelegate d;
-    std::unique_ptr<URLRequest> req(default_context_.CreateRequest(
-        http_server.GetURL(kHost, "/echoheader?Cookie"), DEFAULT_PRIORITY, &d,
-        TRAFFIC_ANNOTATION_FOR_TESTS));
-    req->set_site_for_cookies(http_server.GetURL(kCrossHost, "/"));
-    req->set_initiator(
-        url::Origin::Create(http_server.GetURL(kCrossHost, "/")));
-    req->Start();
-    base::RunLoop().Run();
-    histograms.ExpectTotalCount("Cookie.AgeForNonSecureCrossSiteRequest", 1);
-    histograms.ExpectTotalCount("Cookie.AgeForNonSecureSameSiteRequest", 1);
+    histograms_.ExpectTotalCount("Cookie.NetworkSecurity", 4);
+    // Static cast of boolean required for MSVC 1911.
+    histograms_.ExpectBucketCount(
+        "Cookie.NetworkSecurity",
+        static_cast<int>(CookieNetworkSecurity::k1pSecureConnection) |
+            static_cast<int>(!same_site),
+        2);
+    // Static cast of boolean required for MSVC 1911.
+    histograms_.ExpectBucketCount(
+        "Cookie.NetworkSecurity",
+        static_cast<int>(CookieNetworkSecurity::k1pNonsecureConnection) |
+            static_cast<int>(!same_site),
+        2);
   }
 }
 
@@ -3722,12 +4088,10 @@ std::unique_ptr<test_server::HttpResponse> HandleRedirectConnect(
 
 class TestSSLConfigService : public SSLConfigService {
  public:
-  TestSSLConfigService(bool ev_enabled,
-                       bool online_rev_checking,
+  TestSSLConfigService(bool online_rev_checking,
                        bool rev_checking_required_local_anchors,
                        bool token_binding_enabled)
-      : ev_enabled_(ev_enabled),
-        online_rev_checking_(online_rev_checking),
+      : online_rev_checking_(online_rev_checking),
         rev_checking_required_local_anchors_(
             rev_checking_required_local_anchors),
         token_binding_enabled_(token_binding_enabled),
@@ -3741,7 +4105,6 @@ class TestSSLConfigService : public SSLConfigService {
   void GetSSLConfig(SSLConfig* config) override {
     *config = SSLConfig();
     config->rev_checking_enabled = online_rev_checking_;
-    config->verify_ev_cert = ev_enabled_;
     config->rev_checking_required_local_anchors =
         rev_checking_required_local_anchors_;
     config->version_min = min_version_;
@@ -3755,7 +4118,6 @@ class TestSSLConfigService : public SSLConfigService {
   ~TestSSLConfigService() override = default;
 
  private:
-  const bool ev_enabled_;
   const bool online_rev_checking_;
   const bool rev_checking_required_local_anchors_;
   const bool token_binding_enabled_;
@@ -3771,7 +4133,7 @@ class TokenBindingURLRequestTest : public URLRequestTestHTTP {
 
   void SetUp() override {
     default_context_.set_ssl_config_service(
-        new TestSSLConfigService(false, false, false, true));
+        new TestSSLConfigService(false, false, true));
     channel_id_service_.reset(
         new ChannelIDService(new DefaultChannelIDStore(NULL)));
     default_context_.set_channel_id_service(channel_id_service_.get());
@@ -7070,7 +7432,8 @@ class TestReportingService : public ReportingService {
   void QueueReport(const GURL& url,
                    const std::string& group,
                    const std::string& type,
-                   std::unique_ptr<const base::Value> body) override {
+                   std::unique_ptr<const base::Value> body,
+                   int depth) override {
     NOTIMPLEMENTED();
   }
 
@@ -7085,9 +7448,9 @@ class TestReportingService : public ReportingService {
     NOTIMPLEMENTED();
   }
 
-  bool RequestIsUpload(const URLRequest& request) override {
+  int GetUploadDepth(const URLRequest& request) override {
     NOTIMPLEMENTED();
-    return true;
+    return 0;
   }
 
   const ReportingPolicy& GetPolicy() const override {
@@ -8866,290 +9229,6 @@ TEST_F(URLRequestTestHTTP, ThrottledPriority) {
   EXPECT_TRUE(req->status().is_success());
 }
 
-// A class to hold state for responding to USER_NOTIFY callbacks from
-// BlockingNetworkDelegate.  It also accepts a RunLoop that will be
-// signaled via QuitWhenIdle() when any request is blocked.
-//
-class NotificationCallbackHandler {
- public:
-  // Default constructed object doesn't block anything.
-  NotificationCallbackHandler() : run_loop_(nullptr) {}
-
-  void AddURLRequestToBlockList(const URLRequest* request) {
-    requests_to_block_.insert(request);
-  }
-
-  Error ShouldBlockRequest(const CompletionCallback& callback,
-                           const URLRequest* request) {
-    if (requests_to_block_.find(request) == requests_to_block_.end()) {
-      return OK;
-    }
-
-    DCHECK(blocked_callbacks_.find(request) == blocked_callbacks_.end());
-    blocked_callbacks_[request] = callback;
-    if (run_loop_ && blocked_callbacks_.size() == requests_to_block_.size())
-      run_loop_->QuitWhenIdle();
-    return ERR_IO_PENDING;
-  }
-
-  // Erases object's memory of blocked callbacks as a side effect.
-  void GetBlockedCallbacks(
-      std::map<const URLRequest*, CompletionCallback>* blocked_callbacks) {
-    blocked_callbacks_.swap(*blocked_callbacks);
-  }
-
-  // Set a RunLoop that, if non-null, will be signaled if any request
-  // is blocked.  It is the callers responsibility to make sure the
-  // passed object lives past the destruction of this class or
-  // next call to SetRunLoop().
-  void SetRunLoop(base::RunLoop* run_loop) { run_loop_ = run_loop; }
-
- private:
-  std::set<const URLRequest*> requests_to_block_;
-  std::map<const URLRequest*, CompletionCallback> blocked_callbacks_;
-
-  base::RunLoop* run_loop_;
-
-  DISALLOW_COPY_AND_ASSIGN(NotificationCallbackHandler);
-};
-
-TEST_F(URLRequestTestHTTP, MultiThrottledPriority) {
-  ASSERT_TRUE(http_test_server()->Start());
-
-  base::RunLoop run_until_request_blocked;
-
-  NotificationCallbackHandler notification_handler;
-  notification_handler.SetRunLoop(&run_until_request_blocked);
-  BlockingNetworkDelegate network_delegate(
-      BlockingNetworkDelegate::USER_NOTIFY);
-  network_delegate.set_block_on(BlockingNetworkDelegate::ON_HEADERS_RECEIVED);
-  network_delegate.set_notification_callback(
-      base::Bind(&NotificationCallbackHandler::ShouldBlockRequest,
-                 // Both objects are owned by this function, and
-                 // |*network_delegate| will be destroyed first, so
-                 // it's safe to pass it an unretained pointer.
-                 base::Unretained(&notification_handler)));
-
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.Init();
-
-  // Use different test URLs to make sure all three requests turn into
-  // HttpNetworkTransacations.  Use different URLRequest::Delegates so that
-  // the requests may be waited on separately.
-  TestDelegate d1;
-  std::unique_ptr<URLRequest> req1(
-      context.CreateRequest(http_test_server()->GetURL("/echoall/l"), THROTTLED,
-                            &d1, TRAFFIC_ANNOTATION_FOR_TESTS));
-  notification_handler.AddURLRequestToBlockList(req1.get());
-
-  TestDelegate d2;
-  std::unique_ptr<URLRequest> req2(
-      context.CreateRequest(http_test_server()->GetURL("/echoall/2"), THROTTLED,
-                            &d2, TRAFFIC_ANNOTATION_FOR_TESTS));
-  notification_handler.AddURLRequestToBlockList(req2.get());
-
-  TestDelegate d3;
-  std::unique_ptr<URLRequest> req3(
-      context.CreateRequest(http_test_server()->GetURL("/echoall/3"), THROTTLED,
-                            &d3, TRAFFIC_ANNOTATION_FOR_TESTS));
-  req1->Start();
-  req2->Start();
-  req3->Start();
-  run_until_request_blocked.Run();
-  notification_handler.SetRunLoop(nullptr);
-
-  // The first two requests should be blocked based on the notification
-  // callback, and their status should have blocked the third request
-  // through throttling.
-  EXPECT_TRUE(req1->status().is_io_pending());
-  EXPECT_TRUE(req2->status().is_io_pending());
-  EXPECT_TRUE(req3->status().is_io_pending());
-
-  std::map<const URLRequest*, CompletionCallback> blocked_callbacks;
-  notification_handler.GetBlockedCallbacks(&blocked_callbacks);
-  ASSERT_EQ(2u, blocked_callbacks.size());
-  ASSERT_TRUE(blocked_callbacks.find(req1.get()) != blocked_callbacks.end());
-  ASSERT_TRUE(blocked_callbacks.find(req2.get()) != blocked_callbacks.end());
-
-  // Unblocking one of the requests blocked on the notification callback
-  // should let it complete, which should then let the third request
-  // complete.  Unblock the second request, then wait for the third
-  // request to complete.
-  // TODO(rdsmith): Find something to wait on other than the third
-  // requests completion; if there's a bug in throttling, that will
-  // result in this test hanging rather than failing quickly.
-  d1.set_quit_on_complete(false);
-  d2.set_quit_on_complete(false);
-  d3.set_quit_on_complete(true);
-  blocked_callbacks[req2.get()].Run(OK);
-  base::RunLoop().Run();
-
-  notification_handler.GetBlockedCallbacks(&blocked_callbacks);
-  EXPECT_EQ(0u, blocked_callbacks.size());
-  EXPECT_TRUE(req1->status().is_io_pending());
-  // req3 is only unblocked after req2 completes, so req2's
-  // success is guaranteed at this point in the function.
-  EXPECT_EQ(URLRequestStatus::SUCCESS, req2->status().status());
-  EXPECT_EQ(URLRequestStatus::SUCCESS, req3->status().status());
-}
-
-// Confirm that failing a request unblocks following requests.
-TEST_F(URLRequestTestHTTP, ThrottledFailure) {
-  ASSERT_TRUE(http_test_server()->Start());
-
-  base::RunLoop run_until_request_blocked;
-
-  NotificationCallbackHandler notification_handler;
-  notification_handler.SetRunLoop(&run_until_request_blocked);
-  BlockingNetworkDelegate network_delegate(
-      BlockingNetworkDelegate::USER_NOTIFY);
-  network_delegate.set_block_on(BlockingNetworkDelegate::ON_HEADERS_RECEIVED);
-  network_delegate.set_notification_callback(
-      base::Bind(&NotificationCallbackHandler::ShouldBlockRequest,
-                 // Both objects are owned by this function, and
-                 // |*network_delegate| will be destroyed first, so
-                 // it's safe to pass it an unretained pointer.
-                 base::Unretained(&notification_handler)));
-
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.Init();
-
-  // Use different test URLs to make sure all three requests turn into
-  // HttpNetworkTransacations.  Use different URLRequest::Delegates so that
-  // the requests may be waited on separately.
-  TestDelegate d1;
-  std::unique_ptr<URLRequest> req1(
-      context.CreateRequest(http_test_server()->GetURL("/echoall/l"), THROTTLED,
-                            &d1, TRAFFIC_ANNOTATION_FOR_TESTS));
-  notification_handler.AddURLRequestToBlockList(req1.get());
-
-  TestDelegate d2;
-  std::unique_ptr<URLRequest> req2(
-      context.CreateRequest(http_test_server()->GetURL("/echoall/2"), THROTTLED,
-                            &d2, TRAFFIC_ANNOTATION_FOR_TESTS));
-  notification_handler.AddURLRequestToBlockList(req2.get());
-
-  TestDelegate d3;
-  std::unique_ptr<URLRequest> req3(
-      context.CreateRequest(http_test_server()->GetURL("/echoall/3"), THROTTLED,
-                            &d3, TRAFFIC_ANNOTATION_FOR_TESTS));
-  req1->Start();
-  req2->Start();
-  req3->Start();
-  run_until_request_blocked.Run();
-  notification_handler.SetRunLoop(nullptr);
-
-  // The first two requests should be blocked based on the notification
-  // callback, and their status should have blocked the third request
-  // through throttling.
-  EXPECT_TRUE(req1->status().is_io_pending());
-  EXPECT_TRUE(req2->status().is_io_pending());
-  EXPECT_TRUE(req3->status().is_io_pending());
-
-  std::map<const URLRequest*, CompletionCallback> blocked_callbacks;
-  notification_handler.GetBlockedCallbacks(&blocked_callbacks);
-  ASSERT_EQ(2u, blocked_callbacks.size());
-  ASSERT_TRUE(blocked_callbacks.find(req1.get()) != blocked_callbacks.end());
-  ASSERT_TRUE(blocked_callbacks.find(req2.get()) != blocked_callbacks.end());
-
-  // Confirm canceling one of the outstanding requests allows the
-  // blocked request to complete.
-
-  // TODO(rdsmith): Find something to wait on other than the third
-  // requests completion; if there's a bug in throttling, that will
-  // result in this test hanging rather than failing quickly.
-  d1.set_quit_on_complete(false);
-  d2.set_quit_on_complete(false);
-  d3.set_quit_on_complete(true);
-  req2->Cancel();
-  base::RunLoop().Run();
-
-  notification_handler.GetBlockedCallbacks(&blocked_callbacks);
-  EXPECT_EQ(0u, blocked_callbacks.size());
-  EXPECT_TRUE(req1->status().is_io_pending());
-  EXPECT_EQ(URLRequestStatus::CANCELED, req2->status().status());
-  EXPECT_EQ(URLRequestStatus::SUCCESS, req3->status().status());
-}
-
-TEST_F(URLRequestTestHTTP, ThrottledRepriUnblock) {
-  ASSERT_TRUE(http_test_server()->Start());
-
-  base::RunLoop run_until_request_blocked;
-
-  NotificationCallbackHandler notification_handler;
-  notification_handler.SetRunLoop(&run_until_request_blocked);
-  BlockingNetworkDelegate network_delegate(
-      BlockingNetworkDelegate::USER_NOTIFY);
-  network_delegate.set_block_on(BlockingNetworkDelegate::ON_HEADERS_RECEIVED);
-  network_delegate.set_notification_callback(
-      base::Bind(&NotificationCallbackHandler::ShouldBlockRequest,
-                 // Both objects are owned by this function, and
-                 // |*network_delegate| will be destroyed first, so
-                 // it's safe to pass it an unretained pointer.
-                 base::Unretained(&notification_handler)));
-
-  TestURLRequestContext context(true);
-  context.set_network_delegate(&network_delegate);
-  context.Init();
-
-  // Use different test URLs to make sure all three requests turn into
-  // HttpNetworkTransacations.  Use different URLRequest::Delegates so that
-  // the requests may be waited on separately.
-  TestDelegate d1;
-  std::unique_ptr<URLRequest> req1(
-      context.CreateRequest(http_test_server()->GetURL("/echoall/l"), THROTTLED,
-                            &d1, TRAFFIC_ANNOTATION_FOR_TESTS));
-  notification_handler.AddURLRequestToBlockList(req1.get());
-
-  TestDelegate d2;
-  std::unique_ptr<URLRequest> req2(
-      context.CreateRequest(http_test_server()->GetURL("/echoall/2"), THROTTLED,
-                            &d2, TRAFFIC_ANNOTATION_FOR_TESTS));
-  notification_handler.AddURLRequestToBlockList(req2.get());
-
-  TestDelegate d3;
-  std::unique_ptr<URLRequest> req3(
-      context.CreateRequest(http_test_server()->GetURL("/echoall/3"), THROTTLED,
-                            &d3, TRAFFIC_ANNOTATION_FOR_TESTS));
-  req1->Start();
-  req2->Start();
-  req3->Start();
-  run_until_request_blocked.Run();
-  notification_handler.SetRunLoop(nullptr);
-
-  // The first two requests should be blocked based on the notification
-  // callback, and their status should have blocked the third request
-  // through throttling.
-  EXPECT_TRUE(req1->status().is_io_pending());
-  EXPECT_TRUE(req2->status().is_io_pending());
-  EXPECT_TRUE(req3->status().is_io_pending());
-
-  std::map<const URLRequest*, CompletionCallback> blocked_callbacks;
-  notification_handler.GetBlockedCallbacks(&blocked_callbacks);
-  ASSERT_EQ(2u, blocked_callbacks.size());
-  ASSERT_TRUE(blocked_callbacks.find(req1.get()) != blocked_callbacks.end());
-  ASSERT_TRUE(blocked_callbacks.find(req2.get()) != blocked_callbacks.end());
-
-  // Confirm raising the priority of the third request allows it to complete.
-
-  // TODO(rdsmith): Find something to wait on other than the third
-  // requests completion; if there's a bug in throttling, that will
-  // result in this test hanging rather than failing quickly.
-  d1.set_quit_on_complete(false);
-  d2.set_quit_on_complete(false);
-  d3.set_quit_on_complete(true);
-  req3->SetPriority(IDLE);
-  base::RunLoop().Run();
-
-  notification_handler.GetBlockedCallbacks(&blocked_callbacks);
-  EXPECT_EQ(0u, blocked_callbacks.size());
-  EXPECT_TRUE(req1->status().is_io_pending());
-  EXPECT_TRUE(req2->status().is_io_pending());
-  EXPECT_EQ(URLRequestStatus::SUCCESS, req3->status().status());
-}
-
 TEST_F(URLRequestTestHTTP, RawBodyBytesNoContentEncoding) {
   ASSERT_TRUE(http_test_server()->Start());
 
@@ -10490,7 +10569,7 @@ class HTTPSFallbackTest : public testing::Test {
  public:
   HTTPSFallbackTest() : context_(true) {
     ssl_config_service_ = new TestSSLConfigService(
-        true /* check for EV */, false /* online revocation checking */,
+        false /* online revocation checking */,
         false /* require rev. checking for local anchors */,
         false /* token binding enabled */);
     context_.set_ssl_config_service(ssl_config_service_.get());
@@ -10713,7 +10792,6 @@ class HTTPSOCSPTest : public HTTPSRequestTest {
 
 #if defined(USE_NSS_CERTS)
     SetURLRequestContextForNSSHttpIO(&context_);
-    EnsureNSSHttpIOInit();
 #endif
   }
 
@@ -10761,7 +10839,7 @@ class HTTPSOCSPTest : public HTTPSRequestTest {
 #endif
 
 #if defined(USE_NSS_CERTS)
-    ShutdownNSSHttpIO();
+    SetURLRequestContextForNSSHttpIO(nullptr);
 #endif
   }
 
@@ -10782,11 +10860,11 @@ class HTTPSOCSPTest : public HTTPSRequestTest {
   // connetions to testserver. This can be overridden in test subclasses for
   // different behaviour.
   virtual void SetupContext() {
-    context_.set_ssl_config_service(new TestSSLConfigService(
-        true /* check for EV */, true /* online revocation checking */,
-        false /* require rev. checking for local
+    context_.set_ssl_config_service(
+        new TestSSLConfigService(true /* online revocation checking */,
+                                 false /* require rev. checking for local
                                           anchors */,
-        false /* token binding enabled */));
+                                 false /* token binding enabled */));
   }
 
   std::unique_ptr<ScopedTestRoot> test_root_;
@@ -11506,7 +11584,7 @@ class HTTPSAIATest : public HTTPSOCSPTest {
  public:
   void SetupContext() override {
     context_.set_ssl_config_service(new TestSSLConfigService(
-        false /* check for EV */, false /* online revocation checking */,
+        false /* online revocation checking */,
         false /* require rev. checking for local anchors */,
         false /* token binding enabled */));
   }
@@ -11519,6 +11597,10 @@ TEST_F(HTTPSAIATest, AIAFetching) {
       SpawnedTestServer::TYPE_HTTPS, ssl_options,
       base::FilePath(FILE_PATH_LITERAL("net/data/ssl")));
   ASSERT_TRUE(test_server.Start());
+
+  // Unmark the certificate's OID as EV, which will disable revocation
+  // checking.
+  ev_test_policy_.reset();
 
   TestDelegate d;
   d.set_allow_certificate_errors(true);
@@ -11546,9 +11628,8 @@ class HTTPSHardFailTest : public HTTPSOCSPTest {
  protected:
   void SetupContext() override {
     context_.set_ssl_config_service(new TestSSLConfigService(
-        false /* check for EV */, false /* online revocation checking */,
-        true /* require rev. checking for local
-                                         anchors */,
+        false /* online revocation checking */,
+        true /* require rev. checking for local anchors */,
         false /* token binding enabled */));
   }
 };
@@ -11590,11 +11671,11 @@ TEST_F(HTTPSHardFailTest, FailsOnOCSPInvalid) {
 class HTTPSEVCRLSetTest : public HTTPSOCSPTest {
  protected:
   void SetupContext() override {
-    context_.set_ssl_config_service(new TestSSLConfigService(
-        true /* check for EV */, false /* online revocation checking */,
-        false /* require rev. checking for local
+    context_.set_ssl_config_service(
+        new TestSSLConfigService(false /* online revocation checking */,
+                                 false /* require rev. checking for local
                                           anchors */,
-        false /* token binding enabled */));
+                                 false /* token binding enabled */));
   }
 };
 
@@ -11762,41 +11843,22 @@ TEST_F(HTTPSEVCRLSetTest, FreshCRLSetNotCovered) {
             static_cast<bool>(cert_status & CERT_STATUS_REV_CHECKING_ENABLED));
 }
 
-TEST_F(HTTPSEVCRLSetTest, ExpiredCRLSetAndRevokedNonEVCert) {
-  // Test that when EV verification is requested, but online revocation
-  // checking is disabled, and the leaf certificate is not in fact EV, that
-  // no revocation checking actually happens.
-  if (!SystemSupportsOCSP()) {
-    LOG(WARNING) << "Skipping test because system doesn't support OCSP";
-    return;
-  }
-
-  // Unmark the certificate's OID as EV, which should disable revocation
-  // checking (as per the user preference)
-  ev_test_policy_.reset();
-
-  SpawnedTestServer::SSLOptions ssl_options(
-      SpawnedTestServer::SSLOptions::CERT_AUTO);
-  ssl_options.ocsp_status = SpawnedTestServer::SSLOptions::OCSP_REVOKED;
-  ScopedSetCRLSet set_crlset(CRLSet::ExpiredCRLSetForTesting());
-
-  CertStatus cert_status;
-  DoConnection(ssl_options, &cert_status);
-
-  EXPECT_EQ(0u, cert_status & CERT_STATUS_ALL_ERRORS);
-
-  EXPECT_FALSE(cert_status & CERT_STATUS_IS_EV);
-  EXPECT_FALSE(cert_status & CERT_STATUS_REV_CHECKING_ENABLED);
-}
-
 class HTTPSCRLSetTest : public HTTPSOCSPTest {
  protected:
   void SetupContext() override {
-    context_.set_ssl_config_service(new TestSSLConfigService(
-        false /* check for EV */, false /* online revocation checking */,
-        false /* require rev. checking for local
+    context_.set_ssl_config_service(
+        new TestSSLConfigService(false /* online revocation checking */,
+                                 false /* require rev. checking for local
                                           anchors */,
-        false /* token binding enabled */));
+                                 false /* token binding enabled */));
+  }
+
+  void SetUp() override {
+    HTTPSOCSPTest::SetUp();
+
+    // Unmark the certificate's OID as EV, which should disable revocation
+    // checking (as per the user preference).
+    ev_test_policy_.reset();
   }
 };
 
@@ -11813,6 +11875,28 @@ TEST_F(HTTPSCRLSetTest, ExpiredCRLSet) {
   // If we're not trying EV verification then, even if the CRLSet has expired,
   // we don't fall back to online revocation checks.
   EXPECT_EQ(0u, cert_status & CERT_STATUS_ALL_ERRORS);
+  EXPECT_FALSE(cert_status & CERT_STATUS_IS_EV);
+  EXPECT_FALSE(cert_status & CERT_STATUS_REV_CHECKING_ENABLED);
+}
+
+TEST_F(HTTPSCRLSetTest, ExpiredCRLSetAndRevoked) {
+  // Test that when online revocation checking is disabled, and the leaf
+  // certificate is not EV, that no revocation checking actually happens.
+  if (!SystemSupportsOCSP()) {
+    LOG(WARNING) << "Skipping test because system doesn't support OCSP";
+    return;
+  }
+
+  SpawnedTestServer::SSLOptions ssl_options(
+      SpawnedTestServer::SSLOptions::CERT_AUTO);
+  ssl_options.ocsp_status = SpawnedTestServer::SSLOptions::OCSP_REVOKED;
+  ScopedSetCRLSet set_crlset(CRLSet::ExpiredCRLSetForTesting());
+
+  CertStatus cert_status;
+  DoConnection(ssl_options, &cert_status);
+
+  EXPECT_EQ(0u, cert_status & CERT_STATUS_ALL_ERRORS);
+
   EXPECT_FALSE(cert_status & CERT_STATUS_IS_EV);
   EXPECT_FALSE(cert_status & CERT_STATUS_REV_CHECKING_ENABLED);
 }
@@ -11837,8 +11921,7 @@ TEST_F(HTTPSCRLSetTest, CRLSetRevoked) {
   // reflected without online revocation checking.
   EXPECT_EQ(CERT_STATUS_REVOKED, cert_status & CERT_STATUS_ALL_ERRORS);
   EXPECT_FALSE(cert_status & CERT_STATUS_IS_EV);
-  EXPECT_FALSE(
-      static_cast<bool>(cert_status & CERT_STATUS_REV_CHECKING_ENABLED));
+  EXPECT_FALSE(cert_status & CERT_STATUS_REV_CHECKING_ENABLED);
 }
 
 TEST_F(HTTPSCRLSetTest, CRLSetRevokedBySubject) {
@@ -11864,8 +11947,7 @@ TEST_F(HTTPSCRLSetTest, CRLSetRevokedBySubject) {
     // reflected without online revocation checking.
     EXPECT_EQ(CERT_STATUS_REVOKED, cert_status & CERT_STATUS_ALL_ERRORS);
     EXPECT_FALSE(cert_status & CERT_STATUS_IS_EV);
-    EXPECT_FALSE(
-        static_cast<bool>(cert_status & CERT_STATUS_REV_CHECKING_ENABLED));
+    EXPECT_FALSE(cert_status & CERT_STATUS_REV_CHECKING_ENABLED);
   }
 
   const uint8_t kTestServerSPKISHA256[32] = {

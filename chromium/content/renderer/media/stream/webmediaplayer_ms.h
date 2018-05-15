@@ -13,13 +13,14 @@
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
+#include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "media/blink/webmediaplayer_delegate.h"
 #include "media/blink/webmediaplayer_util.h"
 #include "media/renderers/paint_canvas_video_renderer.h"
 #include "media/video/gpu_video_accelerator_factories.h"
-#include "third_party/WebKit/public/platform/WebMediaPlayer.h"
-#include "third_party/WebKit/public/platform/WebMediaStream.h"
+#include "third_party/blink/public/platform/web_media_player.h"
+#include "third_party/blink/public/platform/web_media_stream.h"
 #include "url/origin.h"
 
 namespace blink {
@@ -99,6 +100,7 @@ class CONTENT_EXPORT WebMediaPlayerMS
   void SetRate(double rate) override;
   void SetVolume(double volume) override;
   void EnterPictureInPicture() override;
+  void ExitPictureInPicture() override;
   void SetSinkId(const blink::WebString& sink_id,
                  const blink::WebSecurityOrigin& security_origin,
                  blink::WebSetSinkIdCallbacks* web_callback) override;
@@ -196,6 +198,10 @@ class CONTENT_EXPORT WebMediaPlayerMS
 
  private:
   friend class WebMediaPlayerMSTest;
+
+#if defined(OS_WIN)
+  static const gfx::Size kUseGpuMemoryBufferVideoFramesMinResolution;
+#endif  // defined(OS_WIN)
 
   void OnFirstFrameReceived(media::VideoRotation video_rotation,
                             bool is_opaque);

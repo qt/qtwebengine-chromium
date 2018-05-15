@@ -1,8 +1,0 @@
-include_rules = [
-    "+services/device/public/mojom",
-    "-modules",
-    "+modules/EventModules.h",
-    "+modules/ModulesExport.h",
-    "+modules/geolocation",
-    "+modules/permissions",
-]

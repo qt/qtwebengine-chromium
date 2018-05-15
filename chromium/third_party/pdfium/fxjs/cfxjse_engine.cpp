@@ -18,6 +18,7 @@
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
+#include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_localemgr.h"
@@ -29,8 +30,6 @@
 #include "xfa/fxfa/parser/xfa_basic_data.h"
 #include "xfa/fxfa/parser/xfa_resolvenode_rs.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
-
-namespace {
 
 const FXJSE_CLASS_DESCRIPTOR GlobalClassDescriptor = {
     "Root",   // name
@@ -61,6 +60,8 @@ const FXJSE_CLASS_DESCRIPTOR VariablesClassDescriptor = {
     CFXJSE_Engine::GlobalPropertySetter,
     CFXJSE_Engine::NormalMethodCall,
 };
+
+namespace {
 
 const char kFormCalcRuntime[] = "pfm_rt";
 
@@ -202,8 +203,9 @@ void CFXJSE_Engine::GlobalPropertySetter(CFXJSE_Value* pObject,
   if (!pNotify)
     return;
 
-  pNotify->GetDocEnvironment()->SetPropertyInNonXFAGlobalObject(
-      pNotify->GetHDOC(), szPropName, pValue);
+  CXFA_FFDoc* hDoc = pNotify->GetHDOC();
+  hDoc->GetDocEnvironment()->SetPropertyInNonXFAGlobalObject(hDoc, szPropName,
+                                                             pValue);
 }
 
 void CFXJSE_Engine::GlobalPropertyGetter(CFXJSE_Value* pObject,
@@ -259,8 +261,9 @@ void CFXJSE_Engine::GlobalPropertyGetter(CFXJSE_Value* pObject,
   if (!pNotify)
     return;
 
-  pNotify->GetDocEnvironment()->GetPropertyFromNonXFAGlobalObject(
-      pNotify->GetHDOC(), szPropName, pValue);
+  CXFA_FFDoc* hDoc = pNotify->GetHDOC();
+  hDoc->GetDocEnvironment()->GetPropertyFromNonXFAGlobalObject(hDoc, szPropName,
+                                                               pValue);
 }
 
 int32_t CFXJSE_Engine::GlobalPropTypeGetter(CFXJSE_Value* pOriginalValue,

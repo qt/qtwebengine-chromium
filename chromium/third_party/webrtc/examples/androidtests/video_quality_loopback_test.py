@@ -86,6 +86,8 @@ def _ParseArgs():
   parser.add_argument('--temp_dir',
       help='A temporary directory to put the output.')
   parser.add_argument('--adb-path', help='Path to adb binary.', default='adb')
+  parser.add_argument('--num-retries', default='0',
+                      help='Number of times to retry the test on Android.')
   parser.add_argument('--isolated-script-test-perf-output',
       help='Where to store perf results in chartjson format.', default=None)
 
@@ -131,12 +133,12 @@ def SetUpTools(android_device, temp_dir, processes):
 
   # Build AppRTC.
   build_apprtc_script = os.path.join(RTC_TOOLS_DIR, 'build_apprtc.py')
-  apprtc_src_dir = os.path.join(temp_dir, 'apprtc', 'src')
+  apprtc_dir = os.path.join(temp_dir, 'apprtc')
   go_dir = os.path.join(temp_dir, 'go')
   collider_dir = os.path.join(temp_dir, 'collider')
 
-  _RunCommand([sys.executable, build_apprtc_script, apprtc_src_dir, go_dir,
-              collider_dir])
+  _RunCommand([sys.executable, build_apprtc_script, apprtc_dir, go_dir,
+               collider_dir])
 
   # Start AppRTC Server.
   dev_appserver = os.path.join(temp_dir, 'apprtc', 'temp', 'google-cloud-sdk',
@@ -160,7 +162,7 @@ def SetUpTools(android_device, temp_dir, processes):
       '8089']))
 
 
-def RunTest(android_device, adb_path, build_dir, temp_dir,
+def RunTest(android_device, adb_path, build_dir, temp_dir, num_retries,
             chartjson_result_file):
   ffmpeg_path = os.path.join(TOOLCHAIN_DIR, 'ffmpeg')
   def ConvertVideo(input_video, output_video):
@@ -169,7 +171,8 @@ def RunTest(android_device, adb_path, build_dir, temp_dir,
   # Start loopback call and record video.
   test_script = os.path.join(
       build_dir, 'bin', 'run_AppRTCMobileTestStubbedVideoIO')
-  _RunCommand([test_script, '--device', android_device])
+  _RunCommand([test_script, '--device', android_device,
+               '--num-retries', num_retries])
 
   # Pull the recorded video.
   test_video = os.path.join(temp_dir, 'test_video.y4m')
@@ -225,7 +228,7 @@ def main():
   try:
     android_device = SelectAndroidDevice(adb_path)
     SetUpTools(android_device, temp_dir, processes)
-    RunTest(android_device, adb_path, build_dir, temp_dir,
+    RunTest(android_device, adb_path, build_dir, temp_dir, args.num_retries,
             args.isolated_script_test_perf_output)
   finally:
     for process in processes:

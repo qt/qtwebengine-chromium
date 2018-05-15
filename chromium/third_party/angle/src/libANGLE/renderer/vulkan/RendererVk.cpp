@@ -28,11 +28,22 @@
 #include "libANGLE/renderer/vulkan/vk_format_utils.h"
 #include "platform/Platform.h"
 
+// Consts
+namespace
+{
+const uint32_t kMockVendorID     = 0xba5eba11;
+const uint32_t kMockDeviceID     = 0xf005ba11;
+constexpr char kMockDeviceName[] = "Vulkan Mock Device";
+}  // anonymous namespace
+
 namespace rx
 {
 
 namespace
 {
+// We currently only allocate 2 uniform buffer per descriptor set, one for the fragment shader and
+// one for the vertex shader.
+constexpr size_t kUniformBufferDescriptorsPerDescriptorSet = 2;
 
 VkResult VerifyExtensionsPresent(const std::vector<VkExtensionProperties> &extensionProps,
                                  const std::vector<const char *> &enabledExtensionNames)
@@ -122,7 +133,7 @@ class ScopedVkLoaderEnvironment : angle::NonCopyable
         // Override environment variable to use the ANGLE layers.
         if (mEnableValidationLayers)
         {
-            if (!angle::PrependPathToEnvironmentVar(g_VkLoaderLayersPathEnv, ANGLE_VK_LAYERS_DIR))
+            if (!angle::PrependPathToEnvironmentVar(g_VkLoaderLayersPathEnv, ANGLE_VK_DATA_DIR))
             {
                 ERR() << "Error setting environment for Vulkan layers init.";
                 mEnableValidationLayers = false;
@@ -248,11 +259,53 @@ RendererVk::~RendererVk()
     mPhysicalDevice = VK_NULL_HANDLE;
 }
 
+void ChoosePhysicalDevice(const std::vector<VkPhysicalDevice> &physicalDevices,
+                          bool preferMockICD,
+                          VkPhysicalDevice *physicalDeviceOut,
+                          VkPhysicalDeviceProperties *physicalDevicePropertiesOut)
+{
+    ASSERT(!physicalDevices.empty());
+    if (preferMockICD)
+    {
+        for (const VkPhysicalDevice &physicalDevice : physicalDevices)
+        {
+            vkGetPhysicalDeviceProperties(physicalDevice, physicalDevicePropertiesOut);
+            if ((kMockVendorID == physicalDevicePropertiesOut->vendorID) &&
+                (kMockDeviceID == physicalDevicePropertiesOut->deviceID) &&
+                (strcmp(kMockDeviceName, physicalDevicePropertiesOut->deviceName) == 0))
+            {
+                *physicalDeviceOut = physicalDevice;
+                return;
+            }
+        }
+        WARN() << "Vulkan Mock Driver was requested but Mock Device was not found. Using default "
+                  "physicalDevice instead.";
+    }
+
+    // Fall back to first device.
+    *physicalDeviceOut = physicalDevices[0];
+    vkGetPhysicalDeviceProperties(*physicalDeviceOut, physicalDevicePropertiesOut);
+}
+
 vk::Error RendererVk::initialize(const egl::AttributeMap &attribs, const char *wsiName)
 {
     ScopedVkLoaderEnvironment scopedEnvironment(ShouldUseDebugLayers(attribs));
     mEnableValidationLayers = scopedEnvironment.canEnableValidationLayers();
 
+    bool enableNullDriver = false;
+#if !defined(ANGLE_PLATFORM_ANDROID)
+    // Mock ICD does not currently run on Android
+    enableNullDriver = (attribs.get(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE,
+                                    EGL_PLATFORM_ANGLE_DEVICE_TYPE_HARDWARE_ANGLE) ==
+                        EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE);
+    if (enableNullDriver)
+    {
+        // Override environment variable to use built Mock ICD
+        // ANGLE_VK_ICD_JSON gets set to the built mock ICD in BUILD.gn
+        ANGLE_VK_CHECK(angle::SetEnvironmentVar(g_VkICDPathEnv, ANGLE_VK_ICD_JSON),
+                       VK_ERROR_INITIALIZATION_FAILED);
+    }
+#endif  // !defined(ANGLE_PLATFORM_ANDROID)
     // Gather global layer properties.
     uint32_t instanceLayerCount = 0;
     ANGLE_VK_TRY(vkEnumerateInstanceLayerProperties(&instanceLayerCount, nullptr));
@@ -345,10 +398,11 @@ vk::Error RendererVk::initialize(const egl::AttributeMap &attribs, const char *w
     ANGLE_VK_CHECK(physicalDeviceCount > 0, VK_ERROR_INITIALIZATION_FAILED);
 
     // TODO(jmadill): Handle multiple physical devices. For now, use the first device.
-    physicalDeviceCount = 1;
-    ANGLE_VK_TRY(vkEnumeratePhysicalDevices(mInstance, &physicalDeviceCount, &mPhysicalDevice));
-
-    vkGetPhysicalDeviceProperties(mPhysicalDevice, &mPhysicalDeviceProperties);
+    std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
+    ANGLE_VK_TRY(
+        vkEnumeratePhysicalDevices(mInstance, &physicalDeviceCount, physicalDevices.data()));
+    ChoosePhysicalDevice(physicalDevices, enableNullDriver, &mPhysicalDevice,
+                         &mPhysicalDeviceProperties);
 
     // Ensure we can find a graphics queue family.
     uint32_t queueCount = 0;
@@ -593,6 +647,18 @@ const gl::Limitations &RendererVk::getNativeLimitations() const
     return mNativeLimitations;
 }
 
+uint32_t RendererVk::getMaxActiveTextures()
+{
+    // TODO(lucferron): expose this limitation to GL in Context Caps
+    return std::min<uint32_t>(mPhysicalDeviceProperties.limits.maxPerStageDescriptorSamplers,
+                              gl::IMPLEMENTATION_MAX_ACTIVE_TEXTURES);
+}
+
+uint32_t RendererVk::getUniformBufferDescriptorCount()
+{
+    return kUniformBufferDescriptorsPerDescriptorSet;
+}
+
 const vk::CommandPool &RendererVk::getCommandPool() const
 {
     return mCommandPool;
@@ -731,7 +797,7 @@ Serial RendererVk::getCurrentQueueSerial() const
     return mCurrentQueueSerial;
 }
 
-bool RendererVk::isResourceInUse(const ResourceVk &resource)
+bool RendererVk::isResourceInUse(const vk::CommandGraphResource &resource)
 {
     return isSerialInUse(resource.getQueueSerial());
 }
@@ -814,7 +880,7 @@ vk::Error RendererVk::initGraphicsPipelineLayout()
         auto &layoutBinding = uniformBindings[blockCount];
 
         layoutBinding.binding            = blockCount;
-        layoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        layoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
         layoutBinding.descriptorCount    = 1;
         layoutBinding.stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
         layoutBinding.pImmutableSamplers = nullptr;
@@ -826,7 +892,7 @@ vk::Error RendererVk::initGraphicsPipelineLayout()
         auto &layoutBinding = uniformBindings[blockCount];
 
         layoutBinding.binding            = blockCount;
-        layoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        layoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
         layoutBinding.descriptorCount    = 1;
         layoutBinding.stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT;
         layoutBinding.pImmutableSamplers = nullptr;
@@ -847,10 +913,7 @@ vk::Error RendererVk::initGraphicsPipelineLayout()
         mGraphicsDescriptorSetLayouts.push_back(std::move(uniformLayout));
     }
 
-    // TODO(lucferron): expose this limitation to GL in Context Caps
-    std::vector<VkDescriptorSetLayoutBinding> textureBindings(
-        std::min<size_t>(mPhysicalDeviceProperties.limits.maxPerStageDescriptorSamplers,
-                         gl::IMPLEMENTATION_MAX_ACTIVE_TEXTURES));
+    std::vector<VkDescriptorSetLayoutBinding> textureBindings(getMaxActiveTextures());
 
     // TODO(jmadill): This approach might not work well for texture arrays.
     for (uint32_t textureIndex = 0; textureIndex < textureBindings.size(); ++textureIndex)

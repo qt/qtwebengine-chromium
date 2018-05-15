@@ -36,6 +36,7 @@ class FeedbackParam {
       : id_(id),
         param_(kParamValueEmpty) {
   }
+
   bool operator==(const FeedbackParam& other) const;
 
   const std::string& id() const { return id_; }
@@ -49,6 +50,7 @@ class FeedbackParam {
 class FeedbackParams {
  public:
   FeedbackParams();
+  ~FeedbackParams();
   bool operator==(const FeedbackParams& other) const;
 
   bool Has(const FeedbackParam& param) const;
@@ -248,6 +250,7 @@ bool CodecNamesEq(const std::string& name1, const std::string& name2);
 bool CodecNamesEq(const char* name1, const char* name2);
 bool HasNack(const Codec& codec);
 bool HasRemb(const Codec& codec);
+bool HasRrtr(const Codec& codec);
 bool HasTransportCc(const Codec& codec);
 // Returns the first codec in |supported_codecs| that matches |codec|, or
 // nullptr if no codec matches.

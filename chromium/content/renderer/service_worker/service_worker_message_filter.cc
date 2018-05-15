@@ -12,9 +12,10 @@
 
 namespace content {
 
-ServiceWorkerMessageFilter::ServiceWorkerMessageFilter(ThreadSafeSender* sender)
-    : WorkerThreadMessageFilter(sender) {
-}
+ServiceWorkerMessageFilter::ServiceWorkerMessageFilter(
+    ThreadSafeSender* sender,
+    scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner)
+    : WorkerThreadMessageFilter(sender, std::move(main_thread_task_runner)) {}
 
 ServiceWorkerMessageFilter::~ServiceWorkerMessageFilter() {}
 
@@ -25,8 +26,7 @@ bool ServiceWorkerMessageFilter::ShouldHandleMessage(
 
 void ServiceWorkerMessageFilter::OnFilteredMessageReceived(
     const IPC::Message& msg) {
-  ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance(
-      thread_safe_sender())
+  ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance()
       ->OnMessageReceived(msg);
 }
 

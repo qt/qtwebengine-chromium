@@ -10,7 +10,6 @@
 #include <utility>
 
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/simple_test_clock.h"
@@ -31,6 +30,7 @@
 #include "components/sync/base/model_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_web_ui.h"
 #include "net/http/http_status_code.h"
@@ -152,6 +152,10 @@ class BrowsingHistoryHandlerTest : public ::testing::Test {
     service->SetupFakeResponse(true /* success */, net::HTTP_OK);
     return std::move(service);
   }
+
+  // TODO(lukasza): https://crbug.com/832100: Move the factory into
+  // TestingProfile, so individual tests don't need to worry about it.
+  content::ScopedMockRenderProcessHostFactory test_process_factory_;
 
   content::TestBrowserThreadBundle thread_bundle_;
   std::unique_ptr<TestingProfile> profile_;

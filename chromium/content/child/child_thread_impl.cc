@@ -17,7 +17,6 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/timer_slack.h"
 #include "base/metrics/field_trial.h"
@@ -521,9 +520,15 @@ void ChildThreadImpl::Init(const Options& options) {
   if (!base::PowerMonitor::Get() && service_manager_connection_) {
     auto power_monitor_source =
         std::make_unique<device::PowerMonitorBroadcastSource>(
-            GetConnector(), GetIOTaskRunner());
+            GetIOTaskRunner());
+    auto* source_ptr = power_monitor_source.get();
     power_monitor_.reset(
         new base::PowerMonitor(std::move(power_monitor_source)));
+    // The two-phase init is necessary to ensure that the process-wide
+    // PowerMonitor is set before the power monitor source receives incoming
+    // communication from the browser process (see https://crbug.com/821790 for
+    // details)
+    source_ptr->Init(GetConnector());
   }
 
 #if defined(OS_POSIX)
@@ -603,8 +608,8 @@ void ChildThreadImpl::InitTracing() {
   channel_->AddFilter(new tracing::ChildTraceMessageFilter(
       ChildProcess::current()->io_task_runner()));
 
-  chrome_trace_event_agent_ =
-      std::make_unique<tracing::ChromeTraceEventAgent>(GetConnector());
+  chrome_trace_event_agent_ = std::make_unique<tracing::ChromeTraceEventAgent>(
+      GetConnector(), false /* request_clock_sync_marker_on_android */);
 }
 
 ChildThreadImpl::~ChildThreadImpl() {
@@ -673,6 +678,22 @@ mojom::FontCacheWin* ChildThreadImpl::GetFontCacheWin() {
   }
   return font_cache_win_ptr_.get();
 }
+#elif defined(OS_MACOSX)
+bool ChildThreadImpl::LoadFont(const base::string16& font_name,
+                               float font_point_size,
+                               mojo::ScopedSharedBufferHandle* out_font_data,
+                               uint32_t* out_font_id) {
+  return GetFontLoaderMac()->LoadFont(font_name, font_point_size, out_font_data,
+                                      out_font_id);
+}
+
+mojom::FontLoaderMac* ChildThreadImpl::GetFontLoaderMac() {
+  if (!font_loader_mac_ptr_) {
+    GetConnector()->BindInterface(mojom::kBrowserServiceName,
+                                  &font_loader_mac_ptr_);
+  }
+  return font_loader_mac_ptr_.get();
+}
 #endif
 
 void ChildThreadImpl::RecordAction(const base::UserMetricsAction& action) {
@@ -737,7 +758,9 @@ void ChildThreadImpl::OnAssociatedInterfaceRequest(
   if (interface_name == mojom::RouteProvider::Name_) {
     DCHECK(!route_provider_binding_.is_bound());
     route_provider_binding_.Bind(
-        mojom::RouteProviderAssociatedRequest(std::move(handle)));
+        mojom::RouteProviderAssociatedRequest(std::move(handle)),
+        ipc_task_runner_ ? ipc_task_runner_
+                         : base::ThreadTaskRunnerHandle::Get());
   } else {
     LOG(ERROR) << "Request for unknown Channel-associated interface: "
                << interface_name;
@@ -759,14 +782,14 @@ void ChildThreadImpl::ProcessShutdown() {
   base::RunLoop::QuitCurrentWhenIdleDeprecated();
 }
 
-void ChildThreadImpl::SetIPCLoggingEnabled(bool enable) {
 #if BUILDFLAG(IPC_MESSAGE_LOG_ENABLED)
+void ChildThreadImpl::SetIPCLoggingEnabled(bool enable) {
   if (enable)
     IPC::Logging::GetInstance()->Enable();
   else
     IPC::Logging::GetInstance()->Disable();
-#endif  //  IPC_MESSAGE_LOG_ENABLED
 }
+#endif  //  IPC_MESSAGE_LOG_ENABLED
 
 void ChildThreadImpl::OnChildControlRequest(
     mojom::ChildControlRequest request) {

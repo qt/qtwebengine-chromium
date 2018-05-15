@@ -13,7 +13,6 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -21,12 +20,12 @@
 #include "content/browser/bad_message.h"
 #include "content/browser/isolated_origin_util.h"
 #include "content/browser/site_instance_impl.h"
-#include "content/browser/site_isolation_policy.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/site_isolation_policy.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/url_constants.h"
@@ -805,6 +804,10 @@ bool ChildProcessSecurityPolicyImpl::CanReadRequestBody(
       case network::DataElement::TYPE_BLOB:
         // No need to validate - the unguessability of the uuid of the blob is a
         // sufficient defense against access from an unrelated renderer.
+        break;
+
+      case network::DataElement::TYPE_DATA_PIPE:
+        // Data is self-contained within |body| - no need to check access.
         break;
 
       case network::DataElement::TYPE_UNKNOWN:

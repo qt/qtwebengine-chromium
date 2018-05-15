@@ -28,7 +28,7 @@
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
-#include "third_party/WebKit/public/public_features.h"
+#include "third_party/blink/public/public_buildflags.h"
 
 using content::BrowserThread;
 using content::WebContents;
@@ -85,7 +85,7 @@ class DevToolsDataSource : public content::URLDataSource {
   using GotDataCallback = content::URLDataSource::GotDataCallback;
 
   explicit DevToolsDataSource(
-      scoped_refptr<content::SharedURLLoaderFactory> url_loader_factory)
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory)
       : url_loader_factory_(std::move(url_loader_factory)) {}
 
   // content::URLDataSource implementation.
@@ -144,7 +144,7 @@ class DevToolsDataSource : public content::URLDataSource {
     DISALLOW_COPY_AND_ASSIGN(PendingRequest);
   };
 
-  scoped_refptr<content::SharedURLLoaderFactory> url_loader_factory_;
+  scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
   std::list<PendingRequest> pending_requests_;
 
   DISALLOW_COPY_AND_ASSIGN(DevToolsDataSource);

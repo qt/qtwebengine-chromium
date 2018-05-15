@@ -16,7 +16,6 @@
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/path_service.h"
 #include "base/stl_util.h"
@@ -214,10 +213,8 @@ void ResourceBundle::InitSharedInstanceWithPakPath(const base::FilePath& path) {
 
 // static
 void ResourceBundle::CleanupSharedInstance() {
-  if (g_shared_instance_) {
-    delete g_shared_instance_;
-    g_shared_instance_ = NULL;
-  }
+  delete g_shared_instance_;
+  g_shared_instance_ = NULL;
 }
 
 // static

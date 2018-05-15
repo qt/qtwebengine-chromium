@@ -4,9 +4,9 @@
 
 module chrome.mojom;
 
-import "mojo/common/file.mojom";
-import "mojo/common/time.mojom";
 import "mojo/common/values.mojom";
+import "mojo/public/mojom/base/file.mojom";
+import "mojo/public/mojom/base/time.mojom";
 
 interface MediaParser {
   // Extracts metadata from a |mime_type| blob of data of |total_size| and
@@ -26,9 +26,24 @@ interface MediaParser {
   // |file| appears to be a well-formed media file, false otherwise.
   // Note: it is still not safe to decode the file in the calling process after
   // this check.
-  CheckMediaFile(mojo.common.mojom.TimeDelta decode_time,
-                 mojo.common.mojom.File file)
+  CheckMediaFile(mojo_base.mojom.TimeDelta decode_time,
+                 mojo_base.mojom.File file)
       => (bool success);
+
+  // Used by tests to validate the right CPU information is set on third-party
+  // libraries.
+  GetCpuInfo() => (int64 libyuv_cpu_flags, int64 ffmpeg_cpu_flags);
+};
+
+interface MediaParserFactory {
+  // Creates a MediaParser. |libyuv_cpuf_lags| are the flags returned by
+  // libyuv::InitCpuFlags() from third-party/libyuv and |libavutil_cpu_flags|
+  // the flags returned by av_get_cpu_flags() from FFmpeg. These flags have to
+  // be passed in as retrieving them may require file access (to /proc/cpuinfo
+  // for instance) and the media parser may be run in a sandboxed process with
+  // no such access.
+  CreateMediaParser(int64 libyuv_cpu_flags, int64 libavutil_cpu_flags)
+      => (MediaParser media_parser);
 };
 
 interface MediaDataSource {

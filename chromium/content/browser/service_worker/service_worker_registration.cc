@@ -16,7 +16,7 @@
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_thread.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -219,11 +219,9 @@ void ServiceWorkerRegistration::ClaimClients() {
   DCHECK(active_version());
 
   for (std::unique_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
-           context_->GetProviderHostIterator();
+           context_->GetClientProviderHostIterator(pattern_.GetOrigin());
        !it->IsAtEnd(); it->Advance()) {
     ServiceWorkerProviderHost* host = it->GetProviderHost();
-    if (host->IsHostToRunningServiceWorker())
-      continue;
     if (host->controller() == active_version())
       continue;
     if (!host->IsContextSecureForServiceWorker())

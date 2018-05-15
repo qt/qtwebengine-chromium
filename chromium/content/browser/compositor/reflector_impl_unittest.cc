@@ -5,7 +5,6 @@
 #include "content/browser/compositor/reflector_impl.h"
 
 #include "base/callback.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
@@ -181,7 +180,8 @@ class ReflectorImplTest : public testing::Test {
       reflector_->RemoveMirroringLayer(mirroring_layer_.get());
     viz::TransferableResource resource;
     std::unique_ptr<viz::SingleReleaseCallback> release;
-    if (mirroring_layer_->PrepareTransferableResource(&resource, &release)) {
+    if (mirroring_layer_->PrepareTransferableResource(nullptr, &resource,
+                                                      &release)) {
       release->Run(gpu::SyncToken(), false);
     }
     compositor_.reset();

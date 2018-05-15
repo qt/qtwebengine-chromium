@@ -15,6 +15,7 @@
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/web_package/mock_signed_exchange_handler.h"
 #include "content/browser/web_package/web_package_loader.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_features.h"
 #include "content/public/test/browser_test_utils.h"
@@ -343,9 +344,9 @@ IN_PROC_BROWSER_TEST_P(PrefetchBrowserTest, WebPackageWithPreload) {
   RegisterResponse(
       target_htxg,
       // We mock the SignedExchangeHandler, so just return a HTML content
-      // as application/http-exchange+cbor.
+      // as "application/signed-exchange;v=b0".
       ResponseEntry("<head><title>Prefetch Target (HTXG)</title></head>",
-                    "application/http-exchange+cbor"));
+                    "application/signed-exchange;v=b0"));
   RegisterResponse(preload_url_in_htxg,
                    ResponseEntry("function foo() {}", "text/javascript"));
 

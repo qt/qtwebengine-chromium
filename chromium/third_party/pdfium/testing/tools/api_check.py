@@ -3,11 +3,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Verifies exported functions in public/*.h are in fpdfview_c_api_test.c.
+"""Verifies exported functions in public/*.h are in fpdf_view_c_api_test.c.
 
 This script gathers a list of functions from public/*.h that contain
 FPDF_EXPORT. It then gathers a list of functions from
-fpdfsdk/fpdfview_c_api_test.c. It then verifies both lists do not contain
+fpdfsdk/fpdf_view_c_api_test.c. It then verifies both lists do not contain
 duplicates, and they match each other.
 
 """
@@ -101,7 +101,7 @@ def main():
   src_path = os.path.dirname(os.path.dirname(os.path.dirname(script_abspath)))
   public_functions = _GetFunctionsFromPublicHeaders(src_path)
 
-  api_test_relative_path = os.path.join('fpdfsdk', 'fpdfview_c_api_test.c')
+  api_test_relative_path = os.path.join('fpdfsdk', 'fpdf_view_c_api_test.c')
   api_test_path = os.path.join(src_path, api_test_relative_path)
   test_functions = _GetFunctionsFromTest(api_test_path)
 

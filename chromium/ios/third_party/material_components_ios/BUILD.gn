@@ -23,11 +23,20 @@ config("config") {
     "src/components/OverlayWindow/src",
     "src/components/Palettes/src",
     "src/components/ProgressView/src",
+    "src/components/schemes/Color/src",
+    "src/components/schemes/Typography/src",
     "src/components/ShadowElevations/src",
     "src/components/ShadowLayer/src",
     "src/components/Snackbar/src",
     "src/components/Themes/src",
     "src/components/Typography/src",
+  ]
+}
+
+config("disable_deprecated_errors") {
+  cflags = [
+    "-Wno-deprecated",
+    "-Wno-deprecated-declarations",
   ]
 }
 
@@ -130,6 +139,7 @@ source_set("material_components_ios") {
     "src/components/Dialogs/src/ColorThemer/MDCAlertColorThemer.m",
     "src/components/Dialogs/src/MDCAlertController.h",
     "src/components/Dialogs/src/MDCAlertController.m",
+    "src/components/Dialogs/src/MDCAlertControllerView.h",
     "src/components/Dialogs/src/MDCDialogPresentationController.h",
     "src/components/Dialogs/src/MDCDialogPresentationController.m",
     "src/components/Dialogs/src/MDCDialogTransitionController.h",
@@ -137,6 +147,8 @@ source_set("material_components_ios") {
     "src/components/Dialogs/src/MaterialDialogs.h",
     "src/components/Dialogs/src/UIViewController+MaterialDialogs.h",
     "src/components/Dialogs/src/UIViewController+MaterialDialogs.m",
+    "src/components/Dialogs/src/private/MDCAlertControllerView+Private.h",
+    "src/components/Dialogs/src/private/MDCAlertControllerView+Private.m",
     "src/components/Dialogs/src/private/MDCDialogShadowedView.h",
     "src/components/Dialogs/src/private/MDCDialogShadowedView.m",
     "src/components/Dialogs/src/private/MaterialDialogsStrings.h",
@@ -204,8 +216,6 @@ source_set("material_components_ios") {
     "src/components/Snackbar/src/private/MDCSnackbarMessageViewInternal.h",
     "src/components/Snackbar/src/private/MDCSnackbarOverlayView.h",
     "src/components/Snackbar/src/private/MDCSnackbarOverlayView.m",
-    "src/components/Themes/src/MDCColorScheme.h",
-    "src/components/Themes/src/MDCColorScheme.m",
     "src/components/Typography/src/MDCTypography.h",
     "src/components/Typography/src/MDCTypography.m",
     "src/components/Typography/src/MaterialTypography.h",
@@ -265,6 +275,15 @@ source_set("material_components_ios") {
     "src/components/private/UIMetrics/src/MDCLayoutMetrics.h",
     "src/components/private/UIMetrics/src/MDCLayoutMetrics.m",
     "src/components/private/UIMetrics/src/MaterialUIMetrics.h",
+    "src/components/schemes/Color/src/MDCLegacyColorScheme.h",
+    "src/components/schemes/Color/src/MDCLegacyColorScheme.m",
+    "src/components/schemes/Color/src/MDCLegacyTonalColorScheme.h",
+    "src/components/schemes/Color/src/MDCLegacyTonalColorScheme.m",
+    "src/components/schemes/Color/src/MDCLegacyTonalPalette.h",
+    "src/components/schemes/Color/src/MDCLegacyTonalPalette.m",
+    "src/components/schemes/Color/src/MDCSemanticColorScheme.h",
+    "src/components/schemes/Color/src/MDCSemanticColorScheme.m",
+    "src/components/schemes/Color/src/MaterialColorScheme.h",
   ]
   include_dirs = [
     "src/components/ActivityIndicator/src",
@@ -322,6 +341,10 @@ source_set("material_components_ios") {
     ":config",
     "//build/config/compiler:enable_arc",
     "//build/config/compiler:no_chromium_code",
+
+    # material_components_ios internally uses deprecated methods.
+    # Disable the warning about deprecation usage.
+    ":disable_deprecated_errors",
   ]
 }
 

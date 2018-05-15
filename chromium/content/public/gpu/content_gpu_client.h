@@ -11,7 +11,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/single_thread_task_runner.h"
 #include "content/public/common/content_client.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 
 namespace gpu {
@@ -42,9 +42,11 @@ class CONTENT_EXPORT ContentGpuClient {
   virtual void GpuServiceInitialized(
       const gpu::GpuPreferences& gpu_preferences) {}
 
-  // Called right after the IO thread is created.
+  // Called right after the IO/compositor thread is created.
   virtual void PostIOThreadCreated(
       base::SingleThreadTaskRunner* io_task_runner) {}
+  virtual void PostCompositorThreadCreated(
+      base::SingleThreadTaskRunner* task_runner) {}
 
   // Allows client to supply a SyncPointManager instance instead of having
   // content internally create one.

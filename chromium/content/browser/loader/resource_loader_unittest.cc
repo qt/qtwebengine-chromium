@@ -20,10 +20,10 @@
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "content/browser/browser_thread_impl.h"
 #include "content/browser/loader/resource_loader_delegate.h"
 #include "content/browser/loader/test_resource_handler.h"
 #include "content/public/browser/client_certificate_delegate.h"
+#include "content/public/browser/login_delegate.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/resource_type.h"
@@ -489,7 +489,7 @@ class ResourceLoaderTest : public testing::Test,
   }
 
   // ResourceLoaderDelegate:
-  ResourceDispatcherHostLoginDelegate* CreateLoginDelegate(
+  scoped_refptr<LoginDelegate> CreateLoginDelegate(
       ResourceLoader* loader,
       net::AuthChallengeInfo* auth_info) override {
     return nullptr;

@@ -15,8 +15,8 @@
 #include "content/public/common/file_chooser_params.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
-#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
-#include "third_party/WebKit/public/platform/WebSuddenTerminationDisablerType.h"
+#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
+#include "third_party/blink/public/platform/web_sudden_termination_disabler_type.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
 #include "url/gurl.h"
@@ -70,11 +70,6 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   // is present only to support Android WebView and must not be used in other
   // configurations.
   static void AllowInjectingJavaScriptForAndroidWebView();
-
-  // Temporary hack to enable data URLs on Android Webview until PlzNavigate
-  // ships.
-  static void AllowDataUrlNavigationForAndroidWebView();
-  static bool IsDataUrlNavigationAllowedForAndroidWebView();
 #endif
 
   // Returns a RenderFrameHost given its accessibility tree ID.

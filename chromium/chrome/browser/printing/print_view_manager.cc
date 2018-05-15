@@ -9,7 +9,6 @@
 
 #include "base/bind.h"
 #include "base/lazy_instance.h"
-#include "base/memory/ptr_util.h"
 #include "build/build_config.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/printing/print_preview_dialog_controller.h"
@@ -24,7 +23,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/webplugininfo.h"
 #include "ipc/ipc_message_macros.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 
 using content::BrowserThread;
 

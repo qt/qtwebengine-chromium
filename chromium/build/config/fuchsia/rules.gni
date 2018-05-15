@@ -5,7 +5,11 @@
 assert(is_fuchsia)
 
 import("//build/config/chromecast_build.gni")
+import("//build/config/fuchsia/config.gni")
 import("//build/config/fuchsia/package.gni")
+import("//build/config/sysroot.gni")
+
+blobstore_qcow_path = "$root_out_dir/fvm.blk.qcow2"
 
 template("generate_runner_script") {
   # This runtime_deps file is used at runtime and thus cannot go in
@@ -18,8 +22,8 @@ template("generate_runner_script") {
   _pkg_dir = "$root_out_dir/gen/" + get_label_info(invoker.package_name, "dir")
   _manifest_path = "$_pkg_dir/${invoker.package_name}.archive_manifest"
   _package_path = "$_pkg_dir/${invoker.package_name}.far"
-  _runner_target = "${target_name}_runner"
-  _legacy_runner_target = "${target_name}_legacy_runner"
+  _runner_target = "${target_name}_script"
+  _legacy_runner_target = "${target_name}_legacy_script"
 
   group(_runtime_deps_target) {
     forward_variables_from(invoker,
@@ -61,7 +65,7 @@ template("generate_runner_script") {
       invoker.generated_script,
       "//build/fuchsia/",
       "//build/util/lib/",
-      "//third_party/fuchsia-sdk/",
+      "${fuchsia_sdk}/",
       _runtime_deps_file,
     ]
     data_deps = [
@@ -103,6 +107,7 @@ template("generate_runner_script") {
                            ])
 
     deps = [
+      "//build/config/fuchsia:blobstore_extended_qcow2",
       "//testing/buildbot/filters:fuchsia_filters",
     ]
 
@@ -119,17 +124,13 @@ template("generate_runner_script") {
       _manifest_path,
       "//build/fuchsia/runner_v2/",
       "//build/util/lib/",
-      "//third_party/fuchsia-sdk/",
+      "${fuchsia_sdk}/",
     ]
 
     # Arguments used at build time by the runner script generator.
     args = [
       "--script-output-path",
       rebase_path(_generated_script, root_build_dir, root_out_dir),
-      "--package",
-      rebase_path(_package_path, root_out_dir, root_build_dir),
-      "--package-manifest",
-      rebase_path(_manifest_path, root_out_dir, root_build_dir),
     ]
 
     if (defined(invoker.use_test_server) && invoker.use_test_server) {
@@ -144,6 +145,12 @@ template("generate_runner_script") {
       rebase_path(root_build_dir, root_build_dir),
       "--target-cpu",
       target_cpu,
+      "--package",
+      rebase_path(_package_path, root_out_dir, root_build_dir),
+      "--package-name",
+      invoker.package_name,
+      "--package-manifest",
+      rebase_path(_manifest_path),
     ]
   }
 }

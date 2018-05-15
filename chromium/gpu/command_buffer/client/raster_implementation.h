@@ -24,10 +24,10 @@
 #include "gpu/command_buffer/client/mapped_memory.h"
 #include "gpu/command_buffer/client/raster_interface.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
-#include "gpu/command_buffer/common/capabilities.h"
 #include "gpu/command_buffer/common/context_result.h"
 #include "gpu/command_buffer/common/debug_marker_manager.h"
 #include "gpu/command_buffer/common/id_allocator.h"
+#include "gpu/command_buffer/common/raster_cmd_format.h"
 #include "gpu/raster_export.h"
 
 namespace gpu {
@@ -99,69 +99,11 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
 #include "gpu/command_buffer/client/raster_implementation_autogen.h"
 
   // RasterInterface implementation.
-  void GenTextures(GLsizei n, GLuint* textures) override;
-  void BindTexture(GLenum target, GLuint texture) override;
-  void ActiveTexture(GLenum texture) override;
-  void GenerateMipmap(GLenum target) override;
-  void SetColorSpaceMetadataCHROMIUM(GLuint texture_id,
-                                     GLColorSpace color_space) override;
-  void GenMailboxCHROMIUM(GLbyte* mailbox) override;
-  void ProduceTextureDirectCHROMIUM(GLuint texture,
-                                    const GLbyte* mailbox) override;
-  GLuint CreateAndConsumeTextureCHROMIUM(const GLbyte* mailbox) override;
-  void BindTexImage2DCHROMIUM(GLenum target, GLint imageId) override;
-  void ReleaseTexImage2DCHROMIUM(GLenum target, GLint imageId) override;
-  void TexImage2D(GLenum target,
-                  GLint level,
-                  GLint internalformat,
-                  GLsizei width,
-                  GLsizei height,
-                  GLint border,
-                  GLenum format,
-                  GLenum type,
-                  const void* pixels) override;
-  void TexSubImage2D(GLenum target,
-                     GLint level,
-                     GLint xoffset,
-                     GLint yoffset,
-                     GLsizei width,
-                     GLsizei height,
-                     GLenum format,
-                     GLenum type,
-                     const void* pixels) override;
-  void CompressedTexImage2D(GLenum target,
-                            GLint level,
-                            GLenum internalformat,
-                            GLsizei width,
-                            GLsizei height,
-                            GLint border,
-                            GLsizei imageSize,
-                            const void* data) override;
-  void TexStorageForRaster(GLenum target,
-                           viz::ResourceFormat format,
-                           GLsizei width,
-                           GLsizei height,
-                           RasterTexStorageFlags flags) override;
-  void CopySubTextureCHROMIUM(GLuint source_id,
-                              GLint source_level,
-                              GLenum dest_target,
-                              GLuint dest_id,
-                              GLint dest_level,
-                              GLint xoffset,
-                              GLint yoffset,
-                              GLint x,
-                              GLint y,
-                              GLsizei width,
-                              GLsizei height,
-                              GLboolean unpack_flip_y,
-                              GLboolean unpack_premultiply_alpha,
-                              GLboolean unpack_unmultiply_alpha) override;
   void BeginRasterCHROMIUM(
       GLuint texture_id,
       GLuint sk_color,
       GLuint msaa_sample_count,
       GLboolean can_use_lcd_text,
-      GLboolean use_distance_field_text,
       GLint pixel_config,
       const cc::RasterColorSpace& raster_color_space) override;
   void RasterCHROMIUM(const cc::DisplayItemList* list,
@@ -185,7 +127,8 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
                             gfx::OverlayTransform plane_transform,
                             unsigned overlay_texture_id,
                             const gfx::Rect& display_bounds,
-                            const gfx::RectF& uv_rect) override;
+                            const gfx::RectF& uv_rect,
+                            bool enable_blend) override;
   uint64_t ShareGroupTracingGUID() const override;
   void SetErrorMessageCallback(
       base::RepeatingCallback<void(const char*, int32_t)> callback) override;
@@ -204,7 +147,7 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
  private:
   friend class RasterImplementationTest;
 
-  using IdNamespaces = gles2::id_namespaces::IdNamespaces;
+  using IdNamespaces = raster::id_namespaces::IdNamespaces;
 
   struct TextureUnit {
     TextureUnit() : bound_texture_2d(0) {}
@@ -312,8 +255,6 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
   base::RepeatingCallback<void(const char*, int32_t)> error_message_callback_;
 
   int current_trace_stack_;
-
-  Capabilities capabilities_;
 
   // Flag to indicate whether the implementation can retain resources, or
   // whether it should aggressively free them.

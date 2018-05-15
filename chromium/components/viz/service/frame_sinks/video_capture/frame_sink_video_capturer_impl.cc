@@ -14,10 +14,11 @@
 #include "base/trace_event/trace_event.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
+#include "components/viz/common/surfaces/local_surface_id.h"
 #include "components/viz/service/frame_sinks/video_capture/frame_sink_video_capturer_manager.h"
 #include "media/base/limits.h"
 #include "media/base/video_util.h"
-#include "media/capture/mojo/video_capture_types.mojom.h"
+#include "media/capture/mojom/video_capture_types.mojom.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/size.h"
@@ -36,18 +37,6 @@ constexpr gfx::Rect kMaxRect = gfx::Rect(0,
                                          std::numeric_limits<int>::max(),
                                          std::numeric_limits<int>::max());
 
-// Returns |raw_size| truncated to positive even-numbered values.
-gfx::Size AdjustSizeForI420(const gfx::Size& raw_size) {
-  gfx::Size result(raw_size.width() & ~1, raw_size.height() & ~1);
-  if (result.width() <= 0) {
-    result.set_width(2);
-  }
-  if (result.height() <= 0) {
-    result.set_height(2);
-  }
-  return result;
-}
-
 }  // namespace
 
 // static
@@ -56,10 +45,6 @@ constexpr media::VideoPixelFormat
 
 // static
 constexpr media::ColorSpace FrameSinkVideoCapturerImpl::kDefaultColorSpace;
-
-// static
-constexpr base::TimeDelta
-    FrameSinkVideoCapturerImpl::kDisplayTimeCacheKeepAliveInterval;
 
 FrameSinkVideoCapturerImpl::FrameSinkVideoCapturerImpl(
     FrameSinkVideoCapturerManager* frame_sink_manager,
@@ -132,8 +117,9 @@ void FrameSinkVideoCapturerImpl::SetFormat(media::VideoPixelFormat format,
 
   bool format_changed = false;
 
-  if (format != media::PIXEL_FORMAT_I420) {
-    LOG(DFATAL) << "Invalid pixel format: Only I420 supported.";
+  if (format != media::PIXEL_FORMAT_I420 &&
+      format != media::PIXEL_FORMAT_ARGB) {
+    LOG(DFATAL) << "Invalid pixel format: Only I420 and ARGB are supported.";
   } else {
     format_changed |= (pixel_format_ != format);
     pixel_format_ = format;
@@ -187,6 +173,13 @@ void FrameSinkVideoCapturerImpl::SetMinCapturePeriod(
   }
 }
 
+void FrameSinkVideoCapturerImpl::SetMinSizeChangePeriod(
+    base::TimeDelta min_period) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  oracle_.SetMinSizeChangePeriod(min_period);
+}
+
 void FrameSinkVideoCapturerImpl::SetResolutionConstraints(
     const gfx::Size& min_size,
     const gfx::Size& max_size,
@@ -206,6 +199,10 @@ void FrameSinkVideoCapturerImpl::SetResolutionConstraints(
 
   oracle_.SetCaptureSizeConstraints(min_size, max_size, use_fixed_aspect_ratio);
   RefreshEntireSourceSoon();
+}
+
+void FrameSinkVideoCapturerImpl::SetAutoThrottlingEnabled(bool enabled) {
+  oracle_.SetAutoThrottlingEnabled(enabled);
 }
 
 void FrameSinkVideoCapturerImpl::ChangeTarget(
@@ -317,63 +314,15 @@ void FrameSinkVideoCapturerImpl::RefreshSoon() {
                     gfx::Rect(oracle_.source_size()), clock_->NowTicks());
 }
 
-void FrameSinkVideoCapturerImpl::OnBeginFrame(const BeginFrameArgs& args) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  DCHECK(args.IsValid());
-  DCHECK(resolved_target_);
-
-  // Note: It's possible that there are multiple BeginFrameSources that may call
-  // this method. It's not possible to know which one will be associated with a
-  // later OnFrameDamaged() call, so all recent timestamps must be cached.
-
-  const size_t prior_source_count = frame_display_times_.size();
-  TimeRingBuffer& ring_buffer = frame_display_times_[args.source_id];
-  const base::TimeTicks display_time = args.frame_time + args.interval;
-  DCHECK(!display_time.is_null());
-  ring_buffer[args.sequence_number % ring_buffer.size()] = display_time;
-
-  // Garbage-collect |frame_display_times_| entries that are no longer being
-  // actively updated. This only runs when this method is being called with an
-  // as-yet-unseen |args.source_id|. An entry is pruned only if all of its
-  // timestamps are older than a reasonable threshold.
-  if (frame_display_times_.size() != prior_source_count) {
-    const base::TimeTicks threshold =
-        display_time - kDisplayTimeCacheKeepAliveInterval;
-    using KeyValuePair = decltype(frame_display_times_)::value_type;
-    base::EraseIf(frame_display_times_, [&threshold](const KeyValuePair& p) {
-      const TimeRingBuffer& ring_buffer = p.second;
-      return std::all_of(ring_buffer.begin(), ring_buffer.end(),
-                         [&threshold](base::TimeTicks t) {
-                           return t.is_null() || t < threshold;
-                         });
-    });
-  }
-}
-
-void FrameSinkVideoCapturerImpl::OnFrameDamaged(const BeginFrameAck& ack,
-                                                const gfx::Size& frame_size,
-                                                const gfx::Rect& damage_rect) {
+void FrameSinkVideoCapturerImpl::OnFrameDamaged(
+    const gfx::Size& frame_size,
+    const gfx::Rect& damage_rect,
+    base::TimeTicks expected_display_time) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(!frame_size.IsEmpty());
   DCHECK(!damage_rect.IsEmpty());
+  DCHECK(!expected_display_time.is_null());
   DCHECK(resolved_target_);
-
-  base::TimeTicks display_time;
-  const auto it = frame_display_times_.find(ack.source_id);
-  if (it != frame_display_times_.end()) {
-    const TimeRingBuffer& ring_buffer = it->second;
-    display_time = ring_buffer[ack.sequence_number % ring_buffer.size()];
-  }
-  if (display_time.is_null()) {
-    // This can sometimes occur for the first few frames when capture starts,
-    // or whenever Surfaces are changed; but should not otherwise happen. If
-    // this is too frequent, the oracle will be making suboptimal decisions.
-    VLOG(1)
-        << "OnFrameDamaged() called without prior OnBeginFrame() for source_id="
-        << ack.source_id << " and sequence_number=" << ack.sequence_number
-        << ". Using NOW as a substitute display time.";
-    display_time = clock_->NowTicks();
-  }
 
   if (frame_size == oracle_.source_size()) {
     dirty_rect_.Union(damage_rect);
@@ -383,7 +332,7 @@ void FrameSinkVideoCapturerImpl::OnFrameDamaged(const BeginFrameAck& ack,
   }
 
   MaybeCaptureFrame(VideoCaptureOracle::kCompositorUpdate, damage_rect,
-                    display_time);
+                    expected_display_time);
 }
 
 void FrameSinkVideoCapturerImpl::MaybeCaptureFrame(
@@ -422,20 +371,20 @@ void FrameSinkVideoCapturerImpl::MaybeCaptureFrame(
 
   // Reserve a buffer from the pool for the next frame.
   const OracleFrameNumber oracle_frame_number = oracle_.next_frame_number();
-  const gfx::Size i420_capture_size = AdjustSizeForI420(oracle_.capture_size());
+  const gfx::Size capture_size =
+      AdjustSizeForPixelFormat(oracle_.capture_size());
   scoped_refptr<VideoFrame> frame;
   if (dirty_rect_.IsEmpty()) {
-    frame =
-        frame_pool_.ResurrectLastVideoFrame(pixel_format_, i420_capture_size);
+    frame = frame_pool_.ResurrectLastVideoFrame(pixel_format_, capture_size);
     // If the resurrection failed, promote to a full frame capture.
     if (!frame) {
       TRACE_EVENT_INSTANT0("gpu.capture", "ResurrectionFailed",
                            TRACE_EVENT_SCOPE_THREAD);
       dirty_rect_ = kMaxRect;
-      frame = frame_pool_.ReserveVideoFrame(pixel_format_, i420_capture_size);
+      frame = frame_pool_.ReserveVideoFrame(pixel_format_, capture_size);
     }
   } else {
-    frame = frame_pool_.ReserveVideoFrame(pixel_format_, i420_capture_size);
+    frame = frame_pool_.ReserveVideoFrame(pixel_format_, capture_size);
   }
 
   // Compute the current in-flight utilization and attenuate it: The utilization
@@ -496,12 +445,23 @@ void FrameSinkVideoCapturerImpl::MaybeCaptureFrame(
 
   const gfx::Size& source_size = oracle_.source_size();
   DCHECK(!source_size.IsEmpty());
-  const gfx::Rect content_rect =
-      media::ComputeLetterboxRegionForI420(frame->visible_rect(), source_size);
+  gfx::Rect content_rect;
+  if (pixel_format_ == media::PIXEL_FORMAT_I420) {
+    content_rect = media::ComputeLetterboxRegionForI420(frame->visible_rect(),
+                                                        source_size);
+  } else {
+    DCHECK_EQ(media::PIXEL_FORMAT_ARGB, pixel_format_);
+    content_rect =
+        media::ComputeLetterboxRegion(frame->visible_rect(), source_size);
+  }
   // Extreme edge-case: If somehow the source size is so tiny that the content
   // region becomes empty, just deliver a frame filled with black.
   if (content_rect.IsEmpty()) {
-    media::FillYUV(frame.get(), 0x00, 0x80, 0x80);
+    if (pixel_format_ == media::PIXEL_FORMAT_I420) {
+      media::FillYUV(frame.get(), 0x00, 0x80, 0x80);
+    } else {
+      media::LetterboxVideoFrame(frame.get(), gfx::Rect());
+    }
     dirty_rect_ = gfx::Rect();
     DidCaptureFrame(frame_number, oracle_frame_number, std::move(frame),
                     gfx::Rect());
@@ -517,7 +477,9 @@ void FrameSinkVideoCapturerImpl::MaybeCaptureFrame(
 
   // Request a copy of the next frame from the frame sink.
   std::unique_ptr<CopyOutputRequest> request(new CopyOutputRequest(
-      CopyOutputRequest::ResultFormat::I420_PLANES,
+      pixel_format_ == media::PIXEL_FORMAT_I420
+          ? CopyOutputRequest::ResultFormat::I420_PLANES
+          : CopyOutputRequest::ResultFormat::RGBA_BITMAP,
       base::BindOnce(&FrameSinkVideoCapturerImpl::DidCopyFrame,
                      capture_weak_factory_.GetWeakPtr(), frame_number,
                      oracle_frame_number, std::move(frame), content_rect)));
@@ -531,7 +493,7 @@ void FrameSinkVideoCapturerImpl::MaybeCaptureFrame(
   // damage over all the frames that weren't captured.
   request->set_result_selection(gfx::Rect(content_rect.size()));
   dirty_rect_ = gfx::Rect();
-  resolved_target_->RequestCopyOfSurface(std::move(request));
+  resolved_target_->RequestCopyOfOutput(LocalSurfaceId(), std::move(request));
 }
 
 void FrameSinkVideoCapturerImpl::DidCopyFrame(
@@ -543,38 +505,61 @@ void FrameSinkVideoCapturerImpl::DidCopyFrame(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK_GE(frame_number, next_delivery_frame_number_);
   DCHECK(frame);
-  DCHECK_EQ(content_rect.x() % 2, 0);
-  DCHECK_EQ(content_rect.y() % 2, 0);
-  DCHECK_EQ(content_rect.width() % 2, 0);
-  DCHECK_EQ(content_rect.height() % 2, 0);
   DCHECK(result);
 
   // Stop() should have canceled any outstanding copy requests. So, by reaching
   // this point, |consumer_| should be bound.
   DCHECK(consumer_);
 
-  // Populate the VideoFrame from the CopyOutputResult.
-  const int y_stride = frame->stride(VideoFrame::kYPlane);
-  uint8_t* const y = frame->visible_data(VideoFrame::kYPlane) +
-                     content_rect.y() * y_stride + content_rect.x();
-  const int u_stride = frame->stride(VideoFrame::kUPlane);
-  uint8_t* const u = frame->visible_data(VideoFrame::kUPlane) +
-                     (content_rect.y() / 2) * u_stride + (content_rect.x() / 2);
-  const int v_stride = frame->stride(VideoFrame::kVPlane);
-  uint8_t* const v = frame->visible_data(VideoFrame::kVPlane) +
-                     (content_rect.y() / 2) * v_stride + (content_rect.x() / 2);
-  if (result->ReadI420Planes(y, y_stride, u, u_stride, v, v_stride)) {
-    // The result may be smaller than what was requested, if unforeseen clamping
-    // to the source boundaries occurred by the executor of the
-    // CopyOutputRequest. However, the result should never contain more than
-    // what was requested.
-    DCHECK_LE(result->size().width(), content_rect.width());
-    DCHECK_LE(result->size().height(), content_rect.height());
-    media::LetterboxYUV(
-        frame.get(),
-        gfx::Rect(content_rect.origin(), AdjustSizeForI420(result->size())));
+  if (pixel_format_ == media::PIXEL_FORMAT_I420) {
+    DCHECK_EQ(content_rect.x() % 2, 0);
+    DCHECK_EQ(content_rect.y() % 2, 0);
+    DCHECK_EQ(content_rect.width() % 2, 0);
+    DCHECK_EQ(content_rect.height() % 2, 0);
+    // Populate the VideoFrame from the CopyOutputResult.
+    const int y_stride = frame->stride(VideoFrame::kYPlane);
+    uint8_t* const y = frame->visible_data(VideoFrame::kYPlane) +
+                       content_rect.y() * y_stride + content_rect.x();
+    const int u_stride = frame->stride(VideoFrame::kUPlane);
+    uint8_t* const u = frame->visible_data(VideoFrame::kUPlane) +
+                       (content_rect.y() / 2) * u_stride +
+                       (content_rect.x() / 2);
+    const int v_stride = frame->stride(VideoFrame::kVPlane);
+    uint8_t* const v = frame->visible_data(VideoFrame::kVPlane) +
+                       (content_rect.y() / 2) * v_stride +
+                       (content_rect.x() / 2);
+    if (result->ReadI420Planes(y, y_stride, u, u_stride, v, v_stride)) {
+      // The result may be smaller than what was requested, if unforeseen
+      // clamping to the source boundaries occurred by the executor of the
+      // CopyOutputRequest. However, the result should never contain more than
+      // what was requested.
+      DCHECK_LE(result->size().width(), content_rect.width());
+      DCHECK_LE(result->size().height(), content_rect.height());
+      media::LetterboxVideoFrame(
+          frame.get(), gfx::Rect(content_rect.origin(),
+                                 AdjustSizeForPixelFormat(result->size())));
+    } else {
+      frame = nullptr;
+    }
   } else {
-    frame = nullptr;
+    // TODO(samans): Avoid doing an extra copy by implementing a method similar
+    // to ReadI420Planes() that copies directly from GPU memory into shared
+    // memory. https://crbug.com/822264
+    DCHECK_EQ(media::PIXEL_FORMAT_ARGB, pixel_format_);
+    const SkBitmap& bitmap = result->AsSkBitmap();
+    if (bitmap.readyToDraw()) {
+      SkImageInfo image_info = SkImageInfo::MakeN32(
+          bitmap.width(), bitmap.height(), kPremul_SkAlphaType);
+      const int stride = frame->stride(VideoFrame::kARGBPlane);
+      uint8_t* const pixels = frame->visible_data(VideoFrame::kARGBPlane) +
+                              content_rect.y() * stride + content_rect.x() * 4;
+      bitmap.readPixels(image_info, pixels, stride, 0, 0);
+      media::LetterboxVideoFrame(
+          frame.get(), gfx::Rect(content_rect.origin(),
+                                 AdjustSizeForPixelFormat(result->size())));
+    } else {
+      frame = nullptr;
+    }
   }
 
   DidCaptureFrame(frame_number, oracle_frame_number, std::move(frame),
@@ -656,7 +641,7 @@ void FrameSinkVideoCapturerImpl::MaybeDeliverFrame(
   // the consumer.
   media::mojom::VideoFrameInfoPtr info = media::mojom::VideoFrameInfo::New();
   info->timestamp = frame->timestamp();
-  info->metadata = frame->metadata()->CopyInternalValues();
+  info->metadata = frame->metadata()->GetInternalValues().Clone();
   info->pixel_format = frame->format();
   info->storage_type = media::VideoPixelStorage::CPU;
   info->coded_size = frame->coded_size();
@@ -684,6 +669,25 @@ void FrameSinkVideoCapturerImpl::MaybeDeliverFrame(
   consumer_->OnFrameCaptured(std::move(buffer_and_size.first),
                              buffer_and_size.second, std::move(info),
                              update_rect, content_rect, std::move(callbacks));
+}
+
+gfx::Size FrameSinkVideoCapturerImpl::AdjustSizeForPixelFormat(
+    const gfx::Size& raw_size) {
+  if (pixel_format_ == media::PIXEL_FORMAT_ARGB) {
+    gfx::Size result(raw_size);
+    if (result.width() <= 0)
+      result.set_width(1);
+    if (result.height() <= 0)
+      result.set_height(1);
+    return result;
+  }
+  DCHECK_EQ(media::PIXEL_FORMAT_I420, pixel_format_);
+  gfx::Size result(raw_size.width() & ~1, raw_size.height() & ~1);
+  if (result.width() <= 0)
+    result.set_width(2);
+  if (result.height() <= 0)
+    result.set_height(2);
+  return result;
 }
 
 FrameSinkVideoCapturerImpl::CapturedFrame::CapturedFrame(

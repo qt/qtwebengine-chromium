@@ -349,9 +349,11 @@ class UpdateClient : public base::RefCounted<UpdateClient> {
   // is intended to be used for background updates of several CRXs. Overlapping
   // calls to this function result in a queuing behavior, and the execution
   // of each call is serialized. In addition, updates are always queued up when
-  // installs are running.
+  // installs are running. The |is_foreground| parameter must be set to true if
+  // the invocation of this function is a result of a user initiated update.
   virtual void Update(const std::vector<std::string>& ids,
                       CrxDataCallback crx_data_callback,
+                      bool is_foreground,
                       Callback callback) = 0;
 
   // Sends an uninstall ping for the CRX identified by |id| and |version|. The
@@ -392,6 +394,12 @@ scoped_refptr<UpdateClient> UpdateClientFactory(
 // This must be called prior to the construction of any Configurator that
 // contains a PrefService.
 void RegisterPrefs(PrefRegistrySimple* registry);
+
+// This must be called prior to the construction of any Configurator that
+// needs access to local user profiles.
+// This function is mostly used for ExtensionUpdater, which requires update
+// info from user profiles.
+void RegisterProfilePrefs(PrefRegistrySimple* registry);
 
 }  // namespace update_client
 

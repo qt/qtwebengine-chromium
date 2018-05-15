@@ -14,11 +14,11 @@
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "mojo/public/cpp/system/message_pipe.h"
-#include "third_party/WebKit/public/platform/WebLoadingBehaviorFlag.h"
-#include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/platform/web_client_hints_types.mojom.h"
-#include "third_party/WebKit/public/platform/web_feature.mojom.h"
-#include "third_party/WebKit/public/web/WebMeaningfulLayout.h"
+#include "third_party/blink/public/platform/web_client_hints_types.mojom.h"
+#include "third_party/blink/public/platform/web_feature.mojom.h"
+#include "third_party/blink/public/platform/web_loading_behavior_flag.h"
+#include "third_party/blink/public/platform/web_vector.h"
+#include "third_party/blink/public/web/web_meaningful_layout.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -117,9 +117,11 @@ class CONTENT_EXPORT RenderFrameObserver : public IPC::Listener,
   virtual void DidObserveLoadingBehavior(
       blink::WebLoadingBehaviorFlag behavior) {}
 
-  // Notification when the renderer observes a new feature usage during a page
-  // load. This is used for UseCounter feature metrics.
+  // Notification when the renderer observes a new use counter usage during a
+  // page load. This is used for UseCounter metrics.
   virtual void DidObserveNewFeatureUsage(blink::mojom::WebFeature feature) {}
+  virtual void DidObserveNewCssPropertyUsage(int css_property,
+                                             bool is_animated) {}
 
   // Called when the focused node has changed to |node|.
   virtual void FocusedNodeChanged(const blink::WebNode& node) {}

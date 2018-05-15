@@ -180,6 +180,7 @@ GLES2Implementation::GLES2Implementation(
       bound_copy_write_buffer_(0),
       bound_pixel_pack_buffer_(0),
       bound_pixel_unpack_buffer_(0),
+      bound_transform_feedback_buffer_(0),
       bound_uniform_buffer_(0),
       bound_pixel_pack_transfer_buffer_id_(0),
       bound_pixel_unpack_transfer_buffer_id_(0),
@@ -190,7 +191,6 @@ GLES2Implementation::GLES2Implementation(
       flush_id_(0),
       max_extra_transfer_buffer_size_(0),
       current_trace_stack_(0),
-      capabilities_(gpu_control->GetCapabilities()),
       aggressively_free_resources_(false),
       cached_extension_string_(nullptr),
       weak_ptr_factory_(this) {
@@ -878,6 +878,9 @@ bool GLES2Implementation::GetHelper(GLenum pname, GLint* params) {
     case GL_PIXEL_UNPACK_BUFFER_BINDING:
       *params = bound_pixel_unpack_buffer_;
       return true;
+    case GL_TRANSFORM_FEEDBACK_BUFFER_BINDING:
+      *params = bound_transform_feedback_buffer_;
+      return true;
     case GL_UNIFORM_BUFFER_BINDING:
       *params = bound_uniform_buffer_;
       return true;
@@ -925,7 +928,6 @@ bool GLES2Implementation::GetHelper(GLenum pname, GLint* params) {
     case GL_TRANSFORM_FEEDBACK_BINDING:
     case GL_TRANSFORM_FEEDBACK_ACTIVE:
     case GL_TRANSFORM_FEEDBACK_PAUSED:
-    case GL_TRANSFORM_FEEDBACK_BUFFER_BINDING:
     case GL_TRANSFORM_FEEDBACK_BUFFER_SIZE:
     case GL_TRANSFORM_FEEDBACK_BUFFER_START:
     case GL_UNIFORM_BUFFER_SIZE:
@@ -1325,13 +1327,6 @@ void GLES2Implementation::SwapBuffersWithBoundsCHROMIUM(GLsizei count,
     helper_->WaitForToken(swap_buffers_tokens_.front());
     swap_buffers_tokens_.pop();
   }
-}
-
-void GLES2Implementation::SwapInterval(int interval) {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glSwapInterval("
-      << interval << ")");
-  helper_->SwapInterval(interval);
 }
 
 void GLES2Implementation::BindAttribLocation(
@@ -4093,6 +4088,12 @@ void GLES2Implementation::BindBufferHelper(
     case GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM:
       bound_pixel_unpack_transfer_buffer_id_ = buffer_id;
       break;
+    case GL_TRANSFORM_FEEDBACK_BUFFER:
+      if (bound_transform_feedback_buffer_ != buffer_id) {
+        bound_transform_feedback_buffer_ = buffer_id;
+        changed = true;
+      }
+      break;
     case GL_UNIFORM_BUFFER:
       if (bound_uniform_buffer_ != buffer_id) {
         bound_uniform_buffer_ = buffer_id;
@@ -4117,38 +4118,45 @@ void GLES2Implementation::BindBufferStub(GLenum target, GLuint buffer) {
     helper_->CommandBufferHelper::OrderingBarrier();
 }
 
-void GLES2Implementation::BindBufferBaseHelper(
-    GLenum target, GLuint index, GLuint buffer_id) {
-  // TODO(zmo): See note #1 above.
-  // TODO(zmo): See note #2 above.
+bool GLES2Implementation::UpdateIndexedBufferState(GLenum target,
+                                                   GLuint index,
+                                                   GLuint buffer_id,
+                                                   const char* function_name) {
   switch (target) {
     case GL_TRANSFORM_FEEDBACK_BUFFER:
       if (index >=
           static_cast<GLuint>(
               capabilities_.max_transform_feedback_separate_attribs)) {
-        SetGLError(GL_INVALID_VALUE,
-                   "glBindBufferBase", "index out of range");
-        return;
+        SetGLError(GL_INVALID_VALUE, function_name, "index out of range");
+        return false;
       }
+      bound_transform_feedback_buffer_ = buffer_id;
       break;
     case GL_UNIFORM_BUFFER:
       if (index >=
           static_cast<GLuint>(capabilities_.max_uniform_buffer_bindings)) {
-        SetGLError(GL_INVALID_VALUE,
-                   "glBindBufferBase", "index out of range");
-        return;
+        SetGLError(GL_INVALID_VALUE, function_name, "index out of range");
+        return false;
       }
-      if (bound_uniform_buffer_ != buffer_id) {
-        bound_uniform_buffer_ = buffer_id;
-      }
+      bound_uniform_buffer_ = buffer_id;
       break;
     default:
-      SetGLError(GL_INVALID_ENUM, "glBindBufferBase", "invalid target");
-      return;
+      SetGLError(GL_INVALID_ENUM, function_name, "invalid target");
+      return false;
   }
-  GetIdHandler(SharedIdNamespaces::kBuffers)
-      ->MarkAsUsedForBind(this, target, index, buffer_id,
-                          &GLES2Implementation::BindBufferBaseStub);
+  return true;
+}
+
+void GLES2Implementation::BindBufferBaseHelper(GLenum target,
+                                               GLuint index,
+                                               GLuint buffer_id) {
+  // TODO(zmo): See note #1 above.
+  // TODO(zmo): See note #2 above.
+  if (UpdateIndexedBufferState(target, index, buffer_id, "glBindBufferBase")) {
+    GetIdHandler(SharedIdNamespaces::kBuffers)
+        ->MarkAsUsedForBind(this, target, index, buffer_id,
+                            &GLES2Implementation::BindBufferBaseStub);
+  }
 }
 
 void GLES2Implementation::BindBufferBaseStub(
@@ -4163,9 +4171,11 @@ void GLES2Implementation::BindBufferRangeHelper(
     GLintptr offset, GLsizeiptr size) {
   // TODO(zmo): See note #1 above.
   // TODO(zmo): See note #2 above.
-  GetIdHandler(SharedIdNamespaces::kBuffers)
-      ->MarkAsUsedForBind(this, target, index, buffer_id, offset, size,
-                          &GLES2Implementation::BindBufferRangeStub);
+  if (UpdateIndexedBufferState(target, index, buffer_id, "glBindBufferRange")) {
+    GetIdHandler(SharedIdNamespaces::kBuffers)
+        ->MarkAsUsedForBind(this, target, index, buffer_id, offset, size,
+                            &GLES2Implementation::BindBufferRangeStub);
+  }
 }
 
 void GLES2Implementation::BindBufferRangeStub(
@@ -4353,6 +4363,9 @@ void GLES2Implementation::DeleteBuffersHelper(
     }
     if (buffers[ii] == bound_pixel_unpack_buffer_) {
       bound_pixel_unpack_buffer_ = 0;
+    }
+    if (buffers[ii] == bound_transform_feedback_buffer_) {
+      bound_transform_feedback_buffer_ = 0;
     }
     if (buffers[ii] == bound_uniform_buffer_) {
       bound_uniform_buffer_ = 0;
@@ -4713,18 +4726,13 @@ void GLES2Implementation::ScheduleOverlayPlane(
     gfx::OverlayTransform plane_transform,
     unsigned overlay_texture_id,
     const gfx::Rect& display_bounds,
-    const gfx::RectF& uv_rect) {
-  ScheduleOverlayPlaneCHROMIUM(plane_z_order,
-                               GetGLESOverlayTransform(plane_transform),
-                               overlay_texture_id,
-                               display_bounds.x(),
-                               display_bounds.y(),
-                               display_bounds.width(),
-                               display_bounds.height(),
-                               uv_rect.x(),
-                               uv_rect.y(),
-                               uv_rect.width(),
-                               uv_rect.height());
+    const gfx::RectF& uv_rect,
+    bool enable_blend) {
+  ScheduleOverlayPlaneCHROMIUM(
+      plane_z_order, GetGLESOverlayTransform(plane_transform),
+      overlay_texture_id, display_bounds.x(), display_bounds.y(),
+      display_bounds.width(), display_bounds.height(), uv_rect.x(), uv_rect.y(),
+      uv_rect.width(), uv_rect.height(), enable_blend);
 }
 
 void GLES2Implementation::ScheduleCALayerSharedStateCHROMIUM(
@@ -4935,27 +4943,8 @@ void GLES2Implementation::UnmapBufferSubDataCHROMIUM(const void* mem) {
 GLuint GLES2Implementation::GetBoundBufferHelper(GLenum target) {
   GLenum binding = GLES2Util::MapBufferTargetToBindingEnum(target);
   GLint id = 0;
-  if (target == GL_TRANSFORM_FEEDBACK_BUFFER) {
-    // GL_TRANSFORM_FEEDBACK_BUFFER is not cached locally, so we need to call
-    // the server here. We don't cache it because it's part of the transform
-    // feedback object state, which means that it's modified by things other
-    // than glBindBuffer calls, specifically glBindTransformFeedback, the
-    // success of which depends on a bunch of other states.
-    // TODO(jdarpinian): This is slow. We should audit callers of this function
-    //     to figure out if they really need this information, and skip this if
-    //     they don't.
-    auto* result = GetResultAs<cmds::GetIntegerv::Result*>();
-    DCHECK(result);
-    result->SetNumResults(0);
-    helper_->GetIntegerv(GL_TRANSFORM_FEEDBACK_BUFFER_BINDING, GetResultShmId(),
-                         GetResultShmOffset());
-    WaitForCmd();
-    DCHECK(result->GetNumResults() == 1);
-    result->CopyResult(&id);
-  } else {
-    bool cached = GetHelper(binding, &id);
-    DCHECK(cached);
-  }
+  bool cached = GetHelper(binding, &id);
+  DCHECK(cached);
   return static_cast<GLuint>(id);
 }
 

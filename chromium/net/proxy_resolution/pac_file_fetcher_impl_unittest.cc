@@ -32,13 +32,14 @@
 #include "net/http/http_server_properties_impl.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/http/transport_security_state.h"
-#include "net/net_features.h"
+#include "net/net_buildflags.h"
 #include "net/socket/client_socket_pool_manager.h"
 #include "net/socket/transport_client_socket_pool.h"
 #include "net/ssl/ssl_config_service_defaults.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/simple_connection_listener.h"
 #include "net/test/gtest_util.h"
+#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/url_request_context_storage.h"
 #include "net/url_request/url_request_file_job.h"
 #include "net/url_request/url_request_job_factory_impl.h"
@@ -58,14 +59,14 @@ using base::ASCIIToUTF16;
 
 // TODO(eroman):
 //   - Test canceling an outstanding request.
-//   - Test deleting ProxyScriptFetcher while a request is in progress.
+//   - Test deleting PacFileFetcher while a request is in progress.
 
 namespace net {
 
 namespace {
 
 const base::FilePath::CharType kDocRoot[] =
-    FILE_PATH_LITERAL("net/data/proxy_script_fetcher_unittest");
+    FILE_PATH_LITERAL("net/data/pac_file_fetcher_unittest");
 
 struct FetchResult {
   int code;
@@ -86,7 +87,8 @@ class RequestContext : public URLRequestContext {
     storage_.set_cert_transparency_verifier(
         std::make_unique<MultiLogCTVerifier>());
     storage_.set_ct_policy_enforcer(std::make_unique<CTPolicyEnforcer>());
-    storage_.set_proxy_resolution_service(ProxyResolutionService::CreateFixed(no_proxy));
+    storage_.set_proxy_resolution_service(ProxyResolutionService::CreateFixed(
+        ProxyConfigWithAnnotation(no_proxy, TRAFFIC_ANNOTATION_FOR_TESTS)));
     storage_.set_ssl_config_service(new SSLConfigServiceDefaults);
     storage_.set_http_server_properties(
         std::unique_ptr<HttpServerProperties>(new HttpServerPropertiesImpl()));
@@ -122,13 +124,13 @@ class RequestContext : public URLRequestContext {
 };
 
 #if !BUILDFLAG(DISABLE_FILE_SUPPORT)
-// Get a file:// url relative to net/data/proxy/proxy_script_fetcher_unittest.
+// Get a file:// url relative to net/data/proxy/pac_file_fetcher_unittest.
 GURL GetTestFileUrl(const std::string& relpath) {
   base::FilePath path;
   PathService::Get(base::DIR_SOURCE_ROOT, &path);
   path = path.AppendASCII("net");
   path = path.AppendASCII("data");
-  path = path.AppendASCII("proxy_script_fetcher_unittest");
+  path = path.AppendASCII("pac_file_fetcher_unittest");
   GURL base_url = FilePathToFileURL(path);
   return GURL(base_url.spec() + "/" + relpath);
 }
@@ -209,9 +211,9 @@ class BasicNetworkDelegate : public NetworkDelegateImpl {
   DISALLOW_COPY_AND_ASSIGN(BasicNetworkDelegate);
 };
 
-class ProxyScriptFetcherImplTest : public PlatformTest {
+class PacFileFetcherImplTest : public PlatformTest {
  public:
-  ProxyScriptFetcherImplTest() {
+  PacFileFetcherImplTest() {
     test_server_.AddDefaultHandlers(base::FilePath(kDocRoot));
     context_.set_network_delegate(&network_delegate_);
   }
@@ -223,14 +225,15 @@ class ProxyScriptFetcherImplTest : public PlatformTest {
 };
 
 #if !BUILDFLAG(DISABLE_FILE_SUPPORT)
-TEST_F(ProxyScriptFetcherImplTest, FileUrl) {
-  ProxyScriptFetcherImpl pac_fetcher(&context_);
+TEST_F(PacFileFetcherImplTest, FileUrl) {
+  PacFileFetcherImpl pac_fetcher(&context_);
 
   {  // Fetch a non-existent file.
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(GetTestFileUrl("does-not-exist"), &text,
-                                   callback.callback());
+    int result =
+        pac_fetcher.Fetch(GetTestFileUrl("does-not-exist"), &text,
+                          callback.callback(), TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsError(ERR_FILE_NOT_FOUND));
     EXPECT_TRUE(text.empty());
@@ -238,8 +241,9 @@ TEST_F(ProxyScriptFetcherImplTest, FileUrl) {
   {  // Fetch a file that exists.
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(GetTestFileUrl("pac.txt"), &text,
-                                   callback.callback());
+    int result =
+        pac_fetcher.Fetch(GetTestFileUrl("pac.txt"), &text, callback.callback(),
+                          TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
     EXPECT_EQ(ASCIIToUTF16("-pac.txt-\n"), text);
@@ -249,16 +253,17 @@ TEST_F(ProxyScriptFetcherImplTest, FileUrl) {
 
 // Note that all mime types are allowed for PAC file, to be consistent
 // with other browsers.
-TEST_F(ProxyScriptFetcherImplTest, HttpMimeType) {
+TEST_F(PacFileFetcherImplTest, HttpMimeType) {
   ASSERT_TRUE(test_server_.Start());
 
-  ProxyScriptFetcherImpl pac_fetcher(&context_);
+  PacFileFetcherImpl pac_fetcher(&context_);
 
   {  // Fetch a PAC with mime type "text/plain"
     GURL url(test_server_.GetURL("/pac.txt"));
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(url, &text, callback.callback());
+    int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                   TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
     EXPECT_EQ(ASCIIToUTF16("-pac.txt-\n"), text);
@@ -267,7 +272,8 @@ TEST_F(ProxyScriptFetcherImplTest, HttpMimeType) {
     GURL url(test_server_.GetURL("/pac.html"));
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(url, &text, callback.callback());
+    int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                   TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
     EXPECT_EQ(ASCIIToUTF16("-pac.html-\n"), text);
@@ -276,23 +282,25 @@ TEST_F(ProxyScriptFetcherImplTest, HttpMimeType) {
     GURL url(test_server_.GetURL("/pac.nsproxy"));
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(url, &text, callback.callback());
+    int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                   TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
     EXPECT_EQ(ASCIIToUTF16("-pac.nsproxy-\n"), text);
   }
 }
 
-TEST_F(ProxyScriptFetcherImplTest, HttpStatusCode) {
+TEST_F(PacFileFetcherImplTest, HttpStatusCode) {
   ASSERT_TRUE(test_server_.Start());
 
-  ProxyScriptFetcherImpl pac_fetcher(&context_);
+  PacFileFetcherImpl pac_fetcher(&context_);
 
   {  // Fetch a PAC which gives a 500 -- FAIL
     GURL url(test_server_.GetURL("/500.pac"));
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(url, &text, callback.callback());
+    int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                   TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsError(ERR_PAC_STATUS_NOT_OK));
     EXPECT_TRUE(text.empty());
@@ -301,41 +309,44 @@ TEST_F(ProxyScriptFetcherImplTest, HttpStatusCode) {
     GURL url(test_server_.GetURL("/404.pac"));
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(url, &text, callback.callback());
+    int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                   TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsError(ERR_PAC_STATUS_NOT_OK));
     EXPECT_TRUE(text.empty());
   }
 }
 
-TEST_F(ProxyScriptFetcherImplTest, ContentDisposition) {
+TEST_F(PacFileFetcherImplTest, ContentDisposition) {
   ASSERT_TRUE(test_server_.Start());
 
-  ProxyScriptFetcherImpl pac_fetcher(&context_);
+  PacFileFetcherImpl pac_fetcher(&context_);
 
   // Fetch PAC scripts via HTTP with a Content-Disposition header -- should
   // have no effect.
   GURL url(test_server_.GetURL("/downloadable.pac"));
   base::string16 text;
   TestCompletionCallback callback;
-  int result = pac_fetcher.Fetch(url, &text, callback.callback());
+  int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                 TRAFFIC_ANNOTATION_FOR_TESTS);
   EXPECT_THAT(result, IsError(ERR_IO_PENDING));
   EXPECT_THAT(callback.WaitForResult(), IsOk());
   EXPECT_EQ(ASCIIToUTF16("-downloadable.pac-\n"), text);
 }
 
 // Verifies that PAC scripts are not being cached.
-TEST_F(ProxyScriptFetcherImplTest, NoCache) {
+TEST_F(PacFileFetcherImplTest, NoCache) {
   ASSERT_TRUE(test_server_.Start());
 
-  ProxyScriptFetcherImpl pac_fetcher(&context_);
+  PacFileFetcherImpl pac_fetcher(&context_);
 
   // Fetch a PAC script whose HTTP headers make it cacheable for 1 hour.
   GURL url(test_server_.GetURL("/cacheable_1hr.pac"));
   {
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(url, &text, callback.callback());
+    int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                   TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
     EXPECT_EQ(ASCIIToUTF16("-cacheable_1hr.pac-\n"), text);
@@ -350,7 +361,8 @@ TEST_F(ProxyScriptFetcherImplTest, NoCache) {
   {
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(url, &text, callback.callback());
+    int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                   TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
 
     // Expect any error. The exact error varies by platform.
@@ -358,10 +370,10 @@ TEST_F(ProxyScriptFetcherImplTest, NoCache) {
   }
 }
 
-TEST_F(ProxyScriptFetcherImplTest, TooLarge) {
+TEST_F(PacFileFetcherImplTest, TooLarge) {
   ASSERT_TRUE(test_server_.Start());
 
-  ProxyScriptFetcherImpl pac_fetcher(&context_);
+  PacFileFetcherImpl pac_fetcher(&context_);
 
   // Set the maximum response size to 50 bytes.
   int prev_size = pac_fetcher.SetSizeConstraint(50);
@@ -380,7 +392,8 @@ TEST_F(ProxyScriptFetcherImplTest, TooLarge) {
     const GURL& url = urls[i];
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(url, &text, callback.callback());
+    int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                   TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsError(ERR_FILE_TOO_BIG));
     EXPECT_TRUE(text.empty());
@@ -393,32 +406,34 @@ TEST_F(ProxyScriptFetcherImplTest, TooLarge) {
     GURL url(test_server_.GetURL("/pac.nsproxy"));
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(url, &text, callback.callback());
+    int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                   TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
     EXPECT_EQ(ASCIIToUTF16("-pac.nsproxy-\n"), text);
   }
 }
 
-// The ProxyScriptFetcher should be able to handle responses with an empty body.
-TEST_F(ProxyScriptFetcherImplTest, Empty) {
+// The PacFileFetcher should be able to handle responses with an empty body.
+TEST_F(PacFileFetcherImplTest, Empty) {
   ASSERT_TRUE(test_server_.Start());
 
-  ProxyScriptFetcherImpl pac_fetcher(&context_);
+  PacFileFetcherImpl pac_fetcher(&context_);
 
   GURL url(test_server_.GetURL("/empty"));
   base::string16 text;
   TestCompletionCallback callback;
-  int result = pac_fetcher.Fetch(url, &text, callback.callback());
+  int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                 TRAFFIC_ANNOTATION_FOR_TESTS);
   EXPECT_THAT(result, IsError(ERR_IO_PENDING));
   EXPECT_THAT(callback.WaitForResult(), IsOk());
   EXPECT_EQ(0u, text.size());
 }
 
-TEST_F(ProxyScriptFetcherImplTest, Hang) {
+TEST_F(PacFileFetcherImplTest, Hang) {
   ASSERT_TRUE(test_server_.Start());
 
-  ProxyScriptFetcherImpl pac_fetcher(&context_);
+  PacFileFetcherImpl pac_fetcher(&context_);
 
   // Set the timeout period to 0.5 seconds.
   base::TimeDelta prev_timeout =
@@ -430,7 +445,8 @@ TEST_F(ProxyScriptFetcherImplTest, Hang) {
     GURL url(test_server_.GetURL("/slow/proxy.pac?1.2"));
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(url, &text, callback.callback());
+    int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                   TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsError(ERR_TIMED_OUT));
     EXPECT_TRUE(text.empty());
@@ -443,27 +459,29 @@ TEST_F(ProxyScriptFetcherImplTest, Hang) {
     GURL url(test_server_.GetURL("/pac.nsproxy"));
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(url, &text, callback.callback());
+    int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                   TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
     EXPECT_EQ(ASCIIToUTF16("-pac.nsproxy-\n"), text);
   }
 }
 
-// The ProxyScriptFetcher should decode any content-codings
+// The PacFileFetcher should decode any content-codings
 // (like gzip, bzip, etc.), and apply any charset conversions to yield
 // UTF8.
-TEST_F(ProxyScriptFetcherImplTest, Encodings) {
+TEST_F(PacFileFetcherImplTest, Encodings) {
   ASSERT_TRUE(test_server_.Start());
 
-  ProxyScriptFetcherImpl pac_fetcher(&context_);
+  PacFileFetcherImpl pac_fetcher(&context_);
 
   // Test a response that is gzip-encoded -- should get inflated.
   {
     GURL url(test_server_.GetURL("/gzipped_pac"));
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(url, &text, callback.callback());
+    int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                   TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
     EXPECT_EQ(ASCIIToUTF16("This data was gzipped.\n"), text);
@@ -475,15 +493,16 @@ TEST_F(ProxyScriptFetcherImplTest, Encodings) {
     GURL url(test_server_.GetURL("/utf16be_pac"));
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(url, &text, callback.callback());
+    int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                   TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     EXPECT_THAT(callback.WaitForResult(), IsOk());
     EXPECT_EQ(ASCIIToUTF16("This was encoded as UTF-16BE.\n"), text);
   }
 }
 
-TEST_F(ProxyScriptFetcherImplTest, DataURLs) {
-  ProxyScriptFetcherImpl pac_fetcher(&context_);
+TEST_F(PacFileFetcherImplTest, DataURLs) {
+  PacFileFetcherImpl pac_fetcher(&context_);
 
   const char kEncodedUrl[] =
       "data:application/x-ns-proxy-autoconfig;base64,ZnVuY3Rpb24gRmluZFByb3h5R"
@@ -501,7 +520,8 @@ TEST_F(ProxyScriptFetcherImplTest, DataURLs) {
     GURL url(kEncodedUrl);
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(url, &text, callback.callback());
+    int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                   TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsOk());
     EXPECT_EQ(ASCIIToUTF16(kPacScript), text);
   }
@@ -514,18 +534,19 @@ TEST_F(ProxyScriptFetcherImplTest, DataURLs) {
     GURL url(kEncodedUrlBroken);
     base::string16 text;
     TestCompletionCallback callback;
-    int result = pac_fetcher.Fetch(url, &text, callback.callback());
+    int result = pac_fetcher.Fetch(url, &text, callback.callback(),
+                                   TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_FAILED));
   }
 }
 
-// Makes sure that a request gets through when the socket pool is full, so
-// ProxyScriptFetcherImpl can use the same URLRequestContext as everything else.
-TEST_F(ProxyScriptFetcherImplTest, Priority) {
-  // Enough requests to exceed the per-pool limit, which is also enough to
-  // exceed the per-group limit.
-  int num_requests = 10 + ClientSocketPoolManager::max_sockets_per_pool(
-                              HttpNetworkSession::NORMAL_SOCKET_POOL);
+// Makes sure that a request gets through when the socket group for the PAC URL
+// is full, so PacFileFetcherImpl can use the same URLRequestContext as
+// everything else.
+TEST_F(PacFileFetcherImplTest, IgnoresLimits) {
+  // Enough requests to exceed the per-group limit.
+  int num_requests = 2 + ClientSocketPoolManager::max_sockets_per_group(
+                             HttpNetworkSession::NORMAL_SOCKET_POOL);
 
   net::test_server::SimpleConnectionListener connection_listener(
       num_requests, net::test_server::SimpleConnectionListener::
@@ -533,17 +554,18 @@ TEST_F(ProxyScriptFetcherImplTest, Priority) {
   test_server_.SetConnectionListener(&connection_listener);
   ASSERT_TRUE(test_server_.Start());
 
-  std::vector<std::unique_ptr<ProxyScriptFetcherImpl>> pac_fetchers;
+  std::vector<std::unique_ptr<PacFileFetcherImpl>> pac_fetchers;
 
   TestCompletionCallback callback;
   base::string16 text;
   for (int i = 0; i < num_requests; i++) {
-    std::unique_ptr<ProxyScriptFetcherImpl> pac_fetcher =
-        std::make_unique<ProxyScriptFetcherImpl>(&context_);
+    std::unique_ptr<PacFileFetcherImpl> pac_fetcher =
+        std::make_unique<PacFileFetcherImpl>(&context_);
     GURL url(test_server_.GetURL("/hung"));
     // Fine to use the same string and callback for all of these, as they should
     // all hang.
-    int result = pac_fetcher->Fetch(url, &text, callback.callback());
+    int result = pac_fetcher->Fetch(url, &text, callback.callback(),
+                                    TRAFFIC_ANNOTATION_FOR_TESTS);
     EXPECT_THAT(result, IsError(ERR_IO_PENDING));
     pac_fetchers.push_back(std::move(pac_fetcher));
   }
@@ -557,14 +579,15 @@ TEST_F(ProxyScriptFetcherImplTest, Priority) {
   EXPECT_TRUE(test_server_.ShutdownAndWaitUntilComplete());
 }
 
-TEST_F(ProxyScriptFetcherImplTest, OnShutdown) {
+TEST_F(PacFileFetcherImplTest, OnShutdown) {
   ASSERT_TRUE(test_server_.Start());
 
-  ProxyScriptFetcherImpl pac_fetcher(&context_);
+  PacFileFetcherImpl pac_fetcher(&context_);
   base::string16 text;
   TestCompletionCallback callback;
-  int result = pac_fetcher.Fetch(test_server_.GetURL("/hung"), &text,
-                                 callback.callback());
+  int result =
+      pac_fetcher.Fetch(test_server_.GetURL("/hung"), &text,
+                        callback.callback(), TRAFFIC_ANNOTATION_FOR_TESTS);
   EXPECT_THAT(result, IsError(ERR_IO_PENDING));
   EXPECT_EQ(1u, context_.url_requests()->size());
 
@@ -578,20 +601,21 @@ TEST_F(ProxyScriptFetcherImplTest, OnShutdown) {
   EXPECT_FALSE(callback.have_result());
 
   result = pac_fetcher.Fetch(test_server_.GetURL("/hung"), &text,
-                             callback.callback());
+                             callback.callback(), TRAFFIC_ANNOTATION_FOR_TESTS);
   EXPECT_THAT(result, IsError(ERR_CONTEXT_SHUT_DOWN));
 }
 
-TEST_F(ProxyScriptFetcherImplTest, OnShutdownWithNoLiveRequest) {
+TEST_F(PacFileFetcherImplTest, OnShutdownWithNoLiveRequest) {
   ASSERT_TRUE(test_server_.Start());
 
-  ProxyScriptFetcherImpl pac_fetcher(&context_);
+  PacFileFetcherImpl pac_fetcher(&context_);
   pac_fetcher.OnShutdown();
 
   base::string16 text;
   TestCompletionCallback callback;
-  int result = pac_fetcher.Fetch(test_server_.GetURL("/hung"), &text,
-                                 callback.callback());
+  int result =
+      pac_fetcher.Fetch(test_server_.GetURL("/hung"), &text,
+                        callback.callback(), TRAFFIC_ANNOTATION_FOR_TESTS);
   EXPECT_THAT(result, IsError(ERR_CONTEXT_SHUT_DOWN));
   EXPECT_EQ(0u, context_.url_requests()->size());
 }

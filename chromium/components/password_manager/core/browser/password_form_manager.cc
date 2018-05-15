@@ -40,7 +40,7 @@
 
 using autofill::FormStructure;
 using autofill::PasswordForm;
-using autofill::PossibleUsernamePair;
+using autofill::ValueElementPair;
 using base::Time;
 
 // Shorten the name to spare line breaks. The code provides enough context
@@ -110,7 +110,7 @@ void SanitizePossibleUsernames(PasswordForm* form) {
 
   // Filter out |form->username_value| and sensitive information.
   const base::string16& username_value = form->username_value;
-  base::EraseIf(usernames, [&username_value](const PossibleUsernamePair& pair) {
+  base::EraseIf(usernames, [&username_value](const ValueElementPair& pair) {
     return pair.first == username_value ||
            autofill::IsValidCreditCardNumber(pair.first) ||
            autofill::IsSSN(pair.first);
@@ -152,7 +152,7 @@ void SetFieldLabelsOnUpdate(const autofill::ServerFieldType password_type,
 // Sets the autofill type of the password field stored in |submitted_form| to
 // |password_type| in |field_types| map.
 void SetFieldLabelsOnSave(const autofill::ServerFieldType password_type,
-                          const autofill::PasswordForm& submitted_form,
+                          const autofill::PasswordForm& form,
                           FieldTypeMap* field_types) {
   DCHECK(password_type == autofill::PASSWORD ||
          password_type == autofill::PROBABLY_ACCOUNT_CREATION_PASSWORD ||
@@ -160,11 +160,11 @@ void SetFieldLabelsOnSave(const autofill::ServerFieldType password_type,
          password_type == autofill::NOT_ACCOUNT_CREATION_PASSWORD)
       << password_type;
 
-  if (!submitted_form.new_password_element.empty()) {
-    (*field_types)[submitted_form.new_password_element] = password_type;
+  if (!form.new_password_element.empty()) {
+    (*field_types)[form.new_password_element] = password_type;
   } else {
-    DCHECK(!submitted_form.password_element.empty());
-    (*field_types)[submitted_form.password_element] = password_type;
+    DCHECK(!form.password_element.empty());
+    (*field_types)[form.password_element] = password_type;
   }
 }
 
@@ -261,6 +261,8 @@ void PasswordFormManager::Init(
         client_->IsMainFrameSecure(), client_->GetUkmSourceId());
   }
 
+  metrics_recorder_->RecordFormSignature(observed_form_signature_);
+
   if (owned_form_fetcher_)
     owned_form_fetcher_->Fetch();
   form_fetcher_->AddConsumer(this);
@@ -337,14 +339,13 @@ PasswordFormManager::MatchResultMask PasswordFormManager::DoesManage(
   if (CalculateFormSignature(form.form_data) == observed_form_signature_)
     result |= RESULT_SIGNATURE_MATCH;
 
-  if (!form.form_data.name.empty() &&
-      form.form_data.name == observed_form_.form_data.name)
+  if (form.form_data.name == observed_form_.form_data.name)
     result |= RESULT_FORM_NAME_MATCH;
 
   // Note: although saved password forms might actually have an empty action
   // URL if they were imported (see bug 1107719), the |form| we see here comes
   // never from the password store, and should have an exactly matching action.
-  if (!form.action.is_empty() && form.action == observed_form_.action)
+  if (form.action == observed_form_.action)
     result |= RESULT_ACTION_MATCH;
 
   return result;
@@ -488,9 +489,8 @@ void PasswordFormManager::UpdateUsername(const base::string16& new_username) {
   // |username_value| and |username_element| of the submitted form. When the
   // user has to override the username, Chrome will send a username vote.
   if (!submitted_form_->username_value.empty()) {
-    credential.other_possible_usernames.push_back(
-        autofill::PossibleUsernamePair(submitted_form_->username_value,
-                                       submitted_form_->username_element));
+    credential.other_possible_usernames.push_back(autofill::ValueElementPair(
+        submitted_form_->username_value, submitted_form_->username_element));
   }
 
   ProvisionallySave(credential, IGNORE_OTHER_POSSIBLE_USERNAMES);
@@ -781,7 +781,7 @@ bool PasswordFormManager::FindUsernameInOtherPossibleUsernames(
     const base::string16& username) {
   DCHECK(!username_correction_vote_);
 
-  for (const PossibleUsernamePair& pair : match.other_possible_usernames) {
+  for (const ValueElementPair& pair : match.other_possible_usernames) {
     if (pair.first == username) {
       username_correction_vote_.reset(new autofill::PasswordForm(match));
       username_correction_vote_->username_element = pair.second;
@@ -887,19 +887,21 @@ bool PasswordFormManager::UploadPasswordVote(
       autofill::AutofillUploadContents::Field::NO_INFORMATION;
   if (autofill_type != autofill::USERNAME) {
     if (has_autofill_vote) {
-      DCHECK(submitted_form_);
       bool is_update = autofill_type == autofill::NEW_PASSWORD ||
                        autofill_type == autofill::PROBABLY_NEW_PASSWORD ||
                        autofill_type == autofill::NOT_NEW_PASSWORD;
+
       if (is_update) {
-        if (submitted_form_->new_password_element.empty())
+        if (form_to_upload.new_password_element.empty())
           return false;
-        SetFieldLabelsOnUpdate(autofill_type, *submitted_form_, &field_types);
+        SetFieldLabelsOnUpdate(autofill_type, form_to_upload, &field_types);
       } else {  // Saving.
-        SetFieldLabelsOnSave(autofill_type, *submitted_form_, &field_types);
+        SetFieldLabelsOnSave(autofill_type, form_to_upload, &field_types);
       }
-      field_types[submitted_form_->confirmation_password_element] =
-          autofill::CONFIRMATION_PASSWORD;
+      if (autofill_type != autofill::ACCOUNT_CREATION_PASSWORD) {
+        field_types[submitted_form_->confirmation_password_element] =
+            autofill::CONFIRMATION_PASSWORD;
+      }
     }
     if (autofill_type != autofill::ACCOUNT_CREATION_PASSWORD) {
       if (generation_popup_was_shown_)
@@ -1158,6 +1160,8 @@ void PasswordFormManager::CreatePendingCredentials() {
   pending_credentials_.preferred = submitted_form_->preferred;
   pending_credentials_.form_has_autofilled_value =
       submitted_form_->form_has_autofilled_value;
+  pending_credentials_.all_possible_passwords =
+      submitted_form_->all_possible_passwords;
   CopyFieldPropertiesMasks(*submitted_form_, &pending_credentials_);
 
   // If we're dealing with an API-driven provisionally saved form, then take

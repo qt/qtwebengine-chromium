@@ -11,6 +11,8 @@
 #define LIBANGLE_RENDERER_VULKAN_FRAMEBUFFERVK_H_
 
 #include "libANGLE/renderer/FramebufferImpl.h"
+#include "libANGLE/renderer/RenderTargetCache.h"
+#include "libANGLE/renderer/vulkan/CommandGraph.h"
 #include "libANGLE/renderer/vulkan/vk_cache_utils.h"
 
 namespace rx
@@ -19,7 +21,7 @@ class RendererVk;
 class RenderTargetVk;
 class WindowSurfaceVk;
 
-class FramebufferVk : public FramebufferImpl, public ResourceVk
+class FramebufferVk : public FramebufferImpl, public vk::CommandGraphResource
 {
   public:
     // Factory methods so we don't have to use constructors with overloads.
@@ -79,13 +81,14 @@ class FramebufferVk : public FramebufferImpl, public ResourceVk
 
     bool checkStatus(const gl::Context *context) const override;
 
-    void syncState(const gl::Context *context,
-                   const gl::Framebuffer::DirtyBits &dirtyBits) override;
+    gl::Error syncState(const gl::Context *context,
+                        const gl::Framebuffer::DirtyBits &dirtyBits) override;
 
     gl::Error getSamplePosition(size_t index, GLfloat *xy) const override;
 
     const vk::RenderPassDesc &getRenderPassDesc(const gl::Context *context);
-    gl::Error getRenderNode(const gl::Context *context, vk::CommandGraphNode **nodeOut);
+    gl::Error getCommandGraphNodeForDraw(const gl::Context *context,
+                                         vk::CommandGraphNode **nodeOut);
 
   private:
     FramebufferVk(const gl::FramebufferState &state);
@@ -94,11 +97,16 @@ class FramebufferVk : public FramebufferImpl, public ResourceVk
     gl::ErrorOrResult<vk::Framebuffer *> getFramebuffer(const gl::Context *context,
                                                         RendererVk *rendererVk);
 
+    gl::Error clearAttachmentsWithScissorRegion(const gl::Context *context,
+                                                bool clearColor,
+                                                bool clearDepth,
+                                                bool clearStencil);
+
     WindowSurfaceVk *mBackbuffer;
 
     Optional<vk::RenderPassDesc> mRenderPassDesc;
     vk::Framebuffer mFramebuffer;
-    Serial mLastRenderNodeSerial;
+    RenderTargetCache<RenderTargetVk> mRenderTargetCache;
 };
 
 }  // namespace rx

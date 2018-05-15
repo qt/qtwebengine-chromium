@@ -9,11 +9,11 @@
 #include "base/run_loop.h"
 #include "base/scoped_observer.h"
 #include "base/strings/stringprintf.h"
-#include "chrome/browser/extensions/browsertest_util.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "extensions/browser/browsertest_util.h"
 #include "extensions/browser/state_store.h"
 #include "extensions/test/extension_test_message_listener.h"
 #include "extensions/test/test_extension_dir.h"
@@ -119,7 +119,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionActionAPITest, TestNoUnnecessaryIO) {
          domAutomationController.send('pass');)";
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  int tab_id = SessionTabHelper::IdForTab(web_contents);
+  SessionID tab_id = SessionTabHelper::IdForTab(web_contents);
   constexpr char kBrowserActionKey[] = "browser_action";
   TestStateStoreObserver test_state_store_observer(profile(), extension->id());
 
@@ -128,7 +128,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionActionAPITest, TestNoUnnecessaryIO) {
                                                      extension->id());
     // First, update a specific tab.
     std::string update_options =
-        base::StringPrintf("{text: 'New Text', tabId: %d}", tab_id);
+        base::StringPrintf("{text: 'New Text', tabId: %d}", tab_id.id());
     EXPECT_EQ("pass", browsertest_util::ExecuteScriptInBackgroundPage(
                           profile(), extension->id(),
                           base::StringPrintf(kUpdate, update_options.c_str())));

@@ -3,9 +3,11 @@
 // found in the LICENSE file.
 
 syntax = "proto3";
+option optimize_for = LITE_RUNTIME;
 
 // This file defines messages used for starting, stopping, and managing VMs.
 package vm_tools.concierge;
+option go_package = "vm_concierge";
 
 // Specification of the key components of a VM.
 message VirtualMachineSpec {
@@ -83,6 +85,11 @@ message StartVmRequest {
 
   // If true, concierge should also perform termina-specific setup.
   bool start_termina = 5;
+
+  // If true, a file descriptor must be passed along with the message and that
+  // file descriptor will be used for storage.
+  // Ignored unless |start_termina| is true.
+  bool use_fd_for_storage = 6;
 }
 
 // Information sent back by vm_concierge in response to a StartVm dbus message.
@@ -149,6 +156,12 @@ enum DiskImageStatus {
 
   // Unable to create the disk image.
   DISK_STATUS_FAILED = 3;
+
+  // Specified Disk does not exist.
+  DISK_STATUS_DOES_NOT_EXIST = 4;
+
+  // The specified disk was destroyed.
+  DISK_STATUS_DESTROYED = 5;
 }
 
 // Request to concierge to create a disk image.
@@ -181,4 +194,131 @@ message CreateDiskImageResponse {
 
   // The failure reason if the disk image could not be created or doesn't exist.
   string failure_reason = 3;
+}
+
+// Request to concierge to destroy a disk image.
+message DestroyDiskImageRequest {
+  // The cryptohome id for the user's encrypted storage.
+  string cryptohome_id = 1;
+
+  // The path to the disk image. This must be a relative path.
+  string disk_path = 2;
+
+  // The storage location for the disk image.
+  StorageLocation storage_location = 3;
+}
+
+// Response to a DestroyDiskImageRequest.
+message DestroyDiskImageResponse {
+  // If DISK_STATUS_DESTROYED, the disk image has been successfully destroyed.
+  // If DISK_STATUS_DOES_NOT_EXIST, the disk image had already been removed.
+  DiskImageStatus status = 1;
+
+  // The failure reason if the disk image could not be destroyed or doesn't exist.
+  string failure_reason = 3;
+}
+
+// Request to list all VM disk images in the given storage area.
+message ListVmDisksRequest {
+  // The cryptohome id for the user's encrypted storage.
+  string cryptohome_id = 1;
+
+  // The storage location to check.
+  StorageLocation storage_location = 2;
+}
+
+// Response to ListVmDisks {
+message ListVmDisksResponse {
+  // If true, the images array is valid.
+  bool success = 1;
+
+  // List of disk images.
+  repeated string images = 2;
+
+  // The failure reason if the disks could not be listed.
+  string failure_reason = 3;
+}
+
+// Signal for when a container has started up.
+message ContainerStartedSignal {
+  // Name of the VM the container is in.
+  string vm_name = 1;
+
+  // Name of the container within the VM.
+  string container_name = 2;
+}
+
+// Request to start a specified container image within a VM. If the container
+// does not exist in the VM it will be created. Used with the StartContainer
+// D-Bus message into vm_concierge.
+message StartContainerRequest {
+  // Name of the VM to start the container in.
+  string vm_name = 1;
+
+  // Name of the container to start within the VM. If empty, the default
+  // container name will be used.
+  string container_name = 2;
+
+  // Username for the default user in the container. This is only used if the
+  // container has not been created yet.
+  string container_username = 3;
+
+  // Async mode is always used now.
+  bool async = 4 [deprecated=true];
+}
+
+enum ContainerStatus {
+  // Unknown status.
+  CONTAINER_STATUS_UNKNOWN = 0;
+
+  // The container is already running.
+  CONTAINER_STATUS_RUNNING = 1;
+
+  // The container is currently starting up.
+  CONTAINER_STATUS_STARTING = 2;
+
+  // The container failed to startup.
+  CONTAINER_STATUS_FAILURE = 3;
+}
+
+// Response sent back by vm_concierge when it receives a StartContaienr D-Bus
+// message.
+message StartContainerResponse {
+  // Use the status field instead.
+  bool success = 1 [deprecated=true];
+
+  // The failure_reason if the status is CONTAINER_STATUS_FAILURE.
+  string failure_reason = 2;
+
+  // The status of the container as a result of the StartContainer call. If the
+  // status is CONTAINER_STATUS_STARTING then a D-Bus signal will be sent to
+  // indicate whether success or failure occurred. The signal should be
+  // registered for before the StartContainer call is made because it may be
+  // sent before the call returns.
+  ContainerStatus status = 3;
+}
+
+// Request to launch on application in the specified VM/container. Used with the
+// LaunchContainerApplication D-Bus message into vm_concierge.
+message LaunchContainerApplicationRequest {
+  // Name of the VM to target.
+  string vm_name = 1;
+
+  // Name of the container within the VM to target, if empty the default
+  // container name will be used.
+  string container_name = 2;
+
+  // ID of the application to launch, should map to the desktop_file_id that
+  // is in the application list sent back from the container.
+  string desktop_file_id = 3;
+}
+
+// Response sent back by vm_concierge when it receives a
+// LaunchContainerApplication D-Bus message.
+message LaunchContainerApplicationResponse {
+  // If true, the requested application launched successfully.
+  bool success = 1;
+
+  // The failure_reason if the requested application could not be started.
+  string failure_reason = 2;
 }

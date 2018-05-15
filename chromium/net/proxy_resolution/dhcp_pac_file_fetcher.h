@@ -11,11 +11,14 @@
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
 #include "net/proxy_resolution/pac_file_fetcher.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
 #include "url/gurl.h"
 
 namespace net {
 
-// Interface for classes that can fetch a proxy script as configured via DHCP.
+class NetLogWithSource;
+
+// Interface for classes that can fetch a PAC file as configured via DHCP.
 //
 // The Fetch method on this interface tries to retrieve the most appropriate
 // PAC script configured via DHCP.
@@ -23,10 +26,10 @@ namespace net {
 // Normally there are zero or one DHCP scripts configured, but in the
 // presence of multiple adapters with DHCP enabled, the fetcher resolves
 // which PAC script to use if one or more are available.
-class NET_EXPORT_PRIVATE DhcpProxyScriptFetcher {
+class NET_EXPORT_PRIVATE DhcpPacFileFetcher {
  public:
   // Destruction should cancel any outstanding requests.
-  virtual ~DhcpProxyScriptFetcher();
+  virtual ~DhcpPacFileFetcher();
 
   // Attempts to retrieve the most appropriate PAC script configured via DHCP,
   // and invokes |callback| on completion.
@@ -57,7 +60,9 @@ class NET_EXPORT_PRIVATE DhcpProxyScriptFetcher {
   //
   // Only one fetch is allowed to be outstanding at a time.
   virtual int Fetch(base::string16* utf16_text,
-                    const CompletionCallback& callback) = 0;
+                    const CompletionCallback& callback,
+                    const NetLogWithSource& net_log,
+                    const NetworkTrafficAnnotationTag traffic_annotation) = 0;
 
   // Aborts the in-progress fetch (if any).
   virtual void Cancel() = 0;
@@ -76,22 +81,24 @@ class NET_EXPORT_PRIVATE DhcpProxyScriptFetcher {
   virtual std::string GetFetcherName() const;
 
  protected:
-  DhcpProxyScriptFetcher();
+  DhcpPacFileFetcher();
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(DhcpProxyScriptFetcher);
+  DISALLOW_COPY_AND_ASSIGN(DhcpPacFileFetcher);
 };
 
 // A do-nothing retriever, always returns synchronously with
 // ERR_NOT_IMPLEMENTED result and empty text.
-class NET_EXPORT_PRIVATE DoNothingDhcpProxyScriptFetcher
-    : public DhcpProxyScriptFetcher {
+class NET_EXPORT_PRIVATE DoNothingDhcpPacFileFetcher
+    : public DhcpPacFileFetcher {
  public:
-  DoNothingDhcpProxyScriptFetcher();
-  ~DoNothingDhcpProxyScriptFetcher() override;
+  DoNothingDhcpPacFileFetcher();
+  ~DoNothingDhcpPacFileFetcher() override;
 
   int Fetch(base::string16* utf16_text,
-            const CompletionCallback& callback) override;
+            const CompletionCallback& callback,
+            const NetLogWithSource& net_log,
+            const NetworkTrafficAnnotationTag traffic_annotation) override;
   void Cancel() override;
   void OnShutdown() override;
   const GURL& GetPacURL() const override;
@@ -99,7 +106,7 @@ class NET_EXPORT_PRIVATE DoNothingDhcpProxyScriptFetcher
 
  private:
   GURL gurl_;
-  DISALLOW_COPY_AND_ASSIGN(DoNothingDhcpProxyScriptFetcher);
+  DISALLOW_COPY_AND_ASSIGN(DoNothingDhcpPacFileFetcher);
 };
 
 }  // namespace net

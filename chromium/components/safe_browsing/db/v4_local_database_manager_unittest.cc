@@ -13,14 +13,15 @@
 #include "base/run_loop.h"
 #include "base/test/test_simple_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "components/safe_browsing/db/notification_types.h"
 #include "components/safe_browsing/db/v4_database.h"
 #include "components/safe_browsing/db/v4_protocol_manager_util.h"
 #include "components/safe_browsing/db/v4_test_util.h"
+#include "content/public/common/weak_wrapper_shared_url_loader_factory.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
 #include "crypto/sha2.h"
-#include "net/url_request/test_url_fetcher_factory.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "services/network/test/test_url_loader_factory.h"
 #include "testing/platform_test.h"
 
 namespace safe_browsing {
@@ -41,13 +42,11 @@ FullHash HashForUrl(const GURL& url) {
 class FakeGetHashProtocolManager : public V4GetHashProtocolManager {
  public:
   FakeGetHashProtocolManager(
-      net::URLRequestContextGetter* request_context_getter,
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       const StoresToCheck& stores_to_check,
       const V4ProtocolConfig& config,
       const FullHashInfos& full_hash_infos)
-      : V4GetHashProtocolManager(request_context_getter,
-                                 stores_to_check,
-                                 config),
+      : V4GetHashProtocolManager(url_loader_factory, stores_to_check, config),
         full_hash_infos_(full_hash_infos) {}
 
   void GetFullHashes(const FullHashToStoreAndHashPrefixesMap&,
@@ -69,11 +68,11 @@ class FakeGetHashProtocolManagerFactory
       : full_hash_infos_(full_hash_infos) {}
 
   std::unique_ptr<V4GetHashProtocolManager> CreateProtocolManager(
-      net::URLRequestContextGetter* request_context_getter,
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       const StoresToCheck& stores_to_check,
       const V4ProtocolConfig& config) override {
     return std::make_unique<FakeGetHashProtocolManager>(
-        request_context_getter, stores_to_check, config, full_hash_infos_);
+        url_loader_factory, stores_to_check, config, full_hash_infos_);
   }
 
  private:
@@ -285,6 +284,10 @@ class V4LocalDatabaseManagerTest : public PlatformTest {
   void SetUp() override {
     PlatformTest::SetUp();
 
+    test_shared_loader_factory_ =
+        base::MakeRefCounted<content::WeakWrapperSharedURLLoaderFactory>(
+            &test_url_loader_factory_);
+
     ASSERT_TRUE(base_dir_.CreateUniqueTempDir());
     DVLOG(1) << "base_dir_: " << base_dir_.GetPath().value();
 
@@ -357,7 +360,7 @@ class V4LocalDatabaseManagerTest : public PlatformTest {
   }
 
   void StartLocalDatabaseManager() {
-    v4_local_database_manager_->StartOnIOThread(nullptr,
+    v4_local_database_manager_->StartOnIOThread(test_shared_loader_factory_,
                                                 GetTestV4ProtocolConfig());
   }
 
@@ -393,6 +396,8 @@ class V4LocalDatabaseManagerTest : public PlatformTest {
       {SB_THREAT_TYPE_URL_PHISHING, SB_THREAT_TYPE_URL_MALWARE,
        SB_THREAT_TYPE_URL_UNWANTED});
 
+  network::TestURLLoaderFactory test_url_loader_factory_;
+  scoped_refptr<network::SharedURLLoaderFactory> test_shared_loader_factory_;
   base::ScopedTempDir base_dir_;
   ExtendedReportingLevel extended_reporting_level_;
   ExtendedReportingLevelCallback erl_callback_;
@@ -434,7 +439,6 @@ TEST_F(V4LocalDatabaseManagerTest,
 
 TEST_F(V4LocalDatabaseManagerTest, TestCheckBrowseUrlWithFakeDbReturnsMatch) {
   WaitForTasksOnTaskRunner();
-  net::TestURLFetcherFactory factory;
 
   std::string url_bad_no_scheme("example.com/bad/");
   FullHash bad_full_hash(crypto::SHA256HashString(url_bad_no_scheme));
@@ -717,7 +721,6 @@ TEST_F(V4LocalDatabaseManagerTest, CancelQueued) {
 // called async.
 TEST_F(V4LocalDatabaseManagerTest, PerformFullHashCheckCalledAsync) {
   SetupFakeManager();
-  net::TestURLFetcherFactory factory;
 
   std::string url_bad_no_scheme("example.com/bad/");
   FullHash bad_full_hash(crypto::SHA256HashString(url_bad_no_scheme));
@@ -743,7 +746,6 @@ TEST_F(V4LocalDatabaseManagerTest, PerformFullHashCheckCalledAsync) {
 
 TEST_F(V4LocalDatabaseManagerTest, UsingWeakPtrDropsCallback) {
   SetupFakeManager();
-  net::TestURLFetcherFactory factory;
 
   std::string url_bad_no_scheme("example.com/bad/");
   FullHash bad_full_hash(crypto::SHA256HashString(url_bad_no_scheme));
@@ -1114,10 +1116,10 @@ TEST_F(V4LocalDatabaseManagerTest, DeleteUnusedStoreFileRandomFileNotDeleted) {
 }
 
 TEST_F(V4LocalDatabaseManagerTest, NotificationOnUpdate) {
-  content::WindowedNotificationObserver observer(
-      NOTIFICATION_SAFE_BROWSING_UPDATE_COMPLETE,
-      content::Source<SafeBrowsingDatabaseManager>(
-          v4_local_database_manager_.get()));
+  base::RunLoop run_loop;
+  auto callback_subscription =
+      v4_local_database_manager_->RegisterDatabaseUpdatedCallback(
+          run_loop.QuitClosure());
 
   // Creates and associates a V4Database instance.
   StoreAndHashPrefixes store_and_hash_prefixes;
@@ -1125,8 +1127,7 @@ TEST_F(V4LocalDatabaseManagerTest, NotificationOnUpdate) {
 
   v4_local_database_manager_->DatabaseUpdated();
 
-  // This observer waits until it receives the notification.
-  observer.Wait();
+  run_loop.Run();
 }
 
 }  // namespace safe_browsing

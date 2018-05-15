@@ -65,7 +65,7 @@ class CFX_Font {
   uint32_t GetGlyphWidth(uint32_t glyph_index);
   int GetAscent() const;
   int GetDescent() const;
-  bool GetGlyphBBox(uint32_t glyph_index, FX_RECT& bbox);
+  bool GetGlyphBBox(uint32_t glyph_index, FX_RECT* pBBox);
   bool IsItalic() const;
   bool IsBold() const;
   bool IsFixedWidth() const;
@@ -74,7 +74,7 @@ class CFX_Font {
   ByteString GetFamilyName() const;
   ByteString GetFaceName() const;
   bool IsTTFont() const;
-  bool GetBBox(FX_RECT& bbox);
+  bool GetBBox(FX_RECT* pBBox);
   bool IsEmbedded() const { return m_bEmbedded; }
   uint8_t* GetSubData() const { return m_pGsubData.get(); }
   void SetSubData(uint8_t* data) { m_pGsubData.reset(data); }
@@ -84,7 +84,7 @@ class CFX_Font {
 #endif
   uint8_t* GetFontData() const { return m_pFontData; }
   uint32_t GetSize() const { return m_dwSize; }
-  void AdjustMMParams(int glyph_index, uint32_t width, int weight) const;
+  void AdjustMMParams(int glyph_index, uint32_t dest_width, int weight) const;
 
   CFX_PathData* LoadGlyphPathImpl(uint32_t glyph_index,
                                   uint32_t dest_width) const;

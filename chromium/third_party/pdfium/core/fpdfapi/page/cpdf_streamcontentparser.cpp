@@ -37,6 +37,7 @@
 #include "core/fxge/cfx_graphstatedata.h"
 #include "third_party/base/logging.h"
 #include "third_party/base/ptr_util.h"
+#include "third_party/base/span.h"
 #include "third_party/base/stl_util.h"
 
 namespace {
@@ -586,10 +587,10 @@ void CPDF_StreamContentParser::Handle_EOFillStrokePath() {
 
 void CPDF_StreamContentParser::Handle_BeginMarkedContent_Dictionary() {
   ByteString tag = GetString(1);
-  CPDF_Object* pProperty = GetObject(0);
-  if (!pProperty) {
+  const CPDF_Object* pProperty = GetObject(0);
+  if (!pProperty)
     return;
-  }
+
   bool bDirect = true;
   if (pProperty->IsName()) {
     pProperty = FindResourceObj("Properties", pProperty->GetString());
@@ -597,7 +598,7 @@ void CPDF_StreamContentParser::Handle_BeginMarkedContent_Dictionary() {
       return;
     bDirect = false;
   }
-  if (CPDF_Dictionary* pDict = pProperty->AsDictionary()) {
+  if (const CPDF_Dictionary* pDict = pProperty->AsDictionary()) {
     m_CurContentMark.AddMark(tag, pDict, bDirect);
   }
 }
@@ -1515,7 +1516,8 @@ uint32_t CPDF_StreamContentParser::Parse(const uint8_t* pData,
                                                           pData);
 
   uint32_t InitObjCount = m_pObjectHolder->GetPageObjectList()->size();
-  CPDF_StreamParser syntax(pData, dwSize, m_pDocument->GetByteStringPool());
+  CPDF_StreamParser syntax(pdfium::make_span(pData, dwSize),
+                           m_pDocument->GetByteStringPool());
   CPDF_StreamParserAutoClearer auto_clearer(&m_pSyntax, &syntax);
   while (1) {
     uint32_t cost = m_pObjectHolder->GetPageObjectList()->size() - InitObjCount;

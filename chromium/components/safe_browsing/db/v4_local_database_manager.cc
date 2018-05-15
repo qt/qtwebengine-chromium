@@ -18,15 +18,14 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_util.h"
 #include "base/task_scheduler/post_task.h"
-#include "components/safe_browsing/db/notification_types.h"
+#include "base/timer/elapsed_timer.h"
 #include "components/safe_browsing/db/v4_feature_list.h"
 #include "components/safe_browsing/db/v4_protocol_manager_util.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_service.h"
 #include "crypto/sha2.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 
 using content::BrowserThread;
-using base::TimeTicks;
 
 namespace safe_browsing {
 
@@ -471,14 +470,14 @@ bool V4LocalDatabaseManager::IsSupported() const {
 }
 
 void V4LocalDatabaseManager::StartOnIOThread(
-    net::URLRequestContextGetter* request_context_getter,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     const V4ProtocolConfig& config) {
-  SafeBrowsingDatabaseManager::StartOnIOThread(request_context_getter, config);
+  SafeBrowsingDatabaseManager::StartOnIOThread(url_loader_factory, config);
 
   db_updated_callback_ = base::Bind(&V4LocalDatabaseManager::DatabaseUpdated,
                                     weak_factory_.GetWeakPtr());
 
-  SetupUpdateProtocolManager(request_context_getter, config);
+  SetupUpdateProtocolManager(url_loader_factory, config);
   SetupDatabase();
 
   enabled_ = true;
@@ -561,21 +560,14 @@ void V4LocalDatabaseManager::DatabaseUpdated() {
 
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
-        base::Bind(&V4LocalDatabaseManager::PostUpdateNotificationOnUIThread,
-                   content::Source<SafeBrowsingDatabaseManager>(this)));
+        base::BindOnce(
+            &V4LocalDatabaseManager::PostUpdateNotificationOnUIThread, this));
   }
 }
 
-// static
-void V4LocalDatabaseManager::PostUpdateNotificationOnUIThread(
-    const content::NotificationSource& source) {
+void V4LocalDatabaseManager::PostUpdateNotificationOnUIThread() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-
-  // The notification needs to be posted on the UI thread because the extension
-  // checker is observing UI thread's notification service.
-  content::NotificationService::current()->Notify(
-      NOTIFICATION_SAFE_BROWSING_UPDATE_COMPLETE, source,
-      content::NotificationService::NoDetails());
+  update_complete_callback_list_.Notify();
 }
 
 void V4LocalDatabaseManager::DeletePVer3StoreFiles() {
@@ -634,8 +626,7 @@ bool V4LocalDatabaseManager::GetPrefixMatches(
   DCHECK(enabled_);
   DCHECK(v4_database_);
 
-  const base::TimeTicks before = TimeTicks::Now();
-
+  base::ElapsedTimer timer;
   full_hash_to_store_and_hash_prefixes->clear();
   for (const auto& full_hash : check->full_hashes) {
     StoreAndHashPrefixes matched_store_and_hash_prefixes;
@@ -647,16 +638,11 @@ bool V4LocalDatabaseManager::GetPrefixMatches(
     }
   }
 
-  // TODO(vakh): Only log SafeBrowsing.V4GetPrefixMatches.Time once PVer3 code
-  // is removed.
   // NOTE(vakh): This doesn't distinguish which stores it's searching through.
   // However, the vast majority of the entries in this histogram will be from
   // searching the three CHECK_BROWSE_URL stores.
-  base::TimeDelta diff = TimeTicks::Now() - before;
-  UMA_HISTOGRAM_TIMES("SB2.FilterCheck", diff);
-  UMA_HISTOGRAM_CUSTOM_TIMES("SafeBrowsing.V4GetPrefixMatches.Time", diff,
-                             base::TimeDelta::FromMicroseconds(20),
-                             base::TimeDelta::FromSeconds(1), 50);
+  UMA_HISTOGRAM_COUNTS_10M("SafeBrowsing.V4GetPrefixMatches.TimeUs",
+                           timer.Elapsed().InMicroseconds());
   return !full_hash_to_store_and_hash_prefixes->empty();
 }
 
@@ -932,14 +918,14 @@ void V4LocalDatabaseManager::SetupDatabase() {
 }
 
 void V4LocalDatabaseManager::SetupUpdateProtocolManager(
-    net::URLRequestContextGetter* request_context_getter,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     const V4ProtocolConfig& config) {
   V4UpdateCallback update_callback =
       base::Bind(&V4LocalDatabaseManager::UpdateRequestCompleted,
                  weak_factory_.GetWeakPtr());
 
   v4_update_protocol_manager_ = V4UpdateProtocolManager::Create(
-      request_context_getter, config, update_callback,
+      url_loader_factory, config, update_callback,
       extended_reporting_level_callback_);
 }
 

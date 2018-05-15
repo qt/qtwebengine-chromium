@@ -157,14 +157,16 @@ void VirtualTimeController::SetVirtualTimePolicy(base::TimeDelta next_budget,
           .SetMaxVirtualTimeTaskStarvationCount(max_task_starvation_count_)
           .SetWaitForNavigation(wait_for_navigation)
           .Build(),
-      base::Bind(&VirtualTimeController::SetVirtualTimePolicyDone,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::BindOnce(&VirtualTimeController::SetVirtualTimePolicyDone,
+                     weak_ptr_factory_.GetWeakPtr()));
 }
 
 void VirtualTimeController::SetVirtualTimePolicyDone(
     std::unique_ptr<emulation::SetVirtualTimePolicyResult> result) {
   if (result) {
-    virtual_time_base_ = base::Time::FromJsTime(result->GetVirtualTimeBase());
+    virtual_time_base_ =
+        base::TimeTicks() +
+        base::TimeDelta::FromMillisecondsD(result->GetVirtualTimeTicksBase());
   } else {
     LOG(WARNING) << "SetVirtualTimePolicy did not succeed";
   }
@@ -212,7 +214,7 @@ void VirtualTimeController::RemoveObserver(Observer* observer) {
   observers_.erase(observer);
 }
 
-base::Time VirtualTimeController::GetVirtualTimeBase() const {
+base::TimeTicks VirtualTimeController::GetVirtualTimeBase() const {
   return virtual_time_base_;
 }
 

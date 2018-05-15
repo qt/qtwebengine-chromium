@@ -22,7 +22,7 @@
 #include "content/public/browser/android/compositor.h"
 #include "gpu/command_buffer/common/capabilities.h"
 #include "gpu/ipc/common/surface_handle.h"
-#include "gpu/vulkan/features.h"
+#include "gpu/vulkan/buildflags.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "ui/android/resources/resource_manager_impl.h"
@@ -77,6 +77,10 @@ class CONTENT_EXPORT CompositorImpl
   void DeleteUIResource(cc::UIResourceId resource_id) override;
   bool SupportsETC1NonPowerOfTwo() const override;
 
+  // Test functions:
+  bool IsLockedForTesting() const { return lock_manager_.IsLocked(); }
+  void SetVisibleForTesting(bool visible) { SetVisible(visible); }
+
  private:
   // Compositor implementation.
   void SetRootWindow(gfx::NativeWindow root_window) override;
@@ -118,7 +122,9 @@ class CONTENT_EXPORT CompositorImpl
   void DidLoseLayerTreeFrameSink() override;
 
   // WindowAndroidCompositor implementation.
-  void AttachLayerForReadback(scoped_refptr<cc::Layer> layer) override;
+  base::WeakPtr<ui::WindowAndroidCompositor> GetWeakPtr() override;
+  void IncrementReadbackRequestCount() override;
+  void DecrementReadbackRequestCount() override;
   void RequestCopyOfOutputOnRootLayer(
       std::unique_ptr<viz::CopyOutputRequest> request) override;
   void SetNeedsAnimate() override;
@@ -160,14 +166,16 @@ class CONTENT_EXPORT CompositorImpl
 
   void DetachRootWindow();
 
+  // Helper functions to perform delayed cleanup after the compositor is no
+  // longer visible on low-end devices.
+  void EnqueueLowEndBackgroundCleanup();
+  void DoLowEndBackgroundCleanup();
+
   viz::FrameSinkId frame_sink_id_;
 
   // root_layer_ is the persistent internal root layer, while subroot_layer_
   // is the one attached by the compositor client.
   scoped_refptr<cc::Layer> subroot_layer_;
-
-  // Subtree for hidden layers with CopyOutputRequests on them.
-  scoped_refptr<cc::Layer> readback_layer_tree_;
 
   // Destruction order matters here:
   std::unique_ptr<cc::AnimationHost> animation_host_;
@@ -206,6 +214,13 @@ class CONTENT_EXPORT CompositorImpl
       pending_child_frame_sink_ids_;
   ui::CompositorLockManager lock_manager_;
   bool has_submitted_frame_since_became_visible_ = false;
+
+  unsigned int pending_readback_request_count_ = 0u;
+
+  // A task which runs cleanup tasks on low-end Android after a delay. Enqueued
+  // when we hide, canceled when we're shown.
+  base::CancelableOnceClosure low_end_background_cleanup_task_;
+
   base::WeakPtrFactory<CompositorImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CompositorImpl);

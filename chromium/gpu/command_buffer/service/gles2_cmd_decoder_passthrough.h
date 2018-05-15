@@ -276,7 +276,7 @@ class GPU_GLES2_EXPORT GLES2DecoderPassthroughImpl : public GLES2Decoder {
 
   ErrorState* GetErrorState() override;
 
-  void WaitForReadPixels(base::Closure callback) override;
+  void WaitForReadPixels(base::OnceClosure callback) override;
 
   // Returns true if the context was lost either by GL_ARB_robustness, forced
   // context loss or command buffer parse error.
@@ -311,6 +311,10 @@ class GPU_GLES2_EXPORT GLES2DecoderPassthroughImpl : public GLES2Decoder {
                       GLenum severity,
                       GLsizei length,
                       const GLchar* message);
+
+  void SetCopyTextureResourceManagerForTest(
+      CopyTextureCHROMIUMResourceManager* copy_texture_resource_manager)
+      override;
 
  private:
   // Allow unittests to inspect internal state tracking
@@ -395,6 +399,9 @@ class GPU_GLES2_EXPORT GLES2DecoderPassthroughImpl : public GLES2Decoder {
   }
 
   void ExitCommandProcessingEarly() { commands_to_process_ = 0; }
+
+  error::Error CheckSwapBuffersResult(gfx::SwapResult result,
+                                      const char* function_name);
 
   DecoderClient* client_;
 

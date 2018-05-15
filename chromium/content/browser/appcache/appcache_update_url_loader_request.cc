@@ -21,7 +21,6 @@ void AppCacheUpdateJob::UpdateURLLoaderRequest::Start() {
   network::mojom::URLLoaderClientPtr client;
   client_binding_.Bind(mojo::MakeRequest(&client));
 
-  DCHECK(loader_factory_getter_->GetNetworkFactory());
   loader_factory_getter_->GetNetworkFactory()->CreateLoaderAndStart(
       mojo::MakeRequest(&url_loader_), -1, -1,
       network::mojom::kURLLoadOptionNone, request_, std::move(client),
@@ -96,7 +95,6 @@ int AppCacheUpdateJob::UpdateURLLoaderRequest::Cancel() {
 
 void AppCacheUpdateJob::UpdateURLLoaderRequest::OnReceiveResponse(
     const network::ResourceResponseHead& response_head,
-    const base::Optional<net::SSLInfo>& ssl_info,
     network::mojom::DownloadedTempFilePtr downloaded_file) {
   response_ = response_head;
 
@@ -105,8 +103,8 @@ void AppCacheUpdateJob::UpdateURLLoaderRequest::OnReceiveResponse(
   // have a helper function which populates the HttpResponseInfo structure from
   // the ResourceResponseHead structure.
   http_response_info_.reset(new net::HttpResponseInfo());
-  if (ssl_info.has_value())
-    http_response_info_->ssl_info = *ssl_info;
+  if (response_head.ssl_info.has_value())
+    http_response_info_->ssl_info = *response_head.ssl_info;
   http_response_info_->headers = response_head.headers;
   http_response_info_->was_fetched_via_spdy =
       response_head.was_fetched_via_spdy;
@@ -178,7 +176,9 @@ AppCacheUpdateJob::UpdateURLLoaderRequest::UpdateURLLoaderRequest(
       loader_factory_getter_(loader_factory_getter),
       client_binding_(this),
       buffer_size_(buffer_size),
-      handle_watcher_(FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL),
+      handle_watcher_(FROM_HERE,
+                      mojo::SimpleWatcher::ArmingPolicy::MANUAL,
+                      base::SequencedTaskRunnerHandle::Get()),
       read_requested_(false) {
   request_.url = url;
   request_.method = "GET";

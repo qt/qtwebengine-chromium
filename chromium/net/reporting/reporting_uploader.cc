@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/callback_helpers.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "net/base/elements_upload_data_stream.h"
 #include "net/base/load_flags.h"
@@ -26,6 +27,10 @@ namespace {
 class UploadUserData : public base::SupportsUserData::Data {
  public:
   static const void* const kUserDataKey;
+
+  UploadUserData(int depth) : depth(depth) {}
+
+  int depth;
 };
 
 // SetUserData needs a unique const void* to serve as the key, so create a const
@@ -39,6 +44,26 @@ ReportingUploader::Outcome ResponseCodeToOutcome(int response_code) {
     return ReportingUploader::Outcome::REMOVE_ENDPOINT;
   return ReportingUploader::Outcome::FAILURE;
 }
+
+enum class UploadOutcome {
+  CANCELED_REDIRECT_TO_INSECURE_URL = 0,
+  CANCELED_AUTH_REQUIRED = 1,
+  CANCELED_CERTIFICATE_REQUESTED = 2,
+  CANCELED_SSL_CERTIFICATE_ERROR = 3,
+  CANCELED_REPORTING_SHUTDOWN = 4,
+  FAILED = 5,  // See Net.Reporting.UploadError for breakdown.
+  SUCCEEDED_SUCCESS = 6,
+  SUCCEEDED_REMOVE_ENDPOINT = 7,
+
+  MAX
+};
+
+void RecordUploadOutcome(UploadOutcome outcome) {
+  UMA_HISTOGRAM_ENUMERATION("Net.Reporting.UploadOutcome", outcome,
+                            UploadOutcome::MAX);
+}
+
+// TODO: Record net and HTTP error.
 
 class ReportingUploaderImpl : public ReportingUploader, URLRequest::Delegate {
  public:
@@ -56,6 +81,7 @@ class ReportingUploaderImpl : public ReportingUploader, URLRequest::Delegate {
 
   void StartUpload(const GURL& url,
                    const std::string& json,
+                   int max_depth,
                    UploadCallback callback) override {
     net::NetworkTrafficAnnotationTag traffic_annotation =
         net::DefineNetworkTrafficAnnotation("reporting", R"(
@@ -95,7 +121,7 @@ class ReportingUploaderImpl : public ReportingUploader, URLRequest::Delegate {
         ElementsUploadDataStream::CreateWithReader(std::move(reader), 0));
 
     request->SetUserData(UploadUserData::kUserDataKey,
-                         std::make_unique<UploadUserData>());
+                         std::make_unique<UploadUserData>(max_depth));
 
     // This inherently sets mode = "no-cors", but that doesn't matter, because
     // the origins that are included in the upload don't actually get to see
@@ -111,8 +137,10 @@ class ReportingUploaderImpl : public ReportingUploader, URLRequest::Delegate {
   }
 
   // static
-  bool RequestIsUpload(const net::URLRequest& request) override {
-    return request.GetUserData(UploadUserData::kUserDataKey);
+  int GetUploadDepth(const net::URLRequest& request) override {
+    UploadUserData* data = static_cast<UploadUserData*>(
+        request.GetUserData(UploadUserData::kUserDataKey));
+    return data ? data->depth + 1 : 0;
   }
 
   // URLRequest::Delegate implementation:
@@ -156,6 +184,18 @@ class ReportingUploaderImpl : public ReportingUploader, URLRequest::Delegate {
     HttpResponseHeaders* headers = request->response_headers();
     int response_code = headers ? headers->response_code() : 0;
     Outcome outcome = ResponseCodeToOutcome(response_code);
+
+    if (net_error != OK) {
+      RecordUploadOutcome(UploadOutcome::FAILED);
+      base::UmaHistogramSparse("Net.Reporting.UploadError", net_error);
+    } else if (response_code >= 200 && response_code <= 299) {
+      RecordUploadOutcome(UploadOutcome::SUCCEEDED_SUCCESS);
+    } else if (response_code == 410) {
+      RecordUploadOutcome(UploadOutcome::SUCCEEDED_REMOVE_ENDPOINT);
+    } else {
+      RecordUploadOutcome(UploadOutcome::FAILED);
+      base::UmaHistogramSparse("Net.Reporting.UploadError", response_code);
+    }
 
     std::move(upload->second).Run(outcome);
 

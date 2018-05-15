@@ -8,7 +8,6 @@
 #include <utility>
 
 #include "base/feature_list.h"
-#include "base/memory/ptr_util.h"
 #include "base/stl_util.h"
 #include "components/payments/content/can_make_payment_query_factory.h"
 #include "components/payments/content/content_payment_request_delegate.h"
@@ -16,6 +15,7 @@
 #include "components/payments/content/payment_request_converter.h"
 #include "components/payments/content/payment_request_web_contents_manager.h"
 #include "components/payments/core/can_make_payment_query.h"
+#include "components/payments/core/features.h"
 #include "components/payments/core/payment_details.h"
 #include "components/payments/core/payment_details_validation.h"
 #include "components/payments/core/payment_prefs.h"
@@ -150,7 +150,7 @@ void PaymentRequest::Init(mojom::PaymentRequestClientPtr client,
           spec_->url_payment_method_identifiers().end());
 }
 
-void PaymentRequest::Show() {
+void PaymentRequest::Show(bool is_user_gesture) {
   if (!client_.is_bound() || !binding_.is_bound()) {
     LOG(ERROR) << "Attempted Show(), but binding(s) missing.";
     OnConnectionTerminated();
@@ -175,6 +175,8 @@ void PaymentRequest::Show() {
     OnConnectionTerminated();
     return;
   }
+
+  is_show_user_gesture_ = is_user_gesture;
 
   // TODO(crbug.com/783811): Display a spinner when checking whether
   // the methods are supported asynchronously for better user experience.
@@ -352,6 +354,19 @@ bool PaymentRequest::IsIncognito() const {
   return delegate_->IsIncognito();
 }
 
+bool PaymentRequest::SatisfiesSkipUIConstraints() const {
+  return base::FeatureList::IsEnabled(features::kWebPaymentsSingleAppUiSkip) &&
+         base::FeatureList::IsEnabled(::features::kServiceWorkerPaymentApps) &&
+         is_show_user_gesture_ && state()->is_get_all_instruments_finished() &&
+         state()->available_instruments().size() == 1 &&
+         spec()->stringified_method_data().size() == 1 &&
+         !spec()->request_shipping() && !spec()->request_payer_name() &&
+         !spec()->request_payer_phone() &&
+         !spec()->request_payer_email()
+         // Only allowing URL base payment apps to skip the payment sheet.
+         && spec()->url_payment_method_identifiers().size() == 1;
+}
+
 void PaymentRequest::RecordFirstAbortReason(
     JourneyLogger::AbortReason abort_reason) {
   if (!has_recorded_completion_) {
@@ -382,7 +397,7 @@ void PaymentRequest::RespondToCanMakePaymentQuery(bool can_make_payment,
   if (delegate_->IsIncognito()) {
     can_make_payment =
         spec()->HasBasicCardMethodName() ||
-        base::FeatureList::IsEnabled(features::kServiceWorkerPaymentApps);
+        base::FeatureList::IsEnabled(::features::kServiceWorkerPaymentApps);
   }
 
   mojom::CanMakePaymentQueryResult positive =

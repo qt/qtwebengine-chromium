@@ -46,6 +46,7 @@
 #include "components/prefs/pref_service.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/event_router.h"
@@ -695,6 +696,11 @@ bool BookmarksUpdateFunction::RunOnReady() {
     error_ = keys::kModifySpecialError;
     return false;
   }
+  if (!url.is_empty() && node->is_folder()) {
+    error_ = keys::kCannotSetUrlOfFolderError;
+    return false;
+  }
+
   if (has_title)
     model->SetTitle(node, title);
   if (!url.is_empty())

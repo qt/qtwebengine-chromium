@@ -15,7 +15,6 @@
 #include "base/format_macros.h"
 #include "base/i18n/break_iterator.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -597,6 +596,7 @@ TEST_P(RenderTextTest, DefaultStyles) {
   for (size_t i = 0; i < arraysize(cases); ++i) {
     EXPECT_TRUE(test_api()->colors().EqualsValueForTesting(SK_ColorBLACK));
     EXPECT_TRUE(test_api()->baselines().EqualsValueForTesting(NORMAL_BASELINE));
+    EXPECT_TRUE(test_api()->font_size_overrides().EqualsValueForTesting(0));
     for (size_t style = 0; style < NUM_TEXT_STYLES; ++style)
       EXPECT_TRUE(test_api()->styles()[style].EqualsValueForTesting(false));
     render_text->SetText(UTF8ToUTF16(cases[i]));
@@ -632,32 +632,27 @@ TEST_P(RenderTextTest, ApplyStyles) {
   RenderText* render_text = GetRenderText();
   render_text->SetText(UTF8ToUTF16("012345678"));
 
+  constexpr int kTestFontSizeOverride = 20;
+
   // Apply a ranged color and style and check the resulting breaks.
   render_text->ApplyColor(SK_ColorRED, Range(1, 4));
   render_text->ApplyBaselineStyle(SUPERIOR, Range(2, 4));
   render_text->ApplyWeight(Font::Weight::BOLD, Range(2, 5));
-  std::vector<std::pair<size_t, SkColor> > expected_color;
-  expected_color.push_back(std::pair<size_t, SkColor>(0, SK_ColorBLACK));
-  expected_color.push_back(std::pair<size_t, SkColor>(1, SK_ColorRED));
-  expected_color.push_back(std::pair<size_t, SkColor>(4, SK_ColorBLACK));
-  EXPECT_TRUE(test_api()->colors().EqualsForTesting(expected_color));
-  std::vector<std::pair<size_t, BaselineStyle>> expected_baseline_style;
-  expected_baseline_style.push_back(
-      std::pair<size_t, BaselineStyle>(0, NORMAL_BASELINE));
-  expected_baseline_style.push_back(
-      std::pair<size_t, BaselineStyle>(2, SUPERIOR));
-  expected_baseline_style.push_back(
-      std::pair<size_t, BaselineStyle>(4, NORMAL_BASELINE));
+  render_text->ApplyFontSizeOverride(kTestFontSizeOverride, Range(5, 7));
+
+  EXPECT_TRUE(test_api()->colors().EqualsForTesting(
+      {{0, SK_ColorBLACK}, {1, SK_ColorRED}, {4, SK_ColorBLACK}}));
+
+  EXPECT_TRUE(test_api()->baselines().EqualsForTesting(
+      {{0, NORMAL_BASELINE}, {2, SUPERIOR}, {4, NORMAL_BASELINE}}));
+
+  EXPECT_TRUE(test_api()->font_size_overrides().EqualsForTesting(
+      {{0, 0}, {5, kTestFontSizeOverride}, {7, 0}}));
+
   EXPECT_TRUE(
-      test_api()->baselines().EqualsForTesting(expected_baseline_style));
-  std::vector<std::pair<size_t, Font::Weight>> expected_weight;
-  expected_weight.push_back(
-      std::pair<size_t, Font::Weight>(0, Font::Weight::NORMAL));
-  expected_weight.push_back(
-      std::pair<size_t, Font::Weight>(2, Font::Weight::BOLD));
-  expected_weight.push_back(
-      std::pair<size_t, Font::Weight>(5, Font::Weight::NORMAL));
-  EXPECT_TRUE(test_api()->weights().EqualsForTesting(expected_weight));
+      test_api()->weights().EqualsForTesting({{0, Font::Weight::NORMAL},
+                                              {2, Font::Weight::BOLD},
+                                              {5, Font::Weight::NORMAL}}));
 
   // Ensure that setting a value overrides the ranged values.
   render_text->SetColor(SK_ColorBLUE);
@@ -674,30 +669,18 @@ TEST_P(RenderTextTest, ApplyStyles) {
   render_text->ApplyColor(SK_ColorRED, Range(0, text_length));
   render_text->ApplyBaselineStyle(SUPERIOR, Range(0, text_length));
   render_text->ApplyWeight(Font::Weight::BOLD, Range(2, text_length));
-  std::vector<std::pair<size_t, SkColor> > expected_color_end;
-  expected_color_end.push_back(std::pair<size_t, SkColor>(0, SK_ColorRED));
-  EXPECT_TRUE(test_api()->colors().EqualsForTesting(expected_color_end));
-  std::vector<std::pair<size_t, BaselineStyle>> expected_baseline_end;
-  expected_baseline_end.push_back(
-      std::pair<size_t, BaselineStyle>(0, SUPERIOR));
-  EXPECT_TRUE(test_api()->baselines().EqualsForTesting(expected_baseline_end));
-  std::vector<std::pair<size_t, Font::Weight>> expected_weight_end;
-  expected_weight_end.push_back(
-      std::pair<size_t, Font::Weight>(0, Font::Weight::NORMAL));
-  expected_weight_end.push_back(
-      std::pair<size_t, Font::Weight>(2, Font::Weight::BOLD));
-  EXPECT_TRUE(test_api()->weights().EqualsForTesting(expected_weight_end));
+
+  EXPECT_TRUE(test_api()->colors().EqualsForTesting({{0, SK_ColorRED}}));
+  EXPECT_TRUE(test_api()->baselines().EqualsForTesting({{0, SUPERIOR}}));
+  EXPECT_TRUE(test_api()->weights().EqualsForTesting(
+      {{0, Font::Weight::NORMAL}, {2, Font::Weight::BOLD}}));
 
   // Ensure ranged values adjust to accommodate text length changes.
   render_text->ApplyStyle(ITALIC, true, Range(0, 2));
   render_text->ApplyStyle(ITALIC, true, Range(3, 6));
   render_text->ApplyStyle(ITALIC, true, Range(7, text_length));
-  std::vector<std::pair<size_t, bool> > expected_italic;
-  expected_italic.push_back(std::pair<size_t, bool>(0, true));
-  expected_italic.push_back(std::pair<size_t, bool>(2, false));
-  expected_italic.push_back(std::pair<size_t, bool>(3, true));
-  expected_italic.push_back(std::pair<size_t, bool>(6, false));
-  expected_italic.push_back(std::pair<size_t, bool>(7, true));
+  std::vector<std::pair<size_t, bool>> expected_italic = {
+      {0, true}, {2, false}, {3, true}, {6, false}, {7, true}};
   EXPECT_TRUE(test_api()->styles()[ITALIC].EqualsForTesting(expected_italic));
 
   // Changing the text should clear any breaks except for the first one.
@@ -721,44 +704,42 @@ TEST_P(RenderTextTest, ApplyStyles) {
     // Styles shouldn't be changed mid-grapheme.
     render_text->SetText(UTF8ToUTF16("0\u0915\u093f1\u0915\u093f2"));
     render_text->ApplyStyle(UNDERLINE, true, Range(2, 5));
-    std::vector<std::pair<size_t, bool>> expected_underline;
-    expected_underline.push_back(std::pair<size_t, bool>(0, false));
-    expected_underline.push_back(std::pair<size_t, bool>(1, true));
-    expected_underline.push_back(std::pair<size_t, bool>(6, false));
-    EXPECT_TRUE(
-        test_api()->styles()[UNDERLINE].EqualsForTesting(expected_underline));
+    EXPECT_TRUE(test_api()->styles()[UNDERLINE].EqualsForTesting(
+        {{0, false}, {1, true}, {6, false}}));
   }
 }
 
 TEST_P(RenderTextTest, AppendTextKeepsStyles) {
   RenderText* render_text = GetRenderText();
   // Setup basic functionality.
-  render_text->SetText(UTF8ToUTF16("abc"));
+  render_text->SetText(UTF8ToUTF16("abcd"));
   render_text->ApplyColor(SK_ColorRED, Range(0, 1));
   render_text->ApplyBaselineStyle(SUPERSCRIPT, Range(1, 2));
   render_text->ApplyStyle(UNDERLINE, true, Range(2, 3));
+  render_text->ApplyFontSizeOverride(20, Range(3, 4));
   // Verify basic functionality.
-  std::vector<std::pair<size_t, SkColor>> expected_color;
-  expected_color.push_back(std::pair<size_t, SkColor>(0, SK_ColorRED));
-  expected_color.push_back(std::pair<size_t, SkColor>(1, SK_ColorBLACK));
+  const std::vector<std::pair<size_t, SkColor>> expected_color = {
+      {0, SK_ColorRED}, {1, SK_ColorBLACK}};
   EXPECT_TRUE(test_api()->colors().EqualsForTesting(expected_color));
-  std::vector<std::pair<size_t, BaselineStyle>> expected_baseline;
-  expected_baseline.push_back(
-      std::pair<size_t, BaselineStyle>(0, NORMAL_BASELINE));
-  expected_baseline.push_back(std::pair<size_t, BaselineStyle>(1, SUPERSCRIPT));
-  expected_baseline.push_back(
-      std::pair<size_t, BaselineStyle>(2, NORMAL_BASELINE));
+  const std::vector<std::pair<size_t, BaselineStyle>> expected_baseline = {
+      {0, NORMAL_BASELINE}, {1, SUPERSCRIPT}, {2, NORMAL_BASELINE}};
   EXPECT_TRUE(test_api()->baselines().EqualsForTesting(expected_baseline));
-  std::vector<std::pair<size_t, bool>> expected_style;
-  expected_style.push_back(std::pair<size_t, bool>(0, false));
-  expected_style.push_back(std::pair<size_t, bool>(2, true));
+  const std::vector<std::pair<size_t, bool>> expected_style = {
+      {0, false}, {2, true}, {3, false}};
   EXPECT_TRUE(test_api()->styles()[UNDERLINE].EqualsForTesting(expected_style));
+  const std::vector<std::pair<size_t, int>> expected_font_size = {{0, 0},
+                                                                  {3, 20}};
+  EXPECT_TRUE(
+      test_api()->font_size_overrides().EqualsForTesting(expected_font_size));
+
   // Ensure AppendText maintains current text styles.
-  render_text->AppendText(UTF8ToUTF16("def"));
-  EXPECT_EQ(render_text->GetDisplayText(), UTF8ToUTF16("abcdef"));
+  render_text->AppendText(UTF8ToUTF16("efg"));
+  EXPECT_EQ(render_text->GetDisplayText(), UTF8ToUTF16("abcdefg"));
   EXPECT_TRUE(test_api()->colors().EqualsForTesting(expected_color));
   EXPECT_TRUE(test_api()->baselines().EqualsForTesting(expected_baseline));
   EXPECT_TRUE(test_api()->styles()[UNDERLINE].EqualsForTesting(expected_style));
+  EXPECT_TRUE(
+      test_api()->font_size_overrides().EqualsForTesting(expected_font_size));
 }
 
 void TestVisualCursorMotionInObscuredField(
@@ -962,10 +943,6 @@ TEST_P(RenderTextTest, ObscuredEmoji) {
   render_text->Draw(canvas());
 }
 
-// TODO(PORT): Fails for RenderTextMac.
-// Crashes on Mac with RenderTextHarfBuzz. See http://crbug.com/640068.
-#if !defined(OS_MACOSX)
-
 TEST_P(RenderTextTest, ElidedText) {
   // TODO(skanuj) : Add more test cases for following
   // - RenderText styles.
@@ -1066,8 +1043,6 @@ TEST_P(RenderTextTest, ElidedObscuredText) {
   EXPECT_EQ(UTF8ToUTF16("abcdef"), render_text->text());
   EXPECT_EQ(elided_obscured_text, render_text->GetDisplayText());
 }
-
-#endif  // !defined(OS_MACOSX)
 
 // TODO(PORT): Fails for RenderTextMac.
 TEST_P(RenderTextHarfBuzzTest, MultilineElide) {
@@ -1814,9 +1789,6 @@ TEST_P(RenderTextHarfBuzzTest, MoveCursorLeftRight_ComplexScript) {
   EXPECT_EQ(0U, render_text->cursor_position());
 }
 
-// TODO(asvitkine): RenderTextMac cursor movements. http://crbug.com/131618
-// Crashes on Mac with RenderTextHarfBuzz. See http://crbug.com/640068.
-#if !defined(OS_MACOSX)
 TEST_P(RenderTextHarfBuzzTest, MoveCursorLeftRight_MeiryoUILigatures) {
   RenderText* render_text = GetRenderText();
   // Meiryo UI uses single-glyph ligatures for 'ff' and 'ffi', but each letter
@@ -1841,7 +1813,6 @@ TEST_P(RenderTextHarfBuzzTest, MoveCursorLeftRight_MeiryoUILigatures) {
   }
   EXPECT_EQ(6U, render_text->cursor_position());
 }
-#endif  // !defined(OS_MACOSX)
 
 TEST_P(RenderTextHarfBuzzTest, GraphemePositions) {
   // LTR कि (DEVANAGARI KA with VOWEL I) (2-char grapheme), LTR abc, and LTR कि.
@@ -2502,26 +2473,26 @@ TEST_P(RenderTextTest, StringSizeEmptyString) {
 }
 
 TEST_P(RenderTextTest, StringSizeRespectsFontListMetrics) {
-  // Check that Verdana and the CJK font have different font metrics.
-  Font verdana_font("Verdana", 16);
-  ASSERT_EQ("verdana",
-            base::ToLowerASCII(verdana_font.GetActualFontNameForTesting()));
+  // Check that the test font and the CJK font have different font metrics.
+  Font test_font(kTestFontName, 16);
+  ASSERT_EQ(base::ToLowerASCII(kTestFontName),
+            base::ToLowerASCII(test_font.GetActualFontNameForTesting()));
   Font cjk_font(kCJKFontName, 16);
   ASSERT_EQ(base::ToLowerASCII(kCJKFontName),
             base::ToLowerASCII(cjk_font.GetActualFontNameForTesting()));
-  EXPECT_NE(verdana_font.GetHeight(), cjk_font.GetHeight());
-  EXPECT_NE(verdana_font.GetBaseline(), cjk_font.GetBaseline());
-  // "a" should be rendered with Verdana, not with the CJK font.
-  const char* verdana_font_text = "a";
+  EXPECT_NE(test_font.GetHeight(), cjk_font.GetHeight());
+  EXPECT_NE(test_font.GetBaseline(), cjk_font.GetBaseline());
+  // "a" should be rendered with the test font, not with the CJK font.
+  const char* test_font_text = "a";
   // "円" (U+5168 Han character YEN) should render with the CJK font, not
-  // Verdana.
+  // the test font.
   const char* cjk_font_text = "\u5168";
-  Font smaller_font = verdana_font;
+  Font smaller_font = test_font;
   Font larger_font = cjk_font;
-  const char* smaller_font_text = verdana_font_text;
+  const char* smaller_font_text = test_font_text;
   const char* larger_font_text = cjk_font_text;
-  if (cjk_font.GetHeight() < verdana_font.GetHeight() &&
-      cjk_font.GetBaseline() < verdana_font.GetBaseline()) {
+  if (cjk_font.GetHeight() < test_font.GetHeight() &&
+      cjk_font.GetBaseline() < test_font.GetBaseline()) {
     std::swap(smaller_font, larger_font);
     std::swap(smaller_font_text, larger_font_text);
   }
@@ -4251,11 +4222,17 @@ TEST_P(RenderTextTest, StringFitsOwnWidth) {
 // Ensure that RenderText examines all of the fonts in its FontList before
 // falling back to other fonts.
 TEST_P(RenderTextHarfBuzzTest, HarfBuzz_FontListFallback) {
+#if defined(OS_LINUX)
+  const char kTestFont[] = "Arimo";
+#else
+  const char kTestFont[] = "Arial";
+#endif
   // Double-check that the requested fonts are present.
-  FontList font_list(base::StringPrintf("Arial, %s, 12px", kSymbolFontName));
+  std::string format = std::string(kTestFont) + ", %s, 12px";
+  FontList font_list(base::StringPrintf(format.c_str(), kSymbolFontName));
   const std::vector<Font>& fonts = font_list.GetFonts();
   ASSERT_EQ(2u, fonts.size());
-  ASSERT_EQ("arial",
+  ASSERT_EQ(base::ToLowerASCII(kTestFont),
             base::ToLowerASCII(fonts[0].GetActualFontNameForTesting()));
   ASSERT_EQ(base::ToLowerASCII(kSymbolFontName),
             base::ToLowerASCII(fonts[1].GetActualFontNameForTesting()));
@@ -4369,13 +4346,13 @@ TEST_P(RenderTextTest, TextDoesntClip) {
     }
     {
       SCOPED_TRACE("TextDoesntClip Left Side");
-#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_CHROMEOS) || \
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX) || \
     defined(ARCH_CPU_MIPS_FAMILY)
-      // TODO(dschuyler): On Windows, Chrome OS, and Mac smoothing draws to the
-      // left of text.  This appears to be a preexisting issue that wasn't
-      // revealed by the prior unit tests.  RenderText currently only uses
-      // origins and advances and ignores bounding boxes so cannot account for
-      // under- and over-hang.
+      // TODO(dschuyler): On Windows, Chrome OS, Linux, and Mac smoothing draws
+      // to the left of text.  This appears to be a preexisting issue that
+      // wasn't revealed by the prior unit tests.  RenderText currently only
+      // uses origins and advances and ignores bounding boxes so cannot account
+      // for under- and over-hang.
       rect_buffer.EnsureSolidRect(SK_ColorWHITE, 0, kTestSize, kTestSize - 1,
                                   string_size.height());
 #else
@@ -4385,13 +4362,13 @@ TEST_P(RenderTextTest, TextDoesntClip) {
     }
     {
       SCOPED_TRACE("TextDoesntClip Right Side");
-#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_CHROMEOS) || \
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX) || \
     defined(ARCH_CPU_MIPS_FAMILY)
-      // TODO(dschuyler): On Windows, Chrome OS, and Mac smoothing draws to the
-      // right of text.  This appears to be a preexisting issue that wasn't
-      // revealed by the prior unit tests.  RenderText currently only uses
-      // origins and advances and ignores bounding boxes so cannot account for
-      // under- and over-hang.
+      // TODO(dschuyler): On Windows, Chrome OS, Linux, and Mac smoothing draws
+      // to the right of text.  This appears to be a preexisting issue that
+      // wasn't revealed by the prior unit tests.  RenderText currently only
+      // uses origins and advances and ignores bounding boxes so cannot account
+      // for under- and over-hang.
       rect_buffer.EnsureSolidRect(SK_ColorWHITE,
                                   kTestSize + string_size.width() + 1,
                                   kTestSize, kTestSize - 1,
@@ -4574,9 +4551,9 @@ TEST_P(RenderTextTest, SubpixelRenderingSuppressed) {
     EXPECT_FALSE(GetRendererPaint().isLCDRenderText());
 }
 
-// Verify GetDecoratedWordAtPoint returns the correct baseline point and
+// Verify GetWordLookupDataAtPoint returns the correct baseline point and
 // decorated word for an LTR string.
-TEST_P(RenderTextHarfBuzzTest, GetDecoratedWordAtPoint_LTR) {
+TEST_P(RenderTextHarfBuzzTest, GetWordLookupDataAtPoint_LTR) {
   const base::string16 ltr = UTF8ToUTF16("  ab  c ");
   const int kWordOneStartIndex = 2;
   const int kWordTwoStartIndex = 6;
@@ -4621,14 +4598,14 @@ TEST_P(RenderTextHarfBuzzTest, GetDecoratedWordAtPoint_LTR) {
 
   {
     SCOPED_TRACE(base::StringPrintf("Query to the left of text bounds"));
-    EXPECT_TRUE(render_text->GetDecoratedWordAtPoint(
+    EXPECT_TRUE(render_text->GetWordLookupDataAtPoint(
         Point(-5, cursor_y), &decorated_word, &baseline_point));
     VerifyDecoratedWordsAreEqual(expected_word_1, decorated_word);
     EXPECT_TRUE(left_glyph_word_1.Contains(baseline_point));
   }
   {
     SCOPED_TRACE(base::StringPrintf("Query to the right of text bounds"));
-    EXPECT_TRUE(render_text->GetDecoratedWordAtPoint(
+    EXPECT_TRUE(render_text->GetWordLookupDataAtPoint(
         Point(105, cursor_y), &decorated_word, &baseline_point));
     VerifyDecoratedWordsAreEqual(expected_word_2, decorated_word);
     EXPECT_TRUE(left_glyph_word_2.Contains(baseline_point));
@@ -4641,8 +4618,8 @@ TEST_P(RenderTextHarfBuzzTest, GetDecoratedWordAtPoint_LTR) {
         render_text->GetCursorBounds(SelectionModel(i, CURSOR_FORWARD), false)
             .origin();
 
-    EXPECT_TRUE(render_text->GetDecoratedWordAtPoint(query, &decorated_word,
-                                                     &baseline_point));
+    EXPECT_TRUE(render_text->GetWordLookupDataAtPoint(query, &decorated_word,
+                                                      &baseline_point));
 
     if (i < kWordTwoStartIndex) {
       VerifyDecoratedWordsAreEqual(expected_word_1, decorated_word);
@@ -4654,9 +4631,9 @@ TEST_P(RenderTextHarfBuzzTest, GetDecoratedWordAtPoint_LTR) {
   }
 }
 
-// Verify GetDecoratedWordAtPoint returns the correct baseline point and
+// Verify GetWordLookupDataAtPoint returns the correct baseline point and
 // decorated word for an RTL string.
-TEST_P(RenderTextHarfBuzzTest, GetDecoratedWordAtPoint_RTL) {
+TEST_P(RenderTextHarfBuzzTest, GetWordLookupDataAtPoint_RTL) {
   const base::string16 rtl = UTF8ToUTF16(" \u0634\u0632  \u0634");
   const int kWordOneStartIndex = 1;
   const int kWordTwoStartIndex = 5;
@@ -4699,14 +4676,14 @@ TEST_P(RenderTextHarfBuzzTest, GetDecoratedWordAtPoint_RTL) {
 
   {
     SCOPED_TRACE(base::StringPrintf("Query to the left of text bounds"));
-    EXPECT_TRUE(render_text->GetDecoratedWordAtPoint(
+    EXPECT_TRUE(render_text->GetWordLookupDataAtPoint(
         Point(-5, cursor_y), &decorated_word, &baseline_point));
     VerifyDecoratedWordsAreEqual(expected_word_2, decorated_word);
     EXPECT_TRUE(left_glyph_word_2.Contains(baseline_point));
   }
   {
     SCOPED_TRACE(base::StringPrintf("Query to the right of text bounds"));
-    EXPECT_TRUE(render_text->GetDecoratedWordAtPoint(
+    EXPECT_TRUE(render_text->GetWordLookupDataAtPoint(
         Point(105, cursor_y), &decorated_word, &baseline_point));
     VerifyDecoratedWordsAreEqual(expected_word_1, decorated_word);
     EXPECT_TRUE(left_glyph_word_1.Contains(baseline_point));
@@ -4721,8 +4698,8 @@ TEST_P(RenderTextHarfBuzzTest, GetDecoratedWordAtPoint_RTL) {
         render_text->GetCursorBounds(SelectionModel(i, CURSOR_FORWARD), false)
             .top_right();
 
-    EXPECT_TRUE(render_text->GetDecoratedWordAtPoint(query, &decorated_word,
-                                                     &baseline_point));
+    EXPECT_TRUE(render_text->GetWordLookupDataAtPoint(query, &decorated_word,
+                                                      &baseline_point));
     if (i < kWordTwoStartIndex) {
       VerifyDecoratedWordsAreEqual(expected_word_1, decorated_word);
       EXPECT_TRUE(left_glyph_word_1.Contains(baseline_point));
@@ -4733,8 +4710,8 @@ TEST_P(RenderTextHarfBuzzTest, GetDecoratedWordAtPoint_RTL) {
   }
 }
 
-// Test that GetDecoratedWordAtPoint behaves correctly for multiline text.
-TEST_P(RenderTextHarfBuzzTest, GetDecoratedWordAtPoint_Multiline) {
+// Test that GetWordLookupDataAtPoint behaves correctly for multiline text.
+TEST_P(RenderTextHarfBuzzTest, GetWordLookupDataAtPoint_Multiline) {
   const base::string16 text = UTF8ToUTF16("a b\n..\ncd.");
   const size_t kWordOneIndex = 0;    // Index of character 'a'.
   const size_t kWordTwoIndex = 2;    // Index of character 'b'.
@@ -4784,36 +4761,36 @@ TEST_P(RenderTextHarfBuzzTest, GetDecoratedWordAtPoint_Multiline) {
   Point baseline_point;
   {
     // Query to the left of the first line.
-    EXPECT_TRUE(render_text->GetDecoratedWordAtPoint(
+    EXPECT_TRUE(render_text->GetWordLookupDataAtPoint(
         Point(-5, GetCursorYForTesting(0)), &decorated_word, &baseline_point));
     VerifyDecoratedWordsAreEqual(expected_word_1, decorated_word);
     EXPECT_TRUE(left_glyph_word_1.Contains(baseline_point));
   }
   {
     // Query on the second line.
-    EXPECT_TRUE(render_text->GetDecoratedWordAtPoint(
+    EXPECT_TRUE(render_text->GetWordLookupDataAtPoint(
         Point(5, GetCursorYForTesting(1)), &decorated_word, &baseline_point));
     VerifyDecoratedWordsAreEqual(expected_word_2, decorated_word);
     EXPECT_TRUE(left_glyph_word_2.Contains(baseline_point));
   }
   {
     // Query at the center point of the character 'c'.
-    EXPECT_TRUE(render_text->GetDecoratedWordAtPoint(
+    EXPECT_TRUE(render_text->GetWordLookupDataAtPoint(
         left_glyph_word_3.CenterPoint(), &decorated_word, &baseline_point));
     VerifyDecoratedWordsAreEqual(expected_word_3, decorated_word);
     EXPECT_TRUE(left_glyph_word_3.Contains(baseline_point));
   }
   {
     // Query to the right of the third line.
-    EXPECT_TRUE(render_text->GetDecoratedWordAtPoint(
+    EXPECT_TRUE(render_text->GetWordLookupDataAtPoint(
         Point(505, GetCursorYForTesting(2)), &decorated_word, &baseline_point));
     VerifyDecoratedWordsAreEqual(expected_word_3, decorated_word);
     EXPECT_TRUE(left_glyph_word_3.Contains(baseline_point));
   }
 }
 
-// Verify the boolean return value of GetDecoratedWordAtPoint.
-TEST_P(RenderTextHarfBuzzTest, GetDecoratedWordAtPoint_Return) {
+// Verify the boolean return value of GetWordLookupDataAtPoint.
+TEST_P(RenderTextHarfBuzzTest, GetWordLookupDataAtPoint_Return) {
   RenderText* render_text = GetRenderText();
   render_text->SetText(UTF8ToUTF16("..."));
 
@@ -4824,21 +4801,90 @@ TEST_P(RenderTextHarfBuzzTest, GetDecoratedWordAtPoint_Return) {
   Point query =
       render_text->GetCursorBounds(SelectionModel(0, CURSOR_FORWARD), false)
           .origin();
-  EXPECT_FALSE(render_text->GetDecoratedWordAtPoint(query, &decorated_word,
-                                                    &baseline_point));
+  EXPECT_FALSE(render_text->GetWordLookupDataAtPoint(query, &decorated_word,
+                                                     &baseline_point));
 
   render_text->SetText(UTF8ToUTF16("abc"));
   query = render_text->GetCursorBounds(SelectionModel(0, CURSOR_FORWARD), false)
               .origin();
-  EXPECT_TRUE(render_text->GetDecoratedWordAtPoint(query, &decorated_word,
-                                                   &baseline_point));
+  EXPECT_TRUE(render_text->GetWordLookupDataAtPoint(query, &decorated_word,
+                                                    &baseline_point));
 
   // False should be returned for obscured text.
   render_text->SetObscured(true);
   query = render_text->GetCursorBounds(SelectionModel(0, CURSOR_FORWARD), false)
               .origin();
-  EXPECT_FALSE(render_text->GetDecoratedWordAtPoint(query, &decorated_word,
-                                                    &baseline_point));
+  EXPECT_FALSE(render_text->GetWordLookupDataAtPoint(query, &decorated_word,
+                                                     &baseline_point));
+}
+
+// Test that GetLookupDataAtPoint behaves correctly when the range spans lines.
+TEST_P(RenderTextHarfBuzzTest, GetLookupDataAtRange_Multiline) {
+  const base::string16 text = UTF8ToUTF16("a\nb");
+  constexpr Range kWordOneRange = Range(0, 1);  // Range of character 'a'.
+  constexpr Range kWordTwoRange = Range(2, 3);  // Range of character 'b'.
+  constexpr Range kTextRange = Range(0, 3);     // Range of the entire text.
+
+  // Set up render text. Apply style ranges so that each character index gets
+  // a corresponding font.
+  RenderText* render_text = GetRenderText();
+  render_text->SetMultiline(true);
+  render_text->SetDisplayRect(Rect(500, 500));
+  render_text->SetText(text);
+  render_text->ApplyWeight(Font::Weight::SEMIBOLD, kWordOneRange);
+  render_text->ApplyStyle(UNDERLINE, true, kWordTwoRange);
+
+  // Set up test expectations.
+  const std::vector<RenderText::FontSpan> font_spans =
+      render_text->GetFontSpansForTesting();
+
+  DecoratedText expected_word_1;
+  expected_word_1.text = UTF8ToUTF16("a");
+  expected_word_1.attributes.push_back(CreateRangedAttribute(
+      font_spans, 0, kWordOneRange.start(), Font::Weight::SEMIBOLD, 0));
+  const Rect left_glyph_word_1 = GetSubstringBoundsUnion(kWordOneRange);
+
+  DecoratedText expected_word_2;
+  expected_word_2.text = UTF8ToUTF16("b");
+  expected_word_2.attributes.push_back(
+      CreateRangedAttribute(font_spans, 0, kWordTwoRange.start(),
+                            Font::Weight::NORMAL, UNDERLINE_MASK));
+  const Rect left_glyph_word_2 = GetSubstringBoundsUnion(kWordTwoRange);
+
+  DecoratedText expected_entire_text;
+  expected_entire_text.text = UTF8ToUTF16("a\nb");
+  expected_entire_text.attributes.push_back(
+      CreateRangedAttribute(font_spans, kWordOneRange.start(),
+                            kWordOneRange.start(), Font::Weight::SEMIBOLD, 0));
+  expected_entire_text.attributes.push_back(
+      CreateRangedAttribute(font_spans, 1, 1, Font::Weight::NORMAL, 0));
+  expected_entire_text.attributes.push_back(CreateRangedAttribute(
+      font_spans, kWordTwoRange.start(), kWordTwoRange.start(),
+      Font::Weight::NORMAL, UNDERLINE_MASK));
+
+  DecoratedText decorated_word;
+  Point baseline_point;
+  {
+    // Query for the range of the first word.
+    EXPECT_TRUE(render_text->GetLookupDataForRange(
+        kWordOneRange, &decorated_word, &baseline_point));
+    VerifyDecoratedWordsAreEqual(expected_word_1, decorated_word);
+    EXPECT_TRUE(left_glyph_word_1.Contains(baseline_point));
+  }
+  {
+    // Query for the range of the second word.
+    EXPECT_TRUE(render_text->GetLookupDataForRange(
+        kWordTwoRange, &decorated_word, &baseline_point));
+    VerifyDecoratedWordsAreEqual(expected_word_2, decorated_word);
+    EXPECT_TRUE(left_glyph_word_2.Contains(baseline_point));
+  }
+  {
+    // Query the entire text range.
+    EXPECT_TRUE(render_text->GetLookupDataForRange(kTextRange, &decorated_word,
+                                                   &baseline_point));
+    VerifyDecoratedWordsAreEqual(expected_entire_text, decorated_word);
+    EXPECT_TRUE(left_glyph_word_1.Contains(baseline_point));
+  }
 }
 
 // Tests text selection made at end points of individual lines of multiline
@@ -5164,6 +5210,24 @@ TEST_P(RenderTextHarfBuzzTest, GlyphSpacing) {
   // The new width is the sum of |width_without_glyph_spacing| and the spacing.
   const float total_spacing = seuss.length() * kGlyphSpacing;
   EXPECT_EQ(width_without_glyph_spacing + total_spacing, run->width);
+}
+
+// Ensure font size overrides propagate through to text runs.
+TEST_P(RenderTextHarfBuzzTest, FontSizeOverride) {
+  RenderTextHarfBuzz* render_text = GetRenderTextHarfBuzz();
+  const int default_font_size = render_text->font_list().GetFontSize();
+  const int test_font_size_override = default_font_size + 5;
+  render_text->SetText(UTF8ToUTF16("0123456789"));
+  render_text->ApplyFontSizeOverride(test_font_size_override, gfx::Range(3, 7));
+  test_api()->EnsureLayout();
+  EXPECT_EQ(ToString16Vec({"012", "3456", "789"}), GetRunListStrings());
+
+  const internal::TextRunList* run_list = GetHarfBuzzRunList();
+  ASSERT_EQ(3U, run_list->size());
+
+  EXPECT_EQ(default_font_size, run_list->runs()[0].get()->font_size);
+  EXPECT_EQ(test_font_size_override, run_list->runs()[1].get()->font_size);
+  EXPECT_EQ(default_font_size, run_list->runs()[2].get()->font_size);
 }
 
 // Prefix for test instantiations intentionally left blank since each test

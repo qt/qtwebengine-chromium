@@ -13,7 +13,7 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/common/input_event_ack_state.h"
 #include "ipc/ipc_listener.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/blink/public/platform/web_input_event.h"
 
 namespace content {
 
@@ -75,6 +75,9 @@ class InputRouter : public IPC::Listener {
 
   // Used to stop an active fling if such exists.
   virtual void StopFling() = 0;
+
+  // Used to check if a fling cancellation is deferred due to boosting or not.
+  virtual bool FlingCancellationIsDeferred() = 0;
 };
 
 }  // namespace content

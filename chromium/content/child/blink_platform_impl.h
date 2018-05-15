@@ -18,10 +18,10 @@
 #include "content/child/webfallbackthemeengine_impl.h"
 #include "content/common/content_export.h"
 #include "media/blink/webmediacapabilitiesclient_impl.h"
-#include "third_party/WebKit/public/platform/Platform.h"
-#include "third_party/WebKit/public/platform/WebGestureDevice.h"
-#include "third_party/WebKit/public/platform/WebURLError.h"
-#include "third_party/WebKit/public/public_features.h"
+#include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/public/platform/web_gesture_device.h"
+#include "third_party/blink/public/platform/web_url_error.h"
+#include "third_party/blink/public/public_buildflags.h"
 #include "ui/base/layout.h"
 
 #if BUILDFLAG(USE_DEFAULT_RENDER_THEME)
@@ -71,7 +71,6 @@ class CONTENT_EXPORT BlinkPlatformImpl : public blink::Platform {
       const blink::WebSecurityOrigin& origin) override;
   bool DatabaseSetFileSize(const blink::WebString& vfs_file_name,
                            long long size) override;
-  size_t ActualMemoryUsageMB() override;
   size_t NumberOfProcessors() override;
 
   size_t MaxDecodedImageBytes() override;

@@ -91,6 +91,7 @@ HeadlessBrowserContextImpl::HeadlessBrowserContextImpl(
 
 HeadlessBrowserContextImpl::~HeadlessBrowserContextImpl() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  NotifyWillBeDestroyed(this);
 
   // Inform observers that we're going away.
   {
@@ -208,8 +209,7 @@ void HeadlessBrowserContextImpl::Close() {
 
 void HeadlessBrowserContextImpl::InitWhileIOAllowed() {
   if (!context_options_->user_data_dir().empty()) {
-    path_ =
-        context_options_->user_data_dir().Append(FILE_PATH_LITERAL("Default"));
+    path_ = context_options_->user_data_dir().Append(kDefaultProfileName);
   } else {
     PathService::Get(base::DIR_EXE, &path_);
   }
@@ -396,10 +396,18 @@ void HeadlessBrowserContextImpl::NotifyChildContentsCreated(
 void HeadlessBrowserContextImpl::NotifyUrlRequestFailed(
     net::URLRequest* request,
     int net_error,
-    bool canceled_by_devtools) {
+    DevToolsStatus devtools_status) {
   base::AutoLock lock(observers_lock_);
   for (auto& observer : observers_)
-    observer.UrlRequestFailed(request, net_error, canceled_by_devtools);
+    observer.UrlRequestFailed(request, net_error, devtools_status);
+}
+
+void HeadlessBrowserContextImpl::NotifyMetadataForResource(const GURL& url,
+                                                           net::IOBuffer* buf,
+                                                           int buf_len) {
+  base::AutoLock lock(observers_lock_);
+  for (auto& observer : observers_)
+    observer.OnMetadataForResource(url, buf, buf_len);
 }
 
 void HeadlessBrowserContextImpl::SetNetworkConditions(
@@ -525,8 +533,15 @@ HeadlessBrowserContext::Builder::EnableUnsafeNetworkAccessWithMojoBindings(
 
 HeadlessBrowserContext::Builder&
 HeadlessBrowserContext::Builder::SetOverrideWebPreferencesCallback(
-    base::Callback<void(WebPreferences*)> callback) {
+    base::RepeatingCallback<void(WebPreferences*)> callback) {
   options_->override_web_preferences_callback_ = std::move(callback);
+  return *this;
+}
+
+HeadlessBrowserContext::Builder&
+HeadlessBrowserContext::Builder::SetCaptureResourceMetadata(
+    bool capture_resource_metadata) {
+  options_->capture_resource_metadata_ = capture_resource_metadata;
   return *this;
 }
 

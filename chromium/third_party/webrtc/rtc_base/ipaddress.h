@@ -126,8 +126,8 @@ class InterfaceAddress : public IPAddress {
  public:
   InterfaceAddress() : ipv6_flags_(IPV6_ADDRESS_FLAG_NONE) {}
 
-  InterfaceAddress(IPAddress ip)
-    : IPAddress(ip), ipv6_flags_(IPV6_ADDRESS_FLAG_NONE) {}
+  explicit InterfaceAddress(IPAddress ip)
+      : IPAddress(ip), ipv6_flags_(IPV6_ADDRESS_FLAG_NONE) {}
 
   InterfaceAddress(IPAddress addr, int ipv6_flags)
     : IPAddress(addr), ipv6_flags_(ipv6_flags) {}
@@ -143,6 +143,8 @@ class InterfaceAddress : public IPAddress {
   int ipv6_flags() const { return ipv6_flags_; }
   friend std::ostream& operator<<(std::ostream& os,
                                   const InterfaceAddress& addr);
+
+  std::string ToString() const;
 
  private:
   int ipv6_flags_;

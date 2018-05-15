@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-#include "p2p/base/common.h"
+#include "p2p/base/p2pconstants.h"
 #include "p2p/base/portallocator.h"
 #include "p2p/base/stun.h"
 #include "rtc_base/checks.h"
@@ -25,7 +25,6 @@
 namespace cricket {
 
 // TODO(?): Move these to a common place (used in relayport too)
-const int KEEPALIVE_DELAY = 10 * 1000;  // 10 seconds - sort timeouts
 const int RETRY_TIMEOUT = 50 * 1000;    // 50 seconds
 
 // Handles a binding request sent to the STUN server.
@@ -69,9 +68,9 @@ class StunBindingRequest : public StunRequest {
       RTC_LOG(LS_ERROR) << "Missing binding response error code.";
     } else {
       RTC_LOG(LS_ERROR) << "Binding error response:"
-                        << " class=" << attr->eclass()
-                        << " number=" << attr->number() << " reason='"
-                        << attr->reason() << "'";
+                           " class=" << attr->eclass()
+                        << " number=" << attr->number() << " reason="
+                        << attr->reason();
     }
 
     port_->OnStunBindingOrResolveRequestFailed(server_addr_);
@@ -166,17 +165,12 @@ UDPPort::UDPPort(rtc::Thread* thread,
                  const std::string& password,
                  const std::string& origin,
                  bool emit_local_for_anyaddress)
-    : Port(thread,
-           LOCAL_PORT_TYPE,
-           factory,
-           network,
-           username,
-           password),
+    : Port(thread, LOCAL_PORT_TYPE, factory, network, username, password),
       requests_(thread),
       socket_(socket),
       error_(0),
       ready_(false),
-      stun_keepalive_delay_(KEEPALIVE_DELAY),
+      stun_keepalive_delay_(STUN_KEEPALIVE_INTERVAL),
       emit_local_for_anyaddress_(emit_local_for_anyaddress) {
   requests_.set_origin(origin);
 }
@@ -202,7 +196,7 @@ UDPPort::UDPPort(rtc::Thread* thread,
       socket_(NULL),
       error_(0),
       ready_(false),
-      stun_keepalive_delay_(KEEPALIVE_DELAY),
+      stun_keepalive_delay_(STUN_KEEPALIVE_INTERVAL),
       emit_local_for_anyaddress_(emit_local_for_anyaddress) {
   requests_.set_origin(origin);
 }
@@ -214,7 +208,8 @@ bool UDPPort::Init() {
     socket_ = socket_factory()->CreateUdpSocket(
         rtc::SocketAddress(Network()->GetBestIP(), 0), min_port(), max_port());
     if (!socket_) {
-      LOG_J(LS_WARNING, this) << "UDP socket creation failed";
+      RTC_LOG(LS_WARNING) << ToString()
+                          << ": UDP socket creation failed";
       return false;
     }
     socket_->SignalReadPacket.connect(this, &UDPPort::OnReadPacket);
@@ -276,8 +271,8 @@ int UDPPort::SendTo(const void* data, size_t size,
   int sent = socket_->SendTo(data, size, addr, options);
   if (sent < 0) {
     error_ = socket_->GetError();
-    LOG_J(LS_ERROR, this) << "UDP send of " << size
-                          << " bytes failed with error " << error_;
+    RTC_LOG(LS_ERROR) << ToString() << ": UDP send of "
+                      << size << " bytes failed with error " << error_;
   }
   return sent;
 }
@@ -322,7 +317,7 @@ void UDPPort::GetStunStats(rtc::Optional<StunStats>* stats) {
 }
 
 void UDPPort::set_stun_keepalive_delay(const rtc::Optional<int>& delay) {
-  stun_keepalive_delay_ = delay.value_or(KEEPALIVE_DELAY);
+  stun_keepalive_delay_ = delay.value_or(STUN_KEEPALIVE_INTERVAL);
 }
 
 void UDPPort::OnLocalAddressReady(rtc::AsyncPacketSocket* socket,
@@ -392,8 +387,9 @@ void UDPPort::ResolveStunAddress(const rtc::SocketAddress& stun_addr) {
     resolver_->SignalDone.connect(this, &UDPPort::OnResolveResult);
   }
 
-  LOG_J(LS_INFO, this) << "Starting STUN host lookup for "
-                       << stun_addr.ToSensitiveString();
+  RTC_LOG(LS_INFO) << ToString()
+                   << ": Starting STUN host lookup for "
+                   << stun_addr.ToSensitiveString();
   resolver_->Resolve(stun_addr);
 }
 
@@ -404,8 +400,9 @@ void UDPPort::OnResolveResult(const rtc::SocketAddress& input,
   rtc::SocketAddress resolved;
   if (error != 0 || !resolver_->GetResolvedAddress(
                         input, Network()->GetBestIP().family(), &resolved)) {
-    LOG_J(LS_WARNING, this) << "StunPort: stun host lookup received error "
-                            << error;
+    RTC_LOG(LS_WARNING) << ToString()
+                        << ": StunPort: stun host lookup received error "
+                        << error;
     OnStunBindingOrResolveRequestFailed(input);
     return;
   }
@@ -457,17 +454,16 @@ void UDPPort::OnStunBindingRequestSucceeded(
     int rtt_ms,
     const rtc::SocketAddress& stun_server_addr,
     const rtc::SocketAddress& stun_reflected_addr) {
-  if (bind_request_succeeded_servers_.find(stun_server_addr) !=
-          bind_request_succeeded_servers_.end()) {
-    return;
-  }
-  bind_request_succeeded_servers_.insert(stun_server_addr);
-
   RTC_DCHECK(stats_.stun_binding_responses_received <
              stats_.stun_binding_requests_sent);
   stats_.stun_binding_responses_received++;
   stats_.stun_binding_rtt_ms_total += rtt_ms;
   stats_.stun_binding_rtt_ms_squared_total += rtt_ms * rtt_ms;
+  if (bind_request_succeeded_servers_.find(stun_server_addr) !=
+      bind_request_succeeded_servers_.end()) {
+    return;
+  }
+  bind_request_succeeded_servers_.insert(stun_server_addr);
   // If socket is shared and |stun_reflected_addr| is equal to local socket
   // address, or if the same address has been added by another STUN server,
   // then discarding the stun address.
@@ -554,9 +550,11 @@ StunPort* StunPort::Create(rtc::Thread* thread,
                            const std::string& username,
                            const std::string& password,
                            const ServerAddresses& servers,
-                           const std::string& origin) {
+                           const std::string& origin,
+                           rtc::Optional<int> stun_keepalive_interval) {
   StunPort* port = new StunPort(thread, factory, network, min_port, max_port,
                                 username, password, servers, origin);
+  port->set_stun_keepalive_delay(stun_keepalive_interval);
   if (!port->Init()) {
     delete port;
     port = NULL;

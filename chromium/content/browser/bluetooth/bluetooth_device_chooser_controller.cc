@@ -10,7 +10,6 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -81,16 +80,13 @@ const int k80thPercentileRSSI = -52;
 
 namespace content {
 
-bool BluetoothDeviceChooserController::use_test_scan_duration_ = false;
+// Sets the default duration for a Bluetooth scan to 60 seconds.
+int64_t BluetoothDeviceChooserController::scan_duration_ = 60;
 
 namespace {
 // Max length of device name in filter. Bluetooth 5.0 3.C.3.2.2.3 states that
 // the maximum device name length is 248 bytes (UTF-8 encoded).
 constexpr size_t kMaxLengthForDeviceName = 248;
-
-// The duration of a Bluetooth Scan in seconds.
-constexpr int kScanDuration = 60;
-constexpr int kTestScanDuration = 0;
 
 void LogRequestDeviceOptions(
     const blink::mojom::WebBluetoothRequestDeviceOptionsPtr& options) {
@@ -281,10 +277,7 @@ BluetoothDeviceChooserController::BluetoothDeviceChooserController(
       web_contents_(WebContents::FromRenderFrameHost(render_frame_host_)),
       discovery_session_timer_(
           FROM_HERE,
-          // TODO(jyasskin): Add a way for tests to control the dialog
-          // directly, and change this to a reasonable discovery timeout.
-          base::TimeDelta::FromSeconds(
-              use_test_scan_duration_ ? kTestScanDuration : kScanDuration),
+          base::TimeDelta::FromSeconds(scan_duration_),
           base::Bind(&BluetoothDeviceChooserController::StopDeviceDiscovery,
                      // base::Timer guarantees it won't call back after its
                      // destructor starts.
@@ -397,7 +390,7 @@ void BluetoothDeviceChooserController::GetDevice(
 
   if (WebContentsDelegate* delegate = web_contents_->GetDelegate()) {
     chooser_ = delegate->RunBluetoothChooser(render_frame_host_,
-                                             chooser_event_handler);
+                                             std::move(chooser_event_handler));
   }
 
   if (!chooser_.get()) {
@@ -490,8 +483,16 @@ int BluetoothDeviceChooserController::CalculateSignalStrengthLevel(
   }
 }
 
-void BluetoothDeviceChooserController::SetTestScanDurationForTesting() {
-  BluetoothDeviceChooserController::use_test_scan_duration_ = true;
+void BluetoothDeviceChooserController::SetTestScanDurationForTesting(
+    TestScanDurationSetting setting) {
+  switch (setting) {
+    case TestScanDurationSetting::IMMEDIATE_TIMEOUT:
+      scan_duration_ = 0;
+      break;
+    case TestScanDurationSetting::NEVER_TIMEOUT:
+      scan_duration_ = base::TimeDelta::Max().InSeconds();
+      break;
+  }
 }
 
 void BluetoothDeviceChooserController::PopulateConnectedDevices() {

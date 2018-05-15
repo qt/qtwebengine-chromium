@@ -32,7 +32,7 @@
 #include "base/files/file.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_pump_for_io.h"
 #include "base/single_thread_task_runner.h"
 #include "base/task_runner.h"
 #include "net/base/completion_once_callback.h"
@@ -51,7 +51,7 @@ namespace net {
 class IOBuffer;
 
 #if defined(OS_WIN)
-class FileStream::Context : public base::MessageLoopForIO::IOHandler {
+class FileStream::Context : public base::MessagePumpForIO::IOHandler {
 #elif defined(OS_POSIX)
 class FileStream::Context {
 #endif
@@ -124,27 +124,6 @@ class FileStream::Context {
     DISALLOW_COPY_AND_ASSIGN(OpenResult);
   };
 
-  // TODO(xunjieli): Remove after crbug.com/732321 is fixed.
-  enum LastOperation {
-    // FileStream has a pending Open().
-    OPEN,
-    // FileStream has a pending Write().
-    WRITE,
-    // FileStream has a pending Read().
-    READ,
-    // FileStream has a pending Seek().
-    SEEK,
-    // FileStream has a pending Flush().
-    FLUSH,
-    // FileStream has a pending Close().
-    CLOSE,
-    // FileStream doesn't have any pending operation.
-    NONE
-  };
-
-  // TODO(xunjieli): Remove after crbug.com/732321 is fixed.
-  void CheckNoAsyncInProgress() const;
-
   ////////////////////////////////////////////////////////////////////////////
   // Platform-independent methods implemented in file_stream_context.cc.
   ////////////////////////////////////////////////////////////////////////////
@@ -181,8 +160,8 @@ class FileStream::Context {
 #if defined(OS_WIN)
   void IOCompletionIsPending(CompletionOnceCallback callback, IOBuffer* buf);
 
-  // Implementation of MessageLoopForIO::IOHandler.
-  void OnIOCompleted(base::MessageLoopForIO::IOContext* context,
+  // Implementation of MessagePumpForIO::IOHandler.
+  void OnIOCompleted(base::MessagePumpForIO::IOContext* context,
                      DWORD bytes_read,
                      DWORD error) override;
 
@@ -239,14 +218,11 @@ class FileStream::Context {
   base::File file_;
   bool async_in_progress_;
 
-  // TODO(xunjieli): Remove after crbug.com/732321 is fixed.
-  LastOperation last_operation_;
-
   bool orphaned_;
   scoped_refptr<base::TaskRunner> task_runner_;
 
 #if defined(OS_WIN)
-  base::MessageLoopForIO::IOContext io_context_;
+  base::MessagePumpForIO::IOContext io_context_;
   CompletionOnceCallback callback_;
   scoped_refptr<IOBuffer> in_flight_buf_;
   // This flag is set to true when we receive a Read request which is queued to

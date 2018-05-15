@@ -48,8 +48,8 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
       public ServiceWorkerContextCoreObserver,
       public base::RefCountedThreadSafe<ServiceWorkerContextWrapper> {
  public:
-  using StatusCallback = base::Callback<void(ServiceWorkerStatusCode)>;
-  using BoolCallback = base::Callback<void(bool)>;
+  using StatusCallback = base::OnceCallback<void(ServiceWorkerStatusCode)>;
+  using BoolCallback = base::OnceCallback<void(bool)>;
   using FindRegistrationCallback =
       ServiceWorkerStorage::FindRegistrationCallback;
   using GetRegistrationsInfosCallback =
@@ -140,7 +140,7 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
 
   // Must be called from the IO thread.
   void HasMainFrameProviderHost(const GURL& origin,
-                                const BoolCallback& callback) const;
+                                BoolCallback callback) const;
 
   // Returns all render process ids and frame ids for the given |origin|.
   std::unique_ptr<
@@ -224,14 +224,14 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
       int64_t registration_id,
       const GURL& origin,
       const std::vector<std::pair<std::string, std::string>>& key_value_pairs,
-      const StatusCallback& callback);
+      StatusCallback callback);
   void ClearRegistrationUserData(int64_t registration_id,
                                  const std::vector<std::string>& keys,
-                                 const StatusCallback& callback);
+                                 StatusCallback callback);
   void ClearRegistrationUserDataByKeyPrefixes(
       int64_t registration_id,
       const std::vector<std::string>& key_prefixes,
-      const StatusCallback& callback);
+      StatusCallback callback);
   void GetUserDataForAllRegistrations(
       const std::string& key,
       GetUserDataForAllRegistrationsCallback callback);
@@ -241,7 +241,7 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
 
   // This function can be called from any thread, but the callback will always
   // be called on the UI thread.
-  void StartServiceWorker(const GURL& pattern, const StatusCallback& callback);
+  void StartServiceWorker(const GURL& pattern, StatusCallback callback);
 
   // These methods can be called from any thread.
   void SkipWaitingWorker(const GURL& pattern);
@@ -253,6 +253,17 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
   void RemoveObserver(ServiceWorkerContextCoreObserver* observer);
 
   bool is_incognito() const { return is_incognito_; }
+
+  // S13nServiceWorker:
+  // Used for starting a shared worker. Returns a provider host for the shared
+  // worker and fills |out_provider_info| with info to send to the renderer to
+  // connect to the host. The host stays alive as long as this info stays alive
+  // (namely, as long as |out_provider_info->host_ptr_info| stays alive).
+  //
+  // Must be called on the IO thread.
+  base::WeakPtr<ServiceWorkerProviderHost> PreCreateHostForSharedWorker(
+      int process_id,
+      mojom::ServiceWorkerProviderInfoForSharedWorkerPtr* out_provider_info);
 
  private:
   friend class BackgroundSyncManagerTest;

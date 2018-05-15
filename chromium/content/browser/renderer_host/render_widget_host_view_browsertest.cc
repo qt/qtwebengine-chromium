@@ -761,14 +761,14 @@ IN_PROC_BROWSER_TEST_P(CompositingRenderWidgetHostViewBrowserTestHiDPI,
                          kContentHeight, kScrollAmount));
 
   SET_UP_SURFACE_OR_PASS_TEST("\"DONE\"");
+  RenderFrameSubmissionObserver observer_(
+      GetRenderWidgetHost()->render_frame_metadata_provider());
+  observer_.WaitForScrollOffsetAtTop(false);
+
   if (!ShouldContinueAfterTestURLLoad())
     return;
 
-  RenderWidgetHostViewBase* rwhv = GetRenderWidgetHostView();
-  gfx::Vector2dF scroll_offset = rwhv->GetLastScrollOffset();
-
-  EXPECT_EQ(scroll_offset.x(), 0);
-  EXPECT_EQ(scroll_offset.y(), kScrollAmount);
+  EXPECT_FALSE(GetRenderWidgetHostView()->IsScrollOffsetAtTop());
 }
 
 #if defined(OS_CHROMEOS)

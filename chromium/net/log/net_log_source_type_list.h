@@ -4,12 +4,15 @@
 
 // NOTE: No header guards are used, since this file is intended to be expanded
 // directly within a block where the SOURCE_TYPE macro is defined.
+// The following line silences a presubmit warning that would otherwise be
+// triggered by this:
+// no-include-guard-because-multiply-included
 
 // Used for global events which don't correspond to a particular entity.
 SOURCE_TYPE(NONE)
 
 SOURCE_TYPE(URL_REQUEST)
-SOURCE_TYPE(PROXY_SCRIPT_DECIDER)
+SOURCE_TYPE(PAC_FILE_DECIDER)
 SOURCE_TYPE(HTTP_PROXY_CONNECT_JOB)
 SOURCE_TYPE(SOCKS_CONNECT_JOB)
 SOURCE_TYPE(SSL_CONNECT_JOB)
@@ -41,3 +44,4 @@ SOURCE_TYPE(SERVER_PUSH_LOOKUP_TRANSACTION)
 SOURCE_TYPE(QUIC_STREAM_FACTORY_JOB)
 SOURCE_TYPE(HTTP_SERVER_PROPERTIES)
 SOURCE_TYPE(HOST_CACHE_PERSISTENCE_MANAGER)
+SOURCE_TYPE(TRIAL_CERT_VERIFIER_JOB)

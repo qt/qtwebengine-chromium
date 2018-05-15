@@ -7,10 +7,11 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/metrics/histogram_macros.h"
+#include "chromeos/components/proximity_auth/logging/logging.h"
 #include "components/cryptauth/cryptauth_client_impl.h"
 #include "components/cryptauth/cryptauth_enrollment_utils.h"
 #include "components/cryptauth/secure_message_delegate.h"
-#include "components/proximity_auth/logging/logging.h"
 #include "crypto/sha2.h"
 
 namespace cryptauth {
@@ -211,13 +212,15 @@ void CryptAuthEnrollerImpl::OnOuterSecureMessageCreated(
 
 void CryptAuthEnrollerImpl::OnFinishEnrollmentSuccess(
     const FinishEnrollmentResponse& response) {
-  if (response.status() != kResponseStatusOk) {
+  const bool success = response.status() == kResponseStatusOk;
+
+  if (!success) {
     PA_LOG(WARNING) << "Unexpected status for FinishEnrollment: "
                     << response.status();
-    callback_.Run(false);
-  } else {
-    callback_.Run(true);
   }
+
+  UMA_HISTOGRAM_BOOLEAN("CryptAuth.Enrollment.Result", success);
+  callback_.Run(success);
 }
 
 void CryptAuthEnrollerImpl::OnFinishEnrollmentFailure(

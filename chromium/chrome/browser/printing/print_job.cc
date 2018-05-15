@@ -10,7 +10,6 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
@@ -41,11 +40,7 @@ void HoldRefCallback(scoped_refptr<PrintJobWorkerOwner> owner,
 
 PrintJob::PrintJob()
     : is_job_pending_(false), is_canceling_(false), quit_factory_(this) {
-  // This is normally a UI message loop, but in unit tests, the message loop is
-  // of the 'default' type.
-  DCHECK(base::MessageLoopForUI::IsCurrent() ||
-         base::MessageLoop::current()->type() ==
-             base::MessageLoop::TYPE_DEFAULT);
+  DCHECK(base::MessageLoopForUI::IsCurrent());
 }
 
 PrintJob::~PrintJob() {
@@ -86,19 +81,21 @@ void PrintJob::Initialize(PrintJobWorkerOwner* job,
 }
 
 #if defined(OS_WIN)
-void PrintJob::ResetPageMapping() {
-  std::vector<int> pages = PageRange::GetPages(settings_.ranges());
-  if (pages.empty())
-    return;
-
-  pdf_page_mapping_ = std::vector<int>(document_->page_count(), -1);
+// static
+std::vector<int> PrintJob::GetFullPageMapping(const std::vector<int>& pages,
+                                              int total_page_count) {
+  std::vector<int> mapping(total_page_count, -1);
   for (int page_number : pages) {
     // Make sure the page is in range.
-    if (page_number >= 0 &&
-        page_number < static_cast<int>(pdf_page_mapping_.size())) {
-      pdf_page_mapping_[page_number] = page_number;
-    }
+    if (page_number >= 0 && page_number < total_page_count)
+      mapping[page_number] = page_number;
   }
+  return mapping;
+}
+
+void PrintJob::ResetPageMapping() {
+  pdf_page_mapping_ =
+      GetFullPageMapping(pdf_page_mapping_, document_->page_count());
 }
 #endif
 
@@ -280,7 +277,7 @@ void PrintJob::StartPdfToEmfConversion(
       std::make_unique<PdfConversionState>(page_size, content_area);
   PdfRenderSettings render_settings(
       content_area, gfx::Point(0, 0), settings().dpi_size(),
-      /*autorotate=*/true,
+      /*autorotate=*/true, settings_.color() == COLOR,
       print_text_with_gdi ? PdfRenderSettings::Mode::GDI_TEXT
                           : PdfRenderSettings::Mode::NORMAL);
   pdf_conversion_state_->Start(
@@ -336,7 +333,8 @@ void PrintJob::StartPdfToTextConversion(
   gfx::Rect page_area = gfx::Rect(0, 0, page_size.width(), page_size.height());
   PdfRenderSettings render_settings(
       page_area, gfx::Point(0, 0), settings().dpi_size(),
-      /*autorotate=*/true, PdfRenderSettings::Mode::TEXTONLY);
+      /*autorotate=*/true,
+      /*use_color=*/true, PdfRenderSettings::Mode::TEXTONLY);
   pdf_conversion_state_->Start(
       bytes, render_settings,
       base::BindOnce(&PrintJob::OnPdfConversionStarted, this));
@@ -352,7 +350,7 @@ void PrintJob::StartPdfToPostScriptConversion(
       gfx::Size(), gfx::Rect());
   PdfRenderSettings render_settings(
       content_area, physical_offsets, settings().dpi_size(),
-      /*autorotate=*/true,
+      /*autorotate=*/true, settings_.color() == COLOR,
       ps_level2 ? PdfRenderSettings::Mode::POSTSCRIPT_LEVEL2
                 : PdfRenderSettings::Mode::POSTSCRIPT_LEVEL3);
   pdf_conversion_state_->Start(
@@ -486,6 +484,14 @@ void PrintJob::HoldUntilStopIsCalled() {
 
 void PrintJob::Quit() {
   base::RunLoop::QuitCurrentWhenIdleDeprecated();
+}
+
+void PrintJob::set_settings(const PrintSettings& settings) {
+  settings_ = settings;
+}
+
+void PrintJob::set_job_pending(bool pending) {
+  is_job_pending_ = pending;
 }
 
 #if defined(OS_WIN)

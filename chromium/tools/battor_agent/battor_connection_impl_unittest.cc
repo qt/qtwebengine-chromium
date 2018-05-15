@@ -31,9 +31,9 @@ namespace battor {
 class TestableBattOrConnection : public BattOrConnectionImpl {
  public:
   TestableBattOrConnection(BattOrConnection::Listener* listener,
-                           std::unique_ptr<base::TickClock> tick_clock)
+                           const base::TickClock* tick_clock)
       : BattOrConnectionImpl("/dev/test", listener, nullptr) {
-    tick_clock_ = std::move(tick_clock);
+    tick_clock_ = tick_clock;
   }
   scoped_refptr<device::SerialIoHandler> CreateIoHandler() override {
     return device::TestSerialIoHandler::Create();
@@ -89,6 +89,8 @@ class BattOrConnectionImplTest : public testing::Test,
     connection_->Flush();
     task_runner_->RunUntilIdle();
   }
+
+  bool IsConnectionOpen() { return connection_->IsOpen(); }
 
   void CloseConnection() { connection_->Close(); }
 
@@ -147,10 +149,10 @@ class BattOrConnectionImplTest : public testing::Test,
   std::vector<char>* GetReadMessage() { return read_bytes_.get(); }
 
  private:
-  std::unique_ptr<TestableBattOrConnection> connection_;
-
   scoped_refptr<base::TestMockTimeTaskRunner> task_runner_;
   base::ThreadTaskRunnerHandle thread_task_runner_handle_;
+
+  std::unique_ptr<TestableBattOrConnection> connection_;
 
   // Result from the last connect command.
   bool open_success_;
@@ -171,6 +173,18 @@ TEST_F(BattOrConnectionImplTest, OpenConnectionSucceedsImmediately) {
   OpenConnection();
   ASSERT_TRUE(IsOpenComplete());
   ASSERT_TRUE(GetOpenSuccess());
+  ASSERT_TRUE(IsConnectionOpen());
+}
+
+TEST_F(BattOrConnectionImplTest, IsOpenFalseAfterClosingConnection) {
+  OpenConnection();
+  ASSERT_TRUE(IsOpenComplete());
+  ASSERT_TRUE(GetOpenSuccess());
+  ASSERT_TRUE(IsConnectionOpen());
+
+  CloseConnection();
+
+  ASSERT_FALSE(IsConnectionOpen());
 }
 
 TEST_F(BattOrConnectionImplTest, FlushConnectionSucceedsOnlyAfterTimeout) {

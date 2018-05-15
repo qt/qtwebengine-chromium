@@ -29,8 +29,9 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/stop_find_action.h"
-#include "third_party/WebKit/public/common/frame/sandbox_flags.h"
+#include "third_party/blink/public/common/frame/sandbox_flags.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/accessibility/ax_modes.h"
 #include "ui/accessibility/ax_tree_update.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/geometry/rect.h"
@@ -299,10 +300,11 @@ class WebContents : public PageNavigator,
   virtual RenderWidgetHostView* GetTopLevelRenderWidgetHostView() = 0;
 
   // Request a one-time snapshot of the accessibility tree without changing
-  // the accessibility mode.
-  using AXTreeSnapshotCallback = base::Callback<void(const ui::AXTreeUpdate&)>;
-  virtual void RequestAXTreeSnapshot(
-      const AXTreeSnapshotCallback& callback) = 0;
+  // the accessibility mode. |ax_mode| is the accessibility mode to use.
+  using AXTreeSnapshotCallback =
+      base::OnceCallback<void(const ui::AXTreeUpdate&)>;
+  virtual void RequestAXTreeSnapshot(AXTreeSnapshotCallback callback,
+                                     ui::AXMode ax_mode) = 0;
 
   // Causes the current page to be closed, including running its onunload event
   // handler.
@@ -321,7 +323,10 @@ class WebContents : public PageNavigator,
   virtual WebUI* GetCommittedWebUI() const = 0;
 
   // Allows overriding the user agent used for NavigationEntries it owns.
-  virtual void SetUserAgentOverride(const std::string& override) = 0;
+  // |override_in_new_tabs| is set when we are overriding user agent for new
+  // tabs.
+  virtual void SetUserAgentOverride(const std::string& override,
+                                    bool override_in_new_tabs) = 0;
   virtual const std::string& GetUserAgentOverride() const = 0;
 
   // Set the accessibility mode so that accessibility events are forwarded
@@ -379,6 +384,17 @@ class WebContents : public PageNavigator,
   // Returns the character encoding of the page.
   virtual const std::string& GetEncoding() const = 0;
 
+  // Indicates that the tab was previously discarded.
+  // wasDiscarded is exposed on Document after discard, see:
+  // https://github.com/WICG/web-lifecycle
+  // When a tab is discarded, WebContents sets was_discarded on its
+  // root FrameTreeNode.
+  // In addition, when a child frame is created, this bit is passed on from
+  // parent to child.
+  // When a navigation request is created, was_discarded is passed on to the
+  // request and reset to false in FrameTreeNode.
+  virtual void SetWasDiscarded(bool was_discarded) = 0;
+
   // Internal state ------------------------------------------------------------
 
   // Indicates whether the WebContents is being captured (e.g., for screenshots
@@ -430,11 +446,10 @@ class WebContents : public PageNavigator,
   virtual void WasShown() = 0;
   virtual void WasHidden() = 0;
 
-  // Invoked when the WebContents becomes occluded/unoccluded. An occluded
-  // WebContents isn't painted on the screen, except in a window switching
-  // feature (e.g. Alt-Tab).
+  // Invoked when the WebContents becomes occluded. An occluded WebContents
+  // isn't painted on the screen, except in a window switching feature (e.g.
+  // Alt-Tab).
   virtual void WasOccluded() = 0;
-  virtual void WasUnOccluded() = 0;
 
   // Returns the visibility of the WebContents' view.
   virtual Visibility GetVisibility() const = 0;
@@ -465,10 +480,17 @@ class WebContents : public PageNavigator,
   // Invoked when visible security state changes.
   virtual void DidChangeVisibleSecurityState() = 0;
 
+  // Notify this WebContents that the preferences have changed. This will send
+  // an IPC to all the renderer processes associated with this WebContents.
+  virtual void NotifyPreferencesChanged() = 0;
+
   // Commands ------------------------------------------------------------------
 
   // Stop any pending navigation.
   virtual void Stop() = 0;
+
+  // Freeze the current page.
+  virtual void FreezePage() = 0;
 
   // Creates a new WebContents with the same state as this one. The returned
   // heap-allocated pointer is owned by the caller.
@@ -596,9 +618,11 @@ class WebContents : public PageNavigator,
   // provided, is used to make a request to the URL rather than using cache.
   // Format of |headers| is a new line separated list of key value pairs:
   // "<key1>: <value1>\r\n<key2>: <value2>".
-  virtual void SaveFrameWithHeaders(const GURL& url,
-                                    const Referrer& referrer,
-                                    const std::string& headers) = 0;
+  virtual void SaveFrameWithHeaders(
+      const GURL& url,
+      const Referrer& referrer,
+      const std::string& headers,
+      const base::string16& suggested_filename) = 0;
 
   // Generate an MHTML representation of the current page in the given file.
   // If |use_binary_encoding| is specified, a Content-Transfer-Encoding value of
@@ -607,7 +631,7 @@ class WebContents : public PageNavigator,
   // not the recommended encoding for shareable content.
   virtual void GenerateMHTML(
       const MHTMLGenerationParams& params,
-      const base::Callback<void(int64_t /* size of the file */)>& callback) = 0;
+      base::OnceCallback<void(int64_t /* size of the file */)> callback) = 0;
 
   // Returns the contents MIME type after a navigation.
   virtual const std::string& GetContentsMimeType() const = 0;
@@ -626,10 +650,11 @@ class WebContents : public PageNavigator,
   // WebContentsDelegate.
   virtual void SystemDragEnded(RenderWidgetHost* source_rwh) = 0;
 
-  // Notification the user has made a gesture while focus was on the
-  // page. This is used to avoid uninitiated user downloads (aka carpet
-  // bombing), see DownloadRequestLimiter for details.
-  virtual void UserGestureDone() = 0;
+  // The user initiated navigation to this page (as opposed to a navigation that
+  // could have been triggered without user interaction). Used to avoid
+  // uninitiated user downloads (aka carpet bombing), see DownloadRequestLimiter
+  // for details.
+  virtual void NavigatedByUser() = 0;
 
   // Indicates if this tab was explicitly closed by the user (control-w, close
   // tab menu item...). This is false for actions that indirectly close the tab,
@@ -652,6 +677,10 @@ class WebContents : public PageNavigator,
   // Returns true if |allowed| is true and the mouse has been successfully
   // locked.
   virtual bool GotResponseToLockMouseRequest(bool allowed) = 0;
+
+  // Called when the response to a keyboard mouse lock request has arrived.
+  // Returns false if the request is no longer valid, otherwise true.
+  virtual bool GotResponseToKeyboardLockRequest(bool allowed) = 0;
 
   // Called when the user has selected a color in the color chooser.
   virtual void DidChooseColorInColorChooser(SkColor color) = 0;
@@ -686,17 +715,16 @@ class WebContents : public PageNavigator,
   // Returns the WakeLockContext accociated with this WebContents.
   virtual device::mojom::WakeLockContext* GetWakeLockContext() = 0;
 
-  typedef base::Callback<void(
-      int, /* id */
-      int, /* HTTP status code */
-      const GURL&, /* image_url */
+  using ImageDownloadCallback = base::OnceCallback<void(
+      int,                          /* id */
+      int,                          /* HTTP status code */
+      const GURL&,                  /* image_url */
       const std::vector<SkBitmap>&, /* bitmaps */
       /* The sizes in pixel of the bitmaps before they were resized due to the
          max bitmap size passed to DownloadImage(). Each entry in the bitmaps
          vector corresponds to an entry in the sizes vector. If a bitmap was
          resized, there should be a single returned bitmap. */
-      const std::vector<gfx::Size>&)>
-          ImageDownloadCallback;
+      const std::vector<gfx::Size>&)>;
 
   // Sends a request to download the given image |url| and returns the unique
   // id of the download request. When the download is finished, |callback| will
@@ -713,7 +741,7 @@ class WebContents : public PageNavigator,
                             bool is_favicon,
                             uint32_t max_bitmap_size,
                             bool bypass_cache,
-                            const ImageDownloadCallback& callback) = 0;
+                            ImageDownloadCallback callback) = 0;
 
   // Returns true if the WebContents is responsible for displaying a subframe
   // in a different process from its parent page.
@@ -741,11 +769,11 @@ class WebContents : public PageNavigator,
   // The callback invoked when the renderer responds to a request for the main
   // frame document's manifest. The url will be empty if the document specifies
   // no manifest, and the manifest will be empty if any other failures occurred.
-  typedef base::Callback<void(const GURL&, const Manifest&)>
-      GetManifestCallback;
+  using GetManifestCallback =
+      base::OnceCallback<void(const GURL&, const Manifest&)>;
 
   // Requests the manifest URL and the Manifest of the main frame's document.
-  virtual void GetManifest(const GetManifestCallback& callback) = 0;
+  virtual void GetManifest(GetManifestCallback callback) = 0;
 
   // Returns whether the renderer is in fullscreen mode.
   virtual bool IsFullscreenForCurrentTab() const = 0;
@@ -785,6 +813,20 @@ class WebContents : public PageNavigator,
 
   // Tells the WebContents whether the context menu is showing.
   virtual void SetShowingContextMenu(bool showing) = 0;
+
+  // Pause and unpause scheduled tasks in the page of blink. This function will
+  // suspend page loadings and all background processing like active javascript,
+  // and timers through |blink::Page::SetPaused|. If you want to resume the
+  // paused state, you have to call this function with |false| argument again.
+  // The function with |false| should be called after calling it with |true|. If
+  // not, assertion will happen.
+  //
+  // WARNING: This only pauses the activities in the particular page in the
+  // renderer process, but may indirectly block or break other pages when they
+  // wait for the common backend (e.g. storage) in the browser process.
+  // TODO(gyuyoung): https://crbug.com/822564 - Make this feature safer and fix
+  // bugs.
+  virtual void PausePageScheduledTasks(bool paused) = 0;
 
 #if defined(OS_ANDROID)
   CONTENT_EXPORT static WebContents* FromJavaWebContents(

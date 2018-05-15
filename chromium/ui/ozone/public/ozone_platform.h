@@ -13,7 +13,6 @@
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "ui/events/system_input_injector.h"
 #include "ui/ozone/ozone_export.h"
-//#include "ui/ozone/public/interfaces/drm_device.mojom.h"
 
 namespace display {
 class NativeDisplayDelegate;
@@ -78,9 +77,9 @@ class OZONE_EXPORT OzonePlatform {
     // split between a host and viz specific portion.
     bool single_process = false;
 
-    //  Setting this to true indicates that the platform implementation should
-    //  use mojo. Setting this to true requires calling |AddInterfaces|
-    //  afterwards in the Viz process and providing a connector as part
+    // Setting this to true indicates that the platform implementation should
+    // use mojo. Setting this to true requires calling |AddInterfaces|
+    // afterwards in the Viz process and providing a connector as part.
     bool using_mojo = false;
   };
 

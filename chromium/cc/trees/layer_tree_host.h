@@ -296,6 +296,10 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
                                float device_scale_factor,
                                const viz::LocalSurfaceId& local_surface_id);
 
+  void SetViewportVisibleRect(const gfx::Rect& visible_rect);
+
+  gfx::Rect viewport_visible_rect() const { return viewport_visible_rect_; }
+
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
 
   void SetBrowserControlsHeight(float top_height,
@@ -633,6 +637,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
 
   uint32_t content_source_id_;
   viz::LocalSurfaceId local_surface_id_;
+  // Used to detect surface invariant violations.
+  bool has_pushed_local_surface_id_ = false;
   bool defer_commits_ = false;
 
   SkColor background_color_ = SK_ColorWHITE;
@@ -640,6 +646,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   LayerSelection selection_;
 
   gfx::Size device_viewport_size_;
+
+  gfx::Rect viewport_visible_rect_;
 
   bool have_scroll_event_handlers_ = false;
   EventListenerProperties event_listener_properties_[static_cast<size_t>(

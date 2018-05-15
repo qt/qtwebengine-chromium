@@ -4,6 +4,9 @@
 
 #include "components/download/public/common/download_task_runner.h"
 
+#include "base/lazy_instance.h"
+#include "base/no_destructor.h"
+#include "base/synchronization/lock.h"
 #include "base/task_scheduler/lazy_task_runner.h"
 #include "build/build_config.h"
 
@@ -24,10 +27,42 @@ base::LazySequencedTaskRunner g_download_task_runner =
         base::TaskTraits(base::MayBlock(), base::TaskPriority::USER_VISIBLE));
 #endif
 
+base::LazyInstance<scoped_refptr<base::SingleThreadTaskRunner>>::
+    DestructorAtExit g_io_task_runner = LAZY_INSTANCE_INITIALIZER;
+
+// Lock to protect |g_io_task_runner|
+base::Lock& GetIOTaskRunnerLock() {
+  static base::NoDestructor<base::Lock> instance;
+  return *instance;
+}
+
 }  // namespace
 
 scoped_refptr<base::SequencedTaskRunner> GetDownloadTaskRunner() {
   return g_download_task_runner.Get();
+}
+
+void SetIOTaskRunner(
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner) {
+  base::AutoLock auto_lock(GetIOTaskRunnerLock());
+  static int count = 0;
+  if (task_runner) {
+    DCHECK(!g_io_task_runner.Get() ||
+           task_runner.get() == g_io_task_runner.Get().get());
+    count++;
+    g_io_task_runner.Get() = task_runner;
+    return;
+  }
+
+  count--;
+  DCHECK_GE(count, 0);
+  if (count == 0)
+    g_io_task_runner.Get() = nullptr;
+}
+
+scoped_refptr<base::SingleThreadTaskRunner> GetIOTaskRunner() {
+  base::AutoLock auto_lock(GetIOTaskRunnerLock());
+  return g_io_task_runner.Get();
 }
 
 }  // namespace download

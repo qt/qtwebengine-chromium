@@ -69,14 +69,10 @@ struct StreamParams {
   }
 
   bool operator==(const StreamParams& other) const {
-    return (groupid == other.groupid &&
-            id == other.id &&
-            ssrcs == other.ssrcs &&
-            ssrc_groups == other.ssrc_groups &&
-            type == other.type &&
-            display == other.display &&
-            cname == other.cname &&
-            sync_label == other.sync_label);
+    return (groupid == other.groupid && id == other.id &&
+            ssrcs == other.ssrcs && ssrc_groups == other.ssrc_groups &&
+            type == other.type && display == other.display &&
+            cname == other.cname && stream_ids_ == other.stream_ids_);
   }
   bool operator!=(const StreamParams &other) const {
     return !(*this == other);
@@ -146,9 +142,13 @@ struct StreamParams {
   void GetFidSsrcs(const std::vector<uint32_t>& primary_ssrcs,
                    std::vector<uint32_t>* fid_ssrcs) const;
 
-  // Stream labels serialized to SDP.
-  std::vector<std::string> stream_labels() const;
-  void set_stream_labels(const std::vector<std::string>& stream_labels);
+  // Stream ids serialized to SDP.
+  std::vector<std::string> stream_ids() const;
+  void set_stream_ids(const std::vector<std::string>& stream_ids);
+
+  // Returns the first stream id or "" if none exist. This method exists only
+  // as temporary backwards compatibility with the old sync_label.
+  std::string first_stream_id() const;
 
   std::string ToString() const;
 
@@ -158,6 +158,8 @@ struct StreamParams {
   std::string groupid;
   // Unique per-groupid, not across all groupids
   std::string id;
+  // There may be no SSRCs stored in unsignaled case when stream_ids are
+  // signaled with a=msid lines.
   std::vector<uint32_t> ssrcs;         // All SSRCs for this source
   std::vector<SsrcGroup> ssrc_groups;  // e.g. FID, FEC, SIM
   // Examples: "camera", "screencast"
@@ -165,8 +167,6 @@ struct StreamParams {
   // Friendly name describing stream
   std::string display;
   std::string cname;  // RTCP CNAME
-  // TODO(steveanton): Move callers to |stream_labels()| and make private.
-  std::string sync_label;  // Friendly name of cname.
 
  private:
   bool AddSecondarySsrc(const std::string& semantics,
@@ -175,6 +175,8 @@ struct StreamParams {
   bool GetSecondarySsrc(const std::string& semantics,
                         uint32_t primary_ssrc,
                         uint32_t* secondary_ssrc) const;
+
+  std::vector<std::string> stream_ids_;
 };
 
 // A Stream can be selected by either groupid+id or ssrc.
@@ -187,6 +189,9 @@ struct StreamSelector {
       groupid(groupid),
       streamid(streamid) {
   }
+
+  explicit StreamSelector(const std::string& streamid)
+      : ssrc(0), streamid(streamid) {}
 
   bool Matches(const StreamParams& stream) const {
     if (ssrc == 0) {
@@ -262,6 +267,11 @@ StreamParams* GetStream(StreamParamsVec& streams, Condition condition) {
   StreamParamsVec::iterator found =
       std::find_if(streams.begin(), streams.end(), condition);
   return found == streams.end() ? nullptr : &(*found);
+}
+
+inline bool HasStreamWithNoSsrcs(const StreamParamsVec& streams) {
+  return GetStream(streams,
+                   [](const StreamParams& sp) { return !sp.has_ssrcs(); });
 }
 
 inline const StreamParams* GetStreamBySsrc(const StreamParamsVec& streams,

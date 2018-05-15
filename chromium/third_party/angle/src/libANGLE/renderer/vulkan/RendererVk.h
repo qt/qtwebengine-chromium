@@ -46,6 +46,10 @@ class RendererVk : angle::NonCopyable
 
     VkInstance getInstance() const { return mInstance; }
     VkPhysicalDevice getPhysicalDevice() const { return mPhysicalDevice; }
+    const VkPhysicalDeviceProperties &getPhysicalDeviceProperties() const
+    {
+        return mPhysicalDeviceProperties;
+    }
     VkQueue getQueue() const { return mQueue; }
     VkDevice getDevice() const { return mDevice; }
 
@@ -62,16 +66,18 @@ class RendererVk : angle::NonCopyable
     const gl::TextureCapsMap &getNativeTextureCaps() const;
     const gl::Extensions &getNativeExtensions() const;
     const gl::Limitations &getNativeLimitations() const;
+    uint32_t getMaxActiveTextures();
+    uint32_t getUniformBufferDescriptorCount();
 
     GlslangWrapper *getGlslangWrapper();
 
     Serial getCurrentQueueSerial() const;
 
-    bool isResourceInUse(const ResourceVk &resource);
+    bool isResourceInUse(const vk::CommandGraphResource &resource);
     bool isSerialInUse(Serial serial);
 
     template <typename T>
-    void releaseResource(const ResourceVk &resource, T *object)
+    void releaseResource(const vk::CommandGraphResource &resource, T *object)
     {
         Serial resourceSerial = resource.getQueueSerial();
         releaseObject(resourceSerial, object);

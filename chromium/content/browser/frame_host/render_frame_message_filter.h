@@ -9,15 +9,17 @@
 
 #include <set>
 
+#include "base/optional.h"
 #include "content/common/frame_replication_state.h"
 #include "content/common/render_frame_message_filter.mojom.h"
 #include "content/public/browser/browser_associated_interface.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/common/three_d_api_types.h"
 #include "net/cookies/canonical_cookie.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "services/network/public/mojom/network_service.mojom.h"
-#include "third_party/WebKit/public/web/WebTreeScopeType.h"
+#include "third_party/blink/public/web/web_tree_scope_type.h"
+#include "url/origin.h"
 
 #if BUILDFLAG(ENABLE_PLUGINS)
 #include "content/common/pepper_renderer_instance_data.h"
@@ -46,6 +48,7 @@ class PluginServiceImpl;
 struct Referrer;
 class RenderWidgetHelper;
 class ResourceContext;
+class StoragePartition;
 struct WebPluginInfo;
 
 // RenderFrameMessageFilter intercepts FrameHost messages on the IO thread
@@ -62,7 +65,7 @@ class CONTENT_EXPORT RenderFrameMessageFilter
   RenderFrameMessageFilter(int render_process_id,
                            PluginServiceImpl* plugin_service,
                            BrowserContext* browser_context,
-                           net::URLRequestContextGetter* request_context,
+                           StoragePartition* storage_partition,
                            RenderWidgetHelper* render_widget_helper);
 
   // BrowserMessageFilter methods:
@@ -148,8 +151,10 @@ class CONTENT_EXPORT RenderFrameMessageFilter
                        bool* found,
                        WebPluginInfo* info,
                        std::string* actual_mime_type);
-  void OnOpenChannelToPepperPlugin(const base::FilePath& path,
-                                   IPC::Message* reply_msg);
+  void OnOpenChannelToPepperPlugin(
+      const base::FilePath& path,
+      const base::Optional<url::Origin>& origin_lock,
+      IPC::Message* reply_msg);
   void OnDidCreateOutOfProcessPepperInstance(
       int plugin_child_id,
       int32_t pp_instance,

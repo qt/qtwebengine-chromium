@@ -6,11 +6,11 @@
 
 #include <utility>
 
-#include "base/macros.h"
-
 namespace device {
 
 PublicKey::~PublicKey() = default;
+
+PublicKey::PublicKey() = default;
 
 PublicKey::PublicKey(std::string algorithm)
     : algorithm_(std::move(algorithm)) {}

@@ -1381,6 +1381,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Android.ChromeHome.OpenedByExpandButton">
+  <obsolete>Unused as of 03/2018</obsolete>
   <owner>mdjones@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
   <description>
@@ -1389,6 +1390,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Android.ChromeHome.OpenedByNTP">
+  <obsolete>Unused as of 03/2018</obsolete>
   <owner>mdjones@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
   <description>
@@ -1397,6 +1399,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Android.ChromeHome.OpenedByOmnibox">
+  <obsolete>Unused as of 03/2018</obsolete>
   <owner>mdjones@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
   <description>
@@ -1405,6 +1408,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Android.ChromeHome.OpenedByStartup">
+  <obsolete>Unused as of 03/2018</obsolete>
   <owner>thildebr@chromium.org</owner>
   <description>
     The Chrome Home bottom sheet was automatically opened on startup after a
@@ -1430,24 +1434,28 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Android.ChromeHome.ShowBookmarks">
+  <obsolete>Unused as of 03/2018</obsolete>
   <owner>mdjones@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
   <description>User showed the bookmarks bottom sheet content.</description>
 </action>
 
 <action name="Android.ChromeHome.ShowDownloads">
+  <obsolete>Unused as of 03/2018</obsolete>
   <owner>mdjones@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
   <description>User showed the downloads bottom sheet content.</description>
 </action>
 
 <action name="Android.ChromeHome.ShowHistory">
+  <obsolete>Unused as of 03/2018</obsolete>
   <owner>mdjones@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
   <description>User showed the history bottom sheet content.</description>
 </action>
 
 <action name="Android.ChromeHome.ShowIncognitoHome">
+  <obsolete>Unused as of 03/2018</obsolete>
   <owner>mdjones@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
   <description>
@@ -1456,12 +1464,16 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Android.ChromeHome.ShowSuggestions">
+  <obsolete>Unused as of 03/2018</obsolete>
   <owner>mdjones@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
   <description>User showed the suggestions bottom sheet content.</description>
 </action>
 
 <action name="Android.ChromeHome.Survey.ShowSurveyInfoBar">
+  <obsolete>
+    Deprecated 4/2018. Replaced with Android.Survey.ShowSurveyInfoBar action.
+  </obsolete>
   <owner>danielpark@chromium.org</owner>
   <description>The survey infobar was displayed.</description>
 </action>
@@ -1848,6 +1860,11 @@ should be able to be added at any place in this file.
   <description>
     A user clicked on a telephone number link in Chrome content.
   </description>
+</action>
+
+<action name="Android.Survey.ShowSurveyInfoBar">
+  <owner>danielpark@chromium.org</owner>
+  <description>The survey infobar was displayed.</description>
 </action>
 
 <action name="AppCloseButton_Clk">
@@ -4107,6 +4124,24 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="ContextualSuggestions.Preference.Disabled">
+  <owner>huayinz@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    Android: Contextual suggestions are disabled by a user click on the switch
+    preference in contextual suggestions settings.
+  </description>
+</action>
+
+<action name="ContextualSuggestions.Preference.Enabled">
+  <owner>huayinz@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    Android: Contextual suggestions are enabled by a user click on the switch
+    preference in contextual suggestions settings.
+  </description>
+</action>
+
 <action name="CookieBlockingDisabledPerDefault">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -4994,6 +5029,13 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="FileBrowser.ClickBreadcrumbs">
+  <owner>joelhockey@chromium.org</owner>
+  <description>
+    User clicked the breadcrumbs in order to return to a parent directory.
+  </description>
+</action>
+
 <action name="FileBrowser.CreateNewFolder">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -5007,6 +5049,14 @@ should be able to be added at any place in this file.
 <action name="FileBrowser.PhotoEditor.View">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="FileBrowser.SelectSearch">
+  <owner>sashab@chromium.org</owner>
+  <description>
+    Chrome OS Files App: When the user focused the search field at the top of
+    the file manager app.
+  </description>
 </action>
 
 <action name="FileBrowser.SuggestApps.ShowDialog">
@@ -5602,6 +5652,14 @@ should be able to be added at any place in this file.
   <description>User triggered the hotword by saying 'Ok Google'.</description>
 </action>
 
+<action name="ITunesLinksHandler_StoreKitLaunched">
+  <owner>mrefaat@chromium.org</owner>
+  <description>
+    Record when StoreKit is launched on the iOS app by ITunesLinkHandler. This
+    should happen when the user navigates to iTunes appstore URL.
+  </description>
+</action>
+
 <action name="ImportLockDialogCocoa_Shown">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -5653,6 +5711,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="InProductHelp.NotifyEvent.IPH_ChromeHomeMenuHeader">
+  <obsolete>Unused as of 03/2018</obsolete>
   <owner>twellington@chromium.org</owner>
   <owner>mdjones@chromium.org</owner>
   <description>
@@ -5759,6 +5818,15 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="InProductHelp.NotifyEvent.IPH_ContextualSuggestions">
+  <owner>twellington@chromium.org</owner>
+  <description>
+    The user triggered an event related to the contextual suggestions in-product
+    help. See //components/feature_engagement/README.md#Configuring-UMA for
+    details.
+  </description>
+</action>
+
 <action name="InProductHelp.NotifyEvent.IPH_DataSaverDetail">
   <owner>nyquist@chromium.org</owner>
   <owner>xingliu@chromium.org</owner>
@@ -5848,6 +5916,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="InProductHelp.NotifyUsedEvent.IPH_ChromeHomeMenuHeader">
+  <obsolete>Unused as of 03/2018</obsolete>
   <owner>twellington@chromium.org</owner>
   <owner>mdjones@chromium.org</owner>
   <description>
@@ -5955,6 +6024,15 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="InProductHelp.NotifyUsedEvent.IPH_ContextualSuggestions">
+  <owner>twellington@chromium.org</owner>
+  <description>
+    The user triggered a used event related to the contextual suggestions
+    in-product help. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
 <action name="InProductHelp.NotifyUsedEvent.IPH_DataSaverDetail">
   <owner>nyquist@chromium.org</owner>
   <owner>xingliu@chromium.org</owner>
@@ -6044,6 +6122,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="InProductHelp.ShouldTriggerHelpUI.IPH_ChromeHomeMenuHeader">
+  <obsolete>Unused as of 03/2018</obsolete>
   <owner>twellington@chromium.org</owner>
   <owner>mdjones@chromium.org</owner>
   <description>
@@ -6154,6 +6233,15 @@ should be able to be added at any place in this file.
   <description>
     The feature engagement tracker tried to determine whether the Contextual
     Search in-product help should be shown to the user. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action name="InProductHelp.ShouldTriggerHelpUI.IPH_ContextualSuggestions">
+  <owner>twellington@chromium.org</owner>
+  <description>
+    The feature engagement tracker tried to determine whether the contextual
+    suggestions in-product help should be shown to the user. See
     //components/feature_engagement/README.md#Configuring-UMA for details.
   </description>
 </action>
@@ -6279,6 +6367,7 @@ should be able to be added at any place in this file.
 
 <action
     name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_ChromeHomeMenuHeader">
+  <obsolete>Unused as of 03/2018</obsolete>
   <owner>twellington@chromium.org</owner>
   <owner>mdjones@chromium.org</owner>
   <description>
@@ -6396,6 +6485,16 @@ should be able to be added at any place in this file.
 </action>
 
 <action
+    name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_ContextualSuggestions">
+  <owner>twellington@chromium.org</owner>
+  <description>
+    A user action that could have triggered the contextual suggestions
+    in-product help did not. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action
     name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_DataSaverDetail">
   <owner>nyquist@chromium.org</owner>
   <owner>xingliu@chromium.org</owner>
@@ -6509,6 +6608,7 @@ should be able to be added at any place in this file.
 
 <action
     name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_ChromeHomeMenuHeader">
+  <obsolete>Unused as of 03/2018</obsolete>
   <owner>twellington@chromium.org</owner>
   <owner>mdjones@chromium.org</owner>
   <description>
@@ -6620,6 +6720,17 @@ should be able to be added at any place in this file.
 </action>
 
 <action
+    name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_ContextualSuggestions">
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    A user action triggered the contextual suggestions in-product help. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action
     name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_DataSaverDetail">
   <owner>nyquist@chromium.org</owner>
   <owner>xingliu@chromium.org</owner>
@@ -6720,6 +6831,7 @@ should be able to be added at any place in this file.
 
 <action
     name="InProductHelp.ShouldTriggerHelpUIResult.WouldHaveTriggered.IPH_ChromeHomeMenuHeader">
+  <obsolete>Unused as of 03/2018</obsolete>
   <owner>twellington@chromium.org</owner>
   <owner>mdjones@chromium.org</owner>
   <description>
@@ -6736,6 +6848,17 @@ should be able to be added at any place in this file.
   <description>
     A pull-to-refresh would have triggered the Chrome Home in-product help, but
     the feature was configured for tracking only. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action
+    name="InProductHelp.ShouldTriggerHelpUIResult.WouldHaveTriggered.IPH_ContextualSuggestions">
+  <owner>twellington@chromium.org</owner>
+  <owner>mdjones@chromium.org</owner>
+  <description>
+    A user action would have triggered the contextual suggestions in-product
+    help, but the feature was configured for tracking only. See
     //components/feature_engagement/README.md#Configuring-UMA for details.
   </description>
 </action>
@@ -11611,6 +11734,26 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="MobileDownloadFileUIInstallGoogleDrive">
+  <owner>eugenebut@chromium.org</owner>
+  <description>
+    User has requested installation of Google Drive app from the Download file
+    UI.
+  </description>
+</action>
+
+<action name="MobileDownloadFileUIShown">
+  <owner>eugenebut@chromium.org</owner>
+  <description>User was presented with the Download file UI.</description>
+</action>
+
+<action name="MobileDownloadRetryDownload">
+  <owner>eugenebut@chromium.org</owner>
+  <description>
+    User attempted to retry downloading a file after the download failed.
+  </description>
+</action>
+
 <action name="MobileExternalNavigationDispatched">
   <owner>mariakhomenko@chromium.org</owner>
   <description>
@@ -11746,6 +11889,13 @@ should be able to be added at any place in this file.
   <description>User pressed the back icon in the app menu.</description>
 </action>
 
+<action name="MobileMenuCloseAllIncognitoTabs">
+  <owner>gambard@chromium.org</owner>
+  <description>
+    User pressed 'Close all incognito tabs' in the app menu.
+  </description>
+</action>
+
 <action name="MobileMenuCloseAllTabs">
   <owner>aurimas@chromium.org</owner>
   <description>User pressed 'Close all tabs' in the app menu.</description>
@@ -11807,6 +11957,11 @@ should be able to be added at any place in this file.
   <description>User pressed 'Fullscreen' in the app menu.</description>
 </action>
 
+<action name="MobileMenuHelp">
+  <owner>gambard@chromium.org</owner>
+  <description>User pressed 'Help' in the app menu.</description>
+</action>
+
 <action name="MobileMenuHistory">
   <owner>aurimas@chromium.org</owner>
   <description>User pressed 'History' in the app menu.</description>
@@ -11845,6 +12000,11 @@ should be able to be added at any place in this file.
   <obsolete>This menu item was never added to the app menu.</obsolete>
   <owner>aurimas@chromium.org</owner>
   <description>User pressed 'Quit' in the app menu.</description>
+</action>
+
+<action name="MobileMenuReadLater">
+  <owner>gambard@chromium.org</owner>
+  <description>User pressed 'Read Later' in the app menu.</description>
 </action>
 
 <action name="MobileMenuReadingList">
@@ -11896,6 +12056,11 @@ should be able to be added at any place in this file.
 <action name="MobileMenuShow">
   <owner>aurimas@chromium.org</owner>
   <description>User opened the app menu.</description>
+</action>
+
+<action name="MobileMenuSiteInformation">
+  <owner>gambard@chromium.org</owner>
+  <description>User pressed 'Site Information' in the app menu.</description>
 </action>
 
 <action name="MobileMenuStop">
@@ -12026,6 +12191,26 @@ should be able to be added at any place in this file.
   </obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="MobileNTPShowBookmarks">
+  <owner>justincohen@chromium.org</owner>
+  <description>The user tapped the bookmarks icon on the NTP.</description>
+</action>
+
+<action name="MobileNTPShowHistory">
+  <owner>justincohen@chromium.org</owner>
+  <description>The user tapped the history icon on the NTP.</description>
+</action>
+
+<action name="MobileNTPShowReadingList">
+  <owner>justincohen@chromium.org</owner>
+  <description>The user tapped the reading list icon on the NTP.</description>
+</action>
+
+<action name="MobileNTPShowRecentTabs">
+  <owner>justincohen@chromium.org</owner>
+  <description>The user tapped the recent list icon on the NTP.</description>
 </action>
 
 <action name="MobileNTPShown">
@@ -12527,9 +12712,32 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="MobileToolbarShowSearchMenu">
+  <owner>gambard@chromium.org</owner>
+  <description>
+    User long pressed the 'Search' button to displayed the associated menu.
+  </description>
+</action>
+
 <action name="MobileToolbarShowStackView">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="MobileToolbarShowTabGridMenu">
+  <owner>gambard@chromium.org</owner>
+  <description>
+    User long pressed the Tab Grid button to display the menu associated with
+    it.
+  </description>
+</action>
+
+<action name="MobileToolbarShowTabHistoryMenu">
+  <owner>gambard@chromium.org</owner>
+  <description>
+    User long pressed the toolbar navigation buttons to display the tab history
+    menu.
+  </description>
 </action>
 
 <action name="MobileToolbarStackViewNewTab">
@@ -12908,6 +13116,14 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="NewIncognitoTabTipTargetSelected">
+  <owner>gambard@chromium.org</owner>
+  <description>
+    The user opened the tools menu while the 'New Incognito Tab' in-product help
+    is displayed.
+  </description>
+</action>
+
 <action name="NewIncognitoWindow">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -13141,6 +13357,14 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="OfflinePages.ReloadButtonClickedViewingUntrustedPage">
+  <owner>romax@chromium.org</owner>
+  <description>
+    Recorded when &quot;Reload&quot; button is clicked in the snackbar that is
+    shown when an untrusted offline page is loaded.
+  </description>
+</action>
+
 <action name="OfflinePages.ReloadButtonNotClicked">
   <owner>jianli@chromium.org</owner>
   <description>
@@ -13184,6 +13408,25 @@ should be able to be added at any place in this file.
     Recorded when the user navigates away without clicking &quot;Free Up
     Space&quot; button is clicked in the storage space promotion section of
     &quot;Saved Offline&quot; page.
+  </description>
+</action>
+
+<action name="OfflinePages.Sharing.SharePageFromDownloadHome">
+  <owner>romax@chromium.org</owner>
+  <description>
+    Recorded when the user shares offline pages from Download Home. Each page
+    will be counted once if there are multiple items being shared in a batch.
+    This will not increment if the sharing process fails at the page publishing
+    step.
+  </description>
+</action>
+
+<action name="OfflinePages.Sharing.SharePageFromOverflowMenu">
+  <owner>romax@chromium.org</owner>
+  <description>
+    Recorded when the user shares an offline page loaded in the current tab
+    through the &quot;Share...&quot; button in the overflow menu. This will not
+    increment if the sharing process fails at the page publishing step.
   </description>
 </action>
 
@@ -13254,6 +13497,14 @@ should be able to be added at any place in this file.
 <action name="Omnibox_DragURL">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="OpenActiveTabInPwaWindow">
+  <owner>alancutter@chromium.org</owner>
+  <description>
+    Opens the current tab as an app window belonging to the PWA that has the URL
+    in its scope.
+  </description>
 </action>
 
 <action name="OpenAddBluetoothDeviceDialog">
@@ -16654,6 +16905,14 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="SettingsMenu_ExtensionsLinkClicked">
+  <owner>aee@chromium.org</owner>
+  <description>
+    The user clicked the &quot;Extensions&quot; external link in the settings
+    menu (drawer).
+  </description>
+</action>
+
 <action name="SettingsResetBubble.LearnMore">
   <owner>mad@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
@@ -16964,12 +17223,39 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Signin_ImpressionWithAccount_FromAvatarBubbleSignin">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with an account in the
+    avatar bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN).
+  </description>
+</action>
+
+<action name="Signin_ImpressionWithAccount_FromBookmarkBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with an account in the
+    bookmark bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_BOOKMARK_BUBBLE).
+  </description>
+</action>
+
 <action name="Signin_ImpressionWithAccount_FromBookmarkManager">
   <owner>jlebel@chromium.org</owner>
   <description>
-    Recorded when starting sign-in using the promo view, with a default account,
-    from bookmarks manager
+    Recorded when the personalized sign-in promo is shown with an account in the
+    in the bookmark manager.
     (signin_metrics::AccessPoint::ACCESS_POINT_BOOKMARK_MANAGER).
+  </description>
+</action>
+
+<action name="Signin_ImpressionWithAccount_FromExtensionInstallBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with an account in the
+    extension install bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_EXTENSION_INSTALL_BUBBLE).
   </description>
 </action>
 
@@ -16979,6 +17265,15 @@ should be able to be added at any place in this file.
     Recorded when starting sign-in using the promo view, with a default account,
     from NTP content suggestions
     (signin_metrics::AccessPoint::ACCESS_POINT_NTP_CONTENT_SUGGESTIONS).
+  </description>
+</action>
+
+<action name="Signin_ImpressionWithAccount_FromPasswordBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with no account in the
+    password saved bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_PASSWORD_BUBBLE).
   </description>
 </action>
 
@@ -17006,6 +17301,24 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Signin_ImpressionWithNoAccount_FromAvatarBubbleSignin">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with no account in the
+    avatar bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN).
+  </description>
+</action>
+
+<action name="Signin_ImpressionWithNoAccount_FromBookmarkBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with no account in the
+    bookmark bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_BOOKMARK_BUBBLE).
+  </description>
+</action>
+
 <action name="Signin_ImpressionWithNoAccount_FromBookmarkManager">
   <owner>jlebel@chromium.org</owner>
   <description>
@@ -17015,12 +17328,30 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Signin_ImpressionWithNoAccount_FromExtensionInstallBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with no account in the
+    extension install bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_EXTENSION_INSTALL_BUBBLE).
+  </description>
+</action>
+
 <action name="Signin_ImpressionWithNoAccount_FromNTPContentSuggestions">
   <owner>bsazonov@chromium.org</owner>
   <description>
     Recorded when starting sign-in using the promo view, with no default
     account, from NTP content suggestions
     (signin_metrics::AccessPoint::ACCESS_POINT_NTP_CONTENT_SUGGESTIONS).
+  </description>
+</action>
+
+<action name="Signin_ImpressionWithNoAccount_FromPasswordBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded when the personalized sign-in promo is shown with no account in the
+    password saved bubble.
+    (signin_metrics::AccessPoint::ACCESS_POINT_PASSWORD_BUBBLE).
   </description>
 </action>
 
@@ -17205,6 +17536,24 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Signin_SigninNewAccount_FromAvatarBubbleSignin">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN, with a new
+    account.
+  </description>
+</action>
+
+<action name="Signin_SigninNewAccount_FromBookmarkBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_BOOKMARK_BUBBLE, with a new
+    account.
+  </description>
+</action>
+
 <action name="Signin_SigninNewAccount_FromBookmarkManager">
   <owner>jlebel@chromium.org</owner>
   <description>
@@ -17214,12 +17563,30 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Signin_SigninNewAccount_FromExtensionInstallBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_EXTENSION_INSTALL_BUBBLE, with a
+    new account.
+  </description>
+</action>
+
 <action name="Signin_SigninNewAccount_FromNTPContentSuggestions">
   <owner>bsazonov@chromium.org</owner>
   <description>
     Recorded on sign in start from access point
     signin_metrics::AccessPoint::ACCESS_POINT_NTP_CONTENT_SUGGESTIONS, with a
     new account.
+  </description>
+</action>
+
+<action name="Signin_SigninNewAccount_FromPasswordBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_PASSWORD_BUBBLE, with a new
+    account.
   </description>
 </action>
 
@@ -17247,6 +17614,24 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Signin_SigninNotDefault_FromAvatarBubbleSignin">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN, using
+    another account than the default one.
+  </description>
+</action>
+
+<action name="Signin_SigninNotDefault_FromBookmarkBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_BOOKMARK_BUBBLE, using another
+    account than the default one.
+  </description>
+</action>
+
 <action name="Signin_SigninNotDefault_FromBookmarkManager">
   <owner>jlebel@chromium.org</owner>
   <description>
@@ -17256,12 +17641,30 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Signin_SigninNotDefault_FromExtensionInstallBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_EXTENSION_INSTALL_BUBBLE, using
+    another account than the default one.
+  </description>
+</action>
+
 <action name="Signin_SigninNotDefault_FromNTPContentSuggestions">
   <owner>bsazonov@chromium.org</owner>
   <description>
     Recorded on sign in start from access point
     signin_metrics::AccessPoint::ACCESS_POINT_NTP_CONTENT_SUGGESTIONS, using
     another account than the default one.
+  </description>
+</action>
+
+<action name="Signin_SigninNotDefault_FromPasswordBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_PASSWORD_BUBBLE, using another
+    account than the default one.
   </description>
 </action>
 
@@ -17302,6 +17705,24 @@ should be able to be added at any place in this file.
   <description>Recorded when sign in page is shown.</description>
 </action>
 
+<action name="Signin_SigninWithDefault_FromAvatarBubbleSignin">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN, using the
+    default account.
+  </description>
+</action>
+
+<action name="Signin_SigninWithDefault_FromBookmarkBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_BOOKMARK_BUBBLE, using the default
+    account.
+  </description>
+</action>
+
 <action name="Signin_SigninWithDefault_FromBookmarkManager">
   <owner>jlebel@chromium.org</owner>
   <description>
@@ -17311,12 +17732,30 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Signin_SigninWithDefault_FromExtensionInstallBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_EXTENSION_INSTALL_BUBBLE, using
+    the default account.
+  </description>
+</action>
+
 <action name="Signin_SigninWithDefault_FromNTPContentSuggestions">
   <owner>bsazonov@chromium.org</owner>
   <description>
     Recorded on sign in start from access point
     signin_metrics::AccessPoint::ACCESS_POINT_NTP_CONTENT_SUGGESTIONS, using the
     default account.
+  </description>
+</action>
+
+<action name="Signin_SigninWithDefault_FromPasswordBubble">
+  <owner>msarda@chromium.org</owner>
+  <description>
+    Recorded on sign in start from access point
+    signin_metrics::AccessPoint::ACCESS_POINT_PASSWORD_BUBBLE, using the default
+    account.
   </description>
 </action>
 
@@ -18347,6 +18786,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="StatusArea_TapDraggingDisabled">
+  <obsolete>Tap dragging removed from status area menu 03/2018.</obsolete>
   <owner>minch@chromium.org</owner>
   <description>
     Ash system menu: Accessibility: Disable tap dragging
@@ -18354,6 +18794,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="StatusArea_TapDraggingEnabled">
+  <obsolete>Tap dragging removed from status area menu 03/2018.</obsolete>
   <owner>minch@chromium.org</owner>
   <description>Ash system menu: Accessibility: Enable tap dragging</description>
 </action>

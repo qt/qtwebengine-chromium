@@ -12,7 +12,6 @@
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/observer_list.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -76,15 +75,6 @@ void MessageCenterImpl::OnBlockingStateChanged(NotificationBlocker* blocker) {
   NotificationList::PopupNotifications popups =
       notification_list_->GetPopupNotifications(blockers_, &blocked);
 
-  // Close already displayed pop-ups that are blocked now.
-  for (const std::string& notification_id : blocked) {
-    // Do not call MessageCenterImpl::MarkSinglePopupAsShown() directly here
-    // just for performance reason. MessageCenterImpl::MarkSinglePopupAsShown()
-    // calls NotificationList::MarkSinglePopupAsShown(), but the whole cache
-    // will be recreated below.
-    if (FindVisibleNotificationById(notification_id)->IsRead())
-      notification_list_->MarkSinglePopupAsShown(notification_id, true);
-  }
   visible_notifications_ =
       notification_list_->GetVisibleNotifications(blockers_);
 
@@ -319,9 +309,9 @@ void MessageCenterImpl::ClickOnNotification(const std::string& id) {
   scoped_refptr<NotificationDelegate> delegate =
       notification_list_->GetNotificationDelegate(id);
   for (auto& observer : observer_list_)
-    observer.OnNotificationClicked(id);
-  if (delegate.get())
-    delegate->Click();
+    observer.OnNotificationClicked(id, base::nullopt, base::nullopt);
+  if (delegate)
+    delegate->Click(base::nullopt, base::nullopt);
 }
 
 void MessageCenterImpl::ClickOnNotificationButton(const std::string& id,
@@ -336,9 +326,9 @@ void MessageCenterImpl::ClickOnNotificationButton(const std::string& id,
   scoped_refptr<NotificationDelegate> delegate =
       notification_list_->GetNotificationDelegate(id);
   for (auto& observer : observer_list_)
-    observer.OnNotificationButtonClicked(id, button_index);
-  if (delegate.get())
-    delegate->ButtonClick(button_index);
+    observer.OnNotificationClicked(id, button_index, base::nullopt);
+  if (delegate)
+    delegate->Click(button_index, base::nullopt);
 }
 
 void MessageCenterImpl::ClickOnNotificationButtonWithReply(
@@ -355,9 +345,9 @@ void MessageCenterImpl::ClickOnNotificationButtonWithReply(
   scoped_refptr<NotificationDelegate> delegate =
       notification_list_->GetNotificationDelegate(id);
   for (auto& observer : observer_list_)
-    observer.OnNotificationButtonClickedWithReply(id, button_index, reply);
-  if (delegate.get())
-    delegate->ButtonClickWithReply(button_index, reply);
+    observer.OnNotificationClicked(id, button_index, reply);
+  if (delegate)
+    delegate->Click(button_index, reply);
 }
 
 void MessageCenterImpl::ClickOnSettingsButton(const std::string& id) {

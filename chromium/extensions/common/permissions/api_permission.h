@@ -81,7 +81,7 @@ class APIPermission {
     kCryptotokenPrivate,
     kDataReductionProxy,
     kDiagnostics,
-    kDial,
+    kDeleted_Dial,  // API removed.
     kDebugger,
     kDeclarative,
     kDeclarativeContent,
@@ -101,6 +101,7 @@ class APIPermission {
     kEmbeddedExtensionOptions,
     kEnterprisePlatformKeys,
     kEnterprisePlatformKeysPrivate,
+    kEnterpriseReportingPrivate,
     kDeleted_ExperienceSamplingPrivate,
     kExperimental,
     kExtensionView,

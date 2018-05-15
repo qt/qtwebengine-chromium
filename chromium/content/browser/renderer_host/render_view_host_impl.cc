@@ -58,6 +58,7 @@
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_message_filter.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_details.h"
@@ -228,6 +229,9 @@ RenderViewHostImpl::RenderViewHostImpl(
   // make their way to the new renderer once its restarted.
   GetProcess()->EnableSendQueue();
 
+  if (!is_active_)
+    GetWidget()->UpdatePriority();
+
   if (ResourceDispatcherHostImpl::Get()) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
@@ -360,6 +364,13 @@ bool RenderViewHostImpl::CreateRenderView(
   return true;
 }
 
+void RenderViewHostImpl::SetIsActive(bool is_active) {
+  if (is_active_ == is_active)
+    return;
+  is_active_ = is_active;
+  GetWidget()->UpdatePriority();
+}
+
 bool RenderViewHostImpl::IsRenderViewLive() const {
   return GetProcess()->HasConnection() && GetWidget()->renderer_initialized();
 }
@@ -424,6 +435,9 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
 
   prefs.history_entry_requires_user_gesture =
       command_line.HasSwitch(switches::kHistoryEntryRequiresUserGesture);
+
+  prefs.disable_pushstate_throttle =
+      command_line.HasSwitch(switches::kDisablePushStateThrottle);
 
 #if defined(OS_ANDROID)
   prefs.use_solid_color_scrollbars = true;
@@ -547,6 +561,11 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
 
   prefs.background_video_track_optimization_enabled =
       base::FeatureList::IsEnabled(media::kBackgroundVideoTrackOptimization);
+
+  if (base::FeatureList::IsEnabled(media::kUseSurfaceLayerForVideo) &&
+      base::FeatureList::IsEnabled(media::kPictureInPicture)) {
+    prefs.picture_in_picture_enabled = true;
+  }
 
   GetContentClient()->browser()->OverrideWebkitPrefs(this, &prefs);
   return prefs;
@@ -891,6 +910,10 @@ bool RenderViewHostImpl::MayRenderWidgetForwardKeyboardEvent(
   return true;
 }
 
+bool RenderViewHostImpl::ShouldContributePriorityToProcess() {
+  return is_active_;
+}
+
 WebPreferences RenderViewHostImpl::GetWebkitPreferences() {
   if (!web_preferences_.get()) {
     OnWebkitPreferencesChanged();
@@ -923,23 +946,6 @@ void RenderViewHostImpl::DisableScrollbarsForThreshold(const gfx::Size& size) {
 
 void RenderViewHostImpl::EnablePreferredSizeMode() {
   Send(new ViewMsg_EnablePreferredSizeChangedMode(GetRoutingID()));
-}
-
-void RenderViewHostImpl::EnableAutoResize(const gfx::Size& min_size,
-                                          const gfx::Size& max_size) {
-  GetWidget()->SetAutoResize(true, min_size, max_size);
-  Send(new ViewMsg_EnableAutoResize(GetRoutingID(), min_size, max_size));
-}
-
-void RenderViewHostImpl::DisableAutoResize(const gfx::Size& new_size) {
-  GetWidget()->SetAutoResize(false, gfx::Size(), gfx::Size());
-  Send(new ViewMsg_DisableAutoResize(GetRoutingID(), new_size));
-  if (!new_size.IsEmpty())
-    GetWidget()->GetView()->SetSize(new_size);
-  // This clears the cached value in the WebContents, so that OOPIFs will
-  // stop using it.
-  if (GetWidget()->delegate())
-    GetWidget()->delegate()->ResetAutoResizeSize();
 }
 
 void RenderViewHostImpl::ExecuteMediaPlayerActionAtLocation(

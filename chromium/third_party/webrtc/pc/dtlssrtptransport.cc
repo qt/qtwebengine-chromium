@@ -53,18 +53,20 @@ void DtlsSrtpTransport::SetDtlsTransports(
   // When using DTLS-SRTP, we must reset the SrtpTransport every time the
   // DtlsTransport changes and wait until the DTLS handshake is complete to set
   // the newly negotiated parameters.
-  if (IsActive()) {
+  if (IsSrtpActive() && rtp_dtls_transport != rtp_dtls_transport_) {
     srtp_transport_->ResetParams();
   }
 
   const std::string transport_name =
       rtp_dtls_transport ? rtp_dtls_transport->transport_name() : "null";
 
-  // This would only be possible if using BUNDLE but not rtcp-mux, which isn't
-  // allowed according to the BUNDLE spec.
-  RTC_CHECK(!(IsActive()))
-      << "Setting RTCP for DTLS/SRTP after the DTLS is active "
-         "should never happen.";
+  if (rtcp_dtls_transport && rtcp_dtls_transport != rtcp_dtls_transport_) {
+    // This would only be possible if using BUNDLE but not rtcp-mux, which isn't
+    // allowed according to the BUNDLE spec.
+    RTC_CHECK(!(IsSrtpActive()))
+        << "Setting RTCP for DTLS/SRTP after the DTLS is active "
+           "should never happen.";
+  }
 
   RTC_LOG(LS_INFO) << "Setting RTCP Transport on " << transport_name
                    << " transport " << rtcp_dtls_transport;
@@ -140,7 +142,7 @@ bool DtlsSrtpTransport::DtlsHandshakeCompleted() {
 }
 
 void DtlsSrtpTransport::MaybeSetupDtlsSrtp() {
-  if (IsActive() || !DtlsHandshakeCompleted()) {
+  if (IsSrtpActive() || !DtlsHandshakeCompleted()) {
     return;
   }
 
@@ -165,8 +167,8 @@ void DtlsSrtpTransport::SetupRtpDtlsSrtp() {
   }
 
   int selected_crypto_suite;
-  std::vector<unsigned char> send_key;
-  std::vector<unsigned char> recv_key;
+  rtc::ZeroOnFreeBuffer<unsigned char> send_key;
+  rtc::ZeroOnFreeBuffer<unsigned char> recv_key;
 
   if (!ExtractParams(rtp_dtls_transport_, &selected_crypto_suite, &send_key,
                      &recv_key) ||
@@ -184,7 +186,7 @@ void DtlsSrtpTransport::SetupRtcpDtlsSrtp() {
   // Return if the DTLS-SRTP is active because the encrypted header extension
   // IDs don't need to be updated for RTCP and the crypto params don't need to
   // be reset.
-  if (IsActive()) {
+  if (IsSrtpActive()) {
     return;
   }
 
@@ -198,8 +200,8 @@ void DtlsSrtpTransport::SetupRtcpDtlsSrtp() {
   }
 
   int selected_crypto_suite;
-  std::vector<unsigned char> rtcp_send_key;
-  std::vector<unsigned char> rtcp_recv_key;
+  rtc::ZeroOnFreeBuffer<unsigned char> rtcp_send_key;
+  rtc::ZeroOnFreeBuffer<unsigned char> rtcp_recv_key;
   if (!ExtractParams(rtcp_dtls_transport_, &selected_crypto_suite,
                      &rtcp_send_key, &rtcp_recv_key) ||
       !srtp_transport_->SetRtcpParams(
@@ -215,8 +217,8 @@ void DtlsSrtpTransport::SetupRtcpDtlsSrtp() {
 bool DtlsSrtpTransport::ExtractParams(
     cricket::DtlsTransportInternal* dtls_transport,
     int* selected_crypto_suite,
-    std::vector<unsigned char>* send_key,
-    std::vector<unsigned char>* recv_key) {
+    rtc::ZeroOnFreeBuffer<unsigned char>* send_key,
+    rtc::ZeroOnFreeBuffer<unsigned char>* recv_key) {
   if (!dtls_transport || !dtls_transport->IsDtlsActive()) {
     return false;
   }
@@ -239,7 +241,7 @@ bool DtlsSrtpTransport::ExtractParams(
   }
 
   // OK, we're now doing DTLS (RFC 5764)
-  std::vector<unsigned char> dtls_buffer(key_len * 2 + salt_len * 2);
+  rtc::ZeroOnFreeBuffer<unsigned char> dtls_buffer(key_len * 2 + salt_len * 2);
 
   // RFC 5705 exporter using the RFC 5764 parameters
   if (!dtls_transport->ExportKeyingMaterial(kDtlsSrtpExporterLabel, NULL, 0,
@@ -251,8 +253,8 @@ bool DtlsSrtpTransport::ExtractParams(
   }
 
   // Sync up the keys with the DTLS-SRTP interface
-  std::vector<unsigned char> client_write_key(key_len + salt_len);
-  std::vector<unsigned char> server_write_key(key_len + salt_len);
+  rtc::ZeroOnFreeBuffer<unsigned char> client_write_key(key_len + salt_len);
+  rtc::ZeroOnFreeBuffer<unsigned char> server_write_key(key_len + salt_len);
   size_t offset = 0;
   memcpy(&client_write_key[0], &dtls_buffer[offset], key_len);
   offset += key_len;
@@ -269,13 +271,12 @@ bool DtlsSrtpTransport::ExtractParams(
   }
 
   if (role == rtc::SSL_SERVER) {
-    *send_key = server_write_key;
-    *recv_key = client_write_key;
+    *send_key = std::move(server_write_key);
+    *recv_key = std::move(client_write_key);
   } else {
-    *send_key = client_write_key;
-    *recv_key = server_write_key;
+    *send_key = std::move(client_write_key);
+    *recv_key = std::move(server_write_key);
   }
-
   return true;
 }
 

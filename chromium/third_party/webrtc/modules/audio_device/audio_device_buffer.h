@@ -17,7 +17,6 @@
 #include "rtc_base/task_queue.h"
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/thread_checker.h"
-#include "system_wrappers/include/file_wrapper.h"
 #include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
@@ -104,11 +103,12 @@ class AudioDeviceBuffer {
 
   int32_t SetTypingStatus(bool typing_status);
 
-  // Called on iOS where the native audio layer can be interrupted by other
-  // audio applications. This method can then be used to reset internal
-  // states and detach thread checkers to allow for a new audio session where
-  // native callbacks may come from a new set of I/O threads.
-  void NativeAudioInterrupted();
+  // Called on iOS and Android where the native audio layer can be interrupted
+  // by other audio applications. These methods can then be used to reset
+  // internal states and detach thread checkers to allow for new audio sessions
+  // where native callbacks may come from a new set of I/O threads.
+  void NativeAudioPlayoutInterrupted();
+  void NativeAudioRecordingInterrupted();
 
  private:
   // Starts/stops periodic logging of audio stats.

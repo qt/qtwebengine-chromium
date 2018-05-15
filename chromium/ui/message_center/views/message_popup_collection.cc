@@ -172,7 +172,8 @@ void MessagePopupCollection::UpdateWidgets() {
     // Create top-level notification.
     MessageView* view = MessageViewFactory::Create(notification, true);
     observed_views_.Add(view);
-    view->SetExpanded(true);
+    if (!view->IsManuallyExpandedOrCollapsed())
+      view->SetExpanded(view->IsAutoExpandingAllowed());
 
 #if !defined(OS_CHROMEOS)
     view->set_context_menu_controller(context_menu_controller_.get());
@@ -190,8 +191,14 @@ void MessagePopupCollection::UpdateWidgets() {
 
     ToastContentsView* toast = new ToastContentsView(
         notification.id(), alignment_delegate_, weak_factory_.GetWeakPtr());
+
+    const RichNotificationData& optional_fields =
+        notification.rich_notification_data();
+    bool a11y_feedback_for_updates =
+        optional_fields.should_make_spoken_feedback_for_popup_updates;
+
     // There will be no contents already since this is a new ToastContentsView.
-    toast->SetContents(view, /*a11y_feedback_for_updates=*/false);
+    toast->SetContents(view, a11y_feedback_for_updates);
     toasts_.push_back(toast);
 
     gfx::Size preferred_size = toast->GetPreferredSize();
@@ -343,8 +350,7 @@ void MessagePopupCollection::OnNotificationRemoved(
 
   RemoveToast(*iter, /*mark_as_shown=*/true);
 
-  if (by_user)
-    RepositionWidgets();
+  DoUpdate();
 }
 
 void MessagePopupCollection::OnNotificationUpdated(

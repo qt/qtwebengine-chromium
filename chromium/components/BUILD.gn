@@ -7,13 +7,14 @@ import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//components/nacl/features.gni")
 import("//media/media_options.gni")
-import("//printing/features/features.gni")
-import("//rlz/features/features.gni")
+import("//printing/buildflags/buildflags.gni")
+import("//rlz/buildflags/buildflags.gni")
 import("//testing/test.gni")
 import("//tools/grit/repack.gni")
 
 if (is_android) {
   import("//build/config/android/rules.gni")
+  import("//tools/v8_context_snapshot/v8_context_snapshot.gni")
 }
 
 if (is_ios) {
@@ -61,6 +62,7 @@ test("components_unittests") {
 
   deps = [
     "//base",
+    "//components/apdu:unit_tests",
     "//components/assist_ranker:unit_tests",
     "//components/autofill/core/browser:unit_tests",
     "//components/autofill/core/common:unit_tests",
@@ -87,6 +89,7 @@ test("components_unittests") {
     "//components/favicon/core:unit_tests",
     "//components/favicon_base:unit_tests",
     "//components/feature_engagement:unit_tests",
+    "//components/feed:unit_tests",
     "//components/filename_generation:unit_tests",
     "//components/flags_ui:unit_tests",
     "//components/gcm_driver:unit_tests",
@@ -119,7 +122,6 @@ test("components_unittests") {
     "//components/password_manager/sync/browser:unit_tests",
     "//components/payments/core:unit_tests",
     "//components/physical_web/data_source:unit_tests",
-    "//components/physical_web/eddystone:unit_tests",
     "//components/prefs:unit_tests",
     "//components/previews/core:unit_tests",
     "//components/proxy_config:unit_tests",
@@ -130,6 +132,8 @@ test("components_unittests") {
     "//components/search_engines:unit_tests",
     "//components/search_provider_logos:unit_tests",
     "//components/security_state/core:unit_tests",
+    "//components/services/heap_profiling/public/cpp:unit_tests",
+    "//components/services/unzip:unit_tests",
     "//components/sessions:unit_tests",
     "//components/signin/core/browser:unit_tests",
     "//components/ssl_config:unit_tests",
@@ -172,6 +176,7 @@ test("components_unittests") {
   if (is_ios) {
     deps += [
       "//components/autofill/ios/browser:unit_tests",
+      "//components/autofill/ios/fill:unit_tests",
       "//components/image_fetcher/ios:unit_tests",
       "//components/signin/ios/browser:unit_tests",
       "//components/translate/ios/browser:unit_tests",
@@ -184,7 +189,6 @@ test("components_unittests") {
       "//components/autofill/content/renderer:unit_tests",
       "//components/cast_certificate:unit_tests",
       "//components/cast_channel:unit_tests",
-      "//components/certificate_reporting:unit_tests",
       "//components/certificate_transparency:unit_tests",
       "//components/contextual_search:unit_tests",
       "//components/crash/content/app:unit_tests",
@@ -220,6 +224,7 @@ test("components_unittests") {
       "//components/safe_browsing/password_protection:password_protection_unittest",
       "//components/safe_browsing/triggers:unit_tests",
       "//components/security_state/content:unit_tests",
+      "//components/services/heap_profiling:unit_tests",
       "//components/spellcheck/browser:unit_tests",
       "//components/spellcheck/renderer:unit_tests",
       "//components/subresource_filter/content/browser:unit_tests",
@@ -229,7 +234,6 @@ test("components_unittests") {
       "//components/translate/content/renderer:unit_tests",
       "//components/ukm/content:unit_tests",
       "//components/visitedlink/test:unit_tests",
-      "//components/wallpaper:unit_tests",
       "//components/web_cache/browser:unit_tests",
       "//components/webcrypto:unit_tests",
     ]
@@ -251,6 +255,7 @@ test("components_unittests") {
 
   if (is_android) {
     deps += [
+      "//base:base_java_unittest_support",
       "//components/cdm/browser:unit_tests",
       "//components/gcm_driver/instance_id:test_support",
       "//components/gcm_driver/instance_id/android:instance_id_driver_java",
@@ -271,8 +276,12 @@ test("components_unittests") {
       "//ui/android:ui_java",
       "//ui/base",
       "//ui/gfx",
-      "//v8:v8_external_startup_data_assets",
     ]
+    if (use_v8_context_snapshot) {
+      deps += [ "//tools/v8_context_snapshot:v8_context_snapshot_assets" ]
+    } else {
+      deps += [ "//v8:v8_external_startup_data_assets" ]
+    }
   } else {  # !is_android
     deps += [ "//components/keep_alive_registry:unit_tests" ]
   }
@@ -280,14 +289,11 @@ test("components_unittests") {
   # Desktop-only deps.
   if (!is_android && !is_ios) {
     deps += [
-      "//components/cryptauth:unit_tests",
       "//components/feedback:unit_tests",
 
       # See comment in components/guest_view/browser/BUILD.gn for why
       # guest_view is currently non-mobile.
       "//components/guest_view/browser:unit_tests",
-      "//components/multidevice:unit_tests",
-      "//components/proximity_auth:unit_tests",
       "//components/storage_monitor:unit_tests",
       "//components/web_modal:unit_tests",
       "//components/zoom:unit_tests",
@@ -301,6 +307,7 @@ test("components_unittests") {
   if (is_chromeos) {
     deps += [
       "//components/arc:unit_tests",
+      "//components/cryptauth:unit_tests",
       "//components/ownership:unit_tests",
       "//components/pairing:unit_tests",
       "//components/sync_wifi:unit_tests",
@@ -375,8 +382,12 @@ if (is_android) {
       ":components_tests_pak",
       "//content/shell:pak",
       "//third_party/icu:icu_assets",
-      "//v8:v8_external_startup_data_assets",
     ]
+    if (use_v8_context_snapshot) {
+      deps += [ "//tools/v8_context_snapshot:v8_context_snapshot_assets" ]
+    } else {
+      deps += [ "//v8:v8_external_startup_data_assets" ]
+    }
   }
 
   android_library("components_browsertests_java") {
@@ -464,7 +475,7 @@ if (!is_ios) {
       "//google_apis",
       "//ipc:test_support",
       "//net:test_support",
-      "//printing/features",
+      "//printing/buildflags",
       "//services/device/public/mojom",
       "//services/service_manager/public/cpp",
       "//services/service_manager/public/mojom",
@@ -530,30 +541,62 @@ if (!is_ios) {
 
   test("components_perftests") {
     sources = [
+      "discardable_memory/common/discardable_shared_memory_heap_perftest.cc",
       "omnibox/browser/history_quick_provider_performance_unittest.cc",
+      "subresource_filter/core/common/perftests/indexed_ruleset_perftest.cc",
       "test/run_all_perftests.cc",
       "visitedlink/test/visitedlink_perftest.cc",
     ]
 
-    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
-
     deps = [
       "//base",
+      "//components/discardable_memory/common",
       "//components/history/core/test",
       "//components/omnibox/browser",
       "//components/omnibox/browser:test_support",
+      "//components/subresource_filter/core/common",
+      "//components/subresource_filter/core/common:tools_lib",
       "//components/test:test_support",
       "//components/visitedlink/browser",
       "//testing/perf",
       "//url",
     ]
 
-    if (!is_ios) {
-      sources += [
-        "discardable_memory/common/discardable_shared_memory_heap_perftest.cc",
+    data_deps = [
+      ":components_tests_pak",
+      "//ui/resources:ui_test_pak",
+    ]
+
+    data = [
+      "$root_out_dir/components_tests_resources.pak",
+      "$root_out_dir/ui_test.pak",
+      "//components/subresource_filter/core/common/perftests/data",
+
+      # Needed for isolate script to execute.
+      "//testing/scripts/common.py",
+      "//testing/xvfb.py",
+      "//testing/scripts/run_gtest_perf_test.py",
+      "//tools/perf/generate_legacy_perf_dashboard_json.py",
+    ]
+
+    if (is_android) {
+      enable_multidex = true
+      deps += [ "//ui/android:ui_java" ]
+      if (use_v8_context_snapshot) {
+        deps += [ "//tools/v8_context_snapshot:v8_context_snapshot_assets" ]
+      } else {
+        deps += [ "//v8:v8_external_startup_data_assets" ]
+      }
+    }
+
+    if (!is_android) {
+      sources += [ "safe_browsing/db/v4_store_perftest.cc" ]
+      deps += [
+        "//components/safe_browsing/db:v4_protocol_manager_util",
+        "//components/safe_browsing/db:v4_store",
+        "//components/safe_browsing/db:v4_test_util",
+        "//crypto",
       ]
-      deps += [ "//components/discardable_memory/common" ]
     }
   }
 }

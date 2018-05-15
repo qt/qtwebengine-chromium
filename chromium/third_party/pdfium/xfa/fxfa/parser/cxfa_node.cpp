@@ -19,6 +19,7 @@
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_fallthrough.h"
+#include "core/fxcrt/locale_iface.h"
 #include "core/fxcrt/xml/cfx_xmlelement.h"
 #include "core/fxcrt/xml/cfx_xmlnode.h"
 #include "core/fxcrt/xml/cfx_xmltext.h"
@@ -47,6 +48,7 @@
 #include "xfa/fxfa/parser/cxfa_comb.h"
 #include "xfa/fxfa/parser/cxfa_decimal.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
+#include "xfa/fxfa/parser/cxfa_document_parser.h"
 #include "xfa/fxfa/parser/cxfa_event.h"
 #include "xfa/fxfa/parser/cxfa_font.h"
 #include "xfa/fxfa/parser/cxfa_format.h"
@@ -61,7 +63,6 @@
 #include "xfa/fxfa/parser/cxfa_occur.h"
 #include "xfa/fxfa/parser/cxfa_para.h"
 #include "xfa/fxfa/parser/cxfa_picture.h"
-#include "xfa/fxfa/parser/cxfa_simple_parser.h"
 #include "xfa/fxfa/parser/cxfa_stroke.h"
 #include "xfa/fxfa/parser/cxfa_subform.h"
 #include "xfa/fxfa/parser/cxfa_traversestrategy_xfacontainernode.h"
@@ -913,7 +914,7 @@ CXFA_Node* CXFA_Node::GetContainerNode() {
   return pParentOfValueNode ? pParentOfValueNode->GetContainerNode() : nullptr;
 }
 
-IFX_Locale* CXFA_Node::GetLocale() {
+LocaleIface* CXFA_Node::GetLocale() {
   Optional<WideString> localeName = GetLocaleName();
   if (!localeName)
     return nullptr;
@@ -940,7 +941,7 @@ Optional<WideString> CXFA_Node::GetLocaleName() {
 
   CXFA_Node* pConfig = ToNode(GetDocument()->GetXFAObject(XFA_HASHCODE_Config));
   Optional<WideString> localeName = {
-      WideString(GetDocument()->GetLocalMgr()->GetConfigLocaleName(pConfig))};
+      GetDocument()->GetLocalMgr()->GetConfigLocaleName(pConfig)};
   if (localeName && !localeName->IsEmpty())
     return localeName;
 
@@ -951,7 +952,7 @@ Optional<WideString> CXFA_Node::GetLocaleName() {
       return localeName;
   }
 
-  IFX_Locale* pLocale = GetDocument()->GetLocalMgr()->GetDefLocale();
+  LocaleIface* pLocale = GetDocument()->GetLocalMgr()->GetDefLocale();
   if (!pLocale)
     return {};
 
@@ -2047,7 +2048,7 @@ int32_t CXFA_Node::ProcessFormatTestValidate(CXFA_FFDocView* docView,
     if (wsPicture.IsEmpty())
       return XFA_EVENTERROR_NotExist;
 
-    IFX_Locale* pLocale = GetLocale();
+    LocaleIface* pLocale = GetLocale();
     if (!pLocale)
       return XFA_EVENTERROR_NotExist;
 
@@ -2679,7 +2680,7 @@ void CXFA_Node::UpdateUIDisplay(CXFA_FFDocView* docView,
       continue;
     }
     pWidget->UpdateFWLData();
-    pWidget->AddInvalidateRect();
+    pWidget->InvalidateRect();
   }
 }
 
@@ -4269,7 +4270,7 @@ bool CXFA_Node::SetValue(XFA_VALUEPICTURE eValueType,
   XFA_Element eType = pNode->GetElementType();
   if (!wsPicture.IsEmpty()) {
     CXFA_LocaleMgr* pLocalMgr = GetDocument()->GetLocalMgr();
-    IFX_Locale* pLocale = GetLocale();
+    LocaleIface* pLocale = GetLocale();
     CXFA_LocaleValue widgetValue = XFA_GetLocaleValue(this);
     bValidate =
         widgetValue.ValidateValue(wsValue, wsPicture, pLocale, &wsPicture);
@@ -4312,7 +4313,7 @@ WideString CXFA_Node::GetPictureContent(XFA_VALUEPICTURE ePicture) {
         }
       }
 
-      IFX_Locale* pLocale = GetLocale();
+      LocaleIface* pLocale = GetLocale();
       if (!pLocale)
         return L"";
 
@@ -4344,7 +4345,7 @@ WideString CXFA_Node::GetPictureContent(XFA_VALUEPICTURE ePicture) {
         }
       }
 
-      IFX_Locale* pLocale = GetLocale();
+      LocaleIface* pLocale = GetLocale();
       if (!pLocale)
         return L"";
 
@@ -4398,7 +4399,7 @@ WideString CXFA_Node::GetValue(XFA_VALUEPICTURE eValueType) {
     }
     case XFA_Element::NumericEdit:
       if (eValueType != XFA_VALUEPICTURE_Raw && wsPicture.IsEmpty()) {
-        IFX_Locale* pLocale = GetLocale();
+        LocaleIface* pLocale = GetLocale();
         if (eValueType == XFA_VALUEPICTURE_Display && pLocale)
           wsValue = FormatNumStr(NormalizeNumStr(wsValue), pLocale);
       }
@@ -4409,7 +4410,7 @@ WideString CXFA_Node::GetValue(XFA_VALUEPICTURE eValueType) {
   if (wsPicture.IsEmpty())
     return wsValue;
 
-  if (IFX_Locale* pLocale = GetLocale()) {
+  if (LocaleIface* pLocale = GetLocale()) {
     CXFA_LocaleValue widgetValue = XFA_GetLocaleValue(this);
     CXFA_LocaleMgr* pLocalMgr = GetDocument()->GetLocalMgr();
     switch (widgetValue.GetType()) {
@@ -4448,7 +4449,7 @@ WideString CXFA_Node::GetNormalizeDataValue(const WideString& wsValue) {
     return wsValue;
 
   CXFA_LocaleMgr* pLocalMgr = GetDocument()->GetLocalMgr();
-  IFX_Locale* pLocale = GetLocale();
+  LocaleIface* pLocale = GetLocale();
   CXFA_LocaleValue widgetValue = XFA_GetLocaleValue(this);
   if (widgetValue.ValidateValue(wsValue, wsPicture, pLocale, &wsPicture)) {
     widgetValue = CXFA_LocaleValue(widgetValue.GetType(), wsValue, wsPicture,
@@ -4467,7 +4468,7 @@ WideString CXFA_Node::GetFormatDataValue(const WideString& wsValue) {
     return wsValue;
 
   WideString wsFormattedValue = wsValue;
-  if (IFX_Locale* pLocale = GetLocale()) {
+  if (LocaleIface* pLocale = GetLocale()) {
     CXFA_Value* pNodeValue = GetChild<CXFA_Value>(0, XFA_Element::Value, false);
     if (!pNodeValue)
       return wsValue;
@@ -4558,7 +4559,7 @@ WideString CXFA_Node::NormalizeNumStr(const WideString& wsValue) {
 }
 
 WideString CXFA_Node::FormatNumStr(const WideString& wsValue,
-                                   IFX_Locale* pLocale) {
+                                   LocaleIface* pLocale) {
   if (wsValue.IsEmpty())
     return L"";
 
@@ -4654,4 +4655,39 @@ bool CXFA_Node::PresenceRequiresSpace() const {
                                     .value_or(XFA_AttributeEnum::Visible);
   return ePresence == XFA_AttributeEnum::Visible ||
          ePresence == XFA_AttributeEnum::Invisible;
+}
+
+void CXFA_Node::SetToXML(const WideString& value) {
+  auto* elem = static_cast<CFX_XMLElement*>(GetXMLMappingNode());
+  FX_XMLNODETYPE eXMLType = elem->GetType();
+  switch (eXMLType) {
+    case FX_XMLNODE_Element: {
+      if (IsAttributeInXML()) {
+        elem->SetString(JSObject()->GetCData(XFA_Attribute::QualifiedName),
+                        value);
+        return;
+      }
+
+      bool bDeleteChildren = true;
+      if (GetPacketType() == XFA_PacketType::Datasets) {
+        for (CXFA_Node* pChildDataNode = GetFirstChild(); pChildDataNode;
+             pChildDataNode = pChildDataNode->GetNextSibling()) {
+          if (!pChildDataNode->GetBindItems()->empty()) {
+            bDeleteChildren = false;
+            break;
+          }
+        }
+      }
+      if (bDeleteChildren)
+        elem->DeleteChildren();
+
+      elem->SetTextData(value);
+      break;
+    }
+    case FX_XMLNODE_Text:
+      static_cast<CFX_XMLText*>(GetXMLMappingNode())->SetText(value);
+      break;
+    default:
+      NOTREACHED();
+  }
 }

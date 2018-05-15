@@ -61,7 +61,7 @@ RichNotificationData::RichNotificationData(const RichNotificationData& other) =
 
 RichNotificationData::~RichNotificationData() = default;
 
-Notification::Notification() = default;
+Notification::Notification() : serial_number_(g_next_serial_number++) {}
 
 Notification::Notification(NotificationType type,
                            const std::string& id,
@@ -83,8 +83,6 @@ Notification::Notification(NotificationType type,
       notifier_id_(notifier_id),
       optional_fields_(optional_fields),
       serial_number_(g_next_serial_number++),
-      shown_as_popup_(false),
-      is_read_(false),
       delegate_(std::move(delegate)) {}
 
 Notification::Notification(const std::string& id, const Notification& other)
@@ -119,18 +117,6 @@ std::unique_ptr<Notification> Notification::DeepCopy(
                : gfx::Image());
   }
   return notification_copy;
-}
-
-bool Notification::IsRead() const {
-  return is_read_ || optional_fields_.priority == MIN_PRIORITY;
-}
-
-void Notification::CopyState(Notification* base) {
-  shown_as_popup_ = base->shown_as_popup();
-  is_read_ = base->is_read_;
-  if (!delegate_.get())
-    delegate_ = base->delegate();
-  optional_fields_.never_timeout = base->never_timeout();
 }
 
 void Notification::SetButtonIcon(size_t index, const gfx::Image& icon) {
@@ -185,7 +171,6 @@ std::unique_ptr<Notification> Notification::CreateSystemNotification(
       RichNotificationData(),
       new HandleNotificationClickDelegate(click_callback), gfx::kNoneIcon,
       SystemNotificationWarningLevel::CRITICAL_WARNING);
-  notification->set_clickable(true);
   notification->SetSystemPriority();
   return notification;
 }
@@ -227,10 +212,12 @@ std::unique_ptr<Notification> Notification::CreateSystemNotification(
 }
 
 // static
-void RegisterVectorIcon(const gfx::VectorIcon& vector_icon) {
-  g_vector_icon_registry.Get().insert(
-      std::pair<std::string, const gfx::VectorIcon&>(vector_icon.name,
-                                                     vector_icon));
+void RegisterVectorIcons(
+    const std::vector<const gfx::VectorIcon*>& vector_icons) {
+  for (const gfx::VectorIcon* icon : vector_icons) {
+    g_vector_icon_registry.Get().insert(
+        std::pair<std::string, const gfx::VectorIcon&>(icon->name, *icon));
+  }
 }
 
 // static

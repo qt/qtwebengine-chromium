@@ -20,6 +20,7 @@
 #include "build/build_config.h"
 #include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/browser/navigation_throttle.h"
+#include "content/public/browser/overlay_window.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/media_stream_request.h"
@@ -28,7 +29,7 @@
 #include "content/public/common/window_container_type.mojom.h"
 #include "device/usb/public/mojom/chooser_service.mojom.h"
 #include "device/usb/public/mojom/device_manager.mojom.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "media/mojo/interfaces/remoting.mojom.h"
 #include "net/base/mime_util.h"
 #include "net/cookies/canonical_cookie.h"
@@ -39,9 +40,9 @@
 #include "services/service_manager/sandbox/sandbox_type.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/quota/quota_manager.h"
-#include "third_party/WebKit/public/common/associated_interfaces/associated_interface_registry.h"
-#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
-#include "third_party/WebKit/public/web/window_features.mojom.h"
+#include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
+#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
+#include "third_party/blink/public/web/window_features.mojom.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 
@@ -138,6 +139,7 @@ class BrowserURLHandler;
 class ClientCertificateDelegate;
 class ControllerPresentationServiceDelegate;
 class DevToolsManagerDelegate;
+class LoginDelegate;
 class MediaObserver;
 class MemoryCoordinatorDelegate;
 class NavigationHandle;
@@ -149,7 +151,6 @@ class RenderFrameHost;
 class RenderProcessHost;
 class RenderViewHost;
 class ResourceContext;
-class ResourceDispatcherHostLoginDelegate;
 class SiteInstance;
 class SpeechRecognitionManagerDelegate;
 class StoragePartition;
@@ -240,6 +241,19 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool ShouldUseProcessPerSite(BrowserContext* browser_context,
                                        const GURL& effective_url);
 
+  // Returns whether a spare RenderProcessHost should be used for navigating to
+  // the specified site URL.
+  //
+  // Using the spare RenderProcessHost is advisable, because it can improve
+  // performance of a navigation that requires a new process.  On the other
+  // hand, sometimes the spare RenderProcessHost cannot be used - for example
+  // some embedders might override
+  // ContentBrowserClient::AppendExtraCommandLineSwitches and add some cmdline
+  // switches at navigation time (and this won't work for the spare, because the
+  // spare RenderProcessHost is launched ahead of time).
+  virtual bool ShouldUseSpareRenderProcessHost(BrowserContext* browser_context,
+                                               const GURL& site_url);
+
   // Returns true if site isolation should be enabled for |effective_site_url|.
   // This call allows the embedder to supplement the site isolation policy
   // enforced by the content layer. Will only be called if the content layer
@@ -257,12 +271,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool ShouldLockToOrigin(BrowserContext* browser_context,
                                   const GURL& effective_url);
 
-  // Returns true if the |initiator| origin should be allowed to receive a
-  // document at |url|, bypassing the usual blocking logic. Defaults to false.
-  // This is called on the IO thread.
-  virtual bool ShouldBypassDocumentBlocking(const url::Origin& initiator,
-                                            const GURL& url,
-                                            ResourceType resource_type);
+  // Returns the scheme of request initiator that should be ignored by
+  // cross-origin read blocking.  nullptr can be returned to indicate that no
+  // exceptions should be granted based on initiator's scheme.
+  virtual const char* GetInitatorSchemeBypassingDocumentBlocking();
 
   // Returns a list additional WebUI schemes, if any.  These additional schemes
   // act as aliases to the chrome: scheme.  The additional schemes may or may
@@ -358,9 +370,16 @@ class CONTENT_EXPORT ContentBrowserClient {
   // current SiteInstance, if it does not yet have a site.
   virtual bool ShouldAssignSiteForURL(const GURL& url);
 
-  // Allows the embedder to provide a list of origins that require a dedicated
-  // process.
+  // Allows the embedder to programmatically provide some origins that should be
+  // opted into --isolate-origins mode of Site Isolation.
   virtual std::vector<url::Origin> GetOriginsRequiringDedicatedProcess();
+
+  // Allows the embedder to programmatically opt into --site-per-process mode of
+  // Site Isolation.
+  //
+  // Note that for correctness, the same value should be consistently returned.
+  // See also https://crbug.com/825369
+  virtual bool ShouldEnableStrictSiteIsolation();
 
   // Indicates whether a file path should be accessible via file URL given a
   // request from a browser context which lives within |profile_path|.
@@ -1019,6 +1038,14 @@ class CONTENT_EXPORT ContentBrowserClient {
 
 #if defined(OS_ANDROID)
   // Only used by Android WebView.
+  // Returns:
+  //   true  - The check was successfully performed without throwing a
+  //           Java exception. |*ignore_navigation| is set to the
+  //           result of the check in this case.
+  //   false - A Java exception was thrown. It is no longer safe to
+  //           make JNI calls, because of the uncleared exception.
+  //           Callers should return to the message loop as soon as
+  //           possible, so that the exception can be rethrown.
   virtual bool ShouldOverrideUrlLoading(int frame_tree_node_id,
                                         bool browser_initiated,
                                         const GURL& gurl,
@@ -1026,7 +1053,8 @@ class CONTENT_EXPORT ContentBrowserClient {
                                         bool has_user_gesture,
                                         bool is_redirect,
                                         bool is_main_frame,
-                                        ui::PageTransition transition);
+                                        ui::PageTransition transition,
+                                        bool* ignore_navigation);
 #endif
 
   // Called on IO or UI thread to determine whether or not to allow load and
@@ -1092,12 +1120,20 @@ class CONTENT_EXPORT ContentBrowserClient {
       const url::Origin& origin,
       base::OnceCallback<void(bool)> callback);
 
+  // Returns whether |web_contents| is the active tab in the focused window.
+  // As an example, webauthn uses this because it doesn't want to allow
+  // authenticator operations to be triggered by background tabs.
+  //
+  // Note that the default implementation of this function, and the
+  // implementation in ChromeContentBrowserClient for Android, return |true| so
+  // that testing is possible.
+  virtual bool IsFocused(content::WebContents* web_contents);
+
   // Get platform ClientCertStore. May return nullptr.
   virtual std::unique_ptr<net::ClientCertStore> CreateClientCertStore(
       ResourceContext* resource_context);
 
-  // Creates a ResourceDispatcherHostLoginDelegate that asks the user for a
-  // username and password.
+  // Creates a LoginDelegate that asks the user for a username and password.
   // Caller owns the returned pointer.
   // |first_auth_attempt| is needed by AwHttpAuthHandler constructor.
   // |auth_required_callback| is used to transfer auth credentials to
@@ -1105,7 +1141,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // is base::nullopt if the request should be cancelled; otherwise
   // the credentials will be used to respond to the auth challenge. This
   // callback should be called on the IO thread task runner.
-  virtual ResourceDispatcherHostLoginDelegate* CreateLoginDelegate(
+  virtual scoped_refptr<LoginDelegate> CreateLoginDelegate(
       net::AuthChallengeInfo* auth_info,
       content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
       bool is_main_frame,
@@ -1113,6 +1149,30 @@ class CONTENT_EXPORT ContentBrowserClient {
       bool first_auth_attempt,
       const base::Callback<void(const base::Optional<net::AuthCredentials>&)>&
           auth_required_callback);
+
+  // Launches the url for the given tab. Returns true if an attempt to handle
+  // the url was made, e.g. by launching an app. Note that this does not
+  // guarantee that the app successfully handled it.
+  // If this is a navigation request, then |child_id| will be
+  // ChildProcessHost::kInvalidUniqueID and |navigation_ui_data| will valid.
+  // Otherwise child_id will be the process id and |navigation_ui_data| will be
+  // nullptr.
+  virtual bool HandleExternalProtocol(
+      const GURL& url,
+      ResourceRequestInfo::WebContentsGetter web_contents_getter,
+      int child_id,
+      NavigationUIData* navigation_data,
+      bool is_main_frame,
+      ui::PageTransition page_transition,
+      bool has_user_gesture);
+
+  // Creates an OverlayWindow to be used for Picture-in-Picture. This window
+  // will house the content shown when in Picture-in-Picture mode. This will
+  // return a new OverlayWindow.
+  // May return nullptr if embedder does not support this functionality. The
+  // default implementation provides nullptr OverlayWindow.
+  virtual std::unique_ptr<OverlayWindow> CreateWindowForPictureInPicture(
+      PictureInPictureWindowController* controller);
 };
 
 }  // namespace content

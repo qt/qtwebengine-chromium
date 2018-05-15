@@ -23,7 +23,6 @@ group("base") {
     ":rtc_base",
     ":rtc_base_approved",
     ":rtc_task_queue",
-    ":sequenced_task_checker",
     ":weak_ptr",
   ]
   if (is_android) {
@@ -85,11 +84,169 @@ source_set("compile_assert_c") {
 rtc_source_set("rtc_base_approved") {
   visibility = [ "*" ]
   public_deps = [
+    ":atomicops",
+    ":criticalsection",
+    ":logging",
+    ":macromagic",
+    ":platform_thread",
+    ":platform_thread_types",
+    ":ptr_util",
+    ":refcount",
     ":rtc_base_approved_generic",
+    ":rtc_event",
+    ":safe_conversions",
+    ":stringutils",
+    ":thread_checker",
+    ":timeutils",
   ]
   if (is_mac && !build_with_chromium) {
     public_deps += [ ":rtc_base_approved_objc" ]
   }
+}
+
+rtc_source_set("macromagic") {
+  sources = [
+    "arraysize.h",
+    "basictypes.h",
+    "constructormagic.h",
+    "format_macros.h",
+    "stringize_macros.h",
+    "thread_annotations.h",
+  ]
+}
+
+rtc_source_set("platform_thread_types") {
+  sources = [
+    "platform_thread_types.cc",
+    "platform_thread_types.h",
+  ]
+}
+
+rtc_source_set("ptr_util") {
+  sources = [
+    "ptr_util.h",
+    "scoped_ref_ptr.h",
+  ]
+}
+
+rtc_source_set("refcount") {
+  sources = [
+    "refcount.h",
+    "refcountedobject.h",
+    "refcounter.h",
+  ]
+  deps = [
+    ":atomicops",
+    ":macromagic",
+  ]
+}
+
+rtc_source_set("criticalsection") {
+  sources = [
+    "criticalsection.cc",
+    "criticalsection.h",
+  ]
+  deps = [
+    ":atomicops",
+    ":checks",
+    ":macromagic",
+    ":platform_thread_types",
+    "..:typedefs",
+  ]
+}
+
+rtc_source_set("platform_thread") {
+  visibility = [
+    ":rtc_base_approved",
+    ":rtc_base_approved_generic",
+    ":rtc_task_queue_libevent",
+    ":rtc_task_queue_win",
+    ":sequenced_task_checker",
+  ]
+  sources = [
+    "platform_thread.cc",
+    "platform_thread.h",
+  ]
+  deps = [
+    ":atomicops",
+    ":checks",
+    ":macromagic",
+    ":platform_thread_types",
+    ":rtc_event",
+    ":thread_checker",
+    ":timeutils",
+    "..:typedefs",
+  ]
+}
+
+rtc_source_set("rtc_event") {
+  deps = [
+    ":checks",
+    ":macromagic",
+  ]
+
+  if (build_with_chromium) {
+    # Dependency on chromium's waitable_event (in //base).
+    deps += [ "//base:base" ]
+    sources = [
+      "../../webrtc_overrides/rtc_base/event.cc",
+      "../../webrtc_overrides/rtc_base/event.h",
+    ]
+  } else {
+    sources = [
+      "event.cc",
+      "event.h",
+    ]
+  }
+}
+
+rtc_source_set("logging") {
+  deps = [
+    ":criticalsection",
+    ":macromagic",
+    ":platform_thread_types",
+    ":stringutils",
+    ":timeutils",
+  ]
+
+  if (build_with_chromium) {
+    # Dependency on chromium's logging (in //base).
+    deps += [ "//base:base" ]
+    sources = [
+      "../../webrtc_overrides/rtc_base/logging.cc",
+      "../../webrtc_overrides/rtc_base/logging.h",
+    ]
+  } else {
+    sources = [
+      "logging.cc",
+      "logging.h",
+    ]
+
+    # logging.h needs the deprecation header while downstream projects are
+    # removing code that depends on logging implementation details.
+    deps += [ ":deprecation" ]
+  }
+}
+
+rtc_source_set("thread_checker") {
+  sources = [
+    "thread_checker.h",
+    "thread_checker_impl.cc",
+    "thread_checker_impl.h",
+  ]
+  deps = [
+    ":checks",
+    ":criticalsection",
+    ":macromagic",
+    ":platform_thread_types",
+    "..:typedefs",
+  ]
+}
+
+rtc_source_set("atomicops") {
+  sources = [
+    "atomicops.h",
+  ]
 }
 
 rtc_source_set("checks") {
@@ -129,14 +286,62 @@ rtc_source_set("safe_compare") {
   ]
 }
 
+rtc_source_set("safe_minmax") {
+  sources = [
+    "numerics/safe_minmax.h",
+  ]
+  deps = [
+    ":checks",
+    ":safe_compare",
+    ":type_traits",
+  ]
+}
+
+rtc_source_set("safe_conversions") {
+  sources = [
+    "numerics/safe_conversions.h",
+    "numerics/safe_conversions_impl.h",
+  ]
+  deps = [
+    ":checks",
+  ]
+}
+
+rtc_source_set("timeutils") {
+  sources = [
+    "timeutils.cc",
+    "timeutils.h",
+  ]
+  deps = [
+    ":checks",
+    ":safe_conversions",
+  ]
+}
+
 rtc_source_set("stringutils") {
   sources = [
+    "stringencode.cc",
+    "stringencode.h",
+    "strings/string_builder.cc",
     "strings/string_builder.h",
     "stringutils.cc",
     "stringutils.h",
   ]
   deps = [
     ":checks",
+    ":safe_minmax",
+    "../api:array_view",
+  ]
+}
+
+rtc_source_set("audio_format_to_string") {
+  sources = [
+    "strings/audio_format_to_string.cc",
+    "strings/audio_format_to_string.h",
+  ]
+  deps = [
+    ":stringutils",
+    "../api/audio_codecs:audio_codecs_api",
   ]
 }
 
@@ -156,7 +361,6 @@ rtc_source_set("deprecation") {
 rtc_source_set("rtc_base_approved_generic") {
   visibility = [
     ":rtc_base_approved",
-    ":rtc_base_approved_objc",
     ":weak_ptr_unittests",
   ]
 
@@ -164,19 +368,29 @@ rtc_source_set("rtc_base_approved_generic") {
   defines = []
   libs = []
   deps = [
+    ":atomicops",
     ":checks",
+    ":criticalsection",
+    ":logging",
+    ":macromagic",
+    ":platform_thread",
+    ":platform_thread_types",
+    ":ptr_util",
+    ":refcount",
+    ":rtc_event",
+    ":rtc_task_queue",
     ":safe_compare",
+    ":safe_conversions",
     ":stringutils",
+    ":thread_checker",
+    ":timeutils",
     ":type_traits",
     "../:typedefs",
   ]
 
   sources = [
-    "arraysize.h",
-    "atomicops.h",
     "base64.cc",
     "base64.h",
-    "basictypes.h",
     "bind.h",
     "bitbuffer.cc",
     "bitbuffer.h",
@@ -188,18 +402,14 @@ rtc_source_set("rtc_base_approved_generic") {
     "bytebuffer.cc",
     "bytebuffer.h",
     "byteorder.h",
-    "constructormagic.h",
     "copyonwritebuffer.cc",
     "copyonwritebuffer.h",
-    "criticalsection.cc",
-    "criticalsection.h",
     "event_tracer.cc",
     "event_tracer.h",
     "file.cc",
     "file.h",
     "flags.cc",
     "flags.h",
-    "format_macros.h",
     "function_view.h",
     "ignore_wundef.h",
     "location.cc",
@@ -208,19 +418,11 @@ rtc_source_set("rtc_base_approved_generic") {
     "numerics/histogram_percentile_counter.h",
     "numerics/mod_ops.h",
     "numerics/moving_max_counter.h",
-    "numerics/safe_conversions.h",
-    "numerics/safe_conversions_impl.h",
-    "numerics/safe_minmax.h",
     "onetimeevent.h",
     "pathutils.cc",
     "pathutils.h",
     "platform_file.cc",
     "platform_file.h",
-    "platform_thread.cc",
-    "platform_thread.h",
-    "platform_thread_types.cc",
-    "platform_thread_types.h",
-    "ptr_util.h",
     "race_checker.cc",
     "race_checker.h",
     "random.cc",
@@ -229,26 +431,15 @@ rtc_source_set("rtc_base_approved_generic") {
     "rate_statistics.h",
     "ratetracker.cc",
     "ratetracker.h",
-    "refcount.h",
-    "refcountedobject.h",
-    "refcounter.h",
-    "scoped_ref_ptr.h",
     "string_to_number.cc",
     "string_to_number.h",
-    "stringencode.cc",
-    "stringencode.h",
-    "stringize_macros.h",
     "swap_queue.h",
     "template_util.h",
-    "thread_annotations.h",
-    "thread_checker.h",
-    "thread_checker_impl.cc",
-    "thread_checker_impl.h",
     "timestampaligner.cc",
     "timestampaligner.h",
-    "timeutils.cc",
-    "timeutils.h",
     "trace_event.h",
+    "zero_memory.cc",
+    "zero_memory.h",
   ]
 
   deps += [
@@ -261,7 +452,7 @@ rtc_source_set("rtc_base_approved_generic") {
     libs += [ "log" ]
   }
 
-  if (is_posix) {
+  if (is_posix || is_fuchsia) {
     sources += [ "file_posix.cc" ]
   }
 
@@ -269,27 +460,6 @@ rtc_source_set("rtc_base_approved_generic") {
     sources += [ "file_win.cc" ]
   }
 
-  if (build_with_chromium) {
-    # Dependency on chromium's logging (in //base).
-    deps += [ "//base:base" ]
-    sources += [
-      "../../webrtc_overrides/rtc_base/event.cc",
-      "../../webrtc_overrides/rtc_base/event.h",
-      "../../webrtc_overrides/rtc_base/logging.cc",
-      "../../webrtc_overrides/rtc_base/logging.h",
-    ]
-  } else {
-    sources += [
-      "event.cc",
-      "event.h",
-      "logging.cc",
-      "logging.h",
-    ]
-
-    # logging.h needs the deprecation header while downstream projects are
-    # removing code that depends on logging implementation details.
-    deps += [ ":deprecation" ]
-  }
   if (is_component_build && is_win) {
     # Copy the VS runtime DLLs into the isolate so that they don't have to be
     # preinstalled on the target machine. The debug runtimes have a "d" at
@@ -380,16 +550,14 @@ if (is_mac && !build_with_chromium) {
       "logging_mac.mm",
     ]
     deps = [
-      ":rtc_base_approved_generic",
+      ":logging",
     ]
   }
 }
 
 rtc_source_set("rtc_task_queue") {
   visibility = [ "*" ]
-  deps = [
-    ":rtc_base_approved",
-  ]
+  deps = []
   public_deps = [
     ":rtc_task_queue_api",
   ]
@@ -406,47 +574,109 @@ rtc_source_set("rtc_task_queue") {
 # provided implementation should be used. An external implementation should
 # depend on rtc_task_queue_api.
 rtc_source_set("rtc_task_queue_api") {
+  # The visibility list is commented out so that we won't break external
+  # implementations, but left here to manually test as well as for sake of what
+  # targets we expect to depend on rtc_task_queue_api.
+  # visibility = [
+  #   ":rtc_task_queue",
+  #   ":rtc_task_queue_impl",
+  #   ":sequenced_task_checker",
+  # ]
   sources = [
     "task_queue.h",
   ]
   deps = [
-    ":rtc_base_approved",
+    ":macromagic",
+    ":ptr_util",
   ]
 }
 
-rtc_source_set("rtc_task_queue_impl") {
-  visibility = [ "*" ]
-  deps = [
-    ":checks",
-    ":rtc_base_approved",
-    ":rtc_task_queue_api",
-  ]
-  if (rtc_build_libevent) {
-    deps += [ "//base/third_party/libevent" ]
-  }
-  if (rtc_enable_libevent) {
+if (rtc_enable_libevent) {
+  rtc_source_set("rtc_task_queue_libevent") {
+    visibility = [ ":rtc_task_queue_impl" ]
     sources = [
       "task_queue_libevent.cc",
       "task_queue_posix.cc",
       "task_queue_posix.h",
     ]
+    deps = [
+      ":checks",
+      ":criticalsection",
+      ":logging",
+      ":platform_thread",
+      ":ptr_util",
+      ":refcount",
+      ":rtc_task_queue_api",
+      ":safe_conversions",
+      ":timeutils",
+    ]
+    if (rtc_build_libevent) {
+      deps += [ "//base/third_party/libevent" ]
+    }
+  }
+}
+
+if (is_mac || is_ios) {
+  rtc_source_set("rtc_task_queue_gcd") {
+    visibility = [ ":rtc_task_queue_impl" ]
+    sources = [
+      "task_queue_gcd.cc",
+      "task_queue_posix.cc",
+      "task_queue_posix.h",
+    ]
+    deps = [
+      ":checks",
+      ":logging",
+      ":ptr_util",
+      ":refcount",
+      ":rtc_task_queue_api",
+    ]
+  }
+}
+
+if (is_win) {
+  rtc_source_set("rtc_task_queue_win") {
+    visibility = [ ":rtc_task_queue_impl" ]
+    sources = [
+      "task_queue_win.cc",
+    ]
+    deps = [
+      ":checks",
+      ":criticalsection",
+      ":logging",
+      ":macromagic",
+      ":platform_thread",
+      ":ptr_util",
+      ":refcount",
+      ":rtc_event",
+      ":rtc_task_queue_api",
+      ":safe_conversions",
+      ":timeutils",
+    ]
+  }
+}
+
+rtc_source_set("rtc_task_queue_impl") {
+  visibility = [ "*" ]
+  if (rtc_enable_libevent) {
+    deps = [
+      ":rtc_task_queue_libevent",
+    ]
   } else {
     if (is_mac || is_ios) {
-      sources = [
-        "task_queue_gcd.cc",
-        "task_queue_posix.cc",
-        "task_queue_posix.h",
+      deps = [
+        ":rtc_task_queue_gcd",
       ]
     }
     if (is_win) {
-      sources = [
-        "task_queue_win.cc",
+      deps = [
+        ":rtc_task_queue_win",
       ]
     }
   }
 }
 
-rtc_static_library("sequenced_task_checker") {
+rtc_source_set("sequenced_task_checker") {
   sources = [
     "sequenced_task_checker.h",
     "sequenced_task_checker_impl.cc",
@@ -454,8 +684,10 @@ rtc_static_library("sequenced_task_checker") {
   ]
   deps = [
     ":checks",
-    ":rtc_base_approved",
+    ":criticalsection",
+    ":macromagic",
     ":rtc_task_queue",
+    ":thread_checker",
   ]
 }
 
@@ -465,7 +697,8 @@ rtc_static_library("weak_ptr") {
     "weak_ptr.h",
   ]
   deps = [
-    ":rtc_base_approved",
+    ":ptr_util",
+    ":refcount",
     ":sequenced_task_checker",
   ]
 }
@@ -585,6 +818,8 @@ rtc_static_library("rtc_base_generic") {
     "crc32.h",
     "cryptstring.cc",
     "cryptstring.h",
+    "data_rate_limiter.cc",
+    "data_rate_limiter.h",
     "dscp.h",
     "filerotatingstream.cc",
     "filerotatingstream.h",
@@ -620,18 +855,20 @@ rtc_static_library("rtc_base_generic") {
     "openssl.h",
     "openssladapter.cc",
     "openssladapter.h",
+    "opensslcommon.cc",
+    "opensslcommon.h",
     "openssldigest.cc",
     "openssldigest.h",
     "opensslidentity.cc",
     "opensslidentity.h",
+    "opensslsessioncache.cc",
+    "opensslsessioncache.h",
     "opensslstreamadapter.cc",
     "opensslstreamadapter.h",
     "physicalsocketserver.cc",
     "physicalsocketserver.h",
     "proxyinfo.cc",
     "proxyinfo.h",
-    "ratelimiter.cc",
-    "ratelimiter.h",
     "rtccertificate.cc",
     "rtccertificate.h",
     "rtccertificategenerator.cc",
@@ -664,8 +901,6 @@ rtc_static_library("rtc_base_generic") {
     "stream.h",
     "thread.cc",
     "thread.h",
-    "zero_memory.cc",
-    "zero_memory.h",
   ]
 
   visibility = [
@@ -788,7 +1023,7 @@ rtc_static_library("rtc_base_generic") {
     defines += [ "_CRT_NONSTDC_NO_DEPRECATE" ]
   }
 
-  if (is_posix) {
+  if (is_posix || is_fuchsia) {
     sources += [
       "ifaddrs_converter.cc",
       "ifaddrs_converter.h",
@@ -855,7 +1090,6 @@ rtc_source_set("rtc_base_tests_utils") {
     "nattypes.h",
     "proxyserver.cc",
     "proxyserver.h",
-    "refcount.h",
     "sigslottester.h",
     "sigslottester.h.pump",
     "testbase64.h",
@@ -912,6 +1146,7 @@ if (rtc_include_tests) {
       ":rtc_base_tests_utils",
       "../system_wrappers:field_trial_default",
       "../test:field_trial",
+      "../test:fileutils",
       "../test:test_support",
     ]
 
@@ -938,6 +1173,7 @@ if (rtc_include_tests) {
       ":rtc_base_tests_main",
       ":rtc_base_tests_utils",
       "../system_wrappers:system_wrappers",
+      "../test:fileutils",
       "../test:test_support",
       "//testing/gtest",
     ]
@@ -948,7 +1184,9 @@ if (rtc_include_tests) {
 
   rtc_source_set("rtc_base_approved_unittests") {
     testonly = true
-
+    if (is_msan) {
+      cflags = [ "-fsanitize=memory" ]
+    }
     sources = [
       "atomicops_unittest.cc",
       "base64_unittest.cc",
@@ -974,12 +1212,14 @@ if (rtc_include_tests) {
       "numerics/safe_minmax_unittest.cc",
       "onetimeevent_unittest.cc",
       "pathutils_unittest.cc",
+      "platform_file_unittest.cc",
       "platform_thread_unittest.cc",
       "random_unittest.cc",
       "rate_limiter_unittest.cc",
       "rate_statistics_unittest.cc",
       "ratetracker_unittest.cc",
       "refcountedobject_unittest.cc",
+      "sanitizer_unittest.cc",
       "string_to_number_unittest.cc",
       "stringencode_unittest.cc",
       "stringize_macros_unittest.cc",
@@ -991,6 +1231,7 @@ if (rtc_include_tests) {
       "timestampaligner_unittest.cc",
       "timeutils_unittest.cc",
       "virtualsocket_unittest.cc",
+      "zero_memory_unittest.cc",
     ]
     deps = [
       ":checks",
@@ -1001,10 +1242,14 @@ if (rtc_include_tests) {
       ":rtc_base_tests_utils",
       ":rtc_task_queue",
       ":safe_compare",
+      ":safe_minmax",
+      ":sanitizer",
       ":stringutils",
       "../api:array_view",
       "../system_wrappers:system_wrappers",
+      "../test:fileutils",
       "../test:test_support",
+      "memory:unittests",
     ]
   }
 
@@ -1051,6 +1296,7 @@ if (rtc_include_tests) {
       ":rtc_base_approved_generic",
       ":rtc_base_tests_main",
       ":rtc_base_tests_utils",
+      ":rtc_event",
       ":rtc_task_queue",
       ":weak_ptr",
       "../test:test_support",
@@ -1085,6 +1331,7 @@ if (rtc_include_tests) {
     sources = [
       "callback_unittest.cc",
       "crc32_unittest.cc",
+      "data_rate_limiter_unittest.cc",
       "helpers_unittest.cc",
       "httpbase_unittest.cc",
       "httpcommon_unittest.cc",
@@ -1098,7 +1345,6 @@ if (rtc_include_tests) {
       "optionsfile_unittest.cc",
       "proxy_unittest.cc",
       "ptr_util_unittest.cc",
-      "ratelimiter_unittest.cc",
       "rollingaccumulator_unittest.cc",
       "rtccertificate_unittest.cc",
       "rtccertificategenerator_unittest.cc",
@@ -1108,7 +1354,6 @@ if (rtc_include_tests) {
       "stream_unittest.cc",
       "testclient_unittest.cc",
       "thread_unittest.cc",
-      "zero_memory_unittest.cc",
     ]
     if (is_win) {
       sources += [
@@ -1116,9 +1361,11 @@ if (rtc_include_tests) {
         "win32window_unittest.cc",
       ]
     }
-    if (is_posix) {
+    if (is_posix || is_fuchsia) {
       sources += [
         "openssladapter_unittest.cc",
+        "opensslcommon_unittest.cc",
+        "opensslsessioncache_unittest.cc",
         "ssladapter_unittest.cc",
         "sslidentity_unittest.cc",
         "sslstreamadapter_unittest.cc",
@@ -1131,6 +1378,7 @@ if (rtc_include_tests) {
       ":stringutils",
       "../api:array_view",
       "../api:optional",
+      "../test:fileutils",
       "../test:test_support",
     ]
     public_deps = [

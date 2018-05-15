@@ -6,7 +6,7 @@
       "provides": {
         "browser": [
           "chrome::mojom::SearchBouncer",
-          "profiling::mojom::ProfilingClient"
+          "heap_profiling::mojom::ProfilingClient"
         ]
       }
     },
@@ -27,6 +27,9 @@
           "safe_browsing::mojom::PhishingDetector",
           "spellcheck::mojom::SpellCheckPanel"
         ]
+      },
+      "requires": {
+        "content_browser": [ "multidevice_setup" ]
       }
     }
   }

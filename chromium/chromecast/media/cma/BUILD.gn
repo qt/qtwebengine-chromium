@@ -21,19 +21,20 @@ cast_source_set("test_support") {
     "test/frame_generator_for_test.h",
     "test/frame_segmenter_for_test.cc",
     "test/frame_segmenter_for_test.h",
+    "test/mock_cma_backend.cc",
+    "test/mock_cma_backend.h",
+    "test/mock_cma_backend_factory.cc",
+    "test/mock_cma_backend_factory.h",
     "test/mock_frame_consumer.cc",
     "test/mock_frame_consumer.h",
     "test/mock_frame_provider.cc",
     "test/mock_frame_provider.h",
-    "test/mock_media_pipeline_backend.cc",
-    "test/mock_media_pipeline_backend.h",
-    "test/mock_media_pipeline_backend_factory.cc",
-    "test/mock_media_pipeline_backend_factory.h",
   ]
 
   deps = [
     "//base",
     "//chromecast/media/cma/backend",
+    "//chromecast/media/cma/backend:null_video",
     "//chromecast/media/cma/base",
     "//media:test_support",
     "//testing/gmock",
@@ -46,6 +47,12 @@ cast_source_set("unittests") {
   testonly = true
   sources = [
     "backend/audio_video_pipeline_device_unittest.cc",
+
+    # TODO(almasrymina): enable these tests.
+    # "backend/av_sync_unittest.cc",
+    # "backend/mock_audio_decoder_for_mixer.cc",
+    # "backend/mock_video_decoder_for_mixer.cc",
+    # "backend/video/av_sync_video.cc",
     "base/balanced_media_task_runner_unittest.cc",
     "base/buffering_controller_unittest.cc",
     "base/buffering_frame_provider_unittest.cc",

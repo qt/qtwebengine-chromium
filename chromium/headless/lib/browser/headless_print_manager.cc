@@ -8,7 +8,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/base64.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
@@ -84,16 +83,6 @@ std::string HeadlessPrintManager::PrintResultToString(PrintResult result) {
 }
 
 // static
-std::unique_ptr<base::DictionaryValue>
-HeadlessPrintManager::PDFContentsToDictionaryValue(const std::string& data) {
-  std::string base_64_data;
-  base::Base64Encode(data, &base_64_data);
-  auto result = std::make_unique<base::DictionaryValue>();
-  result->SetString("data", base_64_data);
-  return result;
-}
-
-// static
 HeadlessPrintManager::PageRangeStatus
 HeadlessPrintManager::PageRangeTextToPages(base::StringPiece page_range_text,
                                            bool ignore_invalid_page_ranges,
@@ -154,15 +143,15 @@ HeadlessPrintManager::PageRangeTextToPages(base::StringPiece page_range_text,
 
 void HeadlessPrintManager::GetPDFContents(content::RenderFrameHost* rfh,
                                           const HeadlessPrintSettings& settings,
-                                          const GetPDFCallback& callback) {
+                                          GetPDFCallback callback) {
   DCHECK(callback);
 
   if (callback_) {
-    callback.Run(SIMULTANEOUS_PRINT_ACTIVE, std::string());
+    std::move(callback).Run(SIMULTANEOUS_PRINT_ACTIVE, std::string());
     return;
   }
   printing_rfh_ = rfh;
-  callback_ = callback;
+  callback_ = std::move(callback);
   print_params_ = GetPrintParamsFromSettings(settings);
   page_ranges_text_ = settings.page_ranges;
   ignore_invalid_page_ranges_ = settings.ignore_invalid_page_ranges;
@@ -327,9 +316,9 @@ void HeadlessPrintManager::ReleaseJob(PrintResult result) {
   }
 
   if (result == PRINT_SUCCESS)
-    callback_.Run(result, std::move(data_));
+    std::move(callback_).Run(result, std::move(data_));
   else
-    callback_.Run(result, std::string());
+    std::move(callback_).Run(result, std::string());
   printing_rfh_->Send(new PrintMsg_PrintingDone(printing_rfh_->GetRoutingID(),
                                                 result == PRINT_SUCCESS));
   Reset();

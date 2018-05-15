@@ -122,7 +122,11 @@ class NET_EXPORT Backend {
   // operations so the callbacks are not invoked, possibly leaving the work
   // half way (for instance, dooming just a few entries). Note that pending IO
   // for a given Entry (as opposed to the Backend) will still generate a
-  // callback from within this method.
+  // callback.
+  // Warning: there is some inconsistency in details between different backends
+  // on what will succeed and what will fail.  In particular the blockfile
+  // backend will leak entries closed after backend deletion, while others
+  // handle it properly.
   virtual ~Backend() {}
 
   // Returns the type of this cache.
@@ -381,6 +385,11 @@ class NET_EXPORT Entry {
   // object that refers to the same physical disk entry.
   // Note: This method is deprecated.
   virtual int ReadyForSparseIO(const CompletionCallback& callback) = 0;
+
+  // Used in tests to set the last used time. Note that backend might have
+  // limited precision. Also note that this call may modify the last modified
+  // time.
+  virtual void SetLastUsedTimeForTest(base::Time time) = 0;
 
  protected:
   virtual ~Entry() {}

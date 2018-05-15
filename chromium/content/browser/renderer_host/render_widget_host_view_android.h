@@ -47,11 +47,9 @@ struct DidOverscrollParams;
 }
 
 namespace content {
-class ContentViewCore;
 class GestureListenerManager;
 class ImeAdapterAndroid;
 class OverscrollControllerAndroid;
-class RenderWidgetHostImpl;
 class SelectionPopupController;
 class SynchronousCompositorHost;
 class SynchronousCompositorClient;
@@ -79,7 +77,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       public viz::BeginFrameObserver {
  public:
   RenderWidgetHostViewAndroid(RenderWidgetHostImpl* widget,
-                              ContentViewCore* content_view_core);
+                              gfx::NativeView parent_native_view);
   ~RenderWidgetHostViewAndroid() override;
 
   // Interface used to observe the destruction of a RenderWidgetHostViewAndroid.
@@ -107,7 +105,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void InitAsFullscreen(RenderWidgetHostView* reference_host_view) override;
   void SetSize(const gfx::Size& size) override;
   void SetBounds(const gfx::Rect& rect) override;
-  gfx::Vector2dF GetLastScrollOffset() const override;
   gfx::NativeView GetNativeView() const override;
   gfx::NativeViewAccessible GetNativeViewAccessible() override;
   void Focus() override;
@@ -171,7 +168,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void OnDidNavigateMainFrameToNewPage() override;
   void SetNeedsBeginFrames(bool needs_begin_frames) override;
   void SetWantsAnimateOnlyBeginFrames() override;
-  RenderWidgetHostImpl* GetRenderWidgetHostImpl() const override;
   viz::FrameSinkId GetFrameSinkId() override;
   bool TransformPointToLocalCoordSpace(const gfx::PointF& point,
                                        const viz::SurfaceId& original_surface,
@@ -186,6 +182,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   GetTouchSelectionControllerClientManager() override;
   viz::LocalSurfaceId GetLocalSurfaceId() const override;
   void OnRenderWidgetInit() override;
+  void TakeFallbackContentFrom(RenderWidgetHostView* view) override;
 
   // ui::ViewClient implementation.
   bool OnTouchEvent(const ui::MotionEventAndroid& m) override;
@@ -235,6 +232,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   // DelegatedFrameHostAndroid::Client implementation.
   void SetBeginFrameSource(viz::BeginFrameSource* begin_frame_source) override;
   void DidReceiveCompositorFrameAck() override;
+  void DidPresentCompositorFrame(uint32_t presentation_token,
+                                 base::TimeTicks time,
+                                 base::TimeDelta refresh,
+                                 uint32_t flags) override;
+  void DidDiscardCompositorFrame(uint32_t presentation_token) override;
   void ReclaimResources(
       const std::vector<viz::ReturnedResource>& resources) override;
   void OnFrameTokenChanged(uint32_t frame_token) override;
@@ -246,8 +248,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   bool WantsAnimateOnlyBeginFrames() const override;
 
   // Non-virtual methods
-  void SetContentViewCore(ContentViewCore* content_view_core);
-  void OnContentViewCoreDestroyed();
+  void UpdateNativeViewTree(gfx::NativeView parent_native_view);
   SkColor GetCachedBackgroundColor() const;
   void SendKeyEvent(const NativeWebKeyboardEvent& event);
   void SendMouseEvent(const ui::MotionEventAndroid&, int action_button);
@@ -289,9 +290,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void MoveCaret(const gfx::Point& point);
   void ShowContextMenuAtPoint(const gfx::Point& point, ui::MenuSourceType);
   void DismissTextHandles();
-  void SetTextHandlesTemporarilyHidden(bool hidden);
-  // |x_px| and |y_px| are in physical pixel scale.
-  void OnShowUnhandledTapUIIfNeeded(int x_px, int y_px);
+  void SetTextHandlesTemporarilyHidden(bool hide_handles);
   void OnSelectWordAroundCaretAck(bool did_select,
                                   int start_adjust,
                                   int end_adjust);
@@ -390,8 +389,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void OnFocusInternal();
   void LostFocusInternal();
 
-  // The model object.
-  RenderWidgetHostImpl* host_;
+  void SetTextHandlesHiddenForStylus(bool hide_handles);
 
   // The begin frame source being observed.  Null if none.
   viz::BeginFrameSource* begin_frame_source_;
@@ -413,8 +411,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   // appearance of overscroll glow and the keyboard.
   bool is_in_vr_;
 
-  // ContentViewCore is our interface to the view system.
-  ContentViewCore* content_view_core_;
+  // Specifies whether touch selection handles are hidden due to stylus.
+  bool handles_hidden_by_stylus_ = false;
+
+  // Specifies whether touch selection handles are hidden due to text selection.
+  bool handles_hidden_by_selection_ui_ = false;
 
   ImeAdapterAndroid* ime_adapter_android_;
   TapDisambiguator* tap_disambiguator_;
@@ -472,12 +473,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   bool observing_root_window_;
 
-  // The last scroll offset of the view.
-  gfx::Vector2dF last_scroll_offset_;
-
   bool controls_initialized_ = false;
   float prev_top_shown_pix_;
+  float prev_top_controls_translate_;
   float prev_bottom_shown_pix_;
+  float prev_bottom_controls_translate_;
   float page_scale_;
   float min_page_scale_;
   float max_page_scale_;

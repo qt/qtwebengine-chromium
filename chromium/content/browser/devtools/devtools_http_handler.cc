@@ -369,6 +369,10 @@ static bool TimeComparator(scoped_refptr<DevToolsAgentHost> host1,
 // DevToolsHttpHandler -------------------------------------------------------
 
 DevToolsHttpHandler::~DevToolsHttpHandler() {
+  // Disconnecting sessions might lead to the last minute messages generated
+  // by the targets. It is essential that this happens before we issue delete
+  // soon for the server wrapper.
+  connection_to_client_.clear();
   TerminateOnUI(std::move(thread_), std::move(server_wrapper_),
                 std::move(socket_factory_));
 }
@@ -568,8 +572,9 @@ void DevToolsHttpHandler::OnJsonRequest(
         kTargetWebSocketDebuggerUrlField,
         base::StringPrintf("ws://%s%s", host.c_str(), browser_guid_.c_str()));
 #if defined(OS_ANDROID)
-    version.SetString("Android-Package",
-        base::android::BuildInfo::GetInstance()->package_name());
+    version.SetString(
+        "Android-Package",
+        base::android::BuildInfo::GetInstance()->host_package_name());
 #endif
     SendJson(connection_id, net::HTTP_OK, &version, std::string());
     return;

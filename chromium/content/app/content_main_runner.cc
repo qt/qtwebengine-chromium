@@ -52,15 +52,17 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/sandbox_init.h"
-#include "content/public/common/zygote_features.h"
+#include "content/public/common/zygote_buildflags.h"
 #include "gin/v8_initializer.h"
 #include "media/base/media.h"
-#include "media/media_features.h"
-#include "ppapi/features/features.h"
+#include "media/media_buildflags.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "services/service_manager/embedder/switches.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/display/display_switches.h"
+#include "ui/gfx/switches.h"
 
 #if defined(OS_WIN)
 #include <malloc.h>
@@ -92,6 +94,33 @@
 
 #endif  // OS_POSIX
 
+#if defined(OS_LINUX)
+#include "base/native_library.h"
+#include "base/rand_util.h"
+#include "content/common/font_config_ipc_linux.h"
+#include "content/public/common/common_sandbox_support_linux.h"
+#include "third_party/blink/public/platform/web_font_render_style.h"
+#include "third_party/boringssl/src/include/openssl/crypto.h"
+#include "third_party/boringssl/src/include/openssl/rand.h"
+#include "third_party/skia/include/ports/SkFontConfigInterface.h"
+#include "third_party/skia/include/ports/SkFontMgr.h"
+#include "third_party/skia/include/ports/SkFontMgr_android.h"
+
+#if BUILDFLAG(ENABLE_PLUGINS)
+#include "content/common/pepper_plugin_list.h"
+#include "content/public/common/pepper_plugin_info.h"
+#endif
+
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
+#include "content/public/common/cdm_info.h"
+#include "content/public/common/content_client.h"
+#endif
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "third_party/webrtc_overrides/init_webrtc.h"  // nogncheck
+#endif
+#endif  // OS_LINUX
+
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
 #include "content/public/gpu/content_gpu_client.h"
 #include "content/public/renderer/content_renderer_client.h"
@@ -106,10 +135,19 @@
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER) && !defined(CHROME_MULTIPLE_DLL_CHILD)
 #include "content/browser/gpu/gpu_main_thread_factory.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
-#include "content/browser/utility_process_host_impl.h"
+#include "content/browser/utility_process_host.h"
 #include "content/gpu/in_process_gpu_thread.h"
 #include "content/renderer/in_process_renderer_thread.h"
 #include "content/utility/in_process_utility_thread.h"
+#endif
+
+#if BUILDFLAG(USE_ZYGOTE_HANDLE)
+#include "content/browser/sandbox_host_linux.h"
+#include "content/browser/zygote_host/zygote_communication_linux.h"
+#include "content/browser/zygote_host/zygote_host_impl_linux.h"
+#include "content/public/common/common_sandbox_support_linux.h"
+#include "content/public/common/zygote_handle.h"
+#include "media/base/media_switches.h"
 #endif
 
 namespace content {
@@ -233,6 +271,170 @@ void InitializeV8IfNeeded(const base::CommandLine& command_line,
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA
 }
 
+#if BUILDFLAG(USE_ZYGOTE_HANDLE)
+pid_t LaunchZygoteHelper(base::CommandLine* cmd_line,
+                         base::ScopedFD* control_fd) {
+  // Append any switches from the browser process that need to be forwarded on
+  // to the zygote/renderers.
+  static const char* const kForwardSwitches[] = {
+      switches::kAndroidFontsPath, switches::kClearKeyCdmPathForTesting,
+      switches::kEnableHeapProfiling,
+      switches::kEnableLogging,  // Support, e.g., --enable-logging=stderr.
+      // Need to tell the zygote that it is headless so that we don't try to use
+      // the wrong type of main delegate.
+      switches::kHeadless,
+      // Zygote process needs to know what resources to have loaded when it
+      // becomes a renderer process.
+      switches::kForceDeviceScaleFactor, switches::kLoggingLevel,
+      switches::kPpapiInProcess, switches::kRegisterPepperPlugins, switches::kV,
+      switches::kVModule,
+  };
+  cmd_line->CopySwitchesFrom(*base::CommandLine::ForCurrentProcess(),
+                             kForwardSwitches, arraysize(kForwardSwitches));
+
+  GetContentClient()->browser()->AppendExtraCommandLineSwitches(cmd_line, -1);
+
+  // Start up the sandbox host process and get the file descriptor for the
+  // sandboxed processes to talk to it.
+  base::FileHandleMappingVector additional_remapped_fds;
+  additional_remapped_fds.emplace_back(
+      SandboxHostLinux::GetInstance()->GetChildSocket(), GetSandboxFD());
+
+  return ZygoteHostImpl::GetInstance()->LaunchZygote(
+      cmd_line, control_fd, std::move(additional_remapped_fds));
+}
+
+// Initializes the Zygote sandbox host. No thread should be created before this
+// call, as InitializeZygoteSandboxForBrowserProcess() will end-up using fork().
+void InitializeZygoteSandboxForBrowserProcess(
+    const base::CommandLine& parsed_command_line) {
+  TRACE_EVENT0("startup", "SetupSandbox");
+  // SandboxHostLinux needs to be initialized even if the sandbox and
+  // zygote are both disabled. It initializes the sandboxed process socket.
+  SandboxHostLinux::GetInstance()->Init();
+
+  if (parsed_command_line.HasSwitch(switches::kNoZygote) &&
+      !parsed_command_line.HasSwitch(switches::kNoSandbox)) {
+    LOG(ERROR) << "--no-sandbox should be used together with --no--zygote";
+    exit(EXIT_FAILURE);
+  }
+
+  // Tickle the zygote host so it forks now.
+  ZygoteHostImpl::GetInstance()->Init(parsed_command_line);
+  ZygoteHandle generic_zygote =
+      CreateGenericZygote(base::BindOnce(LaunchZygoteHelper));
+
+  // TODO(kerrnel): Investigate doing this without the ZygoteHostImpl as a
+  // proxy. It is currently done this way due to concerns about race
+  // conditions.
+  ZygoteHostImpl::GetInstance()->SetRendererSandboxStatus(
+      generic_zygote->GetSandboxStatus());
+}
+#endif  // BUILDFLAG(USE_ZYGOTE_HANDLE)
+
+#if defined(OS_LINUX)
+
+#if BUILDFLAG(ENABLE_PLUGINS)
+// Loads the (native) libraries but does not initialize them (i.e., does not
+// call PPP_InitializeModule). This is needed by the zygote on Linux to get
+// access to the plugins before entering the sandbox.
+void PreloadPepperPlugins() {
+  std::vector<PepperPluginInfo> plugins;
+  ComputePepperPluginList(&plugins);
+  for (const auto& plugin : plugins) {
+    if (!plugin.is_internal) {
+      base::NativeLibraryLoadError error;
+      base::NativeLibrary library =
+          base::LoadNativeLibrary(plugin.path, &error);
+      VLOG_IF(1, !library) << "Unable to load plugin " << plugin.path.value()
+                           << " " << error.ToString();
+
+      ignore_result(library);  // Prevent release-mode warning.
+    }
+  }
+}
+#endif
+
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
+// Loads registered library CDMs but does not initialize them. This is needed by
+// the zygote on Linux to get access to the CDMs before entering the sandbox.
+void PreloadLibraryCdms() {
+  std::vector<CdmInfo> cdms;
+  GetContentClient()->AddContentDecryptionModules(&cdms, nullptr);
+  for (const auto& cdm : cdms) {
+    base::NativeLibraryLoadError error;
+    base::NativeLibrary library = base::LoadNativeLibrary(cdm.path, &error);
+    VLOG_IF(1, !library) << "Unable to load CDM " << cdm.path.value()
+                         << " (error: " << error.ToString() << ")";
+    ignore_result(library);  // Prevent release-mode warning.
+  }
+}
+#endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
+
+#if BUILDFLAG(USE_ZYGOTE_HANDLE)
+void PreSandboxInit() {
+#if defined(ARCH_CPU_ARM_FAMILY)
+  // On ARM, BoringSSL requires access to /proc/cpuinfo to determine processor
+  // features. Query this before entering the sandbox.
+  CRYPTO_library_init();
+#endif
+
+  // Pass BoringSSL a copy of the /dev/urandom file descriptor so RAND_bytes
+  // will work inside the sandbox.
+  RAND_set_urandom_fd(base::GetUrandomFD());
+
+#if BUILDFLAG(ENABLE_PLUGINS)
+  // Ensure access to the Pepper plugins before the sandbox is turned on.
+  PreloadPepperPlugins();
+#endif
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
+  // Ensure access to the library CDMs before the sandbox is turned on.
+  PreloadLibraryCdms();
+#endif
+#if BUILDFLAG(ENABLE_WEBRTC)
+  InitializeWebRtcModule();
+#endif
+
+  SkFontConfigInterface::SetGlobal(new FontConfigIPC(GetSandboxFD()))->unref();
+
+  // Set the android SkFontMgr for blink. We need to ensure this is done
+  // before the sandbox is initialized to allow the font manager to access
+  // font configuration files on disk.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAndroidFontsPath)) {
+    std::string android_fonts_dir =
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            switches::kAndroidFontsPath);
+
+    if (android_fonts_dir.size() > 0 && android_fonts_dir.back() != '/')
+      android_fonts_dir += '/';
+
+    SkFontMgr_Android_CustomFonts custom;
+    custom.fSystemFontUse =
+        SkFontMgr_Android_CustomFonts::SystemFontUse::kOnlyCustom;
+    custom.fBasePath = android_fonts_dir.c_str();
+
+    std::string font_config;
+    std::string fallback_font_config;
+    if (android_fonts_dir.find("kitkat") != std::string::npos) {
+      font_config = android_fonts_dir + "system_fonts.xml";
+      fallback_font_config = android_fonts_dir + "fallback_fonts.xml";
+      custom.fFallbackFontsXml = fallback_font_config.c_str();
+    } else {
+      font_config = android_fonts_dir + "fonts.xml";
+      custom.fFallbackFontsXml = nullptr;
+    }
+    custom.fFontsXml = font_config.c_str();
+    custom.fIsolated = true;
+
+    blink::WebFontRenderStyle::SetSkiaFontManager(
+        SkFontMgr_New_Android(&custom));
+  }
+}
+#endif  // BUILDFLAG(USE_ZYGOTE_HANDLE)
+
+#endif  // OS_LINUX
+
 }  // namespace
 
 #if !defined(CHROME_MULTIPLE_DLL_CHILD)
@@ -321,6 +523,10 @@ int RunZygote(ContentMainDelegate* delegate) {
     media::InitializeMediaLibrary();
   }
 
+#if defined(OS_LINUX)
+  PreSandboxInit();
+#endif
+
   // This function call can return multiple times, once per fork().
   if (!ZygoteMain(std::move(zygote_fork_delegates)))
     return 1;
@@ -335,6 +541,10 @@ int RunZygote(ContentMainDelegate* delegate) {
   std::string process_type =
       command_line.GetSwitchValueASCII(switches::kProcessType);
   ContentClientInitializer::Set(process_type, delegate);
+
+#if !defined(OS_ANDROID)
+  tracing::EnableStartupTracingIfNeeded();
+#endif  // !OS_ANDROID
 
   MainFunctionParams main_params(command_line);
   main_params.zygote_child = true;
@@ -362,7 +572,7 @@ int RunZygote(ContentMainDelegate* delegate) {
 
 static void RegisterMainThreadFactories() {
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER) && !defined(CHROME_MULTIPLE_DLL_CHILD)
-  UtilityProcessHostImpl::RegisterUtilityMainThreadFactory(
+  UtilityProcessHost::RegisterUtilityMainThreadFactory(
       CreateInProcessUtilityThread);
   RenderProcessHostImpl::RegisterRendererMainThreadFactory(
       CreateInProcessRendererThread);
@@ -544,12 +754,11 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // Enable startup tracing asap to avoid early TRACE_EVENT calls being
     // ignored. For Android, startup tracing is enabled in an even earlier place
     // content/app/android/library_loader_hooks.cc.
-    // Zygote process does not have file thread and renderer process on Win10
-    // cannot access the file system.
-    // TODO(ssid): Check if other processes can enable startup tracing here.
-    bool can_access_file_system = (process_type != switches::kZygoteProcess &&
-                                   process_type != switches::kRendererProcess);
-    tracing::EnableStartupTracingIfNeeded(can_access_file_system);
+    //
+    // Startup tracing flags are not (and should not) passed to Zygote
+    // processes. We will enable tracing when forked, if needed.
+    if (process_type != switches::kZygoteProcess)
+      tracing::EnableStartupTracingIfNeeded();
 #endif  // !OS_ANDROID
 
 #if defined(OS_WIN)
@@ -672,6 +881,16 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 
     if (delegate_)
       delegate_->SandboxInitialized(process_type);
+
+#if BUILDFLAG(USE_ZYGOTE_HANDLE)
+    if (process_type.empty()) {
+      // The sandbox host needs to be initialized before forking a thread to
+      // start the ServiceManager, and after setting up the sandbox and invoking
+      // SandboxInitialized().
+      InitializeZygoteSandboxForBrowserProcess(
+          *base::CommandLine::ForCurrentProcess());
+    }
+#endif  // BUILDFLAG(USE_ZYGOTE_HANDLE)
 
     // Return -1 to indicate no early termination.
     return -1;

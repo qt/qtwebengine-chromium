@@ -11,7 +11,7 @@
 #include "build/build_config.h"
 #include "content/common/dom_storage/dom_storage_map.h"
 #include "content/renderer/dom_storage/dom_storage_proxy.h"
-#include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
+#include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
 
 namespace content {
 
@@ -19,12 +19,12 @@ DOMStorageCachedArea::DOMStorageCachedArea(
     const std::string& namespace_id,
     const GURL& origin,
     DOMStorageProxy* proxy,
-    blink::scheduler::RendererScheduler* renderer_scheduler)
+    blink::scheduler::WebMainThreadScheduler* main_thread_scheduler)
     : ignore_all_mutations_(false),
       namespace_id_(namespace_id),
       origin_(origin),
       proxy_(proxy),
-      renderer_scheduler_(renderer_scheduler),
+      main_thread_scheduler_(main_thread_scheduler),
       weak_factory_(this) {}
 
 DOMStorageCachedArea::~DOMStorageCachedArea() {}
@@ -73,13 +73,14 @@ bool DOMStorageCachedArea::SetItem(int connection_id,
 
   // Ignore mutations to 'key' until OnSetItemComplete.
   blink::WebScopedVirtualTimePauser virtual_time_pauser =
-      renderer_scheduler_->CreateWebScopedVirtualTimePauser();
-  virtual_time_pauser.PauseVirtualTime(true);
+      main_thread_scheduler_->CreateWebScopedVirtualTimePauser(
+          "DOMStorageCachedArea");
+  virtual_time_pauser.PauseVirtualTime();
   ignore_key_mutations_[key]++;
   proxy_->SetItem(connection_id, key, value, old_value, page_url,
-                  base::Bind(&DOMStorageCachedArea::OnSetItemComplete,
-                             weak_factory_.GetWeakPtr(), key,
-                             base::Passed(std::move(virtual_time_pauser))));
+                  base::BindOnce(&DOMStorageCachedArea::OnSetItemComplete,
+                                 weak_factory_.GetWeakPtr(), key,
+                                 std::move(virtual_time_pauser)));
   return true;
 }
 
@@ -100,14 +101,15 @@ void DOMStorageCachedArea::RemoveItem(int connection_id,
 
   // Ignore mutations to 'key' until OnRemoveItemComplete.
   blink::WebScopedVirtualTimePauser virtual_time_pauser =
-      renderer_scheduler_->CreateWebScopedVirtualTimePauser();
-  virtual_time_pauser.PauseVirtualTime(true);
+      main_thread_scheduler_->CreateWebScopedVirtualTimePauser(
+          "DOMStorageCachedArea");
+  virtual_time_pauser.PauseVirtualTime();
   ignore_key_mutations_[key]++;
   proxy_->RemoveItem(connection_id, key,
                      base::NullableString16(old_value, false), page_url,
-                     base::Bind(&DOMStorageCachedArea::OnRemoveItemComplete,
-                                weak_factory_.GetWeakPtr(), key,
-                                base::Passed(std::move(virtual_time_pauser))));
+                     base::BindOnce(&DOMStorageCachedArea::OnRemoveItemComplete,
+                                    weak_factory_.GetWeakPtr(), key,
+                                    std::move(virtual_time_pauser)));
 }
 
 void DOMStorageCachedArea::Clear(int connection_id, const GURL& page_url) {
@@ -117,13 +119,14 @@ void DOMStorageCachedArea::Clear(int connection_id, const GURL& page_url) {
 
   // Ignore all mutations until OnClearComplete time.
   blink::WebScopedVirtualTimePauser virtual_time_pauser =
-      renderer_scheduler_->CreateWebScopedVirtualTimePauser();
-  virtual_time_pauser.PauseVirtualTime(true);
+      main_thread_scheduler_->CreateWebScopedVirtualTimePauser(
+          "DOMStorageCachedArea");
+  virtual_time_pauser.PauseVirtualTime();
   ignore_all_mutations_ = true;
   proxy_->ClearArea(connection_id, page_url,
-                    base::Bind(&DOMStorageCachedArea::OnClearComplete,
-                               weak_factory_.GetWeakPtr(),
-                               base::Passed(std::move(virtual_time_pauser))));
+                    base::BindOnce(&DOMStorageCachedArea::OnClearComplete,
+                                   weak_factory_.GetWeakPtr(),
+                                   std::move(virtual_time_pauser)));
 }
 
 void DOMStorageCachedArea::ApplyMutation(
@@ -182,10 +185,9 @@ void DOMStorageCachedArea::Prime(int connection_id) {
   ignore_all_mutations_ = true;
   DOMStorageValuesMap values;
   base::TimeTicks before = base::TimeTicks::Now();
-  proxy_->LoadArea(connection_id,
-                   &values,
-                   base::Bind(&DOMStorageCachedArea::OnLoadComplete,
-                              weak_factory_.GetWeakPtr()));
+  proxy_->LoadArea(connection_id, &values,
+                   base::BindOnce(&DOMStorageCachedArea::OnLoadComplete,
+                                  weak_factory_.GetWeakPtr()));
   base::TimeDelta time_to_prime = base::TimeTicks::Now() - before;
   // Keeping this histogram named the same (without the ForRenderer suffix)
   // to maintain histogram continuity.

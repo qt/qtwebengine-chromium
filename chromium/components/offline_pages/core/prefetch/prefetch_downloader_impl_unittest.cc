@@ -6,7 +6,6 @@
 
 #include <vector>
 
-#include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/simple_test_clock.h"
 #include "base/time/time.h"
@@ -40,13 +39,11 @@ class PrefetchDownloaderImplTest : public PrefetchRequestTestBase {
   void SetUp() override {
     PrefetchRequestTestBase::SetUp();
 
-    clock_ = new base::SimpleTestClock();
-
     prefetch_service_taco_.reset(new PrefetchServiceTestTaco);
 
     auto downloader = std::make_unique<PrefetchDownloaderImpl>(
         &download_service_, kTestChannel);
-    downloader->SetClockForTesting(base::WrapUnique(clock_));
+    downloader->SetClockForTesting(&clock_);
     download_service_.SetFailedDownload(kFailedDownloadId, false);
     download_service_.SetIsReady(true);
     download_client_ = std::make_unique<TestDownloadClient>(downloader.get());
@@ -81,7 +78,7 @@ class PrefetchDownloaderImplTest : public PrefetchRequestTestBase {
     return prefetch_dispatcher()->download_results;
   }
 
-  base::SimpleTestClock* clock() { return clock_; }
+  base::SimpleTestClock* clock() { return &clock_; }
 
   PrefetchDownloader* prefetch_downloader() const {
     return prefetch_service_taco_->prefetch_service()->GetPrefetchDownloader();
@@ -96,7 +93,7 @@ class PrefetchDownloaderImplTest : public PrefetchRequestTestBase {
   download::test::TestDownloadService download_service_;
   std::unique_ptr<TestDownloadClient> download_client_;
   std::unique_ptr<PrefetchServiceTestTaco> prefetch_service_taco_;
-  base::SimpleTestClock* clock_;
+  base::SimpleTestClock clock_;
 };
 
 TEST_F(PrefetchDownloaderImplTest, DownloadParams) {

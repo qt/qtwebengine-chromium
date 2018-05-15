@@ -24,7 +24,7 @@
 
 #if defined(WEBRTC_WIN)
 #include "rtc_base/win32.h"
-#include <Iphlpapi.h>
+#include <iphlpapi.h>
 #elif !defined(__native_client__)
 #include "rtc_base/ifaddrs_converter.h"
 #endif
@@ -633,7 +633,7 @@ bool BasicNetworkManager::CreateNetworks(bool include_ignored,
               scope_id = v6_addr->sin6_scope_id;
               ip = IPAddress(v6_addr->sin6_addr);
 
-              if (IsIgnoredIPv6(ip)) {
+              if (IsIgnoredIPv6(InterfaceAddress(ip))) {
                 continue;
               }
 

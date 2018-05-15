@@ -124,9 +124,6 @@ struct NET_EXPORT SSLConfig {
   std::vector<TokenBindingParam> token_binding_params;
 
   bool false_start_enabled;  // True if we'll use TLS False Start.
-  // True if the Certificate Transparency signed_certificate_timestamp
-  // TLS extension is enabled.
-  bool signed_cert_timestamps_enabled;
 
   // If true, causes only ECDHE cipher suites to be enabled.
   bool require_ecdhe;
@@ -152,15 +149,6 @@ struct NET_EXPORT SSLConfig {
 
   // True if we should send client_cert to the server.
   bool send_client_cert;
-
-  bool verify_ev_cert;  // True if we should verify the certificate for EV.
-
-  // If cert_io_enabled is false, then certificate verification will not
-  // result in additional HTTP requests. (For example: to fetch missing
-  // intermediates or to perform OCSP/CRL fetches.) It also implies that online
-  // revocation checking is disabled.
-  // NOTE: Only used by NSS.
-  bool cert_io_enabled;
 
   // The list of application level protocols supported with ALPN (Application
   // Layer Protocol Negotation), in decreasing order of preference.  Protocols

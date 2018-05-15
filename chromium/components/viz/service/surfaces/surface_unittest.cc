@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "components/viz/service/surfaces/surface.h"
-#include "base/memory/ptr_util.h"
 #include "cc/test/scheduler_test_common.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
@@ -91,9 +90,12 @@ TEST(SurfaceTest, CopyRequestLifetime) {
   ASSERT_TRUE(!!surface);
 
   bool copy_called = false;
-  support->RequestCopyOfSurface(std::make_unique<CopyOutputRequest>(
-      CopyOutputRequest::ResultFormat::RGBA_BITMAP,
-      base::BindOnce(&TestCopyResultCallback, &copy_called)));
+  support->RequestCopyOfOutput(
+      local_surface_id,
+      std::make_unique<CopyOutputRequest>(
+          CopyOutputRequest::ResultFormat::RGBA_BITMAP,
+          base::BindOnce(&TestCopyResultCallback, &copy_called)));
+  surface->TakeCopyOutputRequestsFromClient();
   EXPECT_TRUE(surface_manager->GetSurfaceForId(surface_id));
   EXPECT_FALSE(copy_called);
 

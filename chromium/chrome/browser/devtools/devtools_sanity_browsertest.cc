@@ -54,6 +54,7 @@
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/autofill_manager_test_delegate.h"
 #include "components/prefs/pref_service.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/devtools_agent_host.h"
@@ -63,6 +64,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui_controller.h"
@@ -85,7 +87,8 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_filter.h"
 #include "net/url_request/url_request_http_job.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "services/network/public/cpp/features.h"
+#include "third_party/blink/public/platform/web_input_event.h"
 #include "ui/compositor/compositor_switches.h"
 #include "ui/gl/gl_switches.h"
 #include "url/gurl.h"
@@ -2084,12 +2087,23 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestRawHeadersWithRedirectAndHSTS) {
   https_test_server.ServeFilesFromSourceDirectory("chrome/test/data");
   ASSERT_TRUE(https_test_server.Start());
   GURL https_url = https_test_server.GetURL("localhost", "/devtools/image.png");
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::BindOnce(
-          AddHSTSHost,
-          base::RetainedRef(browser()->profile()->GetRequestContext()),
-          https_url.host()));
+  if (!base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::BindOnce(
+            AddHSTSHost,
+            base::RetainedRef(browser()->profile()->GetRequestContext()),
+            https_url.host()));
+  } else {
+    base::Time expiry = base::Time::Now() + base::TimeDelta::FromDays(1000);
+    bool include_subdomains = false;
+    mojo::ScopedAllowSyncCallForTesting allow_sync_call;
+    content::StoragePartition* partition =
+        content::BrowserContext::GetDefaultStoragePartition(
+            browser()->profile());
+    partition->GetNetworkContext()->AddHSTSForTesting(https_url.host(), expiry,
+                                                      include_subdomains);
+  }
   ASSERT_TRUE(embedded_test_server()->Start());
 
   OpenDevToolsWindow(std::string(), false);
@@ -2148,9 +2162,35 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestOpenInNewTabFilter) {
   }
 }
 
+IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, LoadNetworkResourceForFrontend) {
+  embedded_test_server()->ServeFilesFromSourceDirectory("content/test/data");
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  GURL url(embedded_test_server()->GetURL("/"));
+  ui_test_utils::NavigateToURL(browser(),
+                               embedded_test_server()->GetURL("/hello.html"));
+  window_ =
+      DevToolsWindowTesting::OpenDevToolsWindowSync(GetInspectedTab(), false);
+  RunTestMethod("testLoadResourceForFrontend", url.spec().c_str());
+  DevToolsWindowTesting::CloseDevToolsWindowSync(window_);
+}
+
 IN_PROC_BROWSER_TEST_F(SitePerProcessDevToolsSanityTest, InspectElement) {
   GURL url(embedded_test_server()->GetURL("a.com", "/devtools/oopif.html"));
-  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(browser(), url, 2);
+  GURL iframe_url(
+      embedded_test_server()->GetURL("b.com", "/devtools/oopif_frame.html"));
+
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
+
+  content::TestNavigationManager navigation_manager(tab, url);
+  content::TestNavigationManager navigation_manager_iframe(tab, iframe_url);
+
+  tab->GetController().LoadURL(url, content::Referrer(),
+                               ui::PAGE_TRANSITION_LINK, std::string());
+
+  navigation_manager.WaitForNavigationFinished();
+  navigation_manager_iframe.WaitForNavigationFinished();
+  content::WaitForLoadStop(tab);
 
   std::vector<RenderFrameHost*> frames = GetInspectedTab()->GetAllFrames();
   ASSERT_EQ(2u, frames.size());
@@ -2166,11 +2206,26 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessDevToolsSanityTest, InspectElement) {
   DevToolsWindowTesting::CloseDevToolsWindowSync(window);
 }
 
+// Flaky on Mus. See https://crbug.com/819285.
 IN_PROC_BROWSER_TEST_F(SitePerProcessDevToolsSanityTest,
-                       InputDispatchEventsToOOPIF) {
+                       DISABLED_InputDispatchEventsToOOPIF) {
   GURL url(
       embedded_test_server()->GetURL("a.com", "/devtools/oopif-input.html"));
-  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(browser(), url, 2);
+  GURL iframe_url(embedded_test_server()->GetURL(
+      "b.com", "/devtools/oopif-input-frame.html"));
+
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
+
+  content::TestNavigationManager navigation_manager(tab, url);
+  content::TestNavigationManager navigation_manager_iframe(tab, iframe_url);
+
+  tab->GetController().LoadURL(url, content::Referrer(),
+                               ui::PAGE_TRANSITION_LINK, std::string());
+
+  navigation_manager.WaitForNavigationFinished();
+  navigation_manager_iframe.WaitForNavigationFinished();
+  content::WaitForLoadStop(tab);
+
   for (auto* frame : GetInspectedTab()->GetAllFrames())
     content::WaitForChildFrameSurfaceReady(frame);
   DevToolsWindow* window =

@@ -12,7 +12,6 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "build/build_config.h"
@@ -22,7 +21,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
 #include "media/base/video_frame.h"
-#include "media/capture/mojo/video_capture_types.mojom.h"
+#include "media/capture/mojom/video_capture_types.mojom.h"
 #include "media/capture/video/video_capture_buffer_pool.h"
 #include "media/capture/video/video_capture_buffer_tracker_factory_impl.h"
 #include "media/capture/video/video_capture_device_client.h"
@@ -458,7 +457,7 @@ void VideoCaptureController::OnFrameReadyInBuffer(
     double frame_rate = 0.0f;
     if (video_capture_format_) {
       media::VideoFrameMetadata metadata;
-      metadata.MergeInternalValuesFrom(*frame_info->metadata);
+      metadata.MergeInternalValuesFrom(frame_info->metadata);
       if (!metadata.GetDouble(VideoFrameMetadata::FRAME_RATE, &frame_rate)) {
         frame_rate = video_capture_format_->frame_rate;
       }

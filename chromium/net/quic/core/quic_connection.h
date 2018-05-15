@@ -25,6 +25,7 @@
 
 #include "base/macros.h"
 #include "net/quic/core/crypto/quic_decrypter.h"
+#include "net/quic/core/crypto/quic_encrypter.h"
 #include "net/quic/core/proto/cached_network_parameters.pb.h"
 #include "net/quic/core/quic_alarm.h"
 #include "net/quic/core/quic_alarm_factory.h"
@@ -51,8 +52,6 @@ namespace net {
 class QuicClock;
 class QuicConfig;
 class QuicConnection;
-class QuicDecrypter;
-class QuicEncrypter;
 class QuicRandom;
 
 namespace test {
@@ -172,6 +171,10 @@ class QUIC_EXPORT_PRIVATE QuicConnectionVisitorInterface {
   // Called when a self address change is observed. Returns true if self address
   // change is allowed.
   virtual bool AllowSelfAddressChange() const = 0;
+
+  // Called when an ACK is received with a larger |largest_acked| than
+  // previously observed.
+  virtual void OnForwardProgressConfirmed() = 0;
 };
 
 // Interface which gets callbacks from the QuicConnection at interesting
@@ -262,7 +265,7 @@ class QUIC_EXPORT_PRIVATE QuicConnectionDebugVisitor
 
   // Called when the version negotiation is successful.
   virtual void OnSuccessfulVersionNegotiation(
-      const QuicTransportVersion& version) {}
+      const ParsedQuicVersion& version) {}
 
   // Called when a CachedNetworkParameters is sent to the client.
   virtual void OnSendConnectionState(
@@ -356,7 +359,7 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   void AdjustNetworkParameters(QuicBandwidth bandwidth, QuicTime::Delta rtt);
 
   // Returns the max pacing rate for the connection.
-  QuicBandwidth MaxPacingRate() const;
+  virtual QuicBandwidth MaxPacingRate() const;
 
   // Sets the number of active streams on the connection for congestion control.
   void SetNumOpenStreams(size_t num_streams);
@@ -375,19 +378,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // otherwise.
   virtual bool SendControlFrame(const QuicFrame& frame);
 
-  // Send a RST_STREAM frame to the peer.
-  virtual void SendRstStream(QuicStreamId id,
-                             QuicRstStreamErrorCode error,
-                             QuicStreamOffset bytes_written);
-
   // Called when stream |id| is reset because of |error|.
   virtual void OnStreamReset(QuicStreamId id, QuicRstStreamErrorCode error);
-
-  // Send a BLOCKED frame to the peer.
-  virtual void SendBlocked(QuicStreamId id);
-
-  // Send a WINDOW_UPDATE frame to the peer.
-  virtual void SendWindowUpdate(QuicStreamId id, QuicStreamOffset byte_offset);
 
   // Closes the connection.
   // |connection_close_behavior| determines whether or not a connection close
@@ -396,11 +388,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
       QuicErrorCode error,
       const QuicString& details,
       ConnectionCloseBehavior connection_close_behavior);
-
-  // Sends a GOAWAY frame.
-  virtual void SendGoAway(QuicErrorCode error,
-                          QuicStreamId last_good_stream_id,
-                          const QuicString& reason);
 
   // Returns statistics tracked for this connection.
   const QuicConnectionStats& GetStats();
@@ -424,6 +411,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Called when an error occurs while attempting to write a packet to the
   // network.
   void OnWriteError(int error_code);
+
+  // Whether |result| represents a MSG TOO BIG write error.
+  bool IsMsgTooBig(const WriteResult& result);
 
   // If the socket is not blocked, writes queued packets.
   void WriteIfNotBlocked();
@@ -484,6 +474,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   bool OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) override;
   bool OnBlockedFrame(const QuicBlockedFrame& frame) override;
   void OnPacketComplete() override;
+  bool IsValidStatelessResetToken(uint128 token) const override;
+  void OnAuthenticatedIetfStatelessResetPacket(
+      const QuicIetfStatelessResetPacket& packet) override;
 
   // QuicConnectionCloseDelegateInterface
   void OnUnrecoverableError(QuicErrorCode error,
@@ -501,6 +494,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // QuicSentPacketManager::NetworkChangeVisitor
   void OnCongestionChange() override;
+  // TODO(b/76462614): remove OnPathDegrading() once
+  // FLAGS_quic_reloadable_flag_quic_path_degrading_alarm is deprecated.
   void OnPathDegrading() override;
   void OnPathMtuIncreased(QuicPacketLength packet_size) override;
 
@@ -525,11 +520,34 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   }
   const QuicTime::Delta ping_timeout() { return ping_timeout_; }
   // Used in Chromium, but not internally.
+  // Must only be called before retransmittable_on_wire_alarm_ is set.
+  void set_retransmittable_on_wire_timeout(
+      QuicTime::Delta retransmittable_on_wire_timeout) {
+    DCHECK(!retransmittable_on_wire_alarm_->IsSet());
+    retransmittable_on_wire_timeout_ = retransmittable_on_wire_timeout;
+  }
+  const QuicTime::Delta retransmittable_on_wire_timeout() {
+    return retransmittable_on_wire_timeout_;
+  }
+  // Used in Chromium, but not internally.
   void set_creator_debug_delegate(QuicPacketCreator::DebugDelegate* visitor) {
     packet_generator_.set_debug_delegate(visitor);
   }
   const QuicSocketAddress& self_address() const { return self_address_; }
-  const QuicSocketAddress& peer_address() const { return peer_address_; }
+  const QuicSocketAddress& peer_address() const {
+    if (enable_server_proxy_) {
+      return direct_peer_address_;
+    }
+    return peer_address_;
+  }
+  const QuicSocketAddress& effective_peer_address() const {
+    if (enable_server_proxy_) {
+      return effective_peer_address_;
+    }
+    QUIC_BUG << "effective_peer_address() should only be called when "
+                "enable_server_proxy_ is true.";
+    return peer_address_;
+  }
   QuicConnectionId connection_id() const { return connection_id_; }
   const QuicClock* clock() const { return clock_; }
   QuicRandom* random_generator() const { return random_generator_; }
@@ -573,11 +591,11 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // if the retransmission alarm is not running.
   void OnPingTimeout();
 
-  // Sends a ping frame.
-  void SendPing();
-
   // Sets up a packet with an QuicAckFrame and sends it out.
   void SendAck();
+
+  // Called when the path degrading alarm fires.
+  void OnPathDegradingTimeout();
 
   // Called when an RTO fires.  Resets the retransmission alarm if there are
   // remaining unacked packets.
@@ -594,9 +612,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // connection becomes forward secure and hasn't received acks for all packets.
   void NeuterUnencryptedPackets();
 
-  // Changes the encrypter used for level |level| to |encrypter|. The function
-  // takes ownership of |encrypter|.
-  void SetEncrypter(EncryptionLevel level, QuicEncrypter* encrypter);
+  // Changes the encrypter used for level |level| to |encrypter|.
+  void SetEncrypter(EncryptionLevel level,
+                    std::unique_ptr<QuicEncrypter> encrypter);
 
   // SetNonceForPublicHeader sets the nonce that will be transmitted in the
   // header of each packet encrypted at the initial encryption level decrypted.
@@ -607,21 +625,22 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // to new packets.
   void SetDefaultEncryptionLevel(EncryptionLevel level);
 
-  // SetDecrypter sets the primary decrypter, replacing any that already exists,
-  // and takes ownership. If an alternative decrypter is in place then the
-  // function DCHECKs. This is intended for cases where one knows that future
-  // packets will be using the new decrypter and the previous decrypter is now
-  // obsolete. |level| indicates the encryption level of the new decrypter.
-  void SetDecrypter(EncryptionLevel level, QuicDecrypter* decrypter);
+  // SetDecrypter sets the primary decrypter, replacing any that already exists.
+  // If an alternative decrypter is in place then the function DCHECKs. This is
+  // intended for cases where one knows that future packets will be using the
+  // new decrypter and the previous decrypter is now obsolete. |level| indicates
+  // the encryption level of the new decrypter.
+  void SetDecrypter(EncryptionLevel level,
+                    std::unique_ptr<QuicDecrypter> decrypter);
 
   // SetAlternativeDecrypter sets a decrypter that may be used to decrypt
-  // future packets and takes ownership of it. |level| indicates the encryption
-  // level of the decrypter. If |latch_once_used| is true, then the first time
-  // that the decrypter is successful it will replace the primary decrypter.
-  // Otherwise both decrypters will remain active and the primary decrypter
-  // will be the one last used.
+  // future packets. |level| indicates the encryption level of the decrypter. If
+  // |latch_once_used| is true, then the first time that the decrypter is
+  // successful it will replace the primary decrypter.  Otherwise both
+  // decrypters will remain active and the primary decrypter will be the one
+  // last used.
   void SetAlternativeDecrypter(EncryptionLevel level,
-                               QuicDecrypter* decrypter,
+                               std::unique_ptr<QuicDecrypter> decrypter,
                                bool latch_once_used);
 
   const QuicDecrypter* decrypter() const;
@@ -748,9 +767,18 @@ class QUIC_EXPORT_PRIVATE QuicConnection
     defer_send_in_response_to_packets_ = defer;
   }
 
-  bool use_control_frame_manager() const { return use_control_frame_manager_; }
-
   bool session_decides_what_to_write() const;
+
+  void SetRetransmittableOnWireAlarm();
+
+  // Sets the current per-packet options for the connection. The QuicConnection
+  // does not take ownership of |options|; |options| must live for as long as
+  // the QuicConnection is in use.
+  void set_per_packet_options(PerPacketOptions* options) {
+    per_packet_options_ = options;
+  }
+
+  bool IsServerProxyEnabled() const { return enable_server_proxy_; }
 
  protected:
   // Calls cancel() on all the alarms owned by this connection.
@@ -767,6 +795,33 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Called when a peer address migration is validated.
   virtual void OnPeerMigrationValidated();
 
+  // Called after a packet is received from a new effective peer address and is
+  // decrypted. Starts validation of effective peer's address change. Calls
+  // OnConnectionMigration as soon as the address changed.
+  void StartEffectivePeerMigration(AddressChangeType type);
+
+  // Called when a effective peer address migration is validated.
+  virtual void OnEffectivePeerMigrationValidated();
+
+  // Get the effective peer address from the packet being processed. For proxied
+  // connections, effective peer address is the address of the endpoint behind
+  // the proxy. For non-proxied connections, effective peer address is the same
+  // as peer address.
+  //
+  // Notes for implementations in subclasses:
+  // - If the connection is not proxied, the overridden method should use the
+  //   base implementation:
+  //
+  //       return QuicConnection::GetEffectivePeerAddressFromCurrentPacket();
+  //
+  // - If the connection is proxied, the overridden method may return either of
+  //   the following:
+  //   a) The address of the endpoint behind the proxy. The address is used to
+  //      drive effective peer migration.
+  //   b) An uninitialized address, meaning the effective peer address does not
+  //      change.
+  virtual QuicSocketAddress GetEffectivePeerAddressFromCurrentPacket() const;
+
   // Selects and updates the version of the protocol being used by selecting a
   // version from |available_versions| which is also supported. Returns true if
   // such a version exists, false otherwise.
@@ -774,15 +829,13 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Returns the current per-packet options for the connection.
   PerPacketOptions* per_packet_options() { return per_packet_options_; }
-  // Sets the current per-packet options for the connection. The QuicConnection
-  // does not take ownership of |options|; |options| must live for as long as
-  // the QuicConnection is in use.
-  void set_per_packet_options(PerPacketOptions* options) {
-    per_packet_options_ = options;
-  }
 
   AddressChangeType active_peer_migration_type() {
     return active_peer_migration_type_;
+  }
+
+  AddressChangeType active_effective_peer_migration_type() const {
+    return active_effective_peer_migration_type_;
   }
 
   // Sends the connection close packet to the peer. |ack_mode| determines
@@ -803,7 +856,7 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Notify various components(SendPacketManager, Session etc.) that this
   // connection has been migrated.
-  void OnConnectionMigration(AddressChangeType addr_change_type);
+  virtual void OnConnectionMigration(AddressChangeType addr_change_type);
 
   // Return whether the packet being processed is a connectivity probing.
   // A packet is a connectivity probing if it is a padded ping packet with self
@@ -894,6 +947,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Sets the retransmission alarm based on SentPacketManager.
   void SetRetransmissionAlarm();
 
+  // Sets the path degrading alarm.
+  void SetPathDegradingAlarm();
+
   // Sets the MTU discovery alarm if necessary.
   // |sent_packet_number| is the recently sent packet number.
   void MaybeSetMtuAlarm(QuicPacketNumber sent_packet_number);
@@ -922,8 +978,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   void CheckIfApplicationLimited();
 
   // Sets |current_packet_content_| to |type| if applicable. And
-  // starts peer miration if current packet is confirmed not a connectivity
-  // probe and |current_peer_migration_type_| indicates peer address change.
+  // starts effective peer miration if current packet is confirmed not a
+  // connectivity probe and |current_effective_peer_migration_type_| indicates
+  // effective peer address change.
   void UpdatePacketContent(PacketContent type);
 
   // Enables session decide what to write based on version and flags.
@@ -931,17 +988,29 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Called when last received ack frame has been processed.
   // |send_stop_waiting| indicates whether a stop waiting needs to be sent.
-  void PostProcessAfterAckFrame(bool send_stop_waiting);
+  // |acked_new_packet| is true if a previously-unacked packet was acked.
+  void PostProcessAfterAckFrame(bool send_stop_waiting, bool acked_new_packet);
 
   QuicFramer framer_;
 
   // Contents received in the current packet, especially used to identify
   // whether the current packet is a padded PING packet.
   PacketContent current_packet_content_;
+  // True if the packet currently being processed is a connectivity probing
+  // packet. Is set to false when a new packet is received, and will be set to
+  // true as soon as |current_packet_content_| is set to
+  // SECOND_FRAME_IS_PADDING.
+  bool is_current_packet_connectivity_probing_;
   // Caches the current peer migration type if a peer migration might be
   // initiated. As soon as the current packet is confirmed not a connectivity
   // probe, peer migration will start.
+  // TODO(wub): Remove once quic_reloadable_flag_quic_enable_server_proxy is
+  // deprecated.
   AddressChangeType current_peer_migration_type_;
+  // Caches the current effective peer migration type if a effective peer
+  // migration might be initiated. As soon as the current packet is confirmed
+  // not a connectivity probe, effective peer migration will start.
+  AddressChangeType current_effective_peer_migration_type_;
   QuicConnectionHelperInterface* helper_;  // Not owned.
   QuicAlarmFactory* alarm_factory_;        // Not owned.
   PerPacketOptions* per_packet_options_;   // Not owned.
@@ -955,16 +1024,37 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   const QuicConnectionId connection_id_;
   // Address on the last successfully processed packet received from the
-  // client.
+  // direct peer.
   QuicSocketAddress self_address_;
   QuicSocketAddress peer_address_;
 
+  QuicSocketAddress direct_peer_address_;
+  // Address of the endpoint behind the proxy if the connection is proxied.
+  // Otherwise it is the same as |peer_address_|.
+  // NOTE: Currently |effective_peer_address_| and |peer_address_| are always
+  // the same(the address of the direct peer), but soon we'll change
+  // |effective_peer_address_| to be the address of the endpoint behind the
+  // proxy if the connection is proxied.
+  QuicSocketAddress effective_peer_address_;
+
   // Records change type when the peer initiates migration to a new peer
   // address. Reset to NO_CHANGE after peer migration is validated.
+  // TODO(wub): Remove once quic_reloadable_flag_quic_enable_server_proxy is
+  // deprecated.
   AddressChangeType active_peer_migration_type_;
 
   // Records highest sent packet number when peer migration is started.
+  // TODO(wub): Remove once quic_reloadable_flag_quic_enable_server_proxy is
+  // deprecated.
   QuicPacketNumber highest_packet_sent_before_peer_migration_;
+
+  // Records change type when the effective peer initiates migration to a new
+  // address. Reset to NO_CHANGE after effective peer migration is validated.
+  AddressChangeType active_effective_peer_migration_type_;
+
+  // Records highest sent packet number when effective peer migration is
+  // started.
+  QuicPacketNumber highest_packet_sent_before_effective_peer_migration_;
 
   // True if the last packet has gotten far enough in the framer to be
   // decrypted.
@@ -1063,6 +1153,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // The timeout for PING.
   QuicTime::Delta ping_timeout_;
 
+  // Timeout for how long the wire can have no retransmittable packets.
+  QuicTime::Delta retransmittable_on_wire_timeout_;
+
   // Arena to store class implementations within the QuicConnection.
   QuicConnectionArena arena_;
 
@@ -1084,6 +1177,11 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   QuicArenaScopedPtr<QuicAlarm> ping_alarm_;
   // An alarm that fires when an MTU probe should be sent.
   QuicArenaScopedPtr<QuicAlarm> mtu_discovery_alarm_;
+  // An alarm that fires when there have been no retransmittable packets on the
+  // wire for some period.
+  QuicArenaScopedPtr<QuicAlarm> retransmittable_on_wire_alarm_;
+  // An alarm that fires when this connection is considered degrading.
+  QuicArenaScopedPtr<QuicAlarm> path_degrading_alarm_;
 
   // Neither visitor is owned by this class.
   QuicConnectionVisitorInterface* visitor_;
@@ -1194,11 +1292,32 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // retransmission code.
   bool probing_retransmission_pending_;
 
+  // Indicates whether a stateless reset token has been received from peer.
+  bool stateless_reset_token_received_;
+  // Stores received stateless reset token from peer. Used to verify whether a
+  // packet is a stateless reset packet.
+  uint128 received_stateless_reset_token_;
+
   // Id of latest sent control frame. 0 if no control frame has been sent.
   QuicControlFrameId last_control_frame_id_;
 
-  // Latched value of quic_reloadable_flag_quic_use_control_frame_manager.
-  const bool use_control_frame_manager_;
+  // Latched value of
+  // quic_reloadable_flag_quic_server_early_version_negotiation.
+  const bool negotiate_version_early_;
+
+  // Latched value of
+  // quic_reloadable_flag_quic_always_discard_packets_after_close.
+  const bool always_discard_packets_after_close_;
+  // Latched valure of
+  // quic_reloadable_flag_quic_handle_write_results_for_connectivity_probe.
+  const bool handle_write_results_for_connectivity_probe_;
+
+  // Latched value of
+  // quic_reloadable_flag_quic_path_degrading_alarm
+  const bool use_path_degrading_alarm_;
+
+  // Latched value of quic_reloadable_flag_quic_enable_server_proxy.
+  const bool enable_server_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnection);
 };

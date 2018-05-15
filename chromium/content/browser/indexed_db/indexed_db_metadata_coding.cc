@@ -33,7 +33,7 @@ using indexed_db::PutVarInt;
 namespace {
 
 std::unique_ptr<LevelDBIterator> CreateIterator(LevelDBDatabase* database) {
-  return database->CreateIterator();
+  return database->CreateIterator(database->DefaultReadOptions());
 }
 
 std::unique_ptr<LevelDBIterator> CreateIterator(

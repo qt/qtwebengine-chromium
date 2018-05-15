@@ -4,8 +4,8 @@
 
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
-import("//ppapi/features/features.gni")
-import("//third_party/WebKit/public/public_features.gni")
+import("//ppapi/buildflags/buildflags.gni")
+import("//third_party/blink/public/public_features.gni")
 
 if (is_component_build) {
   link_target_type = "source_set"
@@ -43,10 +43,10 @@ target(link_target_type, "child") {
     "child_process.h",
     "child_process_sandbox_support_impl_linux.cc",
     "child_process_sandbox_support_impl_linux.h",
+    "child_process_sandbox_support_impl_mac.cc",
+    "child_process_sandbox_support_impl_mac.h",
     "child_thread_impl.cc",
     "child_thread_impl.h",
-    "content_child_helpers.cc",
-    "content_child_helpers.h",
     "dwrite_font_proxy/dwrite_font_proxy_init_impl_win.cc",
     "dwrite_font_proxy/dwrite_font_proxy_init_impl_win.h",
     "dwrite_font_proxy/dwrite_font_proxy_win.cc",
@@ -107,7 +107,7 @@ target(link_target_type, "child") {
     "//media",
     "//media/blink",
     "//mojo/common",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//net",
     "//services/device/public/cpp:device_features",
     "//services/device/public/cpp/power_monitor",
@@ -119,12 +119,12 @@ target(link_target_type, "child") {
     "//services/tracing/public/cpp",
     "//skia",
     "//storage/common",
-    "//third_party/WebKit/public:blink_headers",
-    "//third_party/WebKit/public:features",
-    "//third_party/WebKit/public:mojo_bindings",
-    "//third_party/WebKit/public:resources",
-    "//third_party/WebKit/public:scaled_resources",
-    "//third_party/WebKit/public/common",
+    "//third_party/blink/public:blink_headers",
+    "//third_party/blink/public:buildflags",
+    "//third_party/blink/public:mojo_bindings",
+    "//third_party/blink/public:resources",
+    "//third_party/blink/public:scaled_resources",
+    "//third_party/blink/public/common",
     "//third_party/ced",
     "//third_party/zlib/google:compression_utils",
     "//ui/base",

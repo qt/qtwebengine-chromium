@@ -4,7 +4,6 @@
 <translation id="1135328998467923690">Пакет недійсний: "<ph name="ERROR_CODE" />".</translation>
 <translation id="1140871961407805696">Задня камера</translation>
 <translation id="1196338895211115272">Не вдалося експортувати секретний ключ.</translation>
-<translation id="1256619696651732561">Синтаксичний аналізатор маніфесту розширення</translation>
 <translation id="1420684932347524586">Не вдалося згенерувати випадковий секретний ключ RSA.</translation>
 <translation id="1445572445564823378">Це розширення сповільнює <ph name="PRODUCT_NAME" />. Щоб відновити ефективність <ph name="PRODUCT_NAME" />, потрібно його вимкнути.</translation>
 <translation id="1468038450257740950">WebGL не підтримується.</translation>
@@ -15,18 +14,20 @@
 <translation id="2576842806987913196">Файл у форматі CRX із такою назвою вже існує.</translation>
 <translation id="2753617847762399167">Заборонений шлях (узагалі або у зв’язку з ".."): "<ph name="IMAGE_PATH" />"</translation>
 <translation id="27822970480436970">Цьому розширенню не вдалося змінити запит мережі, оскільки зміна не сумісна з іншим розширенням.</translation>
+<translation id="2785530881066938471">Неможливо завантажити файл "<ph name="RELATIVE_PATH" />" для сценарію вмісту. Кодування файлу не UTF-8.</translation>
 <translation id="2903070246402204397"><ph name="EXTENSION_NAME" /> (ідентифікатор розширення "<ph name="EXTENSION_ID" />") заблоковано адміністратором. <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">Неможливо встановити пакет: "<ph name="ERROR_CODE" />"</translation>
-<translation id="3097628171361913691">Засіб розпакування файлів .zip</translation>
 <translation id="3115238746683532089">Невідомий продукт <ph name="PRODUCT_ID" /> від постачальника <ph name="VENDOR_ID" /> (серійний номер: <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="3144135466825225871">Не вдалося замінити файл у форматі crx. Перевірте, чи файл зараз не використовується.</translation>
 <translation id="3163201441334626963">Невідомий продукт <ph name="PRODUCT_ID" /> від постачальника <ph name="VENDOR_ID" /></translation>
+<translation id="3302709122321372472">Не вдалося завантажити файл .css "<ph name="RELATIVE_PATH" />" для сценарію вмісту.</translation>
 <translation id="3369521687965833290">Неможливо розпакувати розширення. Щоб безпечно розпакувати розширення, має бути шлях до каталогу вашого профілю, який починається буквою диску та не містить точок з’єднання, під’єднання чи символьного посилання. Для вашого профілю такого шляху немає.</translation>
 <translation id="3393440416772303020"><ph name="PRODUCT_NAME" /> (серійний номер: <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="3466070586188012397"><ph name="PRODUCT_NAME" /> від постачальника <ph name="VENDOR_ID" /> (серійний номер: <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="3561217442734750519">Потрібно ввести правильний шлях до секретного ключа.</translation>
 <translation id="388442998277590542">Не вдалося завантажити сторінку параметрів "<ph name="OPTIONS_PAGE" />".</translation>
 <translation id="3984413272403535372">Помилка під час підписування розширення.</translation>
+<translation id="39964277676607559">Не вдалося завантажити javascript "<ph name="RELATIVE_PATH" />" для сценарію вмісту.</translation>
 <translation id="4115165561519362854">Адміністратор цього комп’ютера вимагає встановити розширення <ph name="EXTENSION_NAME" /> принаймні такої версії: <ph name="EXTENSION_VERSION" />. Ви не зможете ввімкнути це розширення, доки не оновите його до цієї версії (або новішої).</translation>
 <translation id="4233778200880751280">Не вдалося завантажити сторінку з інформацією про "<ph name="ABOUT_PAGE" />".</translation>
 <translation id="471800408830181311">Не вдалося вивести секретний ключ.</translation>
@@ -64,7 +65,6 @@
 <translation id="8517576857589387417">Файл маніфесту відсутній або нечитабельний</translation>
 <translation id="8636666366616799973">Пакет недійсний. Деталі: "<ph name="ERROR_MESSAGE" />".</translation>
 <translation id="8670869118777164560">Це розширення не переспрямувало запит мережі на сторінку <ph name="ATTEMPTED_REDIRECT_DESTINATION" />, оскільки інше розширення (<ph name="EXTENSION_NAME" />) переспрямувало його на сторінку <ph name="ACTUAL_REDIRECT_DESTINATION" />.</translation>
-<translation id="8712265948125780616">Засіб розпакування розширень</translation>
 <translation id="8761756413268424715"><ph name="APP_NAME" /> просить надати доступ до одного з ваших пристроїв:</translation>
 <translation id="8825366169884721447">Це розширення не змінило заголовок запиту "<ph name="HEADER_NAME" />" в запиті мережі, оскільки виник конфлікт з іншим розширенням (<ph name="EXTENSION_NAME" />).</translation>
 <translation id="8885905466771744233">Секретний ключ для цього розширення вже існує. Використайте цей ключ знову або спочатку видаліть його.</translation>

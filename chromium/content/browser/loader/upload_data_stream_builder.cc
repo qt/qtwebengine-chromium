@@ -12,7 +12,6 @@
 
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/single_thread_task_runner.h"
 #include "net/base/elements_upload_data_stream.h"
@@ -110,6 +109,7 @@ std::unique_ptr<net::UploadDataStream> UploadDataStreamBuilder::Build(
       }
       case network::DataElement::TYPE_RAW_FILE:
       case network::DataElement::TYPE_DATA_PIPE:
+      case network::DataElement::TYPE_CHUNKED_DATA_PIPE:
       case network::DataElement::TYPE_UNKNOWN:
         NOTREACHED();
         break;

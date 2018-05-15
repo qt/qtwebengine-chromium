@@ -65,7 +65,7 @@ void GbmSurface::SwapBuffersAsync(
     const PresentationCallback& presentation_callback) {
   if (!images_[current_surface_]->ScheduleOverlayPlane(
           widget(), 0, gfx::OverlayTransform::OVERLAY_TRANSFORM_NONE,
-          gfx::Rect(GetSize()), gfx::RectF(1, 1))) {
+          gfx::Rect(GetSize()), gfx::RectF(1, 1), /* enable_blend */ false)) {
     completion_callback.Run(gfx::SwapResult::SWAP_FAILED);
     // Notify the caller, the buffer is never presented on a screen.
     presentation_callback.Run(gfx::PresentationFeedback());
@@ -136,7 +136,7 @@ bool GbmSurface::CreatePixmaps() {
     if (!pixmap)
       return false;
     scoped_refptr<gl::GLImageNativePixmap> image =
-        new gl::GLImageNativePixmap(GetSize(), GL_RGB);
+        new gl::GLImageNativePixmap(GetSize(), GL_BGRA_EXT);
     if (!image->Initialize(pixmap.get(),
                            display::DisplaySnapshot::PrimaryFormat()))
       return false;

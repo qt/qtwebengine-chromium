@@ -8,7 +8,6 @@
 
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "content/public/common/referrer.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/renderer/loader/resource_dispatcher.h"
@@ -18,13 +17,14 @@
 #include "net/http/http_request_headers.h"
 #include "net/url_request/url_request_context.h"
 #include "services/network/public/cpp/resource_request_body.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
-#include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/WebKit/public/platform/WebURLResponse.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/blink/public/platform/web_security_origin.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_url.h"
+#include "third_party/blink/public/platform/web_url_response.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_local_frame.h"
 
 namespace {
 
@@ -66,7 +66,7 @@ class ResourceFetcherImpl::ClientImpl : public network::mojom::URLLoaderClient {
   }
 
   void Start(const network::ResourceRequest& request,
-             scoped_refptr<SharedURLLoaderFactory> url_loader_factory,
+             scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
              const net::NetworkTrafficAnnotationTag& annotation_tag,
              scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
     status_ = Status::kStarted;
@@ -175,7 +175,6 @@ class ResourceFetcherImpl::ClientImpl : public network::mojom::URLLoaderClient {
   // network::mojom::URLLoaderClient overrides:
   void OnReceiveResponse(
       const network::ResourceResponseHead& response_head,
-      const base::Optional<net::SSLInfo>& ssl_info,
       network::mojom::DownloadedTempFilePtr downloaded_file) override {
     DCHECK_EQ(Status::kStarted, status_);
     // Existing callers need URL and HTTP status code. URL is already set in
@@ -288,7 +287,7 @@ void ResourceFetcherImpl::SetHeader(const std::string& header,
 void ResourceFetcherImpl::Start(
     blink::WebLocalFrame* frame,
     blink::WebURLRequest::RequestContext request_context,
-    scoped_refptr<SharedURLLoaderFactory> url_loader_factory,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     const net::NetworkTrafficAnnotationTag& annotation_tag,
     Callback callback,
     size_t maximum_download_size) {
@@ -304,7 +303,7 @@ void ResourceFetcherImpl::Start(
         << "GETs can't have bodies.";
   }
 
-  request_.request_context = request_context;
+  request_.fetch_request_context_type = request_context;
   request_.site_for_cookies = frame->GetDocument().SiteForCookies();
   if (!frame->GetDocument().GetSecurityOrigin().IsNull()) {
     request_.request_initiator =

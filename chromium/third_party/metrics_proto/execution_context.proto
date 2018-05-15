@@ -36,8 +36,8 @@ enum Thread {
   UI_THREAD = 1;
   FILE_THREAD = 2;                // Deprecated.
   FILE_USER_BLOCKING_THREAD = 3;  // Deprecated.
-  PROCESS_LAUNCHER_THREAD = 4;
-  CACHE_THREAD = 5;  // Deprecated.
+  PROCESS_LAUNCHER_THREAD = 4;    // Deprecated.
+  CACHE_THREAD = 5;               // Deprecated.
   IO_THREAD = 6;
   DB_THREAD = 7;  // Deprecated.
 

@@ -19,14 +19,16 @@
 #include "headless/lib/browser/headless_url_request_context_getter.h"
 #include "headless/public/headless_browser.h"
 #include "headless/public/headless_browser_context.h"
+#include "headless/public/headless_export.h"
 
 namespace headless {
 class HeadlessBrowserImpl;
 class HeadlessResourceContext;
 class HeadlessWebContentsImpl;
 
-class HeadlessBrowserContextImpl : public HeadlessBrowserContext,
-                                   public content::BrowserContext {
+class HEADLESS_EXPORT HeadlessBrowserContextImpl final
+    : public HeadlessBrowserContext,
+      public content::BrowserContext {
  public:
   ~HeadlessBrowserContextImpl() override;
 
@@ -116,7 +118,11 @@ class HeadlessBrowserContextImpl : public HeadlessBrowserContext,
   // This will be called on the IO thread.
   void NotifyUrlRequestFailed(net::URLRequest* request,
                               int net_error,
-                              bool canceled_by_devtools);
+                              DevToolsStatus devtools_status);
+
+  void NotifyMetadataForResource(const GURL& url,
+                                 net::IOBuffer* buf,
+                                 int buf_len);
 
   void SetNetworkConditions(HeadlessNetworkConditions conditions);
   HeadlessNetworkConditions GetNetworkConditions() override;

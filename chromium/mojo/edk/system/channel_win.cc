@@ -17,6 +17,7 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_pump_for_io.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner.h"
 #include "base/win/win_util.h"
@@ -27,51 +28,9 @@ namespace edk {
 
 namespace {
 
-// A view over a Channel::Message object. The write queue uses these since
-// large messages may need to be sent in chunks.
-class MessageView {
- public:
-  // Owns |message|. |offset| indexes the first unsent byte in the message.
-  MessageView(Channel::MessagePtr message, size_t offset)
-      : message_(std::move(message)),
-        offset_(offset) {
-    DCHECK_GT(message_->data_num_bytes(), offset_);
-  }
-
-  MessageView(MessageView&& other) { *this = std::move(other); }
-
-  MessageView& operator=(MessageView&& other) {
-    message_ = std::move(other.message_);
-    offset_ = other.offset_;
-    return *this;
-  }
-
-  ~MessageView() {}
-
-  const void* data() const {
-    return static_cast<const char*>(message_->data()) + offset_;
-  }
-
-  size_t data_num_bytes() const { return message_->data_num_bytes() - offset_; }
-
-  size_t data_offset() const { return offset_; }
-  void advance_data_offset(size_t num_bytes) {
-    DCHECK_GE(message_->data_num_bytes(), offset_ + num_bytes);
-    offset_ += num_bytes;
-  }
-
-  Channel::MessagePtr TakeChannelMessage() { return std::move(message_); }
-
- private:
-  Channel::MessagePtr message_;
-  size_t offset_;
-
-  DISALLOW_COPY_AND_ASSIGN(MessageView);
-};
-
 class ChannelWin : public Channel,
                    public base::MessageLoop::DestructionObserver,
-                   public base::MessageLoopForIO::IOHandler {
+                   public base::MessagePumpForIO::IOHandler {
  public:
   ChannelWin(Delegate* delegate,
              ScopedPlatformHandle handle,
@@ -81,19 +40,17 @@ class ChannelWin : public Channel,
         handle_(std::move(handle)),
         io_task_runner_(io_task_runner) {
     CHECK(handle_.is_valid());
-
-    wait_for_connect_ = handle_.get().needs_connection;
   }
 
   void Start() override {
     io_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&ChannelWin::StartOnIOThread, this));
+        FROM_HERE, base::BindOnce(&ChannelWin::StartOnIOThread, this));
   }
 
   void ShutDownImpl() override {
     // Always shut down asynchronously when called through the public interface.
     io_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&ChannelWin::ShutDownOnIOThread, this));
+        FROM_HERE, base::BindOnce(&ChannelWin::ShutDownOnIOThread, this));
   }
 
   void Write(MessagePtr message) override {
@@ -104,16 +61,16 @@ class ChannelWin : public Channel,
         return;
 
       bool write_now = !delay_writes_ && outgoing_messages_.empty();
-      outgoing_messages_.emplace_back(std::move(message), 0);
+      outgoing_messages_.emplace_back(std::move(message));
       if (write_now && !WriteNoLock(outgoing_messages_.front()))
         reject_writes_ = write_error = true;
     }
     if (write_error) {
-      // Do not synchronously invoke OnError(). Write() may have been called by
-      // the delegate and we don't want to re-enter it.
-      io_task_runner_->PostTask(
-          FROM_HERE,
-          base::Bind(&ChannelWin::OnError, this, Error::kDisconnected));
+      // Do not synchronously invoke OnWriteError(). Write() may have been
+      // called by the delegate and we don't want to re-enter it.
+      io_task_runner_->PostTask(FROM_HERE,
+                                base::BindOnce(&ChannelWin::OnWriteError, this,
+                                               Error::kDisconnected));
     }
   }
 
@@ -153,7 +110,7 @@ class ChannelWin : public Channel,
     base::MessageLoopForIO::current()->RegisterIOHandler(
         handle_.get().handle, this);
 
-    if (wait_for_connect_) {
+    if (handle_.get().needs_connection) {
       BOOL ok = ConnectNamedPipe(handle_.get().handle,
                                  &connect_context_.overlapped);
       if (ok) {
@@ -165,12 +122,13 @@ class ChannelWin : public Channel,
       const DWORD err = GetLastError();
       switch (err) {
         case ERROR_PIPE_CONNECTED:
-          wait_for_connect_ = false;
           break;
         case ERROR_IO_PENDING:
+          is_connect_pending_ = true;
           AddRef();
           return;
         case ERROR_NO_DATA:
+        default:
           OnError(Error::kConnectionFailed);
           return;
       }
@@ -185,7 +143,8 @@ class ChannelWin : public Channel,
       }
     }
 
-    // Keep this alive in case we synchronously run shutdown.
+    // Keep this alive in case we synchronously run shutdown, via OnError(),
+    // as a result of a ReadFile() failure on the channel.
     scoped_refptr<ChannelWin> keep_alive(this);
     ReadMore(0);
   }
@@ -201,7 +160,7 @@ class ChannelWin : public Channel,
       ignore_result(handle_.release());
     handle_.reset();
 
-    // May destroy the |this| if it was the last reference.
+    // Allow |this| to be destroyed as soon as no IO is pending.
     self_ = nullptr;
   }
 
@@ -213,14 +172,22 @@ class ChannelWin : public Channel,
   }
 
   // base::MessageLoop::IOHandler:
-  void OnIOCompleted(base::MessageLoopForIO::IOContext* context,
+  void OnIOCompleted(base::MessagePumpForIO::IOContext* context,
                      DWORD bytes_transfered,
                      DWORD error) override {
     if (error != ERROR_SUCCESS) {
-      OnError(Error::kDisconnected);
+      if (context == &write_context_) {
+        {
+          base::AutoLock lock(write_lock_);
+          reject_writes_ = true;
+        }
+        OnWriteError(Error::kDisconnected);
+      } else {
+        OnError(Error::kDisconnected);
+      }
     } else if (context == &connect_context_) {
-      DCHECK(wait_for_connect_);
-      wait_for_connect_ = false;
+      DCHECK(is_connect_pending_);
+      is_connect_pending_ = false;
       ReadMore(0);
 
       base::AutoLock lock(write_lock_);
@@ -234,10 +201,13 @@ class ChannelWin : public Channel,
       CHECK(context == &write_context_);
       OnWriteDone(static_cast<size_t>(bytes_transfered));
     }
-    Release();  // Balancing reference taken after ReadFile / WriteFile.
+    Release();
   }
 
   void OnReadDone(size_t bytes_read) {
+    DCHECK(is_read_pending_);
+    is_read_pending_ = false;
+
     if (bytes_read > 0) {
       size_t next_read_size = 0;
       if (OnReadComplete(bytes_read, &next_read_size)) {
@@ -258,28 +228,31 @@ class ChannelWin : public Channel,
     {
       base::AutoLock lock(write_lock_);
 
+      DCHECK(is_write_pending_);
+      is_write_pending_ = false;
       DCHECK(!outgoing_messages_.empty());
 
-      MessageView& message_view = outgoing_messages_.front();
-      message_view.advance_data_offset(bytes_written);
-      if (message_view.data_num_bytes() == 0) {
-        Channel::MessagePtr message = message_view.TakeChannelMessage();
-        outgoing_messages_.pop_front();
+      Channel::MessagePtr message = std::move(outgoing_messages_.front());
+      outgoing_messages_.pop_front();
 
-        // Clear any handles so they don't get closed on destruction.
-        std::vector<ScopedPlatformHandle> handles = message->TakeHandles();
-        for (auto& handle : handles)
-          ignore_result(handle.release());
-      }
+      // Clear any handles so they don't get closed on destruction.
+      std::vector<ScopedPlatformHandle> handles = message->TakeHandles();
+      for (auto& handle : handles)
+        ignore_result(handle.release());
 
-      if (!WriteNextNoLock())
+      // Overlapped WriteFile() to a pipe should always fully complete.
+      if (message->data_num_bytes() != bytes_written)
+        reject_writes_ = write_error = true;
+      else if (!WriteNextNoLock())
         reject_writes_ = write_error = true;
     }
     if (write_error)
-      OnError(Error::kDisconnected);
+      OnWriteError(Error::kDisconnected);
   }
 
   void ReadMore(size_t next_read_size_hint) {
+    DCHECK(!is_read_pending_);
+
     size_t buffer_capacity = next_read_size_hint;
     char* buffer = GetReadBuffer(&buffer_capacity);
     DCHECK_GT(buffer_capacity, 0u);
@@ -291,7 +264,8 @@ class ChannelWin : public Channel,
                        &read_context_.overlapped);
 
     if (ok || GetLastError() == ERROR_IO_PENDING) {
-      AddRef();  // Will be balanced in OnIOCompleted
+      is_read_pending_ = true;
+      AddRef();
     } else {
       OnError(Error::kDisconnected);
     }
@@ -300,15 +274,14 @@ class ChannelWin : public Channel,
   // Attempts to write a message directly to the channel. If the full message
   // cannot be written, it's queued and a wait is initiated to write the message
   // ASAP on the I/O thread.
-  bool WriteNoLock(const MessageView& message_view) {
-    BOOL ok = WriteFile(handle_.get().handle,
-                        message_view.data(),
-                        static_cast<DWORD>(message_view.data_num_bytes()),
-                        NULL,
+  bool WriteNoLock(const Channel::MessagePtr& message) {
+    BOOL ok = WriteFile(handle_.get().handle, message->data(),
+                        static_cast<DWORD>(message->data_num_bytes()), NULL,
                         &write_context_.overlapped);
 
     if (ok || GetLastError() == ERROR_IO_PENDING) {
-      AddRef();  // Will be balanced in OnIOCompleted.
+      is_write_pending_ = true;
+      AddRef();
       return true;
     }
     return false;
@@ -320,25 +293,39 @@ class ChannelWin : public Channel,
     return WriteNoLock(outgoing_messages_.front());
   }
 
+  void OnWriteError(Error error) {
+    DCHECK(io_task_runner_->RunsTasksInCurrentSequence());
+    DCHECK(reject_writes_);
+
+    if (error == Error::kDisconnected) {
+      // If we can't write because the pipe is disconnected then continue
+      // reading to fetch any in-flight messages, relying on end-of-stream to
+      // signal the actual disconnection.
+      if (is_read_pending_ || is_connect_pending_)
+        return;
+    }
+
+    OnError(error);
+  }
+
   // Keeps the Channel alive at least until explicit shutdown on the IO thread.
   scoped_refptr<Channel> self_;
 
   ScopedPlatformHandle handle_;
-  scoped_refptr<base::TaskRunner> io_task_runner_;
+  const scoped_refptr<base::TaskRunner> io_task_runner_;
 
-  base::MessageLoopForIO::IOContext connect_context_;
-  base::MessageLoopForIO::IOContext read_context_;
-  base::MessageLoopForIO::IOContext write_context_;
+  base::MessagePumpForIO::IOContext connect_context_;
+  base::MessagePumpForIO::IOContext read_context_;
+  bool is_connect_pending_ = false;
+  bool is_read_pending_ = false;
 
-  // Protects |reject_writes_| and |outgoing_messages_|.
+  // Protects all fields potentially accessed on multiple threads via Write().
   base::Lock write_lock_;
-
+  base::MessagePumpForIO::IOContext write_context_;
+  base::circular_deque<Channel::MessagePtr> outgoing_messages_;
   bool delay_writes_ = true;
-
   bool reject_writes_ = false;
-  base::circular_deque<MessageView> outgoing_messages_;
-
-  bool wait_for_connect_;
+  bool is_write_pending_ = false;
 
   bool leak_handle_ = false;
 

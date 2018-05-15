@@ -70,18 +70,6 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CLANG)
     set(C_CXX_FLAGS "${C_CXX_FLAGS} -Wno-free-nonheap-object")
   endif()
 
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
-     NOT "6.0.0" VERSION_GREATER CMAKE_C_COMPILER_VERSION)
-    # Clang's -Wtautological-constant-compare is far too aggressive and does not
-    # account for, say, wanting the same code to work on both 32-bit and 64-bit
-    # platforms.
-    #
-    # Note "Clang" and "AppleClang" version differently, so we check for an
-    # exact match on the COMPILER_ID. As of writing, the warning is not in any
-    # release of AppleClang yet.
-    set(C_CXX_FLAGS "${C_CXX_FLAGS} -Wno-tautological-constant-compare -Wtautological-constant-out-of-range-compare")
-  endif()
-
   if(CLANG OR NOT "7.0.0" VERSION_GREATER CMAKE_C_COMPILER_VERSION)
     set(C_CXX_FLAGS "${C_CXX_FLAGS} -Wimplicit-fallthrough")
   endif()
@@ -172,8 +160,8 @@ elseif(MSVC)
                             ${MSVC_DISABLED_WARNINGS_LIST})
   string(REPLACE "C" " -w4" MSVC_LEVEL4_WARNINGS_STR
                             ${MSVC_LEVEL4_WARNINGS_LIST})
-  set(CMAKE_C_FLAGS   "-Wall -WX ${MSVC_DISABLED_WARNINGS_STR} ${MSVC_LEVEL4_WARNINGS_STR}")
-  set(CMAKE_CXX_FLAGS "-Wall -WX ${MSVC_DISABLED_WARNINGS_STR} ${MSVC_LEVEL4_WARNINGS_STR}")
+  set(CMAKE_C_FLAGS   "-utf-8 -Wall -WX ${MSVC_DISABLED_WARNINGS_STR} ${MSVC_LEVEL4_WARNINGS_STR}")
+  set(CMAKE_CXX_FLAGS "-utf-8 -Wall -WX ${MSVC_DISABLED_WARNINGS_STR} ${MSVC_LEVEL4_WARNINGS_STR}")
 endif()
 
 if(WIN32)
@@ -289,6 +277,10 @@ if(FIPS)
   if(NOT ASAN AND NOT MSAN)
     set(FIPS_DELOCATE "1")
   endif()
+endif()
+
+if(OPENSSL_SMALL)
+  add_definitions(-DOPENSSL_SMALL)
 endif()
 
 # CMake's iOS support uses Apple's multiple-architecture toolchain. It takes an

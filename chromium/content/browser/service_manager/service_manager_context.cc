@@ -26,7 +26,8 @@
 #include "content/browser/child_process_launcher.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/service_manager/common_browser_interfaces.h"
-#include "content/browser/utility_process_host_impl.h"
+#include "content/browser/utility_process_host.h"
+#include "content/browser/utility_process_host_client.h"
 #include "content/browser/wake_lock/wake_lock_context_host.h"
 #include "content/common/service_manager/service_manager_connection_impl.h"
 #include "content/grit/content_resources.h"
@@ -35,15 +36,14 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/gpu_service_registry.h"
 #include "content/public/browser/network_service_instance.h"
-#include "content/public/browser/utility_process_host_client.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/service_names.mojom.h"
 #include "media/audio/audio_manager.h"
-#include "media/media_features.h"
-#include "media/mojo/features.h"
+#include "media/media_buildflags.h"
+#include "media/mojo/buildflags.h"
 #include "media/mojo/interfaces/constants.mojom.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/embedder/incoming_broker_client_invitation.h"
@@ -135,7 +135,7 @@ void StartServiceInUtilityProcess(
     process_host = weak_host->get();
   } else {
     // Start a new process for this service.
-    UtilityProcessHostImpl* impl = new UtilityProcessHostImpl(nullptr, nullptr);
+    UtilityProcessHost* impl = new UtilityProcessHost(nullptr, nullptr);
     impl->SetName(process_name);
     impl->SetServiceIdentity(service_manager::Identity(service_name));
     impl->SetSandboxType(sandbox_type);

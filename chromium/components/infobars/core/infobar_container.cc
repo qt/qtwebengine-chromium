@@ -36,6 +36,7 @@ void InfoBarContainer::ChangeInfoBarManager(InfoBarManager* infobar_manager) {
   if (infobar_manager_)
     infobar_manager_->RemoveObserver(this);
 
+  bool state_changed = false;
   {
     // Ignore intermediate state changes.  We'll manually trigger processing
     // once we're finished.
@@ -48,46 +49,23 @@ void InfoBarContainer::ChangeInfoBarManager(InfoBarManager* infobar_manager) {
       // deletes it.  Otherwise, this ensures the infobar will be deleted if
       // it's closed while it's not in an InfoBarContainer.
       infobar->Hide(false);
+      state_changed = true;
     }
 
     infobar_manager_ = infobar_manager;
     if (infobar_manager_) {
       infobar_manager_->AddObserver(this);
 
-      for (size_t i = 0; i < infobar_manager_->infobar_count(); ++i)
+      for (size_t i = 0; i < infobar_manager_->infobar_count(); ++i) {
         AddInfoBar(infobar_manager_->infobar_at(i), i, false);
+        state_changed = true;
+      }
     }
   }
 
   // Now that everything is up to date, signal the delegate to re-layout.
-  OnInfoBarStateChanged(false);
-}
-
-int InfoBarContainer::GetVerticalOverlap(int* total_height) const {
-  // Our |total_height| is the sum of the preferred heights of the InfoBars
-  // contained within us plus the |vertical_overlap|.
-  int vertical_overlap = 0;
-  int next_infobar_y = 0;
-
-  for (InfoBars::const_iterator i(infobars_.begin()); i != infobars_.end();
-       ++i) {
-    InfoBar* infobar = *i;
-    next_infobar_y -= infobar->arrow_height();
-    vertical_overlap = std::max(vertical_overlap, -next_infobar_y);
-    next_infobar_y += infobar->total_height();
-  }
-
-  if (total_height)
-    *total_height = next_infobar_y + vertical_overlap;
-  return vertical_overlap;
-}
-
-void InfoBarContainer::UpdateInfoBarArrowTargetHeights() {
-  for (size_t i = 0; i < infobars_.size(); ++i) {
-    infobars_[i]->SetArrowTargetHeight(delegate_ ?
-        delegate_->ArrowTargetHeightForInfoBar(
-            i, const_cast<const InfoBar*>(infobars_[i])->animation()) : 0);
-  }
+  if (state_changed)
+    OnInfoBarStateChanged(false);
 }
 
 void InfoBarContainer::OnInfoBarStateChanged(bool is_animating) {
@@ -95,7 +73,6 @@ void InfoBarContainer::OnInfoBarStateChanged(bool is_animating) {
     return;
   if (delegate_)
     delegate_->InfoBarContainerStateChanged(is_animating);
-  UpdateInfoBarArrowTargetHeights();
   PlatformSpecificInfoBarStateChanged(is_animating);
 }
 
@@ -124,7 +101,6 @@ void InfoBarContainer::OnInfoBarAdded(InfoBar* infobar) {
 void InfoBarContainer::OnInfoBarRemoved(InfoBar* infobar, bool animate) {
   DCHECK(infobar_manager_);
   infobar->Hide(infobar_manager_->animations_enabled() && animate);
-  UpdateInfoBarArrowTargetHeights();
 }
 
 void InfoBarContainer::OnInfoBarReplaced(InfoBar* old_infobar,
@@ -151,7 +127,6 @@ void InfoBarContainer::AddInfoBar(InfoBar* infobar,
       infobars_.end());
   DCHECK_LE(position, infobars_.size());
   infobars_.insert(infobars_.begin() + position, infobar);
-  UpdateInfoBarArrowTargetHeights();
   PlatformSpecificAddInfoBar(infobar, position);
   infobar->set_container(this);
   DCHECK(infobar_manager_);

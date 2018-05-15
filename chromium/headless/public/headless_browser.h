@@ -119,12 +119,11 @@ struct HEADLESS_EXPORT HeadlessBrowser::Options {
 #endif
 
   // Address at which DevTools should listen for connections. Disabled by
-  // default. Mutually exclusive with devtools_socket_fd.
+  // default.
   net::HostPortPair devtools_endpoint;
 
-  // The fd of an already-open socket inherited from a parent process. Disabled
-  // by default. Mutually exclusive with devtools_endpoint.
-  size_t devtools_socket_fd = 0;
+  // Enables remote debug over stdio pipes [in=3, out=4].
+  bool devtools_pipe_enabled = false;
 
   // A single way to test whether the devtools server has been requested.
   bool DevtoolsServerEnabled();
@@ -194,13 +193,20 @@ struct HEADLESS_EXPORT HeadlessBrowser::Options {
   // Whether or not all sites should have a dedicated process.
   bool site_per_process = false;
 
+  // Whether or not the net::HttpCache should be replaced with a custom one that
+  // intercepts metadata writes which are surfaced via
+  // HeadlessBrowserContext::Observer:OnMetadataForResource. The custom cache
+  // blacks holes all writes.
+  bool capture_resource_metadata = false;
+
   // Set a callback that is invoked to override WebPreferences for RenderViews
   // created within the HeadlessBrowser. Called whenever the WebPreferences of a
   // RenderView change. Executed on the browser main thread.
   //
   // WARNING: We cannot provide any guarantees about the stability of the
   // exposed WebPreferences API, so use with care.
-  base::Callback<void(WebPreferences*)> override_web_preferences_callback;
+  base::RepeatingCallback<void(WebPreferences*)>
+      override_web_preferences_callback;
 
   // Set a callback that is invoked when a new child process is spawned or
   // forked and allows adding additional command line flags to the child
@@ -210,11 +216,11 @@ struct HEADLESS_EXPORT HeadlessBrowser::Options {
   //
   // NOTE: This callback may be called on the UI or IO thread even after the
   // HeadlessBrowser has been destroyed.
-  using AppendCommandLineFlagsCallback =
-      base::Callback<void(base::CommandLine* command_line,
-                          HeadlessBrowserContext* child_browser_context,
-                          const std::string& child_process_type,
-                          int child_process_id)>;
+  using AppendCommandLineFlagsCallback = base::RepeatingCallback<void(
+      base::CommandLine* command_line,
+      HeadlessBrowserContext* child_browser_context,
+      const std::string& child_process_type,
+      int child_process_id)>;
   AppendCommandLineFlagsCallback append_command_line_flags_callback;
 
   // Minidump crash reporter settings. Crash reporting is disabled by default.
@@ -243,7 +249,7 @@ class HEADLESS_EXPORT HeadlessBrowser::Options::Builder {
   // Browser-wide settings.
 
   Builder& EnableDevToolsServer(const net::HostPortPair& endpoint);
-  Builder& EnableDevToolsServer(const size_t socket_fd);
+  Builder& EnableDevToolsPipe();
   Builder& SetMessagePump(base::MessagePump* message_pump);
   Builder& SetSingleProcessMode(bool single_process_mode);
   Builder& SetDisableSandbox(bool disable_sandbox);
@@ -274,8 +280,9 @@ class HEADLESS_EXPORT HeadlessBrowser::Options::Builder {
   Builder& SetInitialVirtualTime(base::Time initial_virtual_time);
   Builder& SetAllowCookies(bool allow_cookies);
   Builder& SetOverrideWebPreferencesCallback(
-      const base::Callback<void(WebPreferences*)>& callback);
+      base::RepeatingCallback<void(WebPreferences*)> callback);
   Builder& SetCrashReporterEnabled(bool enabled);
+  Builder& SetCaptureResourceMetadata(bool capture_resource_metadata);
   Builder& SetCrashDumpsDir(const base::FilePath& dir);
   Builder& SetFontRenderHinting(
       gfx::FontRenderParams::Hinting font_render_hinting);
@@ -303,7 +310,7 @@ class HEADLESS_EXPORT HeadlessBrowser::Options::Builder {
 //   headless::HeadlessBrowser::Options::Builder builder(argc, argv);
 //   return headless::HeadlessBrowserMain(
 //       builder.Build(),
-//       base::Callback<void(headless::HeadlessBrowser*)>());
+//       base::OnceCallback<void(headless::HeadlessBrowser*)>());
 // }
 //
 // [1]
@@ -328,7 +335,7 @@ HEADLESS_EXPORT void RunChildProcessIfNeeded(
 // initialize the browser again after it has been torn down.
 HEADLESS_EXPORT int HeadlessBrowserMain(
     HeadlessBrowser::Options options,
-    const base::Callback<void(HeadlessBrowser*)>& on_browser_start_callback);
+    base::OnceCallback<void(HeadlessBrowser*)> on_browser_start_callback);
 
 }  // namespace headless
 

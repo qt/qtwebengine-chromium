@@ -14,7 +14,6 @@
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -274,9 +273,7 @@ void Window::SetTransform(const gfx::Transform& transform) {
   WindowOcclusionTracker::ScopedPauseOcclusionTracking pause_occlusion_tracking;
   for (WindowObserver& observer : observers_)
     observer.OnWindowTargetTransformChanging(this, transform);
-  gfx::Transform old_transform = layer()->transform();
   layer()->SetTransform(transform);
-  port_->OnDidChangeTransform(old_transform, transform);
 }
 
 void Window::SetLayoutManager(LayoutManager* layout_manager) {
@@ -767,6 +764,17 @@ void Window::SetBoundsInternal(const gfx::Rect& new_bounds) {
   }
 }
 
+void Window::SetDeviceScaleFactor(float device_scale_factor) {
+  float old_device_scale_factor = layer()->device_scale_factor();
+  layer()->OnDeviceScaleFactorChanged(device_scale_factor);
+
+  // If we are currently not the layer's delegate, we will not get the device
+  // scale factor changed notification from the layer (this typically happens
+  // after animating hidden). We must notify ourselves.
+  if (layer()->delegate() != this)
+    OnDeviceScaleFactorChanged(old_device_scale_factor, device_scale_factor);
+}
+
 void Window::SetVisible(bool visible) {
   if (visible == layer()->GetTargetVisibility())
     return;  // No change.
@@ -1100,6 +1108,15 @@ void Window::AllocateLocalSurfaceId() {
   port_->AllocateLocalSurfaceId();
 }
 
+bool Window::IsLocalSurfaceIdAllocationSuppressed() const {
+  return port_->IsLocalSurfaceIdAllocationSuppressed();
+}
+
+viz::ScopedSurfaceIdAllocator Window::GetSurfaceIdAllocator(
+    base::OnceCallback<void()> allocation_task) {
+  return port_->GetSurfaceIdAllocator(std::move(allocation_task));
+}
+
 const viz::LocalSurfaceId& Window::GetLocalSurfaceId() const {
   return port_->GetLocalSurfaceId();
 }
@@ -1153,7 +1170,9 @@ void Window::OnLayerOpacityChanged(ui::PropertyChangeReason reason) {
     observer.OnWindowOpacitySet(this, reason);
 }
 
-void Window::OnLayerTransformed(ui::PropertyChangeReason reason) {
+void Window::OnLayerTransformed(const gfx::Transform& old_transform,
+                                ui::PropertyChangeReason reason) {
+  port_->OnDidChangeTransform(old_transform, layer()->transform());
   WindowOcclusionTracker::ScopedPauseOcclusionTracking pause_occlusion_tracking;
   for (WindowObserver& observer : observers_)
     observer.OnWindowTransformed(this, reason);

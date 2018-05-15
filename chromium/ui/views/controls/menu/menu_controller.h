@@ -25,6 +25,10 @@
 #include "ui/views/controls/menu/menu_delegate.h"
 #include "ui/views/widget/widget_observer.h"
 
+#if defined(OS_MACOSX)
+#include "ui/views/controls/menu/menu_closure_animation_mac.h"
+#endif
+
 namespace ui {
 class OSExchangeData;
 }
@@ -138,6 +142,7 @@ class VIEWS_EXPORT MenuController
   base::TimeTicks closing_event_time() const { return closing_event_time_; }
 
   void set_is_combobox(bool is_combobox) { is_combobox_ = is_combobox; }
+  bool is_combobox() const { return is_combobox_; }
 
   // Various events, forwarded from the submenu.
   //
@@ -197,6 +202,18 @@ class VIEWS_EXPORT MenuController
 
   // Only used for testing.
   static void TurnOffMenuSelectionHoldForTest();
+
+  void set_use_touchable_layout(bool use_touchable_layout) {
+    use_touchable_layout_ = use_touchable_layout;
+  }
+  bool use_touchable_layout() const { return use_touchable_layout_; }
+
+  // Notifies |this| that |menu_item| is being destroyed.
+  void OnMenuItemDestroying(MenuItemView* menu_item);
+
+  // Returns whether this menu can handle input events right now. This method
+  // can return false while running animations.
+  bool CanProcessInputEvents() const;
 
  private:
   friend class internal::MenuRunnerImpl;
@@ -338,6 +355,7 @@ class VIEWS_EXPORT MenuController
   // Invoked when the user accepts the selected item. This is only used
   // when blocking. This schedules the loop to quit.
   void Accept(MenuItemView* item, int event_flags);
+  void ReallyAccept(MenuItemView* item, int event_flags);
 
   bool ShowSiblingMenu(SubmenuView* source, const gfx::Point& mouse_location);
 
@@ -681,6 +699,9 @@ class VIEWS_EXPORT MenuController
   // Set to true if the menu item was selected by touch.
   bool item_selected_by_touch_ = false;
 
+  // Whether to use the touchable layout.
+  bool use_touchable_layout_ = false;
+
   // During mouse event handling, this is the RootView to forward mouse events
   // to. We need this, because if we forward one event to it (e.g., mouse
   // pressed), subsequent events (like dragging) should also go to it, even if
@@ -689,6 +710,10 @@ class VIEWS_EXPORT MenuController
 
   // A mask of the EventFlags for the mouse buttons currently pressed.
   int current_mouse_pressed_state_ = 0;
+
+#if defined(OS_MACOSX)
+  std::unique_ptr<MenuClosureAnimationMac> menu_closure_animation_;
+#endif
 
 #if defined(USE_AURA)
   std::unique_ptr<MenuPreTargetHandler> menu_pre_target_handler_;

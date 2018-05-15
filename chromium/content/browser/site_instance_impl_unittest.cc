@@ -16,7 +16,6 @@
 #include "base/run_loop.h"
 #include "base/strings/string16.h"
 #include "base/test/scoped_feature_list.h"
-#include "content/browser/browser_thread_impl.h"
 #include "content/browser/browsing_instance.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
@@ -105,8 +104,8 @@ class SiteInstanceTest : public testing::Test {
 
   void SetUp() override {
     old_browser_client_ = SetBrowserClientForTesting(&browser_client_);
-    url::AddStandardScheme(kPrivilegedScheme, url::SCHEME_WITHOUT_PORT);
-    url::AddStandardScheme(kChromeUIScheme, url::SCHEME_WITHOUT_PORT);
+    url::AddStandardScheme(kPrivilegedScheme, url::SCHEME_WITH_HOST);
+    url::AddStandardScheme(kChromeUIScheme, url::SCHEME_WITH_HOST);
 
     RenderProcessHostImpl::set_render_process_host_factory(&rph_factory_);
   }
@@ -128,6 +127,8 @@ class SiteInstanceTest : public testing::Test {
     // scheduled for deletion. Here, call DrainMessageLoop() again so the
     // AppCacheDatabase actually gets deleted.
     DrainMessageLoop();
+
+    ResetSchemesAndOriginsWhitelist();
   }
 
   void set_privileged_process_id(int process_id) {
@@ -360,6 +361,13 @@ TEST_F(SiteInstanceTest, GetSiteForURL) {
       "4d4ff040-6d61-4446-86d3-13ca07ec9ab9");
   site_url = SiteInstanceImpl::GetSiteForURL(nullptr, test_url);
   EXPECT_EQ(GURL("gopher://chromium.org"), site_url);
+
+  // Blob URLs with file origin also extract the site from the origin.
+  test_url = GURL("blob:file:///1029e5a4-2983-4b90-a585-ed217563acfeb");
+  site_url = SiteInstanceImpl::GetSiteForURL(nullptr, test_url);
+  EXPECT_EQ(GURL("file:"), site_url);
+  EXPECT_EQ("file", site_url.scheme());
+  EXPECT_FALSE(site_url.has_host());
 
   // Private domains are preserved, appspot being such a site.
   test_url = GURL(
@@ -617,20 +625,22 @@ TEST_F(SiteInstanceTest, ProcessSharingByType) {
   if (AreAllSitesIsolatedForTesting())
     return;
 
-  // On Android by default the number of renderer hosts is unlimited and process
-  // sharing doesn't happen. We set the override so that the test can run
-  // everywhere.
-  RenderProcessHost::SetMaxRendererProcessCount(kMaxRendererProcessCount);
-
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
 
   // Make a bunch of mock renderers so that we hit the limit.
   std::unique_ptr<TestBrowserContext> browser_context(new TestBrowserContext());
   std::vector<std::unique_ptr<MockRenderProcessHost>> hosts;
-  for (size_t i = 0; i < kMaxRendererProcessCount; ++i)
+  for (size_t i = 0; i < kMaxRendererProcessCount; ++i) {
     hosts.push_back(
         std::make_unique<MockRenderProcessHost>(browser_context.get()));
+    hosts[i]->SetIsUsed();
+  }
+
+  // On Android by default the number of renderer hosts is unlimited and process
+  // sharing doesn't happen. We set the override so that the test can run
+  // everywhere.
+  RenderProcessHost::SetMaxRendererProcessCount(kMaxRendererProcessCount);
 
   // Create some extension instances and make sure they share a process.
   scoped_refptr<SiteInstanceImpl> extension1_instance(

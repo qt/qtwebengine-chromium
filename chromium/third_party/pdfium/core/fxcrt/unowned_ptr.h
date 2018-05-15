@@ -32,32 +32,40 @@
 //
 // The array indexing operation [] is not supported on an unowned ptr,
 // because an unowned ptr expresses a one to one relationship with some
-// other heap object.
+// other heap object. Use pdfium::span<> for the cases where indexing
+// into an unowned array is desired, which performs the same checks.
+
+namespace pdfium {
+
+template <typename T>
+class span;
+
+}  // namespace pdfium
 
 namespace fxcrt {
 
 template <class T>
 class UnownedPtr {
  public:
-  UnownedPtr() = default;
-  UnownedPtr(const UnownedPtr& that) : UnownedPtr(that.Get()) {}
+  constexpr UnownedPtr() noexcept = default;
+  constexpr UnownedPtr(const UnownedPtr& that) noexcept = default;
 
   template <typename U>
-  explicit UnownedPtr(U* pObj) : m_pObj(pObj) {}
+  explicit constexpr UnownedPtr(U* pObj) noexcept : m_pObj(pObj) {}
 
   // Deliberately implicit to allow returning nullptrs.
   // NOLINTNEXTLINE(runtime/explicit)
-  UnownedPtr(std::nullptr_t ptr) {}
+  constexpr UnownedPtr(std::nullptr_t ptr) noexcept {}
 
   ~UnownedPtr() { ProbeForLowSeverityLifetimeIssue(); }
 
-  UnownedPtr& operator=(T* that) {
+  UnownedPtr& operator=(T* that) noexcept {
     ProbeForLowSeverityLifetimeIssue();
     m_pObj = that;
     return *this;
   }
 
-  UnownedPtr& operator=(const UnownedPtr& that) {
+  UnownedPtr& operator=(const UnownedPtr& that) noexcept {
     ProbeForLowSeverityLifetimeIssue();
     if (*this != that)
       m_pObj = that.Get();
@@ -80,7 +88,7 @@ class UnownedPtr {
     return !(*this == that);
   }
 
-  T* Get() const { return m_pObj; }
+  T* Get() const noexcept { return m_pObj; }
 
   T* Release() {
     ProbeForLowSeverityLifetimeIssue();
@@ -94,10 +102,18 @@ class UnownedPtr {
   T* operator->() const { return m_pObj; }
 
  private:
+  friend class pdfium::span<T>;
+
   inline void ProbeForLowSeverityLifetimeIssue() {
 #if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
     if (m_pObj)
       reinterpret_cast<const volatile uint8_t*>(m_pObj)[0];
+#endif
+  }
+
+  inline void ReleaseBadPointer() {
+#if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+    m_pObj = nullptr;
 #endif
   }
 

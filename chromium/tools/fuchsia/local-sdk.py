@@ -31,19 +31,20 @@ def EnsureEmptyDir(path):
     os.makedirs(path)
 
 
-def BuildForArch(project, arch):
-  Run('scripts/build-zircon.sh', '-p', project)
-  Run('build/gn/gen.py', '--target_cpu=' + arch,
-      '--packages=garnet/packages/sdk', '--release')
-  Run('buildtools/ninja', '-C', 'out/release-' + arch)
+def BuildForArch(arch):
+  build_dir = 'out/release-' + arch
+  Run('scripts/fx', 'set', arch,
+      '--packages=garnet/packages/sdk/base',
+      '--args=is_debug=false', build_dir)
+  Run('scripts/fx', 'full-build')
+
   # Also build the deprecated bootfs-based image.
-  # TODO(crbug.com/805057): Remove this once the bootfs path is turned down.
+  # TODO(crbug.com/805057): Remove this once bootfs is turned down.
   build_dir_bootfs = 'out/release-' + arch + '-bootfs'
-  Run('build/gn/gen.py', '--target_cpu=' + arch,
-      '--packages=garnet/packages/sdk_bootfs', '--release',
-      '--args=bootfs_packages=true',
-      '--build-dir='+build_dir_bootfs)
-  Run('buildtools/ninja', '-C', build_dir_bootfs)
+  Run('scripts/fx', 'set', arch,
+      '--packages=garnet/packages/sdk/bootfs', '--args=is_debug=false',
+      '--args=bootfs_packages=true', build_dir_bootfs)
+  Run('scripts/fx', 'full-build')
 
 
 def main(args):
@@ -58,8 +59,8 @@ def main(args):
   # Switch to the Fuchsia tree and build an SDK.
   os.chdir(fuchsia_root)
 
-  BuildForArch('x86', 'x86-64')
-  BuildForArch('arm64', 'aarch64')
+  BuildForArch('x64')
+  BuildForArch('arm64')
 
   tempdir = tempfile.mkdtemp()
   sdk_tar = os.path.join(tempdir, 'fuchsia-sdk.tgz')
@@ -68,7 +69,8 @@ def main(args):
   # Nuke the SDK from DEPS, put our just-built one there, and set a fake .hash
   # file. This means that on next gclient runhooks, we'll restore to the
   # real DEPS-determined SDK.
-  output_dir = os.path.join(REPOSITORY_ROOT, 'third_party', 'fuchsia-sdk')
+  output_dir = os.path.join(REPOSITORY_ROOT, 'third_party', 'fuchsia-sdk',
+                            'sdk')
   EnsureEmptyDir(output_dir)
   tarfile.open(sdk_tar, mode='r:gz').extractall(path=output_dir)
 

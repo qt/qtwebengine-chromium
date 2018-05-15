@@ -33,6 +33,7 @@
 <link rel="import" href="users_page.html">
 </if>
 <if expr="not chromeos">
+<link rel="import" href="chrome://resources/cr_elements/cr_toast/cr_toast.html">
 <link rel="import" href="sync_account_control.html">
 <link rel="import" href="import_data_dialog.html">
 <link rel="import" href="manage_profile.html">
@@ -66,11 +67,16 @@
        --iron-icon-fill-color: var(--settings-error-color);
       }
 
+      #sync-status[actionable].auth-error
+          iron-icon[icon='settings:sync-disabled'] {
+       --iron-icon-fill-color: var(--google-blue-500);
+      }
+
       #sync-status:not([actionable]) .subpage-arrow {
         display: none;
       }
 
-      .settings-box[actionable] .sync-error {
+      .settings-box[actionable].sync-error #syncSecondary {
         color: var(--settings-error-color);
       }
 
@@ -97,6 +103,19 @@
         /* Override the cr-dialog footer padding. */
         padding: 16px 0;
       }
+
+<if expr="not chromeos">
+      #toast {
+        color: white;
+        left: 0;
+        z-index: 1;
+      }
+
+      :host-context([dir='rtl']) #toast {
+        left: auto;
+        right: 0;
+      }
+</if>
     </style>
     <settings-animated-pages id="pages" section="people"
         focus-config="[[focusConfig_]]">
@@ -105,6 +124,7 @@
         <template is="dom-if" if="[[shouldShowSyncAccountControl_(diceEnabled_,
             syncStatus.syncSystemEnabled, syncStatus.signinAllowed)]]">
           <settings-sync-account-control
+              sync-status="[[syncStatus]]"
               promo-label="$i18n{peopleSignInPrompt}"
               promo-secondary-label="$i18n{peopleSignInPromptSecondary}">
           </settings-sync-account-control>
@@ -126,14 +146,16 @@
                   </div>
                 </div>
 <if expr="not chromeos">
-                <button class="subpage-arrow" is="paper-icon-button-light"
-                    aria-label="$i18n{editPerson}"
-                    aria-describedby="profile-name"></button>
+                <paper-icon-button-light class="subpage-arrow">
+                  <button aria-label="$i18n{editPerson}"
+                      aria-describedby="profile-name"></button>
+                </paper-icon-button-light>
 </if>
 <if expr="chromeos">
-                <button class="subpage-arrow" is="paper-icon-button-light"
-                    aria-label="$i18n{changePictureTitle}"
-                    aria-describedby="profile-name"></button>
+                <paper-icon-button-light class="subpage-arrow">
+                  <button aria-label="$i18n{changePictureTitle}"
+                      aria-describedby="profile-name"></button>
+                </paper-icon-button-light>
 </if>
               </div>
 <if expr="not chromeos">
@@ -193,25 +215,36 @@
         </template>
 </if>
 
-        <template is="dom-if"
-            if="[[isAdvancedSyncSettingsVisible_(syncStatus)]]">
-          <div class="settings-box two-line" on-click="onSyncTap_"
-              id="sync-status" actionable$="[[isSyncStatusActionable_(
-              syncStatus)]]">
+        <template is="dom-if" if="[[isAdvancedSyncSettingsVisible_(
+            syncStatus, unifiedConsentEnabled_)]]">
+          <div class$="settings-box two-line
+                  [[getSyncStatusClass_(syncStatus)]]"
+              on-click="onSyncTap_" id="sync-status"
+              actionable$="[[isSyncStatusActionable_(syncStatus)]]">
             <div class="icon-container">
               <iron-icon id="sync-icon" icon$="[[getSyncIcon_(syncStatus)]]">
               </iron-icon>
             </div>
             <div class="middle">
               $i18n{sync}
-              <div class$="secondary [[getSyncStatusTextClass_(syncStatus)]]"
-                  id="syncSecondary">
+              <div class="secondary" id="syncSecondary">
                 [[syncStatus.statusText]]
               </div>
             </div>
-            <button class="subpage-arrow" is="paper-icon-button-light"
-                aria-label="$i18n{sync}"
-                aria-describedby="syncSecondary"></button>
+            <paper-icon-button-light class="subpage-arrow">
+              <button aria-label="$i18n{sync}"
+                  aria-describedby="syncSecondary"></button>
+            </paper-icon-button-light>
+          </div>
+        </template>
+
+        <template is="dom-if" if="[[unifiedConsentEnabled_]]">
+          <div class="settings-box" id="sync-setup" on-click="onSyncTap_"
+              actionable>
+            <div class="start">$i18n{syncAndPersonalization}</div>
+            <paper-icon-button-light class="subpage-arrow">
+              <button aria-label="$i18n{sync}"></button>
+            </paper-icon-button-light>
           </div>
         </template>
 
@@ -220,8 +253,9 @@
           <div class="settings-box" id="edit-profile" on-click="onProfileTap_"
               actionable>
             <div class="start">$i18n{profileNameAndPicture}</div>
-            <button class="subpage-arrow" is="paper-icon-button-light"
-                aria-label="$i18n{editPerson}"></button>
+            <paper-icon-button-light class="subpage-arrow">
+              <button aria-label="$i18n{editPerson}"></button>
+            </paper-icon-button-light>
           </div>
         </template>
 </if>
@@ -236,36 +270,48 @@
                                   prefs.settings.enable_screen_lock.value)]]
             </div>
           </div>
-          <button class="subpage-arrow"
-              is="paper-icon-button-light" aria-label="$i18n{lockScreenTitle}"
-              aria-describedby="lockScreenSecondary"></button>
+          <paper-icon-button-light class="subpage-arrow">
+            <button aria-label="$i18n{lockScreenTitle}"
+                aria-describedby="lockScreenSecondary"></button>
+          </paper-icon-button-light>
         </div>
 </if>
 
         <div id="manage-other-people-subpage-trigger"
             class="settings-box" on-click="onManageOtherPeople_" actionable>
           <div class="start">$i18n{manageOtherPeople}</div>
-          <button class="subpage-arrow" is="paper-icon-button-light"
-              aria-label="$i18n{manageOtherPeople}"></button>
+          <paper-icon-button-light class="subpage-arrow">
+            <button aria-label="$i18n{manageOtherPeople}"></button>
+          </paper-icon-button-light>
         </div>
 
 <if expr="not chromeos">
         <div class="settings-box" on-click="onImportDataTap_" actionable>
           <div class="start">$i18n{importTitle}</div>
-          <button id="importDataDialogTrigger" class="subpage-arrow"
-              is="paper-icon-button-light" aria-label="$i18n{importTitle}">
-          </button>
+          <paper-icon-button-light class="subpage-arrow">
+            <button id="importDataDialogTrigger"
+                aria-label="$i18n{importTitle}">
+            </button>
+          </paper-icon-button-light>
         </div>
 </if>
 
       </neon-animatable>
       <template is="dom-if" route-path="/syncSetup"
-          no-search$="[[!isAdvancedSyncSettingsVisible_(syncStatus)]]">
+          no-search$="[[!isAdvancedSyncSettingsVisible_(syncStatus,
+              unifiedConsentEnabled_)]]">
         <settings-subpage
             associated-control="[[$$('#sync-status')]]"
             page-title="$i18n{syncPageTitle}"
-            no-search$="[[!isAdvancedSyncSettingsVisible_(syncStatus)]]">
-          <settings-sync-page></settings-sync-page>
+            no-search$="[[!isAdvancedSyncSettingsVisible_(syncStatus,
+                unifiedConsentEnabled_)]]">
+          <settings-sync-page
+<if expr="not chromeos">
+              dice-enabled="[[diceEnabled_]]"
+</if>
+              unified-consent-enabled="[[unifiedConsentEnabled_]]"
+              sync-status="[[syncStatus]]">
+          </settings-sync-page>
         </settings-subpage>
       </template>
 <if expr="chromeos">
@@ -314,7 +360,7 @@
     </settings-animated-pages>
 
     <template is="dom-if" if="[[showDisconnectDialog_]]" restamp>
-      <dialog is="cr-dialog" id="disconnectDialog"
+      <cr-dialog id="disconnectDialog"
           ignore-popstate ignore-enter-key
           on-close="onDisconnectClosed_" close-text="$i18n{close}">
         <div slot="title">$i18n{syncDisconnectTitle}</div>
@@ -357,7 +403,7 @@
           </div>
         </template>
 </if>
-      </dialog>
+      </cr-dialog>
     </template>
 
     <template is="dom-if" if="[[showImportDataDialog_]]" restamp>
@@ -365,7 +411,11 @@
           on-close="onImportDataDialogClosed_">
       </settings-import-data-dialog>
     </template>
-
+<if expr="not chromeos">
+    <cr-toast duration="3000" id="toast">
+      $i18n{syncSettingsSavedToast}
+    </cr-toast>
+</if>
   </template>
   <script src="people_page.js"></script>
 </dom-module>

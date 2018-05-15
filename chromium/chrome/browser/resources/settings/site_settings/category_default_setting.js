@@ -98,6 +98,7 @@ Polymer({
       case settings.ContentSettingsTypes.JAVASCRIPT:
       case settings.ContentSettingsTypes.SOUND:
       case settings.ContentSettingsTypes.SENSORS:
+      case settings.ContentSettingsTypes.PAYMENT_HANDLER:
       case settings.ContentSettingsTypes.POPUPS:
       case settings.ContentSettingsTypes.PROTOCOL_HANDLERS:
 
@@ -115,6 +116,7 @@ Polymer({
       case settings.ContentSettingsTypes.NOTIFICATIONS:
       case settings.ContentSettingsTypes.UNSANDBOXED_PLUGINS:
       case settings.ContentSettingsTypes.MIDI_DEVICES:
+      case settings.ContentSettingsTypes.USB_DEVICES:
         // "Ask" vs "Blocked".
         this.browserProxy.setDefaultValueForContentType(
             this.category,

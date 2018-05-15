@@ -20,7 +20,8 @@ struct AuditorException {
     ALL,                // Ignore all errors (doesn't check the files at all).
     MISSING,            // Ignore missing annotations.
     DIRECT_ASSIGNMENT,  // Ignore direct assignment of annotation value.
-    EXCEPTION_TYPE_LAST = DIRECT_ASSIGNMENT
+    TEST_ANNOTATION,    // Ignore usages of annotation for tests.
+    EXCEPTION_TYPE_LAST = TEST_ANNOTATION
   } type;
 
   static bool TypeFromString(const std::string& type_string,
@@ -31,6 +32,8 @@ struct AuditorException {
       *type_value = ExceptionType::MISSING;
     } else if (type_string == "direct_assignment") {
       *type_value = ExceptionType::DIRECT_ASSIGNMENT;
+    } else if (type_string == "test_annotation") {
+      *type_value = ExceptionType::TEST_ANNOTATION;
     } else {
       return false;
     }
@@ -155,6 +158,8 @@ class TrafficAnnotationAuditor {
   const base::FilePath source_path_;
   const base::FilePath build_path_;
   const base::FilePath clang_tool_path_;
+
+  std::vector<std::string> clang_tool_switches_;
 
   TrafficAnnotationExporter exporter_;
 

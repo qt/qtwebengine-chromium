@@ -16,6 +16,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/ime/text_input_type.h"
@@ -37,6 +38,12 @@
 namespace base {
 class TimeDelta;
 }
+
+#if defined(OS_MACOSX)
+namespace ui {
+class ScopedPasswordInputEnabler;
+}
+#endif  // defined(OS_MACOSX)
 
 namespace views {
 
@@ -83,8 +90,9 @@ class VIEWS_EXPORT Textfield : public View,
   // features. The flags is the bit map of ui::TextInputFlags.
   void SetTextInputFlags(int flags);
 
-  // Gets the text for the Textfield. Call sites should take care to not reveal
-  // the text for a password textfield.
+  // Gets the text for the Textfield.
+  // NOTE: Call sites should take care to not reveal the text for a password
+  // textfield.
   const base::string16& text() const { return model_->text(); }
 
   // Sets the text currently displayed in the Textfield.  This doesn't
@@ -102,8 +110,9 @@ class VIEWS_EXPORT Textfield : public View,
   // changes.
   void InsertOrReplaceText(const base::string16& new_text);
 
-  // Returns the text that is currently selected. Call sites should take care to
-  // not reveal the text for a password textfield.
+  // Returns the text that is currently selected.
+  // NOTE: Call sites should take care to not reveal the text for a password
+  // textfield.
   base::string16 GetSelectedText() const;
 
   // Select the entire text range. If |reversed| is true, the range will end at
@@ -154,9 +163,10 @@ class VIEWS_EXPORT Textfield : public View,
   void SetFontList(const gfx::FontList& font_list);
 
   // Sets the default width of the text control. See default_width_in_chars_.
-  void set_default_width_in_chars(int default_width) {
-    default_width_in_chars_ = default_width;
-  }
+  void SetDefaultWidthInChars(int default_width);
+
+  // Sets the minimum width of the text control. See minimum_width_in_chars_.
+  void SetMinimumWidthInChars(int minimum_width);
 
   // Sets the text to display when empty.
   void set_placeholder_text(const base::string16& text) {
@@ -224,10 +234,11 @@ class VIEWS_EXPORT Textfield : public View,
   // label, use SetAssociatedLabel() instead.
   void SetAccessibleName(const base::string16& name);
 
-  // If the accessible name should be the same as the label text, use this. It
-  // will set both the accessible label relationship and the accessible name
-  // from the contents of the label.
-  void SetAssociatedLabel(Label* label);
+  // If the accessible name should be the same as the labelling view's text,
+  // use this. It will set the accessible label relationship and copy the
+  // accessible name from the labelling views's accessible name. Any view with
+  // an accessible name can be used, typically a Label, StyledLabel or Link.
+  void SetAssociatedLabel(View* labelling_view);
 
   // Set extra spacing placed between glyphs; used for obscured text styling.
   void SetGlyphSpacing(int spacing);
@@ -235,6 +246,7 @@ class VIEWS_EXPORT Textfield : public View,
   // View overrides:
   int GetBaseline() const override;
   gfx::Size CalculatePreferredSize() const override;
+  gfx::Size GetMinimumSize() const override;
   const char* GetClassName() const override;
   void SetBorder(std::unique_ptr<Border> b) override;
   gfx::NativeCursor GetCursor(const ui::MouseEvent& event) override;
@@ -287,9 +299,11 @@ class VIEWS_EXPORT Textfield : public View,
                            const gfx::Point& p) override;
 
   // WordLookupClient overrides:
-  bool GetDecoratedWordAtPoint(const gfx::Point& point,
-                               gfx::DecoratedText* decorated_word,
-                               gfx::Point* baseline_point) override;
+  bool GetWordLookupDataAtPoint(const gfx::Point& point,
+                                gfx::DecoratedText* decorated_word,
+                                gfx::Point* baseline_point) override;
+  bool GetWordLookupDataFromSelection(gfx::DecoratedText* decorated_text,
+                                      gfx::Point* baseline_point) override;
 
   // SelectionControllerDelegate overrides:
   bool HasTextBeingDragged() const override;
@@ -483,8 +497,15 @@ class VIEWS_EXPORT Textfield : public View,
   bool read_only_;
 
   // The default number of average characters for the width of this text field.
-  // This will be reported as the "desired size". Defaults to 0.
+  // This will be reported as the "desired size". Must be set to >=
+  // minimum_width_in_chars_. Defaults to 0.
   int default_width_in_chars_;
+
+  // The minimum allowed width of this text field in average characters. This
+  // will be reported as the minimum size. Must be set to <=
+  // default_width_in_chars_. Setting this to -1 will cause GetMinimumSize() to
+  // return View::GetMinimumSize(). Defaults to -1.
+  int minimum_width_in_chars_;
 
   // Flags indicating whether various system colors should be used, and if not,
   // what overriding color values should be used instead.
@@ -574,6 +595,11 @@ class VIEWS_EXPORT Textfield : public View,
 
   // View containing the text cursor.
   View cursor_view_;
+
+#if defined(OS_MACOSX)
+  // Used to track active password input sessions.
+  std::unique_ptr<ui::ScopedPasswordInputEnabler> password_input_enabler_;
+#endif  // defined(OS_MACOSX)
 
   // Used to bind callback functions to this object.
   base::WeakPtrFactory<Textfield> weak_ptr_factory_;

@@ -29,7 +29,6 @@
 <translation id="1966382378801805537">Chromium не може да определи или зададе браузъра по подразбиране</translation>
 <translation id="1967743265616885482">Известно е, че модул със същото име влиза в конфликт с Chromium.</translation>
 <translation id="2008474315282236005">1 елемент ще се изтрие от това устройство. За да извлечете данните си по-късно, влезте в Chromium като <ph name="USER_EMAIL" />.</translation>
-<translation id="2077129598763517140">Да се използва хардуерно ускорение, когато е налице</translation>
 <translation id="2117378023188580026">Администраторът ви моли да рестартирате Chromium, за да се приложи тази актуализация</translation>
 <translation id="2119636228670142020">Всичко за &amp;Chromium OS</translation>
 <translation id="2158734852934720349">Лицензи за отворен код за Chromium OS</translation>
@@ -75,7 +74,6 @@
 <translation id="3479552764303398839">Не сега</translation>
 <translation id="3509308970982693815">Моля, затворете всички прозорци на Chromium и опитайте отново.</translation>
 <translation id="352783484088404971">Премахване от Chromium...</translation>
-<translation id="3549345495227188780">Първи стъпки с Chromium OS</translation>
 <translation id="3582788516608077514">Chromium се актуализира...</translation>
 <translation id="358997566136285270">Лого на Chromium</translation>
 <translation id="3713809861844741608">Отваряне на връзката в нов &amp;раздел на Chromium</translation>
@@ -85,15 +83,14 @@
 <translation id="3852700440713538496">Закачване на Chromium към лентата на задачите</translation>
 <translation id="3889543394854987837">Кликнете върху името си, за да отворите Chromium и да започнете да сърфирате.</translation>
 <translation id="3898493977366060150">Интелигентен начин за сърфиране в мрежата, създаден от Google</translation>
-<translation id="390894725198123737">Под Mac паролите може да се запазват в Keychain и да се използват или синхронизират от други потребители на Chromium, споделящи този профил в OS X.</translation>
 <translation id="4036079820698952681">Помогнете за подобряването на Chromium, като подадете сигнал за <ph name="BEGIN_LINK" />текущите настройки<ph name="END_LINK" /></translation>
 <translation id="4050175100176540509">В последната версия са налице важни подобрения в сигурността и нови функции.</translation>
 <translation id="407254336480250557">Изберете <ph name="BEGIN_BOLD" />Chromium<ph name="END_BOLD" /> <ph name="SMALL_PRODUCT_LOGO" /></translation>
-<translation id="4077262827416206768">Моля, затворете всички прозорци на Chromium и го стартирайте отново, за да влезе в сила тази промяна.</translation>
 <translation id="421369550622382712">Открийте отлични приложения, игри, разширения и теми за Chromium.</translation>
 <translation id="4222580632002216401">Вече влязохте в Chromium! Синхронизирането е деактивирано от администратора ви.</translation>
 <translation id="4224199872375172890">Chromium е актуален.</translation>
 <translation id="4230135487732243613">Да се свържат ли данните ви в Chromium с този профил?</translation>
+<translation id="4260985389288095068">На компютъра ви има опасен софтуер. Chromium може да го премахне и да възстанови настройките ви, така че браузърът отново да заработи нормално.</translation>
 <translation id="4271805377592243930">Получаване на помощ за Chromium</translation>
 <translation id="4285930937574705105">Инсталирането не бе успешно поради неизвестна грешка. Ако Chromium понастоящем се изпълнява, моля, затворете го и опитайте отново.</translation>
 <translation id="4330585738697551178">За този модул е известно, че влиза в конфликт с Chromium.</translation>
@@ -102,7 +99,6 @@
 <translation id="4421155425831608516">Функцията за влизане в Chromium е деактивирана от администратора на това устройство.</translation>
 <translation id="4423735387467980091">Персонализиране и контролиране на Chromium</translation>
 <translation id="4449801103833300785">{0,plural, =1{Chromium ще стартира отново след един час}other{Chromium ще стартира отново след # часа}}</translation>
-<translation id="4458285410772214805">Моля, излезте от профила си и влезте отново, за да влезе в сила тази промяна.</translation>
 <translation id="4469812139324097969">Chromium не е актуален, защото не е бил стартиран отново известно време. Налице е актуализация, която ще бъде приложена веднага, когато рестартирате.</translation>
 <translation id="4488554488975128561">Можете да ни помогнете да направим браузъра Chromium по-надежден и по-лесен за използване, като автоматично изпращате до Google системна информация и част от съдържанието на страниците, за да ни съдействате при откриването на опасни приложения и сайтове.</translation>
 <translation id="4567424176335768812">Влезли сте като <ph name="USER_EMAIL_ADDRESS" />. Сега имате достъп до отметките, историята и другите си настройки на всички устройства, на които сте влезли.</translation>
@@ -137,7 +133,6 @@
 <translation id="5698481217667032250">Показване на Chromium на този език</translation>
 <translation id="5726838626470692954">Мениджърът ви трябва да ви премахне от Chromium и да ви добави отново.</translation>
 <translation id="5768914737813585044">Показване на Chromium OS на този език</translation>
-<translation id="5772805321386874569">(изисква <ph name="BEGIN_BUTTON" />рестартиране<ph name="END_BUTTON" /> на Chromium)</translation>
 <translation id="5796460469508169315">Chromium е почти готов.</translation>
 <translation id="5820394555380036790">Chromium OS</translation>
 <translation id="5862307444128926510">Добре дошли в Chromium</translation>
@@ -233,7 +228,6 @@
 <translation id="8563206822260884157">Използвайте надеждна парола, генерирана от Chromium</translation>
 <translation id="85843667276690461">Получаване на помощ за използването на Chromium</translation>
 <translation id="8586442755830160949">Авторски права <ph name="YEAR" /> Авторите на Chromium. Всички права запазени.</translation>
-<translation id="8590769996813453836">Chromium откри опасен софтуер на компютъра ви. Браузърът може да го премахне и да възстанови настройките ви, така че отново да заработи нормално.</translation>
 <translation id="8621669128220841554">Инсталирането не бе успешно поради неизвестна грешка. Моля, изтеглете отново Chromium.</translation>
 <translation id="8628626585870903697">Chromium не включва визуализатора на PDF, който се изисква, за да функционира визуализацията за печат.</translation>
 <translation id="8667808506758191620">Устройството ви <ph name="DEVICE_TYPE" /> е актуално.</translation>

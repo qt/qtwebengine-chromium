@@ -26,11 +26,11 @@
 #include "cc/input/overscroll_behavior.h"
 #include "cc/input/touch_action.h"
 #include "components/viz/common/surfaces/local_surface_id.h"
+#include "content/common/buildflags.h"
 #include "content/common/content_export.h"
 #include "content/common/cursors/webcursor.h"
 #include "content/common/drag_event_source_info.h"
 #include "content/common/edit_command.h"
-#include "content/common/features.h"
 #include "content/common/widget.mojom.h"
 #include "content/public/common/drop_data.h"
 #include "content/public/common/screen_info.h"
@@ -46,17 +46,17 @@
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sender.h"
 #include "mojo/public/cpp/bindings/binding.h"
-#include "ppapi/features/features.h"
-#include "third_party/WebKit/public/platform/WebDisplayMode.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
-#include "third_party/WebKit/public/platform/WebTextInputInfo.h"
-#include "third_party/WebKit/public/web/WebImeTextSpan.h"
-#include "third_party/WebKit/public/web/WebPopupType.h"
-#include "third_party/WebKit/public/web/WebTextDirection.h"
-#include "third_party/WebKit/public/web/WebWidget.h"
-#include "third_party/WebKit/public/web/WebWidgetClient.h"
+#include "ppapi/buildflags/buildflags.h"
+#include "third_party/blink/public/platform/web_display_mode.h"
+#include "third_party/blink/public/platform/web_input_event.h"
+#include "third_party/blink/public/platform/web_rect.h"
+#include "third_party/blink/public/platform/web_referrer_policy.h"
+#include "third_party/blink/public/platform/web_text_input_info.h"
+#include "third_party/blink/public/web/web_ime_text_span.h"
+#include "third_party/blink/public/web/web_popup_type.h"
+#include "third_party/blink/public/web/web_text_direction.h"
+#include "third_party/blink/public/web/web_widget.h"
+#include "third_party/blink/public/web/web_widget_client.h"
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/ui_base_types.h"
@@ -74,7 +74,7 @@ class SyncMessageFilter;
 
 namespace blink {
 namespace scheduler {
-class RenderWidgetSchedulingState;
+class WebRenderWidgetSchedulingState;
 }
 struct WebDeviceEmulationParams;
 class WebDragData;
@@ -84,7 +84,6 @@ class WebImage;
 class WebInputMethodController;
 class WebLocalFrame;
 class WebMouseEvent;
-class WebTappedInfo;
 struct WebPoint;
 }  // namespace blink
 
@@ -203,6 +202,9 @@ class CONTENT_EXPORT RenderWidget
   }
   gfx::Point host_context_menu_location() const {
     return host_context_menu_location_;
+  }
+  const gfx::Size& visible_viewport_size() const {
+    return visible_viewport_size_;
   }
 
   void set_owner_delegate(RenderWidgetOwnerDelegate* owner_delegate) {
@@ -334,15 +336,6 @@ class CONTENT_EXPORT RenderWidget
   // position.
   virtual ui::TextInputType GetTextInputType();
 
-#if defined(OS_ANDROID)
-  // Notifies that a tap was not consumed, so showing a UI for the unhandled
-  // tap may be needed.
-  // Performs various checks on the given WebTappedInfo to apply heuristics to
-  // determine if triggering is appropriate.
-  void ShowUnhandledTapUIIfNeeded(
-      const blink::WebTappedInfo& tapped_info) override;
-#endif
-
   // Begins the compositor's scheduler to start producing frames.
   void StartCompositor();
 
@@ -422,6 +415,19 @@ class CONTENT_EXPORT RenderWidget
   uint32_t GetContentSourceId();
   void DidNavigate();
 
+  bool auto_resize_mode() const { return auto_resize_mode_; }
+
+  uint64_t auto_resize_sequence_number() const {
+    return auto_resize_sequence_number_;
+  }
+
+  const gfx::Size& min_size_for_auto_resize() const {
+    return min_size_for_auto_resize_;
+  }
+
+  const gfx::Size& max_size_for_auto_resize() const {
+    return max_size_for_auto_resize_;
+  }
   // MainThreadEventQueueClient overrides.
 
   // Requests a BeginMainFrame callback from the compositor.
@@ -544,12 +550,6 @@ class CONTENT_EXPORT RenderWidget
       RenderWidgetScreenMetricsEmulator* emulator);
 #endif
 
-  void SetLocalSurfaceIdForAutoResize(
-      uint64_t sequence_number,
-      const content::ScreenInfo& screen_info,
-      uint32_t content_source_id,
-      const viz::LocalSurfaceId& local_surface_id);
-
   // RenderWidget IPC message handlers
   void OnHandleInputEvent(
       const blink::WebInputEvent* event,
@@ -559,13 +559,6 @@ class CONTENT_EXPORT RenderWidget
   void OnClose();
   void OnCreatingNewAck();
   virtual void OnResize(const ResizeParams& params);
-  void OnSetLocalSurfaceIdForAutoResize(
-      uint64_t sequence_number,
-      const gfx::Size& min_size,
-      const gfx::Size& max_size,
-      const content::ScreenInfo& screen_info,
-      uint32_t content_source_id,
-      const viz::LocalSurfaceId& local_surface_id);
   void OnEnableDeviceEmulation(const blink::WebDeviceEmulationParams& params);
   void OnDisableDeviceEmulation();
   virtual void OnWasHidden();
@@ -584,7 +577,8 @@ class CONTENT_EXPORT RenderWidget
   void OnUpdateScreenRects(const gfx::Rect& view_screen_rect,
                            const gfx::Rect& window_screen_rect);
   void OnUpdateWindowScreenRect(const gfx::Rect& window_screen_rect);
-  void OnSetViewportIntersection(const gfx::Rect& viewport_intersection);
+  void OnSetViewportIntersection(const gfx::Rect& viewport_intersection,
+                                 const gfx::Rect& compositor_visible_rect);
   void OnSetIsInert(bool);
   void OnUpdateRenderThrottlingStatus(bool is_throttled,
                                       bool subtree_throttled);
@@ -630,6 +624,11 @@ class CONTENT_EXPORT RenderWidget
   void set_next_paint_is_resize_ack();
   void set_next_paint_is_repaint_ack();
   void reset_next_paint_is_resize_ack();
+
+  // Returns a rect that the compositor needs to raster. For a main frame this
+  // is always the entire viewprot, but for out-of-process iframes this can be
+  // constrained to limit overdraw.
+  gfx::Rect ViewportVisibleRect();
 
   // QueueMessage implementation extracted into a static method for easy
   // testing.
@@ -737,6 +736,12 @@ class CONTENT_EXPORT RenderWidget
   // The sequence number used for the auto-resize request.
   uint64_t auto_resize_sequence_number_ = 0;
 
+  // The minimum size to use for auto-resize.
+  gfx::Size min_size_for_auto_resize_;
+
+  // The maximum size to use for auto-resize.
+  gfx::Size max_size_for_auto_resize_;
+
   // A pending ResizeOrRepaintAck callback in response to an auto-resize
   // initiated by Blink. If auto-resize mode is canceled with an in-flight
   // Ack, then the Ack will be canceled.
@@ -772,9 +777,6 @@ class CONTENT_EXPORT RenderWidget
   // being rendered by another process.  If all RenderWidgets in a process are
   // swapped out, the process can exit.
   bool is_swapped_out_;
-
-  // Whether this RenderWidget is for an out-of-process iframe or not.
-  bool for_oopif_;
 
   // Stores information about the current text input.
   blink::WebTextInputInfo text_input_info_;
@@ -855,7 +857,7 @@ class CONTENT_EXPORT RenderWidget
   bool has_host_context_menu_location_;
   gfx::Point host_context_menu_location_;
 
-  std::unique_ptr<blink::scheduler::RenderWidgetSchedulingState>
+  std::unique_ptr<blink::scheduler::WebRenderWidgetSchedulingState>
       render_widget_scheduling_state_;
 
   // Mouse Lock dispatcher attached to this view.
@@ -940,6 +942,9 @@ class CONTENT_EXPORT RenderWidget
   // Indicates whether this widget has focus.
   bool has_focus_;
 
+  // Whether this RenderWidget is for an out-of-process iframe or not.
+  bool for_oopif_;
+
   // A callback into the creator/opener of this widget, to be executed when
   // WebWidgetClient::show() occurs.
   ShowCallback show_callback_;
@@ -981,10 +986,7 @@ class CONTENT_EXPORT RenderWidget
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
-  // Keep track of whether we committed after the latest resize that needs to be
-  // acked was received. This helps us make sure we don't ack a resize before
-  // it's committed.
-  bool did_commit_after_resize_ = false;
+  gfx::Rect compositor_visible_rect_;
 
   // Cache whether or not we have touch handlers, to reduce IPCs sent.
   // Different consumers in the browser process makes different assumptions, so

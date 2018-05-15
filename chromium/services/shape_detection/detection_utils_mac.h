@@ -5,11 +5,11 @@
 #ifndef SERVICES_SHAPE_DETECTION_DETECTION_UTILS_MAC_H_
 #define SERVICES_SHAPE_DETECTION_DETECTION_UTILS_MAC_H_
 
-#import <QuartzCore/QuartzCore.h>
+#import <CoreImage/CoreImage.h>
 
 #include "base/mac/scoped_nsobject.h"
-#include "services/shape_detection/public/mojom/barcodedetection.mojom.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/gfx/geometry/rect_f.h"
 
 namespace shape_detection {
 
@@ -17,6 +17,8 @@ namespace shape_detection {
 // with the same contents, or a null scoped_nsobject is something goes wrong.
 base::scoped_nsobject<CIImage> CreateCIImageFromSkBitmap(
     const SkBitmap& bitmap);
+
+gfx::RectF ConvertCGToGfxCoordinates(CGRect bounds, int height);
 
 }  // namespace shape_detection
 

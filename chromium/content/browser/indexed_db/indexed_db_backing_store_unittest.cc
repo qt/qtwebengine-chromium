@@ -13,7 +13,6 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
@@ -34,7 +33,7 @@
 #include "storage/browser/test/mock_quota_manager_proxy.h"
 #include "storage/browser/test/mock_special_storage_policy.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBTypes.h"
+#include "third_party/blink/public/platform/modules/indexeddb/web_idb_types.h"
 
 using base::ASCIIToUTF16;
 using url::Origin;

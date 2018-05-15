@@ -30,6 +30,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/multiprocess_test.h"
+#include "base/test/scoped_task_environment.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
@@ -369,7 +370,7 @@ MULTIPROCESS_TEST_MAIN(CrashingChildProcess) {
 
 // This test intentionally crashes, so we don't need to run it under
 // AddressSanitizer.
-#if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
+#if defined(ADDRESS_SANITIZER)
 #define MAYBE_GetTerminationStatusCrash DISABLED_GetTerminationStatusCrash
 #else
 #define MAYBE_GetTerminationStatusCrash GetTerminationStatusCrash
@@ -488,6 +489,47 @@ TEST_F(ProcessUtilTest, GetTerminationStatusSigTerm) {
   remove(signal_file.c_str());
 }
 #endif  // defined(OS_POSIX)
+
+TEST_F(ProcessUtilTest, EnsureTerminationUndying) {
+  test::ScopedTaskEnvironment task_environment;
+
+  Process child_process = SpawnChild("process_util_test_never_die");
+  ASSERT_TRUE(child_process.IsValid());
+
+  EnsureProcessTerminated(child_process.Duplicate());
+
+  // Allow a generous timeout, to cope with slow/loaded test bots.
+  EXPECT_TRUE(child_process.WaitForExitWithTimeout(
+      TestTimeouts::action_max_timeout(), nullptr));
+}
+
+MULTIPROCESS_TEST_MAIN(process_util_test_never_die) {
+  while (1) {
+    PlatformThread::Sleep(TimeDelta::FromSeconds(500));
+  }
+  return kSuccess;
+}
+
+TEST_F(ProcessUtilTest, EnsureTerminationGracefulExit) {
+  test::ScopedTaskEnvironment task_environment;
+
+  Process child_process = SpawnChild("process_util_test_die_immediately");
+  ASSERT_TRUE(child_process.IsValid());
+
+  // Wait for the child process to actually exit.
+  child_process.Duplicate().WaitForExitWithTimeout(
+      TestTimeouts::action_max_timeout(), nullptr);
+
+  EnsureProcessTerminated(child_process.Duplicate());
+
+  // Verify that the process is really, truly gone.
+  EXPECT_TRUE(child_process.WaitForExitWithTimeout(
+      TestTimeouts::action_max_timeout(), nullptr));
+}
+
+MULTIPROCESS_TEST_MAIN(process_util_test_die_immediately) {
+  return kSuccess;
+}
 
 #if defined(OS_WIN)
 // TODO(estade): if possible, port this test.
@@ -821,7 +863,9 @@ TEST_F(ProcessUtilTest, FDRemappingIncludesStdio) {
   EXPECT_EQ(0, exit_code);
 }
 
-#if defined(OS_FUCHSIA)
+// TODO(https://crbug.com/793412): Disable on Debug/component builds due to
+// process launch taking too long and triggering timeouts.
+#if defined(OS_FUCHSIA) && defined(NDEBUG)
 const uint16_t kStartupHandleId = 43;
 MULTIPROCESS_TEST_MAIN(ProcessUtilsVerifyHandle) {
   zx_handle_t handle =
@@ -856,11 +900,11 @@ TEST_F(ProcessUtilTest, LaunchWithHandleTransfer) {
   // Read from the pipe to verify that the child received it.
   zx_signals_t signals = 0;
   result = zx_object_wait_one(
-      handles[1], ZX_SOCKET_READABLE,
+      handles[1], ZX_SOCKET_READABLE | ZX_SOCKET_PEER_CLOSED,
       (base::TimeTicks::Now() + TestTimeouts::action_timeout()).ToZxTime(),
       &signals);
-  EXPECT_EQ(ZX_OK, result);
-  EXPECT_TRUE(signals & ZX_SOCKET_READABLE);
+  ASSERT_EQ(ZX_OK, result);
+  ASSERT_TRUE(signals & ZX_SOCKET_READABLE);
 
   size_t bytes_read = 0;
   char buf[16] = {0};
@@ -876,7 +920,7 @@ TEST_F(ProcessUtilTest, LaunchWithHandleTransfer) {
                                              &exit_code));
   EXPECT_EQ(0, exit_code);
 }
-#endif  // defined(OS_FUCHSIA)
+#endif  // defined(OS_FUCHSIA) && defined(NDEBUG)
 
 namespace {
 
@@ -1053,60 +1097,6 @@ TEST_F(ProcessUtilTest, GetParentProcessId) {
   EXPECT_EQ(ppid, static_cast<ProcessId>(getppid()));
 }
 #endif  // !defined(OS_FUCHSIA)
-
-// TODO(port): port those unit tests.
-bool IsProcessDead(ProcessHandle child) {
-#if defined(OS_FUCHSIA)
-  // ProcessHandle is an zx_handle_t, not a pid on Fuchsia, so waitpid() doesn't
-  // make sense.
-  zx_signals_t signals;
-  // Timeout of 0 to check for termination, but non-blocking.
-  if (zx_object_wait_one(child, ZX_TASK_TERMINATED, 0, &signals) == ZX_OK) {
-    DCHECK(signals & ZX_TASK_TERMINATED);
-    return true;
-  }
-  return false;
-#else
-  // waitpid() will actually reap the process which is exactly NOT what we
-  // want to test for.  The good thing is that if it can't find the process
-  // we'll get a nice value for errno which we can test for.
-  const pid_t result = HANDLE_EINTR(waitpid(child, nullptr, WNOHANG));
-  return result == -1 && errno == ECHILD;
-#endif
-}
-
-TEST_F(ProcessUtilTest, DelayedTermination) {
-  Process child_process = SpawnChild("process_util_test_never_die");
-  ASSERT_TRUE(child_process.IsValid());
-  EnsureProcessTerminated(child_process.Duplicate());
-  int exit_code;
-  child_process.WaitForExitWithTimeout(TimeDelta::FromSeconds(5), &exit_code);
-
-  // Check that process was really killed.
-  EXPECT_TRUE(IsProcessDead(child_process.Handle()));
-}
-
-MULTIPROCESS_TEST_MAIN(process_util_test_never_die) {
-  while (1) {
-    sleep(500);
-  }
-  return kSuccess;
-}
-
-TEST_F(ProcessUtilTest, ImmediateTermination) {
-  Process child_process = SpawnChild("process_util_test_die_immediately");
-  ASSERT_TRUE(child_process.IsValid());
-  // Give it time to die.
-  sleep(2);
-  EnsureProcessTerminated(child_process.Duplicate());
-
-  // Check that process was really killed.
-  EXPECT_TRUE(IsProcessDead(child_process.Handle()));
-}
-
-MULTIPROCESS_TEST_MAIN(process_util_test_die_immediately) {
-  return kSuccess;
-}
 
 #if !defined(OS_ANDROID) && !defined(OS_FUCHSIA)
 class WriteToPipeDelegate : public LaunchOptions::PreExecDelegate {

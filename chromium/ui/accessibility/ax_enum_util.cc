@@ -32,6 +32,8 @@ const char* ToString(ax::mojom::Event event) {
       return "expandedChanged";
     case ax::mojom::Event::kFocus:
       return "focus";
+    case ax::mojom::Event::kFocusContext:
+      return "focusContext";
     case ax::mojom::Event::kHide:
       return "hide";
     case ax::mojom::Event::kHitTestResult:
@@ -98,6 +100,8 @@ const char* ToString(ax::mojom::Event event) {
       return "selectionRemove";
     case ax::mojom::Event::kShow:
       return "show";
+    case ax::mojom::Event::kStateChanged:
+      return "stateChanged";
     case ax::mojom::Event::kTextChanged:
       return "textChanged";
     case ax::mojom::Event::kTextSelectionChanged:
@@ -784,10 +788,6 @@ const char* ToString(ax::mojom::State state) {
       return "required";
     case ax::mojom::State::kRichlyEditable:
       return "richlyEditable";
-    case ax::mojom::State::kSelectable:
-      return "selectable";
-    case ax::mojom::State::kSelected:
-      return "selected";
     case ax::mojom::State::kVertical:
       return "vertical";
     case ax::mojom::State::kVisited:
@@ -832,10 +832,6 @@ ax::mojom::State ParseState(const char* state) {
     return ax::mojom::State::kRequired;
   if (0 == strcmp(state, "richlyEditable"))
     return ax::mojom::State::kRichlyEditable;
-  if (0 == strcmp(state, "selectable"))
-    return ax::mojom::State::kSelectable;
-  if (0 == strcmp(state, "selected"))
-    return ax::mojom::State::kSelected;
   if (0 == strcmp(state, "vertical"))
     return ax::mojom::State::kVertical;
   if (0 == strcmp(state, "visited"))
@@ -1435,6 +1431,8 @@ const char* ToString(ax::mojom::BoolAttribute bool_attribute) {
       return "clickable";
     case ax::mojom::BoolAttribute::kClipsChildren:
       return "clipsChildren";
+    case ax::mojom::BoolAttribute::kSelected:
+      return "selected";
   }
 
   return "";
@@ -1465,6 +1463,8 @@ ax::mojom::BoolAttribute ParseBoolAttribute(const char* bool_attribute) {
     return ax::mojom::BoolAttribute::kClickable;
   if (0 == strcmp(bool_attribute, "clipsChildren"))
     return ax::mojom::BoolAttribute::kClipsChildren;
+  if (0 == strcmp(bool_attribute, "selected"))
+    return ax::mojom::BoolAttribute::kSelected;
   return ax::mojom::BoolAttribute::kNone;
 }
 

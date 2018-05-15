@@ -10,6 +10,7 @@
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/environment.h"
+#include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/path_service.h"
@@ -159,10 +160,23 @@ void HeadlessContentMainDelegate::InitLogging(
   base::FilePath log_path;
   logging::LoggingSettings settings;
 
-  if (PathService::Get(base::DIR_MODULE, &log_path)) {
+// In release builds we should log into the user profile directory.
+#ifdef NDEBUG
+  if (!browser_->options()->user_data_dir.empty()) {
+    log_path = browser_->options()->user_data_dir;
+    log_path = log_path.Append(kDefaultProfileName);
+    base::CreateDirectory(log_path);
     log_path = log_path.Append(log_filename);
-  } else {
-    log_path = log_filename;
+  }
+#endif  // NDEBUG
+
+  // Otherwise we log to where the executable is.
+  if (log_path.empty()) {
+    if (PathService::Get(base::DIR_MODULE, &log_path)) {
+      log_path = log_path.Append(log_filename);
+    } else {
+      log_path = log_filename;
+    }
   }
 
   std::string filename;
@@ -209,8 +223,8 @@ void HeadlessContentMainDelegate::InitCrashReporter(
 // crashpad is already enabled.
 // TODO(dvallet): Ideally we would also want to avoid this for component builds.
 #elif defined(OS_WIN) && !defined(CHROME_MULTIPLE_DLL)
-  crash_reporter::InitializeCrashpadWithEmbeddedHandler(process_type.empty(),
-                                                        process_type, "");
+  crash_reporter::InitializeCrashpadWithEmbeddedHandler(
+      process_type.empty(), process_type, "", base::FilePath());
 #endif  // defined(HEADLESS_USE_BREAKPAD)
 #endif  // defined(OS_FUCHSIA)
 }

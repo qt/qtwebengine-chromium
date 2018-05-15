@@ -25,6 +25,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/browser_resources.h"
+#include "components/services/heap_profiling/public/cpp/settings.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_data.h"
@@ -40,7 +41,8 @@
 #include "ui/shell_dialogs/select_file_dialog.h"
 #include "ui/shell_dialogs/select_file_policy.h"
 
-using profiling::ProfilingProcessHost;
+using heap_profiling::Mode;
+using heap_profiling::ProfilingProcessHost;
 
 namespace {
 
@@ -48,36 +50,36 @@ namespace {
 std::string GetMessageString() {
 #if BUILDFLAG(USE_ALLOCATOR_SHIM)
   switch (ProfilingProcessHost::GetInstance()->GetMode()) {
-    case ProfilingProcessHost::Mode::kAll:
+    case Mode::kAll:
       return std::string("Memory logging is enabled for all processes.");
 
-    case ProfilingProcessHost::Mode::kAllRenderers:
+    case Mode::kAllRenderers:
       return std::string("Memory logging is enabled for all renderers.");
 
-    case ProfilingProcessHost::Mode::kBrowser:
+    case Mode::kBrowser:
       return std::string(
           "Memory logging is enabled for just the browser process.");
 
-    case ProfilingProcessHost::Mode::kGpu:
+    case Mode::kGpu:
       return std::string("Memory logging is enabled for just the gpu process.");
 
-    case ProfilingProcessHost::Mode::kMinimal:
+    case Mode::kMinimal:
       return std::string(
           "Memory logging is enabled for the browser and GPU processes.");
 
-    case ProfilingProcessHost::Mode::kRendererSampling:
+    case Mode::kRendererSampling:
       return std::string(
           "Memory logging is enabled for an automatic sample of renderer "
           "processes. This UI is disabled.");
 
-    case ProfilingProcessHost::Mode::kNone:
-    case ProfilingProcessHost::Mode::kManual:
+    case Mode::kNone:
+    case Mode::kManual:
     default:
       return std::string(
           "Memory logging must be manually enabled for each process via "
           "chrome://memory-internals.");
   }
-#elif defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
+#elif defined(ADDRESS_SANITIZER)
   return "Memory logging is not available in this build because a memory "
          "sanitizer is running.";
 #else
@@ -171,8 +173,8 @@ void MemoryInternalsDOMHandler::RegisterMessages() {
   // the WebUI.
   web_ui()->RegisterMessageCallback(
       "requestProcessList",
-      base::Bind(&MemoryInternalsDOMHandler::HandleRequestProcessList,
-                 base::Unretained(this)));
+      base::BindRepeating(&MemoryInternalsDOMHandler::HandleRequestProcessList,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "saveDump",
       base::BindRepeating(&MemoryInternalsDOMHandler::HandleSaveDump,

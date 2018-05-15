@@ -15,7 +15,7 @@
 #include "content/renderer/dom_storage/local_storage_cached_areas.h"
 #include "content/renderer/dom_storage/mock_leveldb_wrapper.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/scheduler/test/fake_renderer_scheduler.h"
+#include "third_party/blink/public/platform/scheduler/test/fake_renderer_scheduler.h"
 
 namespace content {
 
@@ -75,7 +75,7 @@ class LocalStorageCachedAreaTest : public testing::Test {
  protected:
   TestBrowserThreadBundle test_browser_thread_bundle_;
   MockLevelDBWrapper mock_leveldb_wrapper_;
-  std::unique_ptr<blink::scheduler::RendererScheduler> renderer_scheduler_;
+  std::unique_ptr<blink::scheduler::WebMainThreadScheduler> renderer_scheduler_;
   LocalStorageCachedAreas cached_areas_;
 };
 

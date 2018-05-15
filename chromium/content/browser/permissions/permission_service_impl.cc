@@ -10,7 +10,6 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/memory/ptr_util.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/permission_manager.h"
 #include "content/public/browser/permission_type.h"
@@ -229,11 +228,14 @@ PermissionStatus PermissionServiceImpl::GetPermissionStatusFromType(
     return PermissionStatus::DENIED;
 
   GURL requesting_origin(origin_.GetURL());
-  // If the embedding_origin is empty we'll use |origin_| instead.
-  GURL embedding_origin = context_->GetEmbeddingOrigin();
+  if (context_->render_frame_host()) {
+    return browser_context->GetPermissionManager()->GetPermissionStatusForFrame(
+        type, context_->render_frame_host(), requesting_origin);
+  }
+
+  DCHECK(context_->GetEmbeddingOrigin().is_empty());
   return browser_context->GetPermissionManager()->GetPermissionStatus(
-      type, requesting_origin,
-      embedding_origin.is_empty() ? requesting_origin : embedding_origin);
+      type, requesting_origin, requesting_origin);
 }
 
 void PermissionServiceImpl::ResetPermissionStatus(PermissionType type) {

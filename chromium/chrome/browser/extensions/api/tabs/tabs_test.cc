@@ -31,6 +31,7 @@
 #include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/resource_coordinator/tab_lifecycle_unit_external.h"
 #include "chrome/browser/resource_coordinator/tab_manager.h"
 #include "chrome/browser/resource_coordinator/time.h"
 #include "chrome/browser/ui/browser.h"
@@ -77,18 +78,7 @@ namespace {
 
 class ExtensionTabsTest : public PlatformAppBrowserTest {
  public:
-  ExtensionTabsTest() : scoped_set_tick_clock_for_testing_(&test_clock_) {}
-
-  // Fast-forward time until no tab is protected from being discarded for having
-  // recently been used.
-  void FastForwardAfterDiscardProtectionTime() {
-    test_clock_.Advance(
-        resource_coordinator::TabManager::kDiscardProtectionTime);
-  }
-
-  base::SimpleTestTickClock test_clock_;
-  resource_coordinator::ScopedSetTickClockForTesting
-      scoped_set_tick_clock_for_testing_;
+  ExtensionTabsTest() {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ExtensionTabsTest);
@@ -1047,7 +1037,6 @@ IN_PROC_BROWSER_TEST_F(ExtensionWindowCreateTest, AcceptState) {
 #if defined(OS_MACOSX)
   if (base::mac::IsOS10_10())
     return;  // Fails when swarmed. http://crbug.com/660582
-  ui::test::ScopedFakeNSWindowFullscreen fake_fullscreen;
 #endif
 
   scoped_refptr<WindowsCreateFunction> function(new WindowsCreateFunction());
@@ -1457,10 +1446,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardWithId) {
           discard.get(), base::StringPrintf("[%u]", tab_id), browser())));
 
   // Confirms that TabManager sees the tab as discarded.
-  resource_coordinator::TabManager* tab_manager =
-      g_browser_process->GetTabManager();
   web_contents = browser()->tab_strip_model()->GetWebContentsAt(1);
-  EXPECT_TRUE(tab_manager->IsTabDiscarded(web_contents));
+  EXPECT_TRUE(resource_coordinator::TabLifecycleUnitExternal::FromWebContents(
+                  web_contents)
+                  ->IsDiscarded());
 
   // Make sure the returned tab is the one discarded and its discarded state is
   // correct.
@@ -1504,8 +1493,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardWithInvalidId) {
       discard.get(), base::StringPrintf("[%u]", tab_invalid_id), browser());
 
   // Discarded state should still be false as no tab was discarded.
-  EXPECT_FALSE(g_browser_process->GetTabManager()->IsTabDiscarded(
-      browser()->tab_strip_model()->GetWebContentsAt(1)));
+  EXPECT_FALSE(resource_coordinator::TabLifecycleUnitExternal::FromWebContents(
+                   browser()->tab_strip_model()->GetWebContentsAt(1))
+                   ->IsDiscarded());
 
   // Check error message.
   EXPECT_TRUE(base::MatchPattern(error, keys::kTabNotFoundError));
@@ -1526,15 +1516,15 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardWithoutId) {
   scoped_refptr<TabsDiscardFunction> discard(new TabsDiscardFunction());
   discard->set_extension(extension.get());
 
-  FastForwardAfterDiscardProtectionTime();
-
   // Run without passing an id.
   std::unique_ptr<base::DictionaryValue> result(utils::ToDictionary(
       utils::RunFunctionAndReturnSingleResult(discard.get(), "[]", browser())));
 
   // Confirms that TabManager sees the tab as discarded.
   web_contents = browser()->tab_strip_model()->GetWebContentsAt(1);
-  EXPECT_TRUE(g_browser_process->GetTabManager()->IsTabDiscarded(web_contents));
+  EXPECT_TRUE(resource_coordinator::TabLifecycleUnitExternal::FromWebContents(
+                  web_contents)
+                  ->IsDiscarded());
 
   // Make sure the returned tab is the one discarded and its discarded state is
   // correct.
@@ -1543,34 +1533,6 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardWithoutId) {
   EXPECT_TRUE(api_test_utils::GetBoolean(result.get(), "discarded"));
   // The result should be scrubbed.
   EXPECT_FALSE(result->FindKey("url"));
-}
-
-// Tests chrome.tabs.discard() without disabling protection time.
-IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardNoTabProtection) {
-  // Create an additional tab.
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(), GURL(url::kAboutBlankURL),
-      WindowOpenDisposition::NEW_BACKGROUND_TAB,
-      ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
-
-  // Set up the function with an extension.
-  scoped_refptr<const Extension> extension = ExtensionBuilder("Test").Build();
-  scoped_refptr<TabsDiscardFunction> discard(new TabsDiscardFunction());
-  discard->set_extension(extension.get());
-
-  // Run without passing an id. In this case the tab couldn't be discarded
-  // because of protection time.
-  std::string error =
-      utils::RunFunctionAndReturnError(discard.get(), "[]", browser());
-
-  // Discarded state should be false for both tabs as no tab was discarded.
-  EXPECT_FALSE(g_browser_process->GetTabManager()->IsTabDiscarded(
-      browser()->tab_strip_model()->GetWebContentsAt(1)));
-  EXPECT_FALSE(g_browser_process->GetTabManager()->IsTabDiscarded(
-      browser()->tab_strip_model()->GetWebContentsAt(0)));
-
-  // Check error message.
-  EXPECT_TRUE(base::MatchPattern(error, keys::kCannotFindTabToDiscard));
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, AutoDiscardableProperty) {

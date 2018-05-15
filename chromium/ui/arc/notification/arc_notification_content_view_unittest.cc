@@ -8,10 +8,15 @@
 #include <string>
 #include <utility>
 
+#include "ash/message_center/message_center_view.h"
 #include "ash/shell.h"
+#include "ash/system/status_area_widget.h"
+#include "ash/system/status_area_widget_test_helper.h"
+#include "ash/system/web_notification/web_notification_tray.h"
 #include "ash/test/ash_test_base.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/bind_test_util.h"
 #include "components/exo/buffer.h"
 #include "components/exo/keyboard.h"
 #include "components/exo/keyboard_delegate.h"
@@ -28,6 +33,7 @@
 #include "ui/arc/notification/arc_notification_surface.h"
 #include "ui/arc/notification/arc_notification_surface_manager_impl.h"
 #include "ui/arc/notification/arc_notification_view.h"
+#include "ui/arc/notification/mock_arc_notification_item.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/events/keycodes/dom/dom_code.h"
@@ -45,7 +51,6 @@ namespace arc {
 
 namespace {
 
-constexpr char kNotificationIdPrefix[] = "ARC_NOTIFICATION_";
 constexpr gfx::Rect kNotificationSurfaceBounds(100, 100, 300, 300);
 
 class MockKeyboardDelegate : public exo::KeyboardDelegate {
@@ -69,63 +74,6 @@ aura::Window* GetFocusedWindow() {
 
 }  // anonymous namespace
 
-class MockArcNotificationItem : public ArcNotificationItem {
- public:
-  MockArcNotificationItem(const std::string& notification_key)
-      : notification_key_(notification_key),
-        notification_id_(kNotificationIdPrefix + notification_key),
-        weak_factory_(this) {}
-
-  // Methods for testing.
-  size_t count_close() { return count_close_; }
-  base::WeakPtr<MockArcNotificationItem> GetWeakPtr() {
-    return weak_factory_.GetWeakPtr();
-  }
-
-  // Overriding methods for testing.
-  void Close(bool by_user) override { count_close_++; }
-  const gfx::ImageSkia& GetSnapshot() const override { return snapshot_; }
-  const std::string& GetNotificationKey() const override {
-    return notification_key_;
-  }
-  const std::string& GetNotificationId() const override {
-    return notification_id_;
-  }
-
-  // Overriding methods for returning dummy data or doing nothing.
-  void OnClosedFromAndroid() override {}
-  void Click() override {}
-  void ToggleExpansion() override {}
-  void OpenSettings() override {}
-  void AddObserver(Observer* observer) override {}
-  void RemoveObserver(Observer* observer) override {}
-  void IncrementWindowRefCount() override {}
-  void DecrementWindowRefCount() override {}
-  bool IsOpeningSettingsSupported() const override { return true; }
-  mojom::ArcNotificationExpandState GetExpandState() const override {
-    return mojom::ArcNotificationExpandState::FIXED_SIZE;
-  }
-  mojom::ArcNotificationShownContents GetShownContents() const override {
-    return mojom::ArcNotificationShownContents::CONTENTS_SHOWN;
-  }
-  gfx::Rect GetSwipeInputRect() const override { return gfx::Rect(); }
-  const base::string16& GetAccessibleName() const override {
-    return base::EmptyString16();
-  };
-  void OnUpdatedFromAndroid(mojom::ArcNotificationDataPtr data) override {}
-  bool IsManuallyExpandedOrCollapsed() const override { return false; }
-
- private:
-  std::string notification_key_;
-  std::string notification_id_;
-  gfx::ImageSkia snapshot_;
-  size_t count_close_ = 0;
-
-  base::WeakPtrFactory<MockArcNotificationItem> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(MockArcNotificationItem);
-};
-
 class DummyEvent : public ui::Event {
  public:
   DummyEvent() : Event(ui::ET_UNKNOWN, base::TimeTicks(), 0) {}
@@ -139,6 +87,8 @@ class ArcNotificationContentViewTest : public ash::AshTestBase {
 
   void SetUp() override {
     ash::AshTestBase::SetUp();
+
+    ash::MessageCenterView::disable_animation_for_testing = true;
 
     wm_helper_ = std::make_unique<exo::WMHelper>();
     exo::WMHelper::SetInstance(wm_helper_.get());
@@ -167,13 +117,14 @@ class ArcNotificationContentViewTest : public ash::AshTestBase {
     ash::AshTestBase::TearDown();
   }
 
-  void PressCloseButton() {
+  void PressCloseButton(ArcNotificationView* notification_view) {
     DummyEvent dummy_event;
     auto* control_buttons_view =
-        GetArcNotificationContentView()->control_buttons_view_;
+        &notification_view->content_view_->control_buttons_view_;
     ASSERT_TRUE(control_buttons_view);
     views::Button* close_button = control_buttons_view->close_button();
     ASSERT_NE(nullptr, close_button);
+    close_button->RequestFocus();
     control_buttons_view->ButtonPressed(close_button, dummy_event);
   }
 
@@ -193,8 +144,8 @@ class ArcNotificationContentViewTest : public ash::AshTestBase {
         static_cast<ArcNotificationView*>(
             message_center::MessageViewFactory::Create(notification, true)));
     notification_view->set_owned_by_client();
-    views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
 
+    views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
     params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
     params.context = ash::Shell::GetPrimaryRootWindow();
     auto wrapper_widget = std::make_unique<views::Widget>();
@@ -228,6 +179,9 @@ class ArcNotificationContentViewTest : public ash::AshTestBase {
   }
 
   Notification CreateNotification(MockArcNotificationItem* notification_item) {
+    message_center::RichNotificationData optional_fields;
+    optional_fields.settings_button_handler =
+        message_center::SettingsButtonHandler::DELEGATE;
     return Notification(
         message_center::NOTIFICATION_TYPE_CUSTOM,
         notification_item->GetNotificationId(), base::UTF8ToUTF16("title"),
@@ -235,7 +189,7 @@ class ArcNotificationContentViewTest : public ash::AshTestBase {
         GURL(),
         message_center::NotifierId(message_center::NotifierId::ARC_APPLICATION,
                                    "ARC_NOTIFICATION"),
-        message_center::RichNotificationData(),
+        optional_fields,
         new ArcNotificationDelegate(notification_item->GetWeakPtr()));
   }
 
@@ -249,8 +203,7 @@ class ArcNotificationContentViewTest : public ash::AshTestBase {
   message_center::NotificationControlButtonsView* GetControlButtonsView()
       const {
     DCHECK(GetArcNotificationContentView());
-    DCHECK(GetArcNotificationContentView()->control_buttons_view_);
-    return GetArcNotificationContentView()->control_buttons_view_;
+    return &GetArcNotificationContentView()->control_buttons_view_;
   }
   views::Widget* GetControlButtonsWidget() const {
     DCHECK(GetControlButtonsView()->GetWidget());
@@ -258,9 +211,7 @@ class ArcNotificationContentViewTest : public ash::AshTestBase {
   }
 
   ArcNotificationContentView* GetArcNotificationContentView() const {
-    views::View* view = notification_view_->contents_view_;
-    EXPECT_EQ(ArcNotificationContentView::kViewClassName, view->GetClassName());
-    return static_cast<ArcNotificationContentView*>(view);
+    return notification_view_->content_view_;
   }
   void ActivateArcNotification() {
     GetArcNotificationContentView()->Activate();
@@ -339,11 +290,66 @@ TEST_F(ArcNotificationContentViewTest, CloseButton) {
 
   EXPECT_TRUE(MessageCenter::Get()->FindVisibleNotificationById(
       notification_item->GetNotificationId()));
-  PressCloseButton();
+  PressCloseButton(notification_view());
   EXPECT_FALSE(MessageCenter::Get()->FindVisibleNotificationById(
       notification_item->GetNotificationId()));
 
   CloseNotificationView();
+}
+
+// Tests pressing close button when hosted in MessageCenterView.
+TEST_F(ArcNotificationContentViewTest, CloseButtonInMessageCenterView) {
+  std::string notification_key("notification id");
+
+  // Override MessageView factory to capture the created notification view in
+  // |notification_view|.
+  ArcNotificationView* notification_view = nullptr;
+  message_center::MessageViewFactory::SetCustomNotificationViewFactory(
+      base::BindLambdaForTesting(
+          [&notification_view](const message_center::Notification& notification)
+              -> std::unique_ptr<message_center::MessageView> {
+            auto* arc_delegate =
+                static_cast<ArcNotificationDelegate*>(notification.delegate());
+            std::unique_ptr<message_center::MessageView> created_view =
+                arc_delegate->CreateCustomMessageView(notification);
+            notification_view =
+                static_cast<ArcNotificationView*>(created_view.get());
+            return created_view;
+          }));
+
+  // Show MessageCenterView and activate its widget.
+  auto* notification_tray =
+      ash::StatusAreaWidgetTestHelper::GetStatusAreaWidget()
+          ->web_notification_tray();
+  notification_tray->ShowBubble(false /* show_by_click */);
+  notification_tray->GetBubbleView()
+      ->GetWidget()
+      ->widget_delegate()
+      ->set_can_activate(true);
+  notification_tray->GetBubbleView()->GetWidget()->Activate();
+
+  auto notification_item =
+      std::make_unique<MockArcNotificationItem>(notification_key);
+  PrepareSurface(notification_key);
+  Notification notification = CreateNotification(notification_item.get());
+
+  // Sets a close callback so that the underlying item is destroyed when close
+  // button is pressed. This simulates ArcNotificationItemImpl behavior.
+  notification_item->SetCloseCallback(base::BindLambdaForTesting(
+      [&notification_item]() { notification_item.reset(); }));
+
+  MessageCenter::Get()->AddNotification(
+      std::make_unique<Notification>(notification));
+  ASSERT_TRUE(notification_view);
+
+  // Cache notification id because |notification_item| will be gone when the
+  // close button is pressed.
+  const std::string notification_id = notification_item->GetNotificationId();
+  EXPECT_TRUE(
+      MessageCenter::Get()->FindVisibleNotificationById(notification_id));
+  PressCloseButton(notification_view);
+  EXPECT_FALSE(
+      MessageCenter::Get()->FindVisibleNotificationById(notification_id));
 }
 
 TEST_F(ArcNotificationContentViewTest, ReuseSurfaceAfterClosing) {

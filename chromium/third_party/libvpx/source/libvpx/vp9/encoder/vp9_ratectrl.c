@@ -100,8 +100,8 @@ static int kf_low = 400;
 #else
 static int gf_high = 2000;
 static int gf_low = 400;
-static int kf_high = 5000;
-static int kf_low = 400;
+static int kf_high = 4800;
+static int kf_low = 300;
 #endif
 
 // Functions to compute the active minq lookup table entries based on a
@@ -131,7 +131,7 @@ static void init_minq_luts(int *kf_low_m, int *kf_high_m, int *arfgf_low,
   for (i = 0; i < QINDEX_RANGE; i++) {
     const double maxq = vp9_convert_qindex_to_q(i, bit_depth);
     kf_low_m[i] = get_minq_index(maxq, 0.000001, -0.0004, 0.150, bit_depth);
-    kf_high_m[i] = get_minq_index(maxq, 0.0000021, -0.00125, 0.55, bit_depth);
+    kf_high_m[i] = get_minq_index(maxq, 0.0000021, -0.00125, 0.45, bit_depth);
 #ifdef AGGRESSIVE_VBR
     arfgf_low[i] = get_minq_index(maxq, 0.0000015, -0.0009, 0.275, bit_depth);
     inter[i] = get_minq_index(maxq, 0.00000271, -0.00113, 0.80, bit_depth);
@@ -393,12 +393,37 @@ void vp9_rc_init(const VP9EncoderConfig *oxcf, int pass, RATE_CONTROL *rc) {
   rc->baseline_gf_interval = (rc->min_gf_interval + rc->max_gf_interval) / 2;
 }
 
+static int check_buffer(VP9_COMP *cpi, int drop_mark) {
+  SVC *svc = &cpi->svc;
+  if (!cpi->use_svc || cpi->svc.framedrop_mode == LAYER_DROP) {
+    RATE_CONTROL *const rc = &cpi->rc;
+    return (rc->buffer_level <= drop_mark);
+  } else {
+    int i;
+    // For SVC in the constrained framedrop mode (svc->framedrop_mode =
+    // CONSTRAINED_LAYER_DROP): the condition on buffer (to drop frame) is
+    // checked on current and upper spatial layers.
+    for (i = svc->spatial_layer_id; i < svc->number_spatial_layers; ++i) {
+      const int layer = LAYER_IDS_TO_IDX(i, svc->temporal_layer_id,
+                                         svc->number_temporal_layers);
+      LAYER_CONTEXT *lc = &svc->layer_context[layer];
+      RATE_CONTROL *lrc = &lc->rc;
+      const int drop_mark_layer =
+          (int)(cpi->svc.framedrop_thresh[i] * lrc->optimal_buffer_level / 100);
+      if (!(lrc->buffer_level <= drop_mark_layer)) return 0;
+    }
+    return 1;
+  }
+}
+
 int vp9_rc_drop_frame(VP9_COMP *cpi) {
   const VP9EncoderConfig *oxcf = &cpi->oxcf;
   RATE_CONTROL *const rc = &cpi->rc;
-  if (!oxcf->drop_frames_water_mark ||
-      (is_one_pass_cbr_svc(cpi) &&
-       cpi->svc.spatial_layer_id > cpi->svc.first_spatial_layer_to_encode)) {
+  int drop_frames_water_mark = oxcf->drop_frames_water_mark;
+  if (cpi->use_svc)
+    drop_frames_water_mark =
+        cpi->svc.framedrop_thresh[cpi->svc.spatial_layer_id];
+  if (!drop_frames_water_mark) {
     return 0;
   } else {
     if (rc->buffer_level < 0) {
@@ -408,10 +433,10 @@ int vp9_rc_drop_frame(VP9_COMP *cpi) {
       // If buffer is below drop_mark, for now just drop every other frame
       // (starting with the next frame) until it increases back over drop_mark.
       int drop_mark =
-          (int)(oxcf->drop_frames_water_mark * rc->optimal_buffer_level / 100);
+          (int)(drop_frames_water_mark * rc->optimal_buffer_level / 100);
       if ((rc->buffer_level > drop_mark) && (rc->decimation_factor > 0)) {
         --rc->decimation_factor;
-      } else if (rc->buffer_level <= drop_mark && rc->decimation_factor == 0) {
+      } else if (check_buffer(cpi, drop_mark) && rc->decimation_factor == 0) {
         rc->decimation_factor = 1;
       }
       if (rc->decimation_factor > 0) {

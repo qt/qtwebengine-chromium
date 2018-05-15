@@ -13,7 +13,7 @@
 #include "content/common/content_export.h"
 #include "content/common/navigation_params.mojom.h"
 #include "content/public/browser/navigation_controller.h"
-#include "third_party/WebKit/public/web/WebTriggeringEventInfo.h"
+#include "third_party/blink/public/web/web_triggering_event_info.h"
 #include "ui/base/window_open_disposition.h"
 
 class GURL;
@@ -159,9 +159,11 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
 
   // Used to start a new renderer-initiated navigation, following a
   // BeginNavigation IPC from the renderer.
-  virtual void OnBeginNavigation(FrameTreeNode* frame_tree_node,
-                                 const CommonNavigationParams& common_params,
-                                 mojom::BeginNavigationParamsPtr begin_params);
+  virtual void OnBeginNavigation(
+      FrameTreeNode* frame_tree_node,
+      const CommonNavigationParams& common_params,
+      mojom::BeginNavigationParamsPtr begin_params,
+      scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory);
 
   // Used to restart a navigation that was thought to be same-document in
   // cross-document mode.
@@ -199,7 +201,8 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
   // With sufficiently bad interleaving of IPCs, this may no longer be the
   // pending NavigationEntry, in which case the pending NavigationEntry will not
   // be discarded.
-  virtual void DiscardPendingEntryIfNeeded(int expected_pending_entry_id) {}
+  virtual void DiscardPendingEntryIfNeeded(int expected_pending_entry_id,
+                                           bool is_download) {}
 
  protected:
   friend class base::RefCounted<Navigator>;

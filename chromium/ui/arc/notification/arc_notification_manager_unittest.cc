@@ -8,7 +8,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "components/arc/arc_bridge_service.h"
@@ -85,6 +84,7 @@ class ArcNotificationManagerTest : public testing::Test {
     data->key = key;
     data->title = "TITLE";
     data->message = "MESSAGE";
+    data->package_name = "PACKAGE_NAME";
 
     arc_notification_manager()->OnNotificationPosted(std::move(data));
 

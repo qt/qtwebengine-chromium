@@ -185,7 +185,6 @@ void CXFA_FFDocView::UpdateDocView() {
 
   m_bLayoutEvent = false;
   m_CalculateNodes.clear();
-  RunInvalidate();
   UnlockUpdate();
 }
 
@@ -262,44 +261,40 @@ CXFA_FFDocView::CreateReadyNodeIterator() {
                    : nullptr;
 }
 
-bool CXFA_FFDocView::SetFocus(CXFA_FFWidget* hWidget) {
-  CXFA_FFWidget* pNewFocus = hWidget;
-  if (m_pOldFocusWidget == pNewFocus)
+bool CXFA_FFDocView::SetFocus(CXFA_FFWidget* pNewFocus) {
+  CXFA_FFWidget* pOldFocus = m_pFocusWidget.Get();
+
+  if (pOldFocus == pNewFocus)
     return false;
 
-  CXFA_FFWidget* pOldFocus = m_pOldFocusWidget.Get();
-  m_pOldFocusWidget = pNewFocus;
   if (pOldFocus) {
-    if (m_pFocusWidget != m_pOldFocusWidget &&
-        (pOldFocus->GetStatus() & XFA_WidgetStatus_Focused)) {
-      m_pFocusWidget = pOldFocus;
-      pOldFocus->OnKillFocus(pNewFocus);
-    } else if ((pOldFocus->GetStatus() & XFA_WidgetStatus_Visible)) {
+    if (!(pOldFocus->GetStatus() & XFA_WidgetStatus_Focused) &&
+        (pOldFocus->GetStatus() & XFA_WidgetStatus_Visible)) {
       if (!pOldFocus->IsLoaded())
         pOldFocus->LoadWidget();
 
-      pOldFocus->OnSetFocus(m_pFocusWidget.Get());
-      m_pFocusWidget = pOldFocus;
-      pOldFocus->OnKillFocus(pNewFocus);
+      pOldFocus->OnSetFocus(pOldFocus);
     }
-  }
-  if (m_pFocusWidget == m_pOldFocusWidget)
-    return false;
 
-  pNewFocus = m_pOldFocusWidget.Get();
-  if (pNewFocus && (pNewFocus->GetStatus() & XFA_WidgetStatus_Visible)) {
-    if (!pNewFocus->IsLoaded())
-      pNewFocus->LoadWidget();
-    pNewFocus->OnSetFocus(m_pFocusWidget.Get());
+    pOldFocus->OnKillFocus(pNewFocus);
   }
+
   if (pNewFocus) {
+    if (pNewFocus->GetStatus() & XFA_WidgetStatus_Visible) {
+      if (!pNewFocus->IsLoaded())
+        pNewFocus->LoadWidget();
+
+      pNewFocus->OnSetFocus(pOldFocus);
+    }
+
     CXFA_Node* node = pNewFocus->GetNode();
     m_pFocusNode = node->IsWidgetReady() ? node : nullptr;
+    m_pFocusWidget = pNewFocus;
   } else {
     m_pFocusNode = nullptr;
+    m_pFocusWidget = nullptr;
   }
-  m_pFocusWidget = pNewFocus;
-  m_pOldFocusWidget = m_pFocusWidget;
+
   return true;
 }
 
@@ -324,7 +319,6 @@ void CXFA_FFDocView::DeleteLayoutItem(CXFA_FFWidget* pWidget) {
 
   m_pFocusNode = nullptr;
   m_pFocusWidget = nullptr;
-  m_pOldFocusWidget = nullptr;
 }
 
 static int32_t XFA_ProcessEvent(CXFA_FFDocView* pDocView,
@@ -442,22 +436,9 @@ void CXFA_FFDocView::OnPageEvent(CXFA_ContainerLayoutItem* pSender,
   m_pDoc->GetDocEnvironment()->PageViewEvent(pFFPageView, dwEvent);
 }
 
-
-void CXFA_FFDocView::AddInvalidateRect(CXFA_FFPageView* pPageView,
-                                       const CFX_RectF& rtInvalidate) {
-  if (m_mapPageInvalidate[pPageView]) {
-    m_mapPageInvalidate[pPageView]->Union(rtInvalidate);
-    return;
-  }
-
-  m_mapPageInvalidate[pPageView] = pdfium::MakeUnique<CFX_RectF>(rtInvalidate);
-}
-
-void CXFA_FFDocView::RunInvalidate() {
-  for (const auto& pair : m_mapPageInvalidate)
-    m_pDoc->GetDocEnvironment()->InvalidateRect(pair.first, *pair.second);
-
-  m_mapPageInvalidate.clear();
+void CXFA_FFDocView::InvalidateRect(CXFA_FFPageView* pPageView,
+                                    const CFX_RectF& rtInvalidate) {
+  m_pDoc->GetDocEnvironment()->InvalidateRect(pPageView, rtInvalidate);
 }
 
 bool CXFA_FFDocView::RunLayout() {

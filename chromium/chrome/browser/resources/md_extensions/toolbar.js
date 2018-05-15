@@ -59,12 +59,25 @@ cr.define('extensions', function() {
        * @private
        */
       toastLabel_: String,
+
+      /**
+       * Prevents initiating update while update is in progress.
+       * @private
+       */
+      isUpdating_: {type: Boolean, value: false}
     },
 
     behaviors: [I18nBehavior],
 
     hostAttributes: {
       role: 'banner',
+    },
+
+    /** @override */
+    detached: function() {
+      const openToastElement = this.$$('cr-toast[open]');
+      if (openToastElement)
+        openToastElement.hide();
     },
 
     /**
@@ -136,11 +149,16 @@ cr.define('extensions', function() {
 
     /** @private */
     onUpdateNowTap_: function() {
-      const updateButton = this.$.updateNow;
-      assert(!updateButton.disabled);
-      updateButton.disabled = true;
+      // If already updating, do not initiate another update.
+      if (this.isUpdating_)
+        return;
+
+      this.isUpdating_ = true;
       const toastElement = this.$$('cr-toast');
       this.toastLabel_ = this.i18n('toolbarUpdatingToast');
+
+      // Keep the toast open indefinitely.
+      toastElement.duration = 0;
       toastElement.show();
       this.delegate.updateAllExtensions()
           .then(() => {
@@ -148,11 +166,12 @@ cr.define('extensions', function() {
             const doneText = this.i18n('toolbarUpdateDone');
             this.fire('iron-announce', {text: doneText});
             this.toastLabel_ = doneText;
-            toastElement.show();
-            updateButton.disabled = false;
+            toastElement.show(3000);
+            this.isUpdating_ = false;
           })
           .catch(function() {
-            updateButton.disabled = false;
+            toastElement.hide();
+            this.isUpdating_ = false;
           });
     },
   });

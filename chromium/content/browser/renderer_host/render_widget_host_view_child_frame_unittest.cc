@@ -9,7 +9,6 @@
 #include <utility>
 
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/test/scoped_feature_list.h"
@@ -28,11 +27,13 @@
 #include "content/browser/renderer_host/frame_connector_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/common/frame_resize_params.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/common/content_features.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "content/test/fake_renderer_compositor_frame_sink.h"
 #include "content/test/mock_render_widget_host_delegate.h"
 #include "content/test/mock_widget_impl.h"
@@ -60,8 +61,10 @@ class MockFrameConnectorDelegate : public FrameConnectorDelegate {
     last_surface_info_ = surface_info;
   }
 
-  void SetViewportIntersection(const gfx::Rect& intersection) {
+  void SetViewportIntersection(const gfx::Rect& intersection,
+                               const gfx::Rect& compositor_visible_rect) {
     viewport_intersection_rect_ = intersection;
+    compositor_visible_rect_ = compositor_visible_rect;
   }
 
   RenderWidgetHostViewBase* GetParentRenderWidgetHostView() override {
@@ -79,9 +82,7 @@ class MockFrameConnectorDelegate : public FrameConnectorDelegate {
 
 class RenderWidgetHostViewChildFrameTest : public testing::Test {
  public:
-  RenderWidgetHostViewChildFrameTest()
-      : scoped_task_environment_(
-            base::test::ScopedTaskEnvironment::MainThreadType::UI) {}
+  RenderWidgetHostViewChildFrameTest() {}
 
   void SetUp() override {
     SetUpEnvironment(false /* use_zoom_for_device_scale_factor */);
@@ -147,12 +148,8 @@ class RenderWidgetHostViewChildFrameTest : public testing::Test {
     return view_->last_received_local_surface_id_;
   }
 
-  void ClearCompositorSurfaceIfNecessary() {
-    view_->ClearCompositorSurfaceIfNecessary();
-  }
-
  protected:
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
+  TestBrowserThreadBundle thread_bundle_;
 
   std::unique_ptr<BrowserContext> browser_context_;
   MockRenderWidgetHostDelegate delegate_;
@@ -236,46 +233,12 @@ TEST_F(RenderWidgetHostViewChildFrameTest, SwapCompositorFrame) {
   }
 }
 
-// Check that the same local surface id can be used after frame eviction.
-TEST_F(RenderWidgetHostViewChildFrameTest, FrameEviction) {
-  // TODO: fix for mash.
-  if (base::FeatureList::IsEnabled(features::kMash))
-    return;
-
-  gfx::Size view_size(100, 100);
-  gfx::Rect view_rect(view_size);
-  float scale_factor = 1.f;
-
-  view_->SetSize(view_size);
-  view_->Show();
-
-  // Submit a frame.
-  view_->SubmitCompositorFrame(
-      kArbitraryLocalSurfaceId,
-      CreateDelegatedFrame(scale_factor, view_size, view_rect), nullptr);
-
-  EXPECT_EQ(kArbitraryLocalSurfaceId, GetLocalSurfaceId());
-  EXPECT_TRUE(view_->has_frame());
-
-  // Evict the frame. has_frame() should return false.
-  ClearCompositorSurfaceIfNecessary();
-  EXPECT_EQ(kArbitraryLocalSurfaceId, GetLocalSurfaceId());
-  EXPECT_FALSE(view_->has_frame());
-
-  // Submit another frame with the same local surface id. The same id should be
-  // usable.
-  view_->SubmitCompositorFrame(
-      kArbitraryLocalSurfaceId,
-      CreateDelegatedFrame(scale_factor, view_size, view_rect), nullptr);
-  EXPECT_EQ(kArbitraryLocalSurfaceId, GetLocalSurfaceId());
-  EXPECT_TRUE(view_->has_frame());
-}
-
 // Tests that the viewport intersection rect is dispatched to the RenderWidget
 // whenever screen rects are updated.
 TEST_F(RenderWidgetHostViewChildFrameTest, ViewportIntersectionUpdated) {
   gfx::Rect intersection_rect(5, 5, 100, 80);
-  test_frame_connector_->SetViewportIntersection(intersection_rect);
+  test_frame_connector_->SetViewportIntersection(intersection_rect,
+                                                 intersection_rect);
 
   MockRenderProcessHost* process =
       static_cast<MockRenderProcessHost*>(widget_host_->GetProcess());
@@ -287,9 +250,11 @@ TEST_F(RenderWidgetHostViewChildFrameTest, ViewportIntersectionUpdated) {
       process->sink().GetUniqueMessageMatching(
           ViewMsg_SetViewportIntersection::ID);
   ASSERT_TRUE(intersection_update);
-  std::tuple<gfx::Rect> sent_rect;
-  ViewMsg_SetViewportIntersection::Read(intersection_update, &sent_rect);
-  EXPECT_EQ(intersection_rect, std::get<0>(sent_rect));
+  std::tuple<gfx::Rect, gfx::Rect> sent_rects;
+
+  ViewMsg_SetViewportIntersection::Read(intersection_update, &sent_rects);
+  EXPECT_EQ(intersection_rect, std::get<0>(sent_rects));
+  EXPECT_EQ(intersection_rect, std::get<1>(sent_rects));
 }
 
 // Tests specific to non-scroll-latching behaviour.
@@ -386,9 +351,11 @@ TEST_F(RenderWidgetHostViewChildFrameTest, WasResizedOncePerChange) {
 
   process->sink().ClearMessages();
 
-  test_frame_connector_->UpdateResizeParams(screen_space_rect,
-                                            compositor_viewport_pixel_size,
-                                            ScreenInfo(), 1u, surface_id);
+  FrameResizeParams resize_params;
+  resize_params.screen_space_rect = screen_space_rect;
+  resize_params.local_frame_size = compositor_viewport_pixel_size;
+  resize_params.auto_resize_sequence_number = 1u;
+  test_frame_connector_->UpdateResizeParams(surface_id, resize_params);
 
   ASSERT_EQ(1u, process->sink().message_count());
 

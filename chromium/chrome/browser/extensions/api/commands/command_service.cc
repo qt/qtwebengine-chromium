@@ -13,7 +13,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/extensions/api/commands/commands.h"
 #include "chrome/browser/extensions/extension_commands_global_registry.h"
 #include "chrome/browser/extensions/extension_keybinding_registry.h"
@@ -52,10 +51,6 @@ const char kSuggestedKey[] = "suggested_key";
 // actually assigned.
 const char kSuggestedKeyWasAssigned[] = "was_assigned";
 
-// A preference that indicates that the initial keybindings for the given
-// extension have been set.
-const char kInitialBindingsHaveBeenAssigned[] = "initial_keybindings_set";
-
 std::string GetPlatformKeybindingKeyForAccelerator(
     const ui::Accelerator& accelerator, const std::string& extension_id) {
   std::string key = Command::CommandPlatform() + ":" +
@@ -82,23 +77,6 @@ std::string StripCurrentPlatform(const std::string& key) {
   base::ReplaceFirstSubstringAfterOffset(
       &result, 0, Command::CommandPlatform() + ":", base::StringPiece());
   return result;
-}
-
-void SetInitialBindingsHaveBeenAssigned(
-    ExtensionPrefs* prefs, const std::string& extension_id) {
-  prefs->UpdateExtensionPref(extension_id, kInitialBindingsHaveBeenAssigned,
-                             std::make_unique<base::Value>(true));
-}
-
-bool InitialBindingsHaveBeenAssigned(
-    const ExtensionPrefs* prefs, const std::string& extension_id) {
-  bool assigned = false;
-  if (!prefs || !prefs->ReadPrefAsBoolean(extension_id,
-                                          kInitialBindingsHaveBeenAssigned,
-                                          &assigned))
-    return false;
-
-  return assigned;
 }
 
 // Merge |suggested_key_prefs| into the saved preferences for the extension. We
@@ -449,8 +427,7 @@ bool CommandService::RequestsBookmarkShortcutOverride(
   return RemovesBookmarkShortcut(extension) &&
          GetSuggestedExtensionCommand(
              extension->id(),
-             chrome::GetPrimaryChromeAcceleratorForCommandId(IDC_BOOKMARK_PAGE),
-             nullptr);
+             chrome::GetPrimaryChromeAcceleratorForBookmarkPage(), nullptr);
 }
 
 void CommandService::AddObserver(Observer* observer) {
@@ -533,11 +510,6 @@ void CommandService::AssignKeybindings(const Extension* extension) {
   if (!commands)
     return;
 
-  ExtensionPrefs* extension_prefs = ExtensionPrefs::Get(profile_);
-  // TODO(wittman): remove use of this pref after M37 hits stable.
-  if (!InitialBindingsHaveBeenAssigned(extension_prefs, extension->id()))
-    SetInitialBindingsHaveBeenAssigned(extension_prefs, extension->id());
-
   for (CommandMap::const_iterator iter = commands->begin();
        iter != commands->end(); ++iter) {
     const Command command = iter->second;
@@ -609,7 +581,7 @@ bool CommandService::CanAutoAssign(const Command &command,
     // Not a global command, check if Chrome shortcut and whether
     // we can override it.
     if (command.accelerator() ==
-        chrome::GetPrimaryChromeAcceleratorForCommandId(IDC_BOOKMARK_PAGE) &&
+            chrome::GetPrimaryChromeAcceleratorForBookmarkPage() &&
         CommandService::RemovesBookmarkShortcut(extension)) {
       // If this check fails it either means we have an API to override a
       // key that isn't a ChromeAccelerator (and the API can therefore be

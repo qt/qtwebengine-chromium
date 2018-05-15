@@ -19,6 +19,7 @@
 namespace gl
 {
 class Framebuffer;
+struct ImageIndex;
 }
 
 namespace rx
@@ -26,6 +27,7 @@ namespace rx
 
 class FramebufferGL;
 class FunctionsGL;
+class RenderbufferGL;
 class StateManagerGL;
 class TextureGL;
 struct WorkaroundsGL;
@@ -40,23 +42,23 @@ class BlitGL : angle::NonCopyable
 
     gl::Error copyImageToLUMAWorkaroundTexture(const gl::Context *context,
                                                GLuint texture,
-                                               GLenum textureType,
-                                               GLenum target,
+                                               gl::TextureType textureType,
+                                               gl::TextureTarget target,
                                                GLenum lumaFormat,
                                                size_t level,
                                                const gl::Rectangle &sourceArea,
                                                GLenum internalFormat,
-                                               const gl::Framebuffer *source);
+                                               gl::Framebuffer *source);
 
     gl::Error copySubImageToLUMAWorkaroundTexture(const gl::Context *context,
                                                   GLuint texture,
-                                                  GLenum textureType,
-                                                  GLenum target,
+                                                  gl::TextureType textureType,
+                                                  gl::TextureTarget target,
                                                   GLenum lumaFormat,
                                                   size_t level,
                                                   const gl::Offset &destOffset,
                                                   const gl::Rectangle &sourceArea,
-                                                  const gl::Framebuffer *source);
+                                                  gl::Framebuffer *source);
 
     gl::Error blitColorBufferWithShader(const gl::Framebuffer *source,
                                         const gl::Framebuffer *dest,
@@ -64,29 +66,29 @@ class BlitGL : angle::NonCopyable
                                         const gl::Rectangle &destArea,
                                         GLenum filter);
 
-    gl::Error copySubTexture(const gl::Context *context,
-                             TextureGL *source,
-                             size_t sourceLevel,
-                             GLenum sourceComponentType,
-                             TextureGL *dest,
-                             GLenum destTarget,
-                             size_t destLevel,
-                             GLenum destComponentType,
-                             const gl::Extents &sourceSize,
-                             const gl::Rectangle &sourceArea,
-                             const gl::Offset &destOffset,
-                             bool needsLumaWorkaround,
-                             GLenum lumaFormat,
-                             bool unpackFlipY,
-                             bool unpackPremultiplyAlpha,
-                             bool unpackUnmultiplyAlpha);
+    gl::ErrorOrResult<bool> copySubTexture(const gl::Context *context,
+                                           TextureGL *source,
+                                           size_t sourceLevel,
+                                           GLenum sourceComponentType,
+                                           TextureGL *dest,
+                                           gl::TextureTarget destTarget,
+                                           size_t destLevel,
+                                           GLenum destComponentType,
+                                           const gl::Extents &sourceSize,
+                                           const gl::Rectangle &sourceArea,
+                                           const gl::Offset &destOffset,
+                                           bool needsLumaWorkaround,
+                                           GLenum lumaFormat,
+                                           bool unpackFlipY,
+                                           bool unpackPremultiplyAlpha,
+                                           bool unpackUnmultiplyAlpha);
 
     gl::Error copySubTextureCPUReadback(const gl::Context *context,
                                         TextureGL *source,
                                         size_t sourceLevel,
                                         GLenum sourceComponentType,
                                         TextureGL *dest,
-                                        GLenum destTarget,
+                                        gl::TextureTarget destTarget,
                                         size_t destLevel,
                                         GLenum destFormat,
                                         GLenum destType,
@@ -96,13 +98,22 @@ class BlitGL : angle::NonCopyable
                                         bool unpackPremultiplyAlpha,
                                         bool unpackUnmultiplyAlpha);
 
-    gl::Error copyTexSubImage(TextureGL *source,
-                              size_t sourceLevel,
-                              TextureGL *dest,
-                              GLenum destTarget,
-                              size_t destLevel,
-                              const gl::Rectangle &sourceArea,
-                              const gl::Offset &destOffset);
+    gl::ErrorOrResult<bool> copyTexSubImage(TextureGL *source,
+                                            size_t sourceLevel,
+                                            TextureGL *dest,
+                                            gl::TextureTarget destTarget,
+                                            size_t destLevel,
+                                            const gl::Rectangle &sourceArea,
+                                            const gl::Offset &destOffset);
+
+    gl::ErrorOrResult<bool> clearRenderableTexture(TextureGL *source,
+                                                   GLenum sizedInternalFormat,
+                                                   int numTextureLayers,
+                                                   const gl::ImageIndex &imageIndex);
+
+    gl::Error clearRenderbuffer(RenderbufferGL *source, GLenum sizedInternalFormat);
+
+    gl::Error clearFramebuffer(FramebufferGL *source);
 
     gl::Error initializeResources();
 

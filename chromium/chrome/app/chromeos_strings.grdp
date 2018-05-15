@@ -119,6 +119,10 @@
     Cancel
   </message>
 
+  <!-- MultiDevice setup dialog. -->
+  <message name="IDS_MULTIDEVICE_SETUP_DIALOG_TITLE" desc="Title for the MultiDevice setup dialog, which allows users to enable features which involve communication between multiple devices (e.g., a Chromebook and a phone).">
+    MultiDevice Setup
+  </message>
 
   <!-- File Manager -->
   <message name="IDS_FILE_SYSTEM_PROVIDER_UNRESPONSIVE_WARNING" desc="A warning shown in a notification that an operation is taking longer than expected.">
@@ -322,10 +326,10 @@
    <ph name="LINE_BREAKS">&lt;br/&gt;&lt;br/&gt;</ph>
    Removing your device while it is in use may cause data loss.  Please wait until the operation is over, then eject the device using the Files app.
   </message>
-  <message name="IDS_FILE_BROWSER_UNMOUNT_PROVIDED_FAILED" desc="Title of the error dialog when unmount operation for a volume provided by an extension failed.">
-   <ph name="BEGIN_BOLD">&lt;b&gt;</ph>Cannot unmount volume<ph name="END_BOLD">&lt;/b&gt;</ph>
+  <message name="IDS_FILE_BROWSER_UNMOUNT_PROVIDED_FAILED" desc="Title of the error dialog when unmount operation for a volume provided by an extension failed. One of the most typical use case is an archive (i.e. ZIP) file mounted as a virtual disk. However, arbitrary Chrome apps can mount volumes. So we should not assume this is an archive file.">
+   <ph name="BEGIN_BOLD">&lt;b&gt;</ph>Can't disconnect from an archive or virtual disk<ph name="END_BOLD">&lt;/b&gt;</ph>
    <ph name="LINE_BREAKS">&lt;br/&gt;&lt;br/&gt;</ph>
-   The volume is busy. Please close all the opened files from it, then try again later.
+   Close all files on the archive or virtual disk, then try again.
   </message>
   <message name="IDS_FILE_BROWSER_MOUNT_ARCHIVE" desc="Title of the action for mounting an archive file to work with its contents.">
     Open
@@ -556,7 +560,7 @@
     Open with...
   </message>
   <message name="IDS_FILE_BROWSER_MORE_ACTIONS_BUTTON_LABEL" desc="Menu item label, showing dialog to choose extension to open/share/pack/etc... selected files or directories.">
-    More actions...
+    More actions
   </message>
   <message name="IDS_FILE_BROWSER_OPEN_WITH_VERB_BUTTON_LABEL" desc="Verb that describe the action of opening one or more files or directories with the given extension.">
     Open with <ph name="EXTENSION_NAME">$1<ex>Gallery</ex></ph>
@@ -888,16 +892,16 @@
     Album
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_AUDIO_INFO" desc="Category label for audio file info.">
-    Audio Info
+    Audio info
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_CODEC" desc="Label for video codec.">
     Codec
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_CREATED_BY" desc="Label for who created the file.">
-    Created By
+    Created by
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_CREATION_TIME" desc="Label for file creation time.">
-    Created Time
+    Created time
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_DIMENSION" desc="Label for image dimensions.">
     Dimensions
@@ -906,10 +910,10 @@
     Duration
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_EXIF_DEVICE_MODEL" desc="Label for the device model which created the image.">
-    Device Model
+    Device model
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_EXIF_DEVICE_SETTINGS" desc="Label for the device settings (exif's F number, exposure time, focal length and ISO speed rating) metadata.">
-    Device Settings
+    Device settings
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_EXIF_GEOGRAPHY" desc="Label for the latitude and the longitude where the image was taken.">
     Geography
@@ -917,20 +921,20 @@
   <message name="IDS_FILE_BROWSER_METADATA_BOX_FILE_PATH" desc="Label for file path.">
     Path
   </message>
-  <message name="IDS_FILE_BROWSER_METADATA_BOX_FILE_SIZE" desc="Label fo file size.">
+  <message name="IDS_FILE_BROWSER_METADATA_BOX_FILE_SIZE" desc="Label for file size.">
     Size
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_FRAME_RATE" desc="Label for video frame rate.">
-    Frame Rate
+    Frame rate
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_GENERAL_INFO" desc="Category label for general file info.">
-    General Info
+    General info
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_GENRE" desc="Label for audio genre.">
     Genre
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_IMAGE_INFO" desc="Category label for image file info.">
-    Image Info
+    Image info
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_MEDIA_ARTIST" desc="Label for media artist.">
     Artist
@@ -942,13 +946,13 @@
     Title
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_MODIFICATION_TIME" desc="Label for file modification time.">
-    Modified Time
+    Modified time
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_MODIFIED_BY" desc="Label for who modified the file.">
-    Modified By
+    Modified by
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_PAGE_COUNT" desc="Label for pdf page count.">
-    Page Count
+    Page count
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_SOURCE" desc="Label for the device used to capture the image.">
     Source
@@ -957,10 +961,10 @@
     Track
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_VIDEO_INFO" desc="Category label for video file info.">
-    Video Info
+    Video info
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_YEAR_RECORDED" desc="Label for audio recorded year.">
-    Year Recorded
+    Year recorded
   </message>
   <message name="IDS_FILE_BROWSER_CALCULATING_SIZE" desc="Message informing the user that total items size is being calculated.">
     Calculating size
@@ -2104,7 +2108,7 @@
     Help
   </message>
   <message name="IDS_LOGIN_NEEDS_DIRCRYPTO_MIGRATION_BANNER" desc="Banner text for users that need to migrate their data to use dircrypto.">
-    You've got a new OS update. Sign in to get started.
+    A critical update is ready to install. Sign in to get started.
   </message>
   <message name="IDS_LOGIN_NEW_LOCK_SCREEN_NOTE_BUTTON_TITLE" desc="Title for the button on the Chrome OS lock screen that launches an app for taking notes (the action of creating a new note is delegated to the app). The string is primarily intended to be spoken out by accessibility tools - the button is represented by an icon in the lock screen UI.">
     Create new note
@@ -3468,6 +3472,9 @@
   <message name="IDS_LOGIN_ERROR_TITLE" desc="A title of screen containing a message about login error, like proxy error or corruption of the local state.">
     Oops, something went wrong with signing in
   </message>
+  <message name="IDS_LOGIN_ERROR_DETACHABLE_BASE_CHANGED" desc="Text for error dialog shown on the login screen when a detachable base different than the base last used by the user is attached.">
+        A different keyboard has been connected since you last entered your password. It may be attempting to steal your keystrokes.
+      </message>
   <message name="IDS_LOGIN_PROXY_ERROR_MESSAGE" desc="An offline message shown when a proxy error has appeared.">
     The sign-in page failed to load using the current proxy settings. Please <ph name="GAIA_RELOAD_LINK_START">$1<ex>&gt;a&lt;</ex></ph>try to sign in again<ph name="GAIA_RELOAD_LINK_END">$2<ex>&gt;/a&lt;</ex></ph>, or use different <ph name="PROXY_SETTINGS_LINK_START">$3<ex>&gt;a&lt;</ex></ph>proxy settings<ph name="PROXY_SETTINGS_LINK_END">$4<ex>&gt;/a&lt;</ex></ph>.
   </message>
@@ -3576,10 +3583,10 @@
 
   <!-- Encryption migration dialog -->
   <message name="IDS_ENCRYPTION_MIGRATION_READY_TITLE" desc="Title shown in encryption migration screen, which asks the user to install an OS update.">
-    Install OS update
+    Install critical update
   </message>
   <message name="IDS_ENCRYPTION_MIGRATION_READY_DESCRIPTION" desc="Description shown in encryption migration screen, which asks the user to install an OS update.">
-    To download and use Android apps, first you need to install an update. While your device is updating, you can’t use it. Your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> will restart after installation completes.
+    To download and use Android apps, first you need to install this required update. While your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> is updating, you can’t use it. After installation completes, your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> will restart.
   </message>
   <message name="IDS_ENCRYPTION_MIGRATION_MIGRATING_TITLE" desc="Title shown in encryption migration screen when the migration is ongoing.">
     Installing OS update
@@ -4655,10 +4662,10 @@
     Done
   </message>
   <message name="IDS_ARC_MIGRATE_ENCRYPTION_NOTIFICATION_TITLE" desc="Title of the notification to navigate the user to first update the device encryption before running Android apps.">
-    Install OS update
+    Install critical update
   </message>
   <message name="IDS_ARC_MIGRATE_ENCRYPTION_NOTIFICATION_MESSAGE" desc="Main message of the notification to navigate the user to first update the device encryption before running Android apps.">
-    To use Android apps, sign in again and update.
+    To use Android apps and keep your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> working properly, sign in again and update.
   </message>
   <message name="IDS_ARC_MIGRATE_ENCRYPTION_NOTIFICATION_LOW_BATTERY_MESSAGE" desc="Main message of the notification to navigate the user to first update the device encryption before running Android apps.">
     To use Android apps, charge &amp; update your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>.
@@ -4671,6 +4678,15 @@
   </message>
   <message name="IDS_ARC_MIGRATE_ENCRYPTION_SUCCESS_MESSAGE" desc="Message of the toast shown on the first sign-in after the successfully completed migration needed for using Android apps.">
     You can now use Android apps.
+  </message>
+  <message name="IDS_ARC_USB_PERMISSION_TITLE" desc="Titlebar of Android app USB permissions prompt window">
+    Confirm USB Permission
+  </message>
+  <message name="IDS_ARC_USB_SCAN_DEVICE_LIST_PERMISSION_HEADING" desc="Heading text in the content area of the Android app scan device list permission prompt. Tells the user the app will be able to scan attached USB device list if confirmed.">
+    Allow "<ph name="APP_NAME">$1<ex>Gmail Checker</ex></ph>" to get the list of your attached USB devices?
+  </message>
+  <message name="IDS_ARC_USB_ACCESS_PERMISSION_HEADING" desc="Heading text in the content area of the Android app USB device access permission prompt. Tells the user the app will be able to access the usb device if confirmed.">
+    Allow "<ph name="APP_NAME">$1<ex>Gmail Checker</ex></ph>" to access:
   </message>
   <message name="IDS_VOICE_INTERACTION_VALUE_PROP_LOADING" desc="Loading message of the voice interaction value prop dialog.">
     Loading Google Assistant...
@@ -4792,6 +4808,12 @@
   <message name="IDS_PIN_UNLOCK_FEATURE_NOTIFIER_NAME" desc="The name of PIN unlock feature notifier that is a system component">
     PIN Unlock Feature
   </message>
+  <message name="IDS_PIN_UNLOCK_MIGRATION_PROMPT" desc="String shown in a notification asking the user to re-enter their PIN so it can be used in sign-in.">
+    Re-enter your PIN to use it to sign in to your device.
+  </message>
+  <message name="IDS_PIN_UNLOCK_MIGRATION_PROMPT_CONTINUE" desc="Continue button in notification prompt.">
+    Continue
+  </message>
 
   <message name="IDS_WIFI_SCANNING_MESSAGE" desc="Scanning for wifi networks">
     Searching for Wi-Fi networks...
@@ -4822,7 +4844,7 @@
   <message name="IDS_SCREENSHOT_NOTIFICATION_BUTTON_COPY_TO_CLIPBOARD" desc="The button label for the screenshot notification which copies the screenshot image to clipboard on click.">
     Copy to clipboard
   </message>
-  <message name="IDS_SCREENSHOT_NOTIFICATION_BUTTON_ANNOTATE" desc="The label for the screenshot notification button that opens the note-taking app to annotate the screenhsot.">
+  <message name="IDS_SCREENSHOT_NOTIFICATION_BUTTON_ANNOTATE" desc="The label for the screenshot notification button that opens the note-taking app to annotate the screenshot.">
     Annotate image
   </message>
 
@@ -4842,6 +4864,17 @@
     Lock screen notes are automatically saved to <ph name="LOCK_SCREEN_APP_NAME">$1<ex>Lock Screen Enabled App</ex></ph>. Your most recent note will remain on the lock screen.
   </message>
 
+  <!-- Launcher Searchable Chrome OS internal apps -->
+  <message name="IDS_INTERNAL_APP_KEYBOARD_SHORTCUT_VIEWER" desc="The name of keyboard shortcut viewer app.">
+    Shortcuts
+  </message>
+  <message name="IDS_LAUNCHER_SEARCHABLE_KEYBOARD_SHORTCUT_VIEWER" desc="The string can be used to search keyboard shortcut viewer app.">
+    Keyboard Shortcut Helper
+  </message>
+  <message name="IDS_INTERNAL_APP_SETTINGS" desc="The name of Settings.">
+    Settings
+  </message>
+
   <message name="IDS_CROSTINI_INSTALLER_TITLE" desc="Title of the Crostini installer, a dialog for installing the 'Terminal'.">
     <ph name="APP_NAME">$1<ex>Terminal</ex></ph> for <ph name="DEVICE_TYPE">$2<ex>Chromebook</ex></ph>
   </message>
@@ -4855,5 +4888,26 @@ Installing the <ph name="APP_NAME">$2<ex>Terminal</ex></ph> will download <ph na
   </message>
   <message name="IDS_CROSTINI_INSTALLER_INSTALLING" desc="Text shown in the Crostini installer dialog while the 'Terminal' is installing.">
     Installing <ph name="APP_NAME">$1<ex>Terminal</ex></ph>...
+  </message>
+  <message name="IDS_CROSTINI_INSTALLER_ERROR_TITLE" desc="Title of the Crostini installer when an error occurs.">
+    Error installing <ph name="APP_NAME">$1<ex>Terminal</ex></ph>...
+  </message>
+  <message name="IDS_CROSTINI_INSTALLER_COMPLETE" desc="Text shown in the Crostini installer dialog when installation is complete.">
+    Finished installing <ph name="APP_NAME">$1<ex>Terminal</ex></ph>.
+  </message>
+  <message name="IDS_CROSTINI_INSTALLER_LOAD_TERMINA_ERROR" desc="Text shown in the Crostini installer dialog when the 'Termina' component fails to load">
+    ERROR: Failed to load Termina component.
+  </message>
+  <message name="IDS_CROSTINI_INSTALLER_START_CONCIERGE_ERROR" desc="Text shown in the Crostini installer dialog when the 'Concierge' client fails to start">
+    ERROR: Failed to start Concierge client.
+  </message>
+  <message name="IDS_CROSTINI_INSTALLER_CREATE_DISK_IMAGE_ERROR" desc="Text shown in the Crostini installer dialog when the failing to create the disk image">
+    ERROR: Failed to create disk image.
+  </message>
+  <message name="IDS_CROSTINI_INSTALLER_START_TERMINA_VM_ERROR" desc="Text shown in the Crostini installer dialog when the 'Termina VM' fails to start">
+    ERROR: Failed to start Termina VM.
+  </message>
+  <message name="IDS_CROSTINI_INSTALLER_START_CONTAINER_ERROR" desc="Text shown in the Crostini installer dialog when the container fails to start inside the 'Termina VM'">
+    ERROR: Failed to start container inside Termina VM.
   </message>
 </grit-part>

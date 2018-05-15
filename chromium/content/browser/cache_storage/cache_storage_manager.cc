@@ -31,7 +31,7 @@
 #include "net/base/url_util.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/common/database/database_identifier.h"
-#include "third_party/WebKit/public/mojom/quota/quota_types.mojom.h"
+#include "third_party/blink/public/mojom/quota/quota_types.mojom.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -196,10 +196,9 @@ void CacheStorageManager::HasCache(
   cache_storage->HasCache(cache_name, std::move(callback));
 }
 
-void CacheStorageManager::DeleteCache(
-    const url::Origin& origin,
-    const std::string& cache_name,
-    CacheStorage::BoolAndErrorCallback callback) {
+void CacheStorageManager::DeleteCache(const url::Origin& origin,
+                                      const std::string& cache_name,
+                                      CacheStorage::ErrorCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   CacheStorage* cache_storage = FindOrCreateCacheStorage(origin);

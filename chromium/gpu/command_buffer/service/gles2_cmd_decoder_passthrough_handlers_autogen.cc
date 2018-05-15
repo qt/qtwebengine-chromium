@@ -4279,19 +4279,6 @@ error::Error GLES2DecoderPassthroughImpl::HandleCommitOverlayPlanesCHROMIUM(
   return error::kNoError;
 }
 
-error::Error GLES2DecoderPassthroughImpl::HandleSwapInterval(
-    uint32_t immediate_data_size,
-    const volatile void* cmd_data) {
-  const volatile gles2::cmds::SwapInterval& c =
-      *static_cast<const volatile gles2::cmds::SwapInterval*>(cmd_data);
-  GLint interval = static_cast<GLint>(c.interval);
-  error::Error error = DoSwapInterval(interval);
-  if (error != error::kNoError) {
-    return error;
-  }
-  return error::kNoError;
-}
-
 error::Error GLES2DecoderPassthroughImpl::HandleFlushDriverCachesCHROMIUM(
     uint32_t immediate_data_size,
     const volatile void* cmd_data) {
@@ -4564,14 +4551,12 @@ error::Error GLES2DecoderPassthroughImpl::HandleBeginRasterCHROMIUM(
   GLuint sk_color = static_cast<GLuint>(c.sk_color);
   GLuint msaa_sample_count = static_cast<GLuint>(c.msaa_sample_count);
   GLboolean can_use_lcd_text = static_cast<GLboolean>(c.can_use_lcd_text);
-  GLboolean use_distance_field_text =
-      static_cast<GLboolean>(c.use_distance_field_text);
   GLint color_type = static_cast<GLint>(c.color_type);
   GLuint color_space_transfer_cache_id =
       static_cast<GLuint>(c.color_space_transfer_cache_id);
   error::Error error = DoBeginRasterCHROMIUM(
-      texture_id, sk_color, msaa_sample_count, can_use_lcd_text,
-      use_distance_field_text, color_type, color_space_transfer_cache_id);
+      texture_id, sk_color, msaa_sample_count, can_use_lcd_text, color_type,
+      color_space_transfer_cache_id);
   if (error != error::kNoError) {
     return error;
   }

@@ -13,6 +13,7 @@
 #include "content/public/browser/reload_type.h"
 #include "content/public/browser/restore_type.h"
 #include "content/public/common/referrer.h"
+#include "content/public/common/transferrable_url_loader.mojom.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_info.h"
@@ -22,6 +23,7 @@
 class GURL;
 
 namespace net {
+class HttpRequestHeaders;
 class HttpResponseHeaders;
 }  // namespace net
 
@@ -222,6 +224,9 @@ class CONTENT_EXPORT NavigationHandle {
   // Returns the remote address of the socket which fetched this resource.
   virtual net::HostPortPair GetSocketAddress() = 0;
 
+  // Returns the headers used for this request.
+  virtual const net::HttpRequestHeaders& GetRequestHeaders() = 0;
+
   // Returns the response headers for the request, or nullptr if there aren't
   // any response headers or they have not been received yet. The response
   // headers may change during the navigation (e.g. after encountering a server
@@ -317,6 +322,9 @@ class CONTENT_EXPORT NavigationHandle {
   // ResourceDispatcherHostDelegate::GetNavigationData during commit. This will
   // be a clone of the NavigationData.
   virtual NavigationData* GetNavigationData() = 0;
+
+  virtual void RegisterSubresourceOverride(
+      mojom::TransferrableURLLoaderPtr transferrable_loader) = 0;
 };
 
 }  // namespace content

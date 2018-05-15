@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "base/android/scoped_java_ref.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/singleton.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/media/android/media_resource_getter_impl.h"
@@ -80,12 +79,6 @@ BrowserMediaPlayerManager* BrowserMediaPlayerManager::Create(
              ? g_browser_media_player_manager_factory(rfh)
              : nullptr;
 }
-
-#if !defined(USE_AURA)
-ContentViewCore* BrowserMediaPlayerManager::GetContentViewCore() const {
-  return ContentViewCore::FromWebContents(web_contents());
-}
-#endif
 
 std::unique_ptr<MediaPlayerAndroid>
 BrowserMediaPlayerManager::CreateMediaPlayer(
@@ -342,10 +335,7 @@ void BrowserMediaPlayerManager::OnEnterFullscreen(int player_id) {
   base::android::ScopedJavaLocalRef<jobject> embedder(
       web_contents()->GetDelegate()->GetContentVideoViewEmbedder());
   video_view_.reset(
-      new ContentVideoView(this,
-                           GetContentViewCore(),
-                           embedder,
-                           natural_video_size));
+      new ContentVideoView(this, web_contents(), embedder, natural_video_size));
 
   base::android::ScopedJavaLocalRef<jobject> j_content_video_view =
       video_view_->GetJavaObject(base::android::AttachCurrentThread());

@@ -9,7 +9,7 @@ import("//build/config/win/console_app.gni")
 import("//build/config/win/manifest.gni")
 import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
-import("//ppapi/features/features.gni")
+import("//ppapi/buildflags/buildflags.gni")
 import("//services/service_manager/public/service_manifest.gni")
 import("//tools/grit/grit_rule.gni")
 import("//tools/grit/repack.gni")
@@ -21,8 +21,6 @@ if (is_android) {
   import("//build/mac/tweak_info_plist.gni")
   import("//third_party/icu/config.gni")
   import("//v8/gni/v8.gni")
-} else if (is_win) {
-  import("//build/win/syzygy/syzygy.gni")
 }
 
 declare_args() {
@@ -37,10 +35,19 @@ config("content_shell_lib_warnings") {
   }
 }
 
-static_library("content_shell_lib") {
+source_set("android_shell_descriptors") {
   testonly = true
   sources = [
     "android/shell_descriptors.h",
+  ]
+  public_deps = [
+    "//content/public/common:content_descriptors",
+  ]
+}
+
+static_library("content_shell_lib") {
+  testonly = true
+  sources = [
     "android/shell_manager.cc",
     "android/shell_manager.h",
     "app/blink_test_platform_support.h",
@@ -60,6 +67,8 @@ static_library("content_shell_lib") {
     "browser/layout_test/blink_test_controller.h",
     "browser/layout_test/devtools_protocol_test_bindings.cc",
     "browser/layout_test/devtools_protocol_test_bindings.h",
+    "browser/layout_test/fake_bluetooth_chooser.cc",
+    "browser/layout_test/fake_bluetooth_chooser.h",
     "browser/layout_test/layout_test_bluetooth_adapter_provider.cc",
     "browser/layout_test/layout_test_bluetooth_adapter_provider.h",
     "browser/layout_test/layout_test_bluetooth_chooser_factory.cc",
@@ -207,6 +216,8 @@ static_library("content_shell_lib") {
   defines = [ "CONTENT_SHELL_VERSION=\"$content_shell_version\"" ]
 
   public_deps = [
+    ":android_shell_descriptors",
+
     # This exposes all public content APIs.
     "//content/public/app:both",
     "//content/public/browser",
@@ -252,16 +263,15 @@ static_library("content_shell_lib") {
     "//device/bluetooth:fake_bluetooth",
     "//device/bluetooth:mocks",
     "//device/geolocation/public/cpp:test_support",
-    "//device/sensors/public/cpp:full",
     "//gin",
     "//gpu",
     "//media",
     "//media/capture",
-    "//media/mojo:features",
+    "//media/mojo:buildflags",
     "//net",
     "//net:net_resources",
     "//net:test_support",
-    "//ppapi/features",
+    "//ppapi/buildflags",
     "//sandbox",
     "//services/device/public/mojom",
     "//services/network/public/cpp",
@@ -272,11 +282,11 @@ static_library("content_shell_lib") {
     "//storage/browser",
     "//testing/gmock",
     "//testing/gtest",
-    "//third_party/WebKit/public:blink",
-    "//third_party/WebKit/public:features",
-    "//third_party/WebKit/public:image_resources",
-    "//third_party/WebKit/public:resources",
-    "//third_party/WebKit/public:test_support",
+    "//third_party/blink/public:blink",
+    "//third_party/blink/public:buildflags",
+    "//third_party/blink/public:image_resources",
+    "//third_party/blink/public:resources",
+    "//third_party/blink/public:test_support",
     "//third_party/icu",
     "//ui/base",
     "//ui/base/ime",
@@ -451,8 +461,6 @@ group("resources") {
 
 repack("pak") {
   sources = [
-    "$root_gen_dir/blink/public/resources/blink_resources.pak",
-    "$root_gen_dir/blink/public/resources/blink_scaled_resources_100_percent.pak",
     "$root_gen_dir/content/app/resources/content_resources_100_percent.pak",
     "$root_gen_dir/content/app/strings/content_strings_en-US.pak",
     "$root_gen_dir/content/browser/tracing/tracing_resources.pak",
@@ -460,6 +468,8 @@ repack("pak") {
     "$root_gen_dir/content/shell/shell_resources.pak",
     "$root_gen_dir/mojo/public/js/mojo_bindings_resources.pak",
     "$root_gen_dir/net/net_resources.pak",
+    "$root_gen_dir/third_party/blink/public/resources/blink_resources.pak",
+    "$root_gen_dir/third_party/blink/public/resources/blink_scaled_resources_100_percent.pak",
     "$root_gen_dir/ui/resources/ui_resources_100_percent.pak",
     "$root_gen_dir/ui/resources/webui_resources.pak",
     "$root_gen_dir/ui/strings/app_locale_settings_en-US.pak",
@@ -474,8 +484,8 @@ repack("pak") {
     "//content/browser/tracing:resources",
     "//mojo/public/js:resources",
     "//net:net_resources",
-    "//third_party/WebKit/public:resources",
-    "//third_party/WebKit/public:scaled_resources_100_percent",
+    "//third_party/blink/public:resources",
+    "//third_party/blink/public:scaled_resources_100_percent",
     "//ui/resources",
     "//ui/strings",
   ]
@@ -604,19 +614,6 @@ if (is_android) {
   }
 }
 
-if (is_win) {
-  if (is_syzyasan) {
-    syzygy_asan("content_shell_syzyasan") {
-      binary_name = "content_shell.exe"
-      dest_dir = "$root_out_dir/syzygy"
-      deps = [
-        "//content/shell:content_shell",
-      ]
-      testonly = true
-    }
-  }
-}
-
 if (is_mac) {
   bundle_data("content_shell_framework_helpers") {
     testonly = true
@@ -712,6 +709,13 @@ if (is_mac) {
 
     output_name = content_shell_framework_name
 
+    framework_version = "C"
+
+    framework_contents = [
+      "Helpers",
+      "Resources",
+    ]
+
     sources = [
       "app/shell_content_main.cc",
       "app/shell_content_main.h",
@@ -746,11 +750,11 @@ if (is_mac) {
     if (is_component_build) {
       # Set up the rpath for the framework so that it can find dylibs in the
       # root output directory. The framework is at
-      # Content Shell.app/Contents/Frameworks/Content Shell Framework.framework/Content Shell Framework
+      # Content Shell.app/Contents/Frameworks/Content Shell Framework.framework/Versions/C/Content Shell Framework
       # so use loader_path to go back to the root output directory.
       ldflags += [
         "-rpath",
-        "@loader_path/../../../..",
+        "@loader_path/../../../../../..",
       ]
     }
 
@@ -817,11 +821,13 @@ if (is_mac) {
 mojom("mojo_bindings") {
   sources = [
     "common/layout_test.mojom",
+    "common/layout_test/fake_bluetooth_chooser.mojom",
     "common/layout_test/layout_test_bluetooth_fake_adapter_setter.mojom",
     "common/power_monitor_test.mojom",
   ]
   public_deps = [
-    "//mojo/common:common_custom_types",
+    "//mojo/public/mojom/base",
+    "//skia/public/interfaces",
     "//ui/gfx/geometry/mojo",
     "//url/mojom:url_mojom_gurl",
   ]

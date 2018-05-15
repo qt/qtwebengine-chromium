@@ -62,13 +62,12 @@ BorderImages::~BorderImages() {}
 
 namespace {
 
+// The border corner radius for material design bubble borders.
+constexpr int kMaterialDesignCornerRadius = 2;
+
 // The border is stroked at 1px, but for the purposes of reserving space we have
 // to deal in dip coordinates, so round up to 1dip.
-const int kBorderThicknessDip = 1;
-
-bool UseMaterialDesign() {
-  return ui::MaterialDesignController::IsSecondaryUiMaterial();
-}
+constexpr int kBorderThicknessDip = 1;
 
 // Utility functions for getting alignment points on the edge of a rectangle.
 gfx::Point CenterTop(const gfx::Rect& rect) {
@@ -177,23 +176,28 @@ BubbleBorder::BubbleBorder(Arrow arrow, Shadow shadow, SkColor color)
       background_color_(color),
       use_theme_background_color_(false) {
   DCHECK(shadow_ < SHADOW_COUNT);
-  if (UseMaterialDesign()) {
-    // Harmony bubbles don't use arrows.
-    alignment_ = ALIGN_EDGE_TO_ANCHOR_EDGE;
-    arrow_paint_type_ = PAINT_NONE;
-  } else {
-    images_ = GetBorderImages(shadow_);
-  }
+  Init();
 }
 
 BubbleBorder::~BubbleBorder() {}
 
 // static
-gfx::Insets BubbleBorder::GetBorderAndShadowInsets() {
+gfx::Insets BubbleBorder::GetBorderAndShadowInsets(
+    base::Optional<int> elevation) {
+  if (elevation.has_value()) {
+    return -gfx::ShadowValue::GetMargin(GetShadowValues(elevation)) +
+           gfx::Insets(kBorderThicknessDip);
+  }
+
   constexpr gfx::Insets blur(kShadowBlur + kBorderThicknessDip);
   constexpr gfx::Insets offset(-kShadowVerticalOffset, 0, kShadowVerticalOffset,
                                0);
   return blur + offset;
+}
+
+void BubbleBorder::SetCornerRadius(int corner_radius) {
+  corner_radius_ = corner_radius;
+  Init();
 }
 
 void BubbleBorder::set_paint_arrow(ArrowPaintType value) {
@@ -208,7 +212,8 @@ gfx::Rect BubbleBorder::GetBounds(const gfx::Rect& anchor_rect,
   // TODO(estade): handle more anchor positions.
   if (UseMaterialDesign() &&
       (arrow_ == TOP_RIGHT || arrow_ == TOP_LEFT || arrow_ == BOTTOM_CENTER ||
-       arrow_ == LEFT_CENTER || arrow_ == RIGHT_CENTER)) {
+       arrow_ == TOP_CENTER || arrow_ == LEFT_CENTER ||
+       arrow_ == RIGHT_CENTER)) {
     gfx::Rect contents_bounds(contents_size);
     // Apply the border part of the inset before calculating coordinates because
     // the border should align with the anchor's border. For the purposes of
@@ -228,6 +233,8 @@ gfx::Rect BubbleBorder::GetBounds(const gfx::Rect& anchor_rect,
           anchor_rect.bottom_left() - contents_bounds.origin();
     } else if (arrow_ == BOTTOM_CENTER) {
       contents_bounds += CenterTop(anchor_rect) - CenterBottom(contents_bounds);
+    } else if (arrow_ == TOP_CENTER) {
+      contents_bounds += CenterBottom(anchor_rect) - CenterTop(contents_bounds);
     } else if (arrow_ == LEFT_CENTER) {
       contents_bounds += RightCenter(anchor_rect) - LeftCenter(contents_bounds);
     } else if (arrow_ == RIGHT_CENTER) {
@@ -303,7 +310,9 @@ int BubbleBorder::GetBorderThickness() const {
 }
 
 int BubbleBorder::GetBorderCornerRadius() const {
-  return UseMaterialDesign() ? 2 : images_->corner_radius;
+  if (UseMaterialDesign())
+    return corner_radius_.value_or(kMaterialDesignCornerRadius);
+  return images_->corner_radius;
 }
 
 int BubbleBorder::GetArrowOffset(const gfx::Size& border_size) const {
@@ -338,6 +347,16 @@ void BubbleBorder::SetBorderInteriorThickness(int border_interior_thickness) {
     images_->border_thickness = border_interior_thickness;
 }
 
+void BubbleBorder::Init() {
+  if (UseMaterialDesign()) {
+    // Harmony bubbles don't use arrows.
+    alignment_ = ALIGN_EDGE_TO_ANCHOR_EDGE;
+    arrow_paint_type_ = PAINT_NONE;
+  } else {
+    images_ = GetBorderImages(shadow_);
+  }
+}
+
 void BubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) {
   if (UseMaterialDesign())
     return PaintMd(view, canvas);
@@ -365,8 +384,11 @@ void BubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) {
 }
 
 gfx::Insets BubbleBorder::GetInsets() const {
-  if (UseMaterialDesign())
-    return (shadow_ == NO_ASSETS) ? gfx::Insets() : GetBorderAndShadowInsets();
+  if (UseMaterialDesign()) {
+    return (shadow_ == NO_ASSETS)
+               ? gfx::Insets()
+               : GetBorderAndShadowInsets(md_shadow_elevation_);
+  }
 
   // The insets contain the stroke and shadow pixels outside the bubble fill.
   const int inset = GetBorderThickness();
@@ -388,14 +410,20 @@ gfx::Size BubbleBorder::GetMinimumSize() const {
 }
 
 // static
-const cc::PaintFlags& BubbleBorder::GetBorderAndShadowFlags() {
-  // This object is always the same, so construct it once and cache.
-  static const base::NoDestructor<cc::PaintFlags> flags([] {
-    cc::PaintFlags f;
-    constexpr SkColor kBorderColor = SkColorSetA(SK_ColorBLACK, 0x26);
-    f.setColor(kBorderColor);
-    f.setAntiAlias(true);
+const gfx::ShadowValues& BubbleBorder::GetShadowValues(
+    base::Optional<int> elevation) {
+  // The shadows are always the same for any elevation, so construct them once
+  // and cache.
+  static base::NoDestructor<std::map<int, gfx::ShadowValues>> shadow_map;
+  if (shadow_map->find(elevation.value_or(-1)) != shadow_map->end())
+    return shadow_map->find(elevation.value_or(-1))->second;
 
+  gfx::ShadowValues shadows;
+  if (elevation.has_value()) {
+    DCHECK(elevation.value() >= 0);
+    shadows = gfx::ShadowValues(
+        gfx::ShadowValue::MakeMdShadowValues(elevation.value()));
+  } else {
     constexpr int kSmallShadowVerticalOffset = 2;
     constexpr int kSmallShadowBlur = 4;
     constexpr SkColor kSmallShadowColor = SkColorSetA(SK_ColorBLACK, 0x33);
@@ -403,15 +431,38 @@ const cc::PaintFlags& BubbleBorder::GetBorderAndShadowFlags() {
     // gfx::ShadowValue counts blur pixels both inside and outside the shape,
     // whereas these blur values only describe the outside portion, hence they
     // must be doubled.
-    f.setLooper(gfx::CreateShadowDrawLooper({
+    shadows = gfx::ShadowValues({
         {gfx::Vector2d(0, kSmallShadowVerticalOffset), 2 * kSmallShadowBlur,
          kSmallShadowColor},
         {gfx::Vector2d(0, kShadowVerticalOffset), 2 * kShadowBlur,
          kLargeShadowColor},
-    }));
-    return f;
-  }());
-  return *flags;
+    });
+  }
+
+  shadow_map->insert(
+      std::pair<int, gfx::ShadowValues>(elevation.value_or(-1), shadows));
+  return shadow_map->find(elevation.value_or(-1))->second;
+}
+
+// static
+const cc::PaintFlags& BubbleBorder::GetBorderAndShadowFlags(
+    base::Optional<int> elevation) {
+  // The flags are always the same for any elevation, so construct them once and
+  // cache.
+  static base::NoDestructor<std::map<int, cc::PaintFlags>> flag_map;
+
+  if (flag_map->find(elevation.value_or(-1)) != flag_map->end())
+    return flag_map->find(elevation.value_or(-1))->second;
+
+  cc::PaintFlags flags;
+  constexpr SkColor kBorderColor = SkColorSetA(SK_ColorBLACK, 0x26);
+  flags.setColor(kBorderColor);
+  flags.setAntiAlias(true);
+  flags.setLooper(gfx::CreateShadowDrawLooper(GetShadowValues(elevation)));
+  flag_map->insert(
+      std::pair<int, cc::PaintFlags>(elevation.value_or(-1), flags));
+
+  return flag_map->find(elevation.value_or(-1))->second;
 }
 
 gfx::Size BubbleBorder::GetSizeForContentsSize(
@@ -547,7 +598,8 @@ void BubbleBorder::PaintMd(const View& view, gfx::Canvas* canvas) {
   canvas->sk_canvas()->clipRRect(r_rect, SkClipOp::kDifference,
                                  true /*doAntiAlias*/);
 
-  DrawBorderAndShadow(std::move(r_rect), &cc::PaintCanvas::drawRRect, canvas);
+  DrawBorderAndShadow(std::move(r_rect), &cc::PaintCanvas::drawRRect, canvas,
+                      md_shadow_elevation_);
 }
 
 void BubbleBorder::PaintNoAssets(const View& view, gfx::Canvas* canvas) {
@@ -559,6 +611,11 @@ void BubbleBorder::PaintNoAssets(const View& view, gfx::Canvas* canvas) {
 
 internal::BorderImages* BubbleBorder::GetImagesForTest() const {
   return images_;
+}
+
+bool BubbleBorder::UseMaterialDesign() const {
+  return ui::MaterialDesignController::IsSecondaryUiMaterial() ||
+         corner_radius_.has_value();
 }
 
 void BubbleBackground::Paint(gfx::Canvas* canvas, views::View* view) const {

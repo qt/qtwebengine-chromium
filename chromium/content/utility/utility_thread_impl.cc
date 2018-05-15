@@ -14,6 +14,7 @@
 #include "content/public/common/simple_connection_filter.h"
 #include "content/public/utility/content_utility_client.h"
 #include "content/utility/utility_blink_platform_impl.h"
+#include "content/utility/utility_blink_platform_with_sandbox_support_impl.h"
 #include "content/utility/utility_service_factory.h"
 #include "ipc/ipc_sync_channel.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
@@ -23,6 +24,12 @@
 #if !defined(OS_ANDROID)
 #include "content/public/common/resource_usage_reporter.mojom.h"
 #include "net/proxy_resolution/proxy_resolver_v8.h"
+#endif
+
+#if defined(OS_MACOSX)
+#include "content/common/font_loader_mac.mojom.h"
+#include "content/public/common/service_names.mojom.h"
+#include "services/service_manager/public/cpp/connector.h"
 #endif
 
 namespace content {
@@ -81,14 +88,24 @@ void UtilityThreadImpl::ReleaseProcess() {
     return;
   }
 
-  // Close the channel to cause the UtilityProcessHostImpl to be deleted. We
-  // need to take a different code path than the multi-process case because
-  // that case depends on the child process going away to close the channel,
-  // but that can't happen when we're in single process mode.
+  // Close the channel to cause the UtilityProcessHost to be deleted. We need to
+  // take a different code path than the multi-process case because that case
+  // depends on the child process going away to close the channel, but that
+  // can't happen when we're in single process mode.
   channel()->Close();
 }
 
 void UtilityThreadImpl::EnsureBlinkInitialized() {
+  EnsureBlinkInitializedInternal(/*sandbox_support=*/false);
+}
+
+#if defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_FUCHSIA)
+void UtilityThreadImpl::EnsureBlinkInitializedWithSandboxSupport() {
+  EnsureBlinkInitializedInternal(/*sandbox_support=*/true);
+}
+#endif
+
+void UtilityThreadImpl::EnsureBlinkInitializedInternal(bool sandbox_support) {
   if (blink_platform_impl_)
     return;
 
@@ -99,7 +116,10 @@ void UtilityThreadImpl::EnsureBlinkInitialized() {
   if (IsInBrowserProcess())
     return;
 
-  blink_platform_impl_.reset(new UtilityBlinkPlatformImpl);
+  blink_platform_impl_ =
+      sandbox_support
+          ? std::make_unique<UtilityBlinkPlatformWithSandboxSupportImpl>()
+          : std::make_unique<UtilityBlinkPlatformImpl>();
   blink::Platform::Initialize(blink_platform_impl_.get());
 }
 
@@ -136,6 +156,21 @@ void UtilityThreadImpl::Init() {
 bool UtilityThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
   return GetContentClient()->utility()->OnMessageReceived(msg);
 }
+
+#if defined(OS_MACOSX)
+mojom::FontLoaderMac* UtilityThreadImpl::GetFontLoaderMac() {
+  DCHECK(font_loader_mac_ptr_);
+  return font_loader_mac_ptr_.get();
+}
+
+void UtilityThreadImpl::InitializeFontLoaderMac(
+    service_manager::Connector* connector) {
+  if (!font_loader_mac_ptr_) {
+    connector->BindInterface(content::mojom::kBrowserServiceName,
+                             &font_loader_mac_ptr_);
+  }
+}
+#endif
 
 void UtilityThreadImpl::BindServiceFactoryRequest(
     service_manager::mojom::ServiceFactoryRequest request) {

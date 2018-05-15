@@ -39,19 +39,20 @@ extern const base::Feature kAutofillDeleteDisusedCreditCards;
 extern const base::Feature kAutofillExpandedPopupViews;
 extern const base::Feature kAutofillPreferServerNamePredictions;
 extern const base::Feature kAutofillRationalizeFieldTypePredictions;
-extern const base::Feature kAutofillSendBillingCustomerNumber;
 extern const base::Feature kAutofillSuppressDisusedAddresses;
 extern const base::Feature kAutofillSuppressDisusedCreditCards;
 extern const base::Feature kAutofillUpstreamAllowAllEmailDomains;
 extern const base::Feature kAutofillUpstreamRequestCvcIfMissing;
 extern const base::Feature kAutofillUpstreamSendDetectedValues;
 extern const base::Feature kAutofillUpstreamSendPanFirstSix;
+extern const base::Feature kAutofillUpstreamUpdatePromptExplanation;
 extern const char kCreditCardSigninPromoImpressionLimitParamKey[];
 extern const char kAutofillCreditCardLastUsedDateShowExpirationDateKey[];
 extern const char kAutofillUpstreamMaxMinutesSinceAutofillProfileUseKey[];
 
 #if defined(OS_MACOSX)
 extern const base::Feature kCreditCardAutofillTouchBar;
+extern const base::Feature kMacViewsAutofillPopup;
 #endif  // defined(OS_MACOSX)
 
 // Returns true if autofill should be enabled. See also
@@ -129,11 +130,6 @@ void ModifyAutofillCreditCardSuggestion(struct Suggestion* suggestion);
 // layout.
 unsigned int GetPopupMargin();
 
-// Returns whether the experiment is enabled where Chrome reads billing customer
-// number from priority preference and sends it along with UploadCardRequest and
-// FullCardRequest.
-bool IsAutofillSendBillingCustomerNumberExperimentEnabled();
-
 // Returns whether the experiment is enabled where Chrome Upstream requests CVC
 // in the offer to save bubble if it was not detected during the checkout flow.
 bool IsAutofillUpstreamRequestCvcIfMissingExperimentEnabled();
@@ -149,9 +145,18 @@ bool IsAutofillUpstreamSendDetectedValuesExperimentEnabled();
 // card upload is possible.
 bool IsAutofillUpstreamSendPanFirstSixExperimentEnabled();
 
+// Returns whether the experiment is enbaled where upstream sends updated
+// prompt explanation which changes 'save this card' to 'save your card and
+// billing address.'
+bool IsAutofillUpstreamUpdatePromptExplanationExperimentEnabled();
+
 #if defined(OS_MACOSX)
 // Returns whether the Credit Card Autofill Touch Bar experiment is enabled.
 bool IsCreditCardAutofillTouchBarExperimentEnabled();
+
+// Returns true if whether the views autofill popup feature is enabled or the
+// we're using the views browser.
+bool IsMacViewsAutofillPopupExperimentEnabled();
 #endif  // defined(OS_MACOSX)
 
 }  // namespace autofill

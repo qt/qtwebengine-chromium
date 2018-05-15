@@ -16,7 +16,7 @@
 #include "media/base/mime_util_internal.h"
 #include "media/base/video_codecs.h"
 #include "media/base/video_color_space.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_ANDROID)
@@ -126,7 +126,8 @@ static MimeUtil::PlatformInfo VaryAllFields() {
 static bool HasHevcSupport() {
 #if BUILDFLAG(ENABLE_HEVC_DEMUXING)
 #if defined(OS_ANDROID)
-  return base::android::BuildInfo::GetInstance()->sdk_int() >= 21;
+  return base::android::BuildInfo::GetInstance()->sdk_int() >=
+         base::android::SDK_VERSION_LOLLIPOP;
 #else
   return true;
 #endif  // defined(OS_ANDROID)

@@ -2538,6 +2538,39 @@ TEST_F(WebRtcVoiceEngineTestFake, RecvUnsignaled) {
                                                      sizeof(kPcmuFrame)));
 }
 
+// Tests that when we add a stream without SSRCs, but contains a stream_id
+// that it is stored and its stream id is later used when the first packet
+// arrives to properly create a receive stream with a sync label.
+TEST_F(WebRtcVoiceEngineTestFake, RecvUnsignaledSsrcWithSignaledStreamId) {
+  const char kSyncLabel[] = "sync_label";
+  EXPECT_TRUE(SetupChannel());
+  cricket::StreamParams unsignaled_stream;
+  unsignaled_stream.set_stream_ids({kSyncLabel});
+  ASSERT_TRUE(channel_->AddRecvStream(unsignaled_stream));
+  // The stream shouldn't have been created at this point because it doesn't
+  // have any SSRCs.
+  EXPECT_EQ(0, call_.GetAudioReceiveStreams().size());
+
+  DeliverPacket(kPcmuFrame, sizeof(kPcmuFrame));
+
+  EXPECT_EQ(1, call_.GetAudioReceiveStreams().size());
+  EXPECT_TRUE(
+      GetRecvStream(kSsrc1).VerifyLastPacket(kPcmuFrame, sizeof(kPcmuFrame)));
+  EXPECT_EQ(kSyncLabel, GetRecvStream(kSsrc1).GetConfig().sync_group);
+
+  // Removing the unsignaled stream clears the cached parameters. If a new
+  // default unsignaled receive stream is created it will not have a sync group.
+  channel_->RemoveRecvStream(0);
+  channel_->RemoveRecvStream(kSsrc1);
+
+  DeliverPacket(kPcmuFrame, sizeof(kPcmuFrame));
+
+  EXPECT_EQ(1, call_.GetAudioReceiveStreams().size());
+  EXPECT_TRUE(
+      GetRecvStream(kSsrc1).VerifyLastPacket(kPcmuFrame, sizeof(kPcmuFrame)));
+  EXPECT_TRUE(GetRecvStream(kSsrc1).GetConfig().sync_group.empty());
+}
+
 // Test that receiving N unsignaled stream works (streams will be created), and
 // that packets are forwarded to them all.
 TEST_F(WebRtcVoiceEngineTestFake, RecvMultipleUnsignaled) {
@@ -2656,7 +2689,7 @@ TEST_F(WebRtcVoiceEngineTestFake, AddRecvStreamAfterUnsignaled_Recreate) {
   int audio_receive_stream_id = streams.front()->id();
   cricket::StreamParams stream_params;
   stream_params.ssrcs.push_back(1);
-  stream_params.sync_label = "sync_label";
+  stream_params.set_stream_ids({"stream_id"});
   EXPECT_TRUE(channel_->AddRecvStream(stream_params));
   EXPECT_EQ(1, streams.size());
   EXPECT_NE(audio_receive_stream_id, streams.front()->id());
@@ -3035,13 +3068,13 @@ TEST_F(WebRtcVoiceEngineTestFake, SetOutputVolumeUnsignaledRecvStream) {
   EXPECT_DOUBLE_EQ(4, GetRecvStream(kSsrcX).gain());
 }
 
-TEST_F(WebRtcVoiceEngineTestFake, SetsSyncGroupFromSyncLabel) {
+TEST_F(WebRtcVoiceEngineTestFake, SetsSyncGroupFromStreamId) {
   const uint32_t kAudioSsrc = 123;
-  const std::string kSyncLabel = "AvSyncLabel";
+  const std::string kStreamId = "AvSyncLabel";
 
   EXPECT_TRUE(SetupSendStream());
   cricket::StreamParams sp = cricket::StreamParams::CreateLegacy(kAudioSsrc);
-  sp.sync_label = kSyncLabel;
+  sp.set_stream_ids({kStreamId});
   // Creating two channels to make sure that sync label is set properly for both
   // the default voice channel and following ones.
   EXPECT_TRUE(channel_->AddRecvStream(sp));
@@ -3049,12 +3082,12 @@ TEST_F(WebRtcVoiceEngineTestFake, SetsSyncGroupFromSyncLabel) {
   EXPECT_TRUE(channel_->AddRecvStream(sp));
 
   ASSERT_EQ(2, call_.GetAudioReceiveStreams().size());
-  EXPECT_EQ(kSyncLabel,
+  EXPECT_EQ(kStreamId,
             call_.GetAudioReceiveStream(kAudioSsrc)->GetConfig().sync_group)
-      << "SyncGroup should be set based on sync_label";
-  EXPECT_EQ(kSyncLabel,
+      << "SyncGroup should be set based on stream id";
+  EXPECT_EQ(kStreamId,
             call_.GetAudioReceiveStream(kAudioSsrc + 1)->GetConfig().sync_group)
-      << "SyncGroup should be set based on sync_label";
+      << "SyncGroup should be set based on stream id";
 }
 
 // TODO(solenberg): Remove, once recv streams are configured through Call.

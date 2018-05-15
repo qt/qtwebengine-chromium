@@ -196,8 +196,7 @@ std::vector<webrtc::VideoStream> GetNormalSimulcastLayers(
     layers[s].height = height;
     // TODO(pbos): Fill actual temporal-layer bitrate thresholds.
     layers[s].max_qp = max_qp;
-    layers[s].temporal_layer_thresholds_bps.resize(
-        kDefaultConferenceNumberOfTemporalLayers[s] - 1);
+    layers[s].num_temporal_layers = kDefaultConferenceNumberOfTemporalLayers[s];
     layers[s].max_bitrate_bps = FindSimulcastMaxBitrateBps(width, height);
     layers[s].target_bitrate_bps = FindSimulcastTargetBitrateBps(width, height);
     layers[s].min_bitrate_bps = FindSimulcastMinBitrateBps(width, height);
@@ -239,7 +238,7 @@ std::vector<webrtc::VideoStream> GetScreenshareLayers(
   ScreenshareLayerConfig config = ScreenshareLayerConfig::GetDefault();
   // For legacy screenshare in conference mode, tl0 and tl1 bitrates are
   // piggybacked on the VideoCodec struct as target and max bitrates,
-  // respectively. See eg. webrtc::VP8EncoderImpl::SetRates().
+  // respectively. See eg. webrtc::LibvpxVp8Encoder::SetRates().
   layers[0].width = width;
   layers[0].height = height;
   layers[0].max_qp = max_qp;
@@ -247,9 +246,7 @@ std::vector<webrtc::VideoStream> GetScreenshareLayers(
   layers[0].min_bitrate_bps = kMinVideoBitrateBps;
   layers[0].target_bitrate_bps = config.tl0_bitrate_kbps * 1000;
   layers[0].max_bitrate_bps = config.tl1_bitrate_kbps * 1000;
-  layers[0].temporal_layer_thresholds_bps.clear();
-  layers[0].temporal_layer_thresholds_bps.push_back(config.tl0_bitrate_kbps *
-                                                    1000);
+  layers[0].num_temporal_layers = 2;
 
   // With simulcast enabled, add another spatial layer. This one will have a
   // more normal layout, with the regular 3 temporal layer pattern and no fps
@@ -270,8 +267,7 @@ std::vector<webrtc::VideoStream> GetScreenshareLayers(
     layers[1].height = height;
     layers[1].max_qp = max_qp;
     layers[1].max_framerate = max_framerate;
-    // Three temporal layers means two thresholds.
-    layers[1].temporal_layer_thresholds_bps.resize(2);
+    layers[1].num_temporal_layers = 3;
     layers[1].min_bitrate_bps = layers[0].target_bitrate_bps * 2;
     layers[1].target_bitrate_bps = max_bitrate_bps;
     layers[1].max_bitrate_bps = max_bitrate_bps;

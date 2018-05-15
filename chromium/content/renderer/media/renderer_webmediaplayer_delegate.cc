@@ -15,8 +15,8 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
-#include "third_party/WebKit/public/platform/WebFullscreenVideoStatus.h"
-#include "third_party/WebKit/public/web/WebScopedUserGesture.h"
+#include "third_party/blink/public/platform/web_fullscreen_video_status.h"
+#include "third_party/blink/public/web/web_scoped_user_gesture.h"
 #include "ui/gfx/geometry/size.h"
 
 #if defined(OS_ANDROID)
@@ -47,7 +47,8 @@ RendererWebMediaPlayerDelegate::RendererWebMediaPlayerDelegate(
 #if defined(OS_ANDROID)
   // On Android, due to the instability of the OS level media components, we
   // consider all pre-KitKat devices to be potentially buggy.
-  is_jelly_bean_ |= base::android::BuildInfo::GetInstance()->sdk_int() <= 18;
+  is_jelly_bean_ |= base::android::BuildInfo::GetInstance()->sdk_int() <=
+                    base::android::SDK_VERSION_JELLY_BEAN_MR2;
 #endif
 
   idle_cleanup_timer_.SetTaskRunner(
@@ -114,6 +115,18 @@ void RendererWebMediaPlayerDelegate::DidPlayerMutedStatusChange(int delegate_id,
                                                                 bool muted) {
   Send(new MediaPlayerDelegateHostMsg_OnMutedStatusChanged(routing_id(),
                                                            delegate_id, muted));
+}
+
+void RendererWebMediaPlayerDelegate::DidPictureInPictureSourceChange(
+    int delegate_id) {
+  Send(new MediaPlayerDelegateHostMsg_OnPictureInPictureSourceChanged(
+      routing_id(), delegate_id));
+}
+
+void RendererWebMediaPlayerDelegate::DidPictureInPictureModeEnd(
+    int delegate_id) {
+  Send(new MediaPlayerDelegateHostMsg_OnPictureInPictureModeEnded(routing_id(),
+                                                                  delegate_id));
 }
 
 void RendererWebMediaPlayerDelegate::DidPause(int player_id) {
@@ -242,7 +255,7 @@ bool RendererWebMediaPlayerDelegate::OnMessageReceived(
 void RendererWebMediaPlayerDelegate::SetIdleCleanupParamsForTesting(
     base::TimeDelta idle_timeout,
     base::TimeDelta idle_cleanup_interval,
-    base::TickClock* tick_clock,
+    const base::TickClock* tick_clock,
     bool is_jelly_bean) {
   idle_cleanup_interval_ = idle_cleanup_interval;
   idle_timeout_ = idle_timeout;

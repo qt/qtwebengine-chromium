@@ -8,11 +8,11 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "net/base/int128.h"
 #include "net/quic/core/quic_packets.h"
 #include "net/quic/core/quic_time.h"
 #include "net/quic/platform/api/quic_export.h"
 #include "net/quic/platform/api/quic_string.h"
+#include "net/quic/platform/api/quic_uint128.h"
 
 namespace net {
 
@@ -155,15 +155,15 @@ class QUIC_EXPORT_PRIVATE QuicFixedUint128 : public QuicConfigValue {
 
   bool HasSendValue() const;
 
-  uint128 GetSendValue() const;
+  QuicUint128 GetSendValue() const;
 
-  void SetSendValue(uint128 value);
+  void SetSendValue(QuicUint128 value);
 
   bool HasReceivedValue() const;
 
-  uint128 GetReceivedValue() const;
+  QuicUint128 GetReceivedValue() const;
 
-  void SetReceivedValue(uint128 value);
+  void SetReceivedValue(QuicUint128 value);
 
   // If has_send_value is true, serialises |tag_| and |send_value_| to |out|.
   void ToHandshakeMessage(CryptoHandshakeMessage* out) const override;
@@ -174,9 +174,9 @@ class QUIC_EXPORT_PRIVATE QuicFixedUint128 : public QuicConfigValue {
                                  QuicString* error_details) override;
 
  private:
-  uint128 send_value_;
+  QuicUint128 send_value_;
   bool has_send_value_;
-  uint128 receive_value_;
+  QuicUint128 receive_value_;
   bool has_receive_value_;
 };
 
@@ -393,11 +393,11 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
 
   bool SupportMaxHeaderListSize() const;
 
-  void SetStatelessResetTokenToSend(uint128 stateless_reset_token);
+  void SetStatelessResetTokenToSend(QuicUint128 stateless_reset_token);
 
   bool HasReceivedStatelessResetToken() const;
 
-  uint128 ReceivedStatelessResetToken() const;
+  QuicUint128 ReceivedStatelessResetToken() const;
 
   bool negotiated() const;
 
@@ -452,10 +452,6 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   QuicFixedUint32 initial_stream_flow_control_window_bytes_;
   // Initial session flow control receive window in bytes.
   QuicFixedUint32 initial_session_flow_control_window_bytes_;
-
-  // Socket receive buffer in bytes.
-  // TODO(ianswett): Deprecate once QUIC_VERSION_34 is deprecated.
-  QuicFixedUint32 socket_receive_buffer_;
 
   // Whether tell peer not to attempt connection migration.
   QuicFixedUint32 connection_migration_disabled_;

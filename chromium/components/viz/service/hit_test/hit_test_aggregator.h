@@ -26,9 +26,13 @@ class HitTestAggregatorDelegate;
 class VIZ_SERVICE_EXPORT HitTestAggregator {
  public:
   // |delegate| owns and outlives HitTestAggregator.
-  HitTestAggregator(const HitTestManager* hit_test_manager,
-                    HitTestAggregatorDelegate* delegate,
-                    const FrameSinkId& frame_sink_id);
+  HitTestAggregator(
+      const HitTestManager* hit_test_manager,
+      HitTestAggregatorDelegate* delegate,
+      LatestLocalSurfaceIdLookupDelegate* local_surface_id_lookup_delegate,
+      const FrameSinkId& frame_sink_id,
+      uint32_t initial_region_size = 1024,
+      uint32_t max_region_size = 100 * 1024);
   ~HitTestAggregator();
 
   // Called after surfaces have been aggregated into the DisplayFrame.
@@ -94,8 +98,21 @@ class VIZ_SERVICE_EXPORT HitTestAggregator {
 
   HitTestAggregatorDelegate* const delegate_;
 
+  LatestLocalSurfaceIdLookupDelegate* const local_surface_id_lookup_delegate_;
+
   // This is the FrameSinkId for the corresponding root CompositorFrameSink.
   const FrameSinkId root_frame_sink_id_;
+
+  // Initial hit-test region size.
+  // TODO(https://crbug.com/746385): Review and select appropriate sizes based
+  // on telemetry / UMA.
+  const uint32_t initial_region_size_;
+  const uint32_t incremental_region_size_;
+  const uint32_t max_region_size_;
+
+  // This is the set of FrameSinkIds referenced in the aggregation so far, used
+  // to detect cycles.
+  base::flat_set<FrameSinkId> referenced_child_regions_;
 
   // Handles the case when this object is deleted after
   // the PostTaskAggregation call is scheduled but before invocation.

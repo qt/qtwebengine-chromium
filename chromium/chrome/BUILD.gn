@@ -17,10 +17,10 @@ import("//chrome/chrome_paks.gni")
 import("//chrome/common/features.gni")
 import("//chrome/process_version_rc_template.gni")
 import("//components/nacl/features.gni")
-import("//extensions/features/features.gni")
+import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
-import("//ppapi/features/features.gni")
-import("//third_party/WebKit/public/public_features.gni")
+import("//ppapi/buildflags/buildflags.gni")
+import("//third_party/blink/public/public_features.gni")
 import("//third_party/widevine/cdm/widevine.gni")
 import("//tools/resources/generate_resource_whitelist.gni")
 import("//tools/v8_context_snapshot/v8_context_snapshot.gni")
@@ -29,6 +29,8 @@ import("//v8/gni/v8.gni")
 
 if (is_android) {
   import("//build/config/android/rules.gni")
+} else if (is_linux) {
+  import("//build/linux/extract_symbols.gni")
 } else if (is_mac) {
   import("//build/compiled_action.gni")
   import("//build/config/mac/rules.gni")
@@ -153,7 +155,7 @@ if (!is_android && !is_mac) {
       public_deps = []
       deps += [
         "//build/config:exe_and_shlib_deps",
-        "//printing/features",
+        "//printing/buildflags",
       ]
 
       data += [ "$root_out_dir/resources.pak" ]
@@ -305,9 +307,15 @@ if (!is_android && !is_mac) {
         deps += [ "//third_party/adobe/flash:flapper_binaries" ]
       }
 
+      # ChromeOS by design is safe to have rpath=$ORIGIN. This simplifies shared
+      # library usage.
+      if (is_chromeos && !is_component_build) {
+        configs += [ "//build/config/gcc:rpath_for_built_shared_libraries" ]
+      }
+
       data_deps += [
         "//chrome/browser/resources/media/mei_preload:component",
-        "//third_party/widevine/cdm:widevinecdmadapter",
+        "//third_party/widevine/cdm",
       ]
 
       if (is_multi_dll_chrome) {
@@ -394,7 +402,7 @@ if (is_win) {
       "//crypto",
       "//headless:headless_shell_browser_lib",
       "//net:net_resources",
-      "//ppapi/features",
+      "//ppapi/buildflags",
       "//services/service_manager/embedder",
       "//third_party/cld_3/src/src:cld_3",
       "//third_party/wtl",
@@ -436,7 +444,7 @@ if (is_win) {
       deps += [ "//content/public/app:browser" ]
       assert_no_deps = [
         # The browser DLL may not depend on blink or v8.
-        "//third_party/WebKit/public:blink",
+        "//third_party/blink/public:blink",
         "//gin",
         "//v8",
       ]
@@ -447,7 +455,7 @@ if (is_win) {
       ]
     }
 
-    if (is_clang && is_official_build && !use_lld) {
+    if (is_clang && is_official_build) {
       orderfile = "build/chrome.$target_cpu.orderfile"
       rebased_orderfile = rebase_path(orderfile, root_build_dir)
       inputs = [
@@ -509,7 +517,7 @@ if (is_win) {
         "/DELAYLOAD:wininet.dll",
       ]
 
-      if (is_clang && is_official_build && !use_lld) {
+      if (is_clang && is_official_build) {
         orderfile = "build/chrome_child.$target_cpu.orderfile"
         rebased_orderfile = rebase_path(orderfile, root_build_dir)
         inputs = [
@@ -625,13 +633,13 @@ if (is_win) {
       deps += [ ":chrome_helpers" ]
     }
 
-    # Remove the default strip configuration (which strips all symbols) so that
-    # a saves file can be specified.
     if (enable_stripping) {
-      remove_configs = [ "//build/config/mac:strip_all" ]
-
-      ldflags =
-          [ "-Wcrl,strip,-s," + rebase_path("app/app.saves", root_build_dir) ]
+      # At link time, preserve the global symbols specified in the .exports
+      # file. All other global symbols will be marked as private. The default
+      # //build/config/mac:strip_all config will then remove the remaining
+      # local and debug symbols.
+      ldflags = [ "-Wl,-exported_symbols_list," +
+                  rebase_path("app/app.exports", root_build_dir) ]
     }
   }
 
@@ -758,9 +766,7 @@ if (is_win) {
       ":verify_chrome_framework_order",
     ]
 
-    # Only official builds that include Widevine need the widevine
-    # signature file.
-    if (is_chrome_branded && enable_library_cdms) {
+    if (enable_widevine_cdm_host_verification) {
       sources += [ "$root_out_dir/Widevine Resources.bundle" ]
       public_deps += [ ":widevine_resources_bundle" ]
     }
@@ -821,13 +827,13 @@ if (is_win) {
       ]
     }
 
-    # Remove the default strip configuration (which strips all symbols) so that
-    # a saves file can be specified.
     if (enable_stripping) {
-      remove_configs = [ "//build/config/mac:strip_all" ]
-
-      ldflags +=
-          [ "-Wcrl,strip,-s," + rebase_path("app/app.saves", root_build_dir) ]
+      # At link time, preserve the global symbols specified in the .exports
+      # file. All other global symbols will be marked as private. The default
+      # //build/config/mac:strip_all config will then remove the remaining
+      # local and debug symbols.
+      ldflags += [ "-Wl,-exported_symbols_list," +
+                   rebase_path("app/app.exports", root_build_dir) ]
     }
   }
 
@@ -929,7 +935,7 @@ if (is_win) {
         # Depend on :chrome_app to ensure that the bundle is produced before
         # creating or destroying the symlink.
         ":chrome_app",
-        "//third_party/WebKit/public:blink_devtools_frontend_resources",
+        "//third_party/blink/public:blink_devtools_frontend_resources",
       ]
     }
   } else {
@@ -959,18 +965,19 @@ if (is_win) {
     }
   }
 
-  if (use_egl_on_mac) {
-    # We need to copy the ANGLE libraries so that the bundle_data dependencies
-    # have a "copy" target type. Otherwise for "shared_library" target types
-    # it will try to link things into Chromium.app when we want to keep the
-    # ANGLE libraries separate instead.
+  if (use_egl) {
+    # We need to copy the ANGLE and SwiftShader libraries so that the
+    # bundle_data dependencies have a "copy" target type. Otherwise for
+    # "shared_library" target types it will try to link things into
+    # Chromium Framework when we want to keep the ANGLE and SwiftShader
+    # libraries separate instead.
     copy("angle_library_copy") {
       sources = [
         "$root_out_dir/libEGL.dylib",
         "$root_out_dir/libGLESv2.dylib",
       ]
       outputs = [
-        "$root_out_dir/for_bundle/{{source_file_part}}",
+        "$root_out_dir/egl_intermediates/{{source_file_part}}",
       ]
       deps = [
         "//third_party/angle:libEGL",
@@ -981,72 +988,76 @@ if (is_win) {
     # Add the ANGLE .dylibs in the MODULE_DIR of Chromium.app
     bundle_data("angle_binaries") {
       sources = [
-        "$root_out_dir/for_bundle/libEGL.dylib",
-        "$root_out_dir/for_bundle/libGLESv2.dylib",
+        "$root_out_dir/egl_intermediates/libEGL.dylib",
+        "$root_out_dir/egl_intermediates/libGLESv2.dylib",
       ]
       outputs = [
-        "{{bundle_contents_dir}}/{{source_file_part}}",
+        "{{bundle_contents_dir}}/Libraries/{{source_file_part}}",
       ]
       public_deps = [
         ":angle_library_copy",
       ]
     }
+
+    copy("swiftshader_library_copy") {
+      sources = [
+        "$root_out_dir/libswiftshader_libEGL.dylib",
+        "$root_out_dir/libswiftshader_libGLESv2.dylib",
+      ]
+      outputs = [
+        "$root_out_dir/egl_intermediates/{{source_file_part}}",
+      ]
+      deps = [
+        "//third_party/swiftshader/src/OpenGL/libEGL:swiftshader_libEGL",
+        "//third_party/swiftshader/src/OpenGL/libGLESv2:swiftshader_libGLESv2",
+      ]
+    }
+
+    # Add the SwiftShader .dylibs in the MODULE_DIR of Chromium.app
+    bundle_data("swiftshader_binaries") {
+      sources = [
+        "$root_out_dir/egl_intermediates/libswiftshader_libEGL.dylib",
+        "$root_out_dir/egl_intermediates/libswiftshader_libGLESv2.dylib",
+      ]
+      outputs = [
+        "{{bundle_contents_dir}}/Libraries/{{source_file_part}}",
+      ]
+      public_deps = [
+        ":swiftshader_library_copy",
+      ]
+    }
   }
 
   group("angle_library") {
-    if (use_egl_on_mac) {
+    if (use_egl) {
       deps = [
         ":angle_binaries",
       ]
     }
   }
 
-  _should_bundle_widevine =
-      (is_chrome_branded || enable_widevine) && enable_library_cdms
-  if (_should_bundle_widevine) {
-    # The Widevine CDM and manifest are either the actual Widevine CDM and
-    # manifest or stubs used for testing only. The choice is made within the
-    # corresponding Widevine targets based on branding.
-    bundle_data("widevine_cdm_library_binaries") {
-      sources = [
-        "$root_out_dir/$widevine_cdm_path/widevinecdmadapter.plugin",
-        "$root_out_dir/libwidevinecdm.dylib",
+  group("swiftshader_library") {
+    if (use_egl) {
+      deps = [
+        ":swiftshader_binaries",
       ]
-      outputs = [
-        "{{bundle_contents_dir}}/Libraries/$widevine_cdm_path/{{source_file_part}}",
-      ]
-      public_deps = [
-        # Need this intermediate dependency because "widevinecdm" is a
-        # shared_library if !is_chrome_branded, and then depending on
-        # "widevinecdm" directly would cause it to be linked into the Chromium
-        # Framework, which we don't want.
-        ":widevine_cdm_library_copy",
-        "//third_party/widevine/cdm:widevinecdmadapter",
-      ]
-
-      # Signatures are only generated for official chrome.
-      if (is_chrome_branded) {
-        sources += [
-          "$root_out_dir/$widevine_cdm_path/widevinecdmadapter.plugin.sig",
-          "$root_out_dir/libwidevinecdm.dylib.sig",
-        ]
-        public_deps += [ ":sign_cdm_adapter_for_widevine" ]
-      }
     }
+  }
 
-    copy("widevine_cdm_library_copy") {
+  if (should_bundle_widevine_cdm) {
+    bundle_data("widevine_cdm_library_binaries") {
       sources = [
         "$root_out_dir/$widevine_cdm_path/libwidevinecdm.dylib",
       ]
-      if (is_chrome_branded) {
+      if (enable_widevine_cdm_host_verification) {
         sources +=
             [ "$root_out_dir/$widevine_cdm_path/libwidevinecdm.dylib.sig" ]
       }
       outputs = [
-        "$root_out_dir/{{source_file_part}}",
+        "{{bundle_contents_dir}}/Libraries/$widevine_cdm_path/{{source_file_part}}",
       ]
-      deps = [
-        "//third_party/widevine/cdm:widevinecdm",
+      public_deps = [
+        "//third_party/widevine/cdm",
       ]
     }
 
@@ -1058,18 +1069,21 @@ if (is_win) {
         "{{bundle_contents_dir}}/Libraries/WidevineCdm/{{source_file_part}}",
       ]
       public_deps = [
-        "//third_party/widevine/cdm:widevine_cdm_manifest",
+        "//third_party/widevine/cdm",
       ]
     }
+  }
 
-    widevine_sign_file("sign_cdm_adapter_for_widevine") {
-      file = "$root_out_dir/$widevine_cdm_path/widevinecdmadapter.plugin"
-      flags = 0
+  group("widevine_cdm_library") {
+    if (should_bundle_widevine_cdm) {
       deps = [
-        "//third_party/widevine/cdm:widevinecdmadapter",
+        ":widevine_cdm_library_binaries",
+        ":widevine_cdm_library_manifest",
       ]
     }
+  }
 
+  if (enable_widevine_cdm_host_verification) {
     widevine_sign_file("sign_chrome_framework_for_widevine") {
       file = "$root_out_dir/$chrome_framework_name.framework/"
       if (defined(chrome_framework_version)) {
@@ -1125,15 +1139,6 @@ if (is_win) {
       deps = [
         ":framework_widevine_signature",
         ":widevine_resources_plist_bundle_data",
-      ]
-    }
-  }
-
-  group("widevine_cdm_library") {
-    if (_should_bundle_widevine) {
-      deps = [
-        ":widevine_cdm_library_binaries",
-        ":widevine_cdm_library_manifest",
       ]
     }
   }
@@ -1280,6 +1285,7 @@ if (is_win) {
       ":chrome_framework_resources",
       ":chrome_framework_services",
       ":packed_resources",
+      ":swiftshader_library",
       ":widevine_cdm_library",
       "//build/config:exe_and_shlib_deps",
       "//chrome/app/nibs:chrome_xibs",
@@ -1467,7 +1473,7 @@ group("browser_dependencies") {
       # is OK because all of content is linked into one library. Note that the
       # blink_headers target is OK, so we can't do a wildcard for all blink
       # targets.
-      "//third_party/WebKit/public:blink",
+      "//third_party/blink/public:blink",
     ]
 
     if (is_win) {
@@ -1486,13 +1492,13 @@ group("child_dependencies") {
     "//chrome/child",
     "//chrome/common",
     "//chrome/gpu",
-    "//chrome/profiling",
     "//chrome/renderer",
     "//chrome/utility",
+    "//components/services/heap_profiling",
     "//components/sync",
     "//content/public/child",
     "//pdf",
-    "//third_party/WebKit/public:blink_devtools_frontend_resources",
+    "//third_party/blink/public:blink_devtools_frontend_resources",
   ]
 
   if (enable_nacl) {
@@ -1599,6 +1605,7 @@ group("extra_resources") {
 
   if (is_chromeos) {
     public_deps += [
+      "//chrome/browser/resources/chromeos:multidevice_setup_resources",
       "//chrome/browser/resources/chromeos/chromevox",
       "//chrome/browser/resources/chromeos/select_to_speak",
       "//chrome/browser/resources/chromeos/switch_access",
@@ -1778,6 +1785,7 @@ if (is_android) {
 
   java_cpp_enum("download_enum_javagen") {
     sources = [
+      "browser/download/download_location_dialog_type.h",
       "browser/download/download_prompt_status.h",
     ]
   }
@@ -1813,10 +1821,10 @@ if (is_android) {
       "//chrome/child",
       "//chrome/common",
       "//chrome/gpu",
-      "//chrome/profiling",
       "//chrome/renderer",
       "//chrome/utility",
       "//components/safe_browsing/android:safe_browsing_mobile",
+      "//components/services/heap_profiling",
       "//content/public/app:both",
       "//content/public/common:service_names",
       "//services/service_manager/embedder",
@@ -1827,7 +1835,6 @@ if (is_android) {
     if (is_android && is_component_build) {
       deps += [
         "//device/gamepad",
-        "//device/sensors",
         "//ui/events/devices",
       ]
     }
@@ -1846,14 +1853,9 @@ if (enable_resource_whitelist_generation) {
 
 if (is_linux) {
   if (is_official_build) {
-    action("linux_symbols") {
-      script = "//build/linux/dump_app_syms.py"
+    extract_symbols("linux") {
+      binary = "$root_out_dir/chrome"
 
-      dump_syms_label = "//third_party/breakpad:dump_syms($host_toolchain)"
-      dump_syms_binary =
-          get_label_info(dump_syms_label, "root_out_dir") + "/" + "dump_syms"
-
-      chrome_binary = "$root_out_dir/chrome"
       if (current_cpu == "x86") {
         # GYP used "ia32" so keep that naming for back-compat.
         symbol_file = "$root_out_dir/chrome.breakpad.ia32"
@@ -1861,24 +1863,8 @@ if (is_linux) {
         symbol_file = "$root_out_dir/chrome.breakpad.$current_cpu"
       }
 
-      inputs = [
-        chrome_binary,
-        dump_syms_binary,
-      ]
-      outputs = [
-        symbol_file,
-      ]
-
-      args = [
-        "./" + rebase_path(dump_syms_binary, root_build_dir),
-        "0",  # strip_binary = false
-        rebase_path(chrome_binary, root_build_dir),
-        rebase_path(symbol_file, root_build_dir),
-      ]
-
       deps = [
         ":chrome",
-        dump_syms_label,
       ]
     }
   }

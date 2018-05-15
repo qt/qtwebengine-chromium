@@ -10,12 +10,14 @@
 #include "base/strings/stringprintf.h"
 #include "content/browser/loader/data_pipe_to_source_stream.h"
 #include "content/browser/loader/source_stream_to_data_pipe.h"
+#include "content/browser/web_package/signed_exchange_cert_fetcher_factory.h"
 #include "content/browser/web_package/signed_exchange_handler.h"
 #include "content/public/common/content_features.h"
-#include "content/public/common/shared_url_loader_factory.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/http/http_util.h"
+#include "net/url_request/url_request_context_getter.h"
 #include "services/network/public/cpp/features.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 
@@ -78,18 +80,28 @@ WebPackageLoader::WebPackageLoader(
     network::mojom::URLLoaderClientEndpointsPtr endpoints,
     url::Origin request_initiator,
     uint32_t url_loader_options,
-    scoped_refptr<SharedURLLoaderFactory> url_loader_factory,
-    URLLoaderThrottlesGetter url_loader_throttles_getter)
+    int frame_tree_node_id,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+    URLLoaderThrottlesGetter url_loader_throttles_getter,
+    scoped_refptr<net::URLRequestContextGetter> request_context_getter)
     : original_response_timing_info_(
           std::make_unique<ResponseTimingInfo>(original_response)),
       forwarding_client_(std::move(forwarding_client)),
       url_loader_client_binding_(this),
       request_initiator_(request_initiator),
       url_loader_options_(url_loader_options),
+      frame_tree_node_id_(frame_tree_node_id),
       url_loader_factory_(std::move(url_loader_factory)),
       url_loader_throttles_getter_(std::move(url_loader_throttles_getter)),
+      request_context_getter_(std::move(request_context_getter)),
       weak_factory_(this) {
   DCHECK(base::FeatureList::IsEnabled(features::kSignedHTTPExchange));
+
+  // Can't use HttpResponseHeaders::GetMimeType() because SignedExchangeHandler
+  // checks "v=" parameter.
+  original_response.headers->EnumerateHeader(nullptr, "content-type",
+                                             &content_type_);
+
   url_loader_.Bind(std::move(endpoints->url_loader));
 
   if (url_loader_options_ &
@@ -113,7 +125,6 @@ WebPackageLoader::~WebPackageLoader() = default;
 
 void WebPackageLoader::OnReceiveResponse(
     const network::ResourceResponseHead& response_head,
-    const base::Optional<net::SSLInfo>& ssl_info,
     network::mojom::DownloadedTempFilePtr downloaded_file) {
   // Must not be called because this WebPackageLoader and the client endpoints
   // were bound after OnReceiveResponse() is called.
@@ -156,22 +167,25 @@ void WebPackageLoader::OnTransferSizeUpdated(int32_t transfer_size_diff) {
 
 void WebPackageLoader::OnStartLoadingResponseBody(
     mojo::ScopedDataPipeConsumerHandle body) {
+  auto cert_fetcher_factory = SignedExchangeCertFetcherFactory::Create(
+      std::move(request_initiator_), std::move(url_loader_factory_),
+      std::move(url_loader_throttles_getter_));
+
   if (g_signed_exchange_factory_for_testing_) {
     signed_exchange_handler_ = g_signed_exchange_factory_for_testing_->Create(
         std::make_unique<DataPipeToSourceStream>(std::move(body)),
         base::BindOnce(&WebPackageLoader::OnHTTPExchangeFound,
                        weak_factory_.GetWeakPtr()),
-        std::move(request_initiator_), std::move(url_loader_factory_),
-        std::move(url_loader_throttles_getter_));
+        std::move(cert_fetcher_factory));
     return;
   }
 
   signed_exchange_handler_ = std::make_unique<SignedExchangeHandler>(
-      std::make_unique<DataPipeToSourceStream>(std::move(body)),
+      content_type_, std::make_unique<DataPipeToSourceStream>(std::move(body)),
       base::BindOnce(&WebPackageLoader::OnHTTPExchangeFound,
                      weak_factory_.GetWeakPtr()),
-      std::move(request_initiator_), std::move(url_loader_factory_),
-      std::move(url_loader_throttles_getter_));
+      std::move(cert_fetcher_factory), std::move(request_context_getter_),
+      frame_tree_node_id_);
 }
 
 void WebPackageLoader::OnComplete(
@@ -217,8 +231,7 @@ void WebPackageLoader::OnHTTPExchangeFound(
     const GURL& request_url,
     const std::string& request_method,
     const network::ResourceResponseHead& resource_response,
-    std::unique_ptr<net::SourceStream> payload_stream,
-    base::Optional<net::SSLInfo> ssl_info) {
+    std::unique_ptr<net::SourceStream> payload_stream) {
   if (error) {
     // This will eventually delete |this|.
     forwarding_client_->OnComplete(network::URLLoaderCompletionStatus(error));
@@ -232,19 +245,24 @@ void WebPackageLoader::OnHTTPExchangeFound(
       std::move(original_response_timing_info_)->CreateRedirectResponseHead());
   forwarding_client_.reset();
 
-  if (ssl_info &&
+  const base::Optional<net::SSLInfo>& ssl_info = resource_response.ssl_info;
+  if (ssl_info.has_value() &&
       (url_loader_options_ &
        network::mojom::kURLLoadOptionSendSSLInfoForCertificateError) &&
       net::IsCertStatusError(ssl_info->cert_status) &&
       !net::IsCertStatusMinorError(ssl_info->cert_status)) {
     ssl_info_ = ssl_info;
   }
-  if (!(url_loader_options_ &
+  if (ssl_info.has_value() &&
+      !(url_loader_options_ &
         network::mojom::kURLLoadOptionSendSSLInfoWithResponse)) {
-    ssl_info = base::nullopt;
+    network::ResourceResponseHead response_info = resource_response;
+    response_info.ssl_info = base::nullopt;
+    client_->OnReceiveResponse(response_info, nullptr /* downloaded_file */);
+  } else {
+    client_->OnReceiveResponse(resource_response,
+                               nullptr /* downloaded_file */);
   }
-  client_->OnReceiveResponse(resource_response, std::move(ssl_info),
-                             nullptr /* downloaded_file */);
 
   // Currently we always assume that we have body.
   // TODO(https://crbug.com/80374): Add error handling and bail out

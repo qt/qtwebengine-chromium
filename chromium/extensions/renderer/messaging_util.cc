@@ -17,7 +17,7 @@
 #include "extensions/renderer/script_context.h"
 #include "gin/converter.h"
 #include "gin/dictionary.h"
-#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
+#include "third_party/blink/public/web/web_user_gesture_indicator.h"
 
 namespace extensions {
 namespace messaging_util {
@@ -196,9 +196,17 @@ bool GetTargetExtensionId(ScriptContext* script_context,
                           std::string* target_out,
                           std::string* error_out) {
   DCHECK(!v8_target_id.IsEmpty());
+  // Argument parsing should guarantee this is null or a string before we reach
+  // this point.
+  DCHECK(v8_target_id->IsNull() || v8_target_id->IsString());
 
   std::string target_id;
-  if (v8_target_id->IsNull()) {
+  // If omitted, we use the extension associated with the context.
+  // Note: we deliberately treat the empty string as omitting the id, even
+  // though it's not strictly correct. See https://crbug.com/823577.
+  if (v8_target_id->IsNull() ||
+      (v8_target_id->IsString() &&
+       v8_target_id.As<v8::String>()->Length() == 0)) {
     if (!script_context->extension()) {
       *error_out =
           base::StringPrintf(kExtensionIdRequiredErrorTemplate, method_name);
@@ -262,18 +270,21 @@ void MassageSendMessageArguments(
       // Argument must be the message.
       message = arguments[0];
       break;
-    case 2:
-      // Assume the meaning is (id, message) if id would be a string, or if
-      // the options argument isn't expected.
-      // Otherwise the meaning is (message, options).
-      if (!allow_options_argument || arguments[0]->IsString()) {
+    case 2: {
+      // Assume the first argument is the ID if we don't expect options, or if
+      // the argument could match the ID parameter.
+      // ID could be either a string, or null/undefined (since it's optional).
+      bool could_match_id =
+          arguments[0]->IsString() || arguments[0]->IsNullOrUndefined();
+      if (!allow_options_argument || could_match_id) {
         target_id = arguments[0];
         message = arguments[1];
-      } else {
+      } else {  // Otherwise, the meaning is (message, options).
         message = arguments[0];
         options = arguments[1];
       }
       break;
+    }
     case 3:
       DCHECK(allow_options_argument);
       // The meaning in this case is unambiguous.

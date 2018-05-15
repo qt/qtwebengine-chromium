@@ -4,7 +4,7 @@
 
 import("//build/config/features.gni")
 import("//build/config/jumbo.gni")
-import("//extensions/features/features.gni")
+import("//extensions/buildflags/buildflags.gni")
 
 assert(enable_extensions)
 
@@ -193,6 +193,7 @@ jumbo_source_set("renderer") {
     "resources/extension.css",
     "resources/extension_custom_bindings.js",
     "resources/extension_fonts.css",
+    "resources/feedback_private_custom_bindings.js",
     "resources/file_entry_binding_util.js",
     "resources/file_system_custom_bindings.js",
     "resources/greasemonkey_api.js",
@@ -312,7 +313,7 @@ jumbo_source_set("renderer") {
     "//extensions/common/api",
     "//gin",
     "//skia",
-    "//third_party/WebKit/public:blink",
+    "//third_party/blink/public:blink",
     "//third_party/cld_3/src/src:cld_3",
   ]
 
@@ -394,6 +395,7 @@ source_set("unit_tests") {
   sources = [
     "activity_log_converter_strategy_unittest.cc",
     "api_activity_logger_unittest.cc",
+    "bindings/api_binding_bridge_unittest.cc",
     "bindings/api_binding_hooks_test_delegate.cc",
     "bindings/api_binding_hooks_test_delegate.h",
     "bindings/api_binding_js_util_unittest.cc",
@@ -451,7 +453,7 @@ source_set("unit_tests") {
     "//ipc:test_support",
     "//testing/gmock",
     "//testing/gtest",
-    "//third_party/WebKit/public:blink",
+    "//third_party/blink/public:blink",
     "//ui/base",
   ]
 

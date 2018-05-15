@@ -53,8 +53,6 @@ DEFINE_VARIATION_PARAM(kIPHDownloadPageFeature, "IPH_DownloadPage");
 DEFINE_VARIATION_PARAM(kIPHDownloadPageScreenshotFeature,
                        "IPH_DownloadPageScreenshot");
 DEFINE_VARIATION_PARAM(kIPHChromeHomeExpandFeature, "IPH_ChromeHomeExpand");
-DEFINE_VARIATION_PARAM(kIPHChromeHomeMenuHeaderFeature,
-                       "IPH_ChromeHomeMenuHeader");
 DEFINE_VARIATION_PARAM(kIPHChromeHomePullToRefreshFeature,
                        "IPH_ChromeHomePullToRefresh");
 DEFINE_VARIATION_PARAM(kIPHMediaDownloadFeature, "IPH_MediaDownload");
@@ -66,6 +64,8 @@ DEFINE_VARIATION_PARAM(kIPHContextualSearchPromotePanelOpenFeature,
                        "IPH_ContextualSearchPromotePanelOpen");
 DEFINE_VARIATION_PARAM(kIPHContextualSearchOptInFeature,
                        "IPH_ContextualSearchOptIn");
+DEFINE_VARIATION_PARAM(kIPHContextualSuggestionsFeature,
+                       "IPH_ContextualSuggestions");
 #endif  // defined(OS_ANDROID)
 #if BUILDFLAG(ENABLE_DESKTOP_IN_PRODUCT_HELP)
 DEFINE_VARIATION_PARAM(kIPHBookmarkFeature, "IPH_Bookmark");
@@ -92,13 +92,13 @@ constexpr flags_ui::FeatureEntry::FeatureVariation
         VARIATION_ENTRY(kIPHDownloadPageFeature),
         VARIATION_ENTRY(kIPHDownloadPageScreenshotFeature),
         VARIATION_ENTRY(kIPHChromeHomeExpandFeature),
-        VARIATION_ENTRY(kIPHChromeHomeMenuHeaderFeature),
         VARIATION_ENTRY(kIPHChromeHomePullToRefreshFeature),
         VARIATION_ENTRY(kIPHMediaDownloadFeature),
         VARIATION_ENTRY(kIPHContextualSearchWebSearchFeature),
         VARIATION_ENTRY(kIPHContextualSearchPromoteTapFeature),
         VARIATION_ENTRY(kIPHContextualSearchPromotePanelOpenFeature),
         VARIATION_ENTRY(kIPHContextualSearchOptInFeature),
+        VARIATION_ENTRY(kIPHContextualSuggestionsFeature),
 #elif BUILDFLAG(ENABLE_DESKTOP_IN_PRODUCT_HELP)
         VARIATION_ENTRY(kIPHBookmarkFeature),
         VARIATION_ENTRY(kIPHIncognitoWindowFeature),

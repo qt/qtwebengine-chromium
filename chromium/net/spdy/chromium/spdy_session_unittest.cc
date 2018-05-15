@@ -52,6 +52,7 @@
 using net::test::IsError;
 using net::test::IsOk;
 using net::test::TestServerPushDelegate;
+using testing::_;
 
 namespace net {
 
@@ -84,7 +85,10 @@ base::TimeTicks InstantaneousReads() {
 
 class MockRequireCTDelegate : public TransportSecurityState::RequireCTDelegate {
  public:
-  MOCK_METHOD1(IsCTRequiredForHost, CTRequirementLevel(const SpdyString& host));
+  MOCK_METHOD3(IsCTRequiredForHost,
+               CTRequirementLevel(const std::string& host,
+                                  const X509Certificate* chain,
+                                  const HashValueVector& hashes));
 };
 
 }  // namespace
@@ -1927,12 +1931,11 @@ TEST_F(SpdySessionTest, WaitingForWrongPing) {
 TEST_F(SpdySessionTest, OnSettings) {
   session_deps_.host_resolver->set_synchronous_mode(true);
 
-  const SpdyKnownSettingsId kSpdyKnownSettingsId =
-      SETTINGS_MAX_CONCURRENT_STREAMS;
+  const SpdySettingsId kSpdySettingsId = SETTINGS_MAX_CONCURRENT_STREAMS;
 
   SettingsMap new_settings;
   const uint32_t max_concurrent_streams = kInitialMaxConcurrentStreams + 1;
-  new_settings[kSpdyKnownSettingsId] = max_concurrent_streams;
+  new_settings[kSpdySettingsId] = max_concurrent_streams;
   SpdySerializedFrame settings_frame(
       spdy_util_.ConstructSpdySettings(new_settings));
   MockRead reads[] = {
@@ -2726,10 +2729,9 @@ TEST_F(SpdySessionTest, CloseTwoStalledCreateStream) {
   // TODO(rtenneti): Define a helper class/methods and move the common code in
   // this file.
   SettingsMap new_settings;
-  const SpdyKnownSettingsId kSpdyKnownSettingsId1 =
-      SETTINGS_MAX_CONCURRENT_STREAMS;
+  const SpdySettingsId kSpdySettingsId1 = SETTINGS_MAX_CONCURRENT_STREAMS;
   const uint32_t max_concurrent_streams = 1;
-  new_settings[kSpdyKnownSettingsId1] = max_concurrent_streams;
+  new_settings[kSpdySettingsId1] = max_concurrent_streams;
 
   SpdySerializedFrame settings_ack(spdy_util_.ConstructSpdySettingsAck());
   SpdySerializedFrame req1(spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
@@ -4477,7 +4479,7 @@ void SpdySessionTest::RunResumeAfterUnstallTest(
       spdy_util_.ConstructPostHeaderBlock(kDefaultUrl, kBodyDataSize));
   EXPECT_EQ(ERR_IO_PENDING,
             stream->SendRequestHeaders(std::move(headers), MORE_DATA_TO_SEND));
-  EXPECT_EQ(kDefaultUrl, stream->GetUrlFromHeaders().spec());
+  EXPECT_EQ(kDefaultUrl, stream->url().spec());
 
   stall_function.Run(stream.get());
 
@@ -4614,7 +4616,7 @@ TEST_F(SpdySessionTest, ResumeByPriorityAfterSendWindowSizeIncrease) {
       spdy_util_.ConstructPostHeaderBlock(kDefaultUrl, kBodyDataSize));
   EXPECT_EQ(ERR_IO_PENDING, stream1->SendRequestHeaders(std::move(headers1),
                                                         MORE_DATA_TO_SEND));
-  EXPECT_EQ(kDefaultUrl, stream1->GetUrlFromHeaders().spec());
+  EXPECT_EQ(kDefaultUrl, stream1->url().spec());
 
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(1u, stream1->stream_id());
@@ -4624,7 +4626,7 @@ TEST_F(SpdySessionTest, ResumeByPriorityAfterSendWindowSizeIncrease) {
       spdy_util_.ConstructPostHeaderBlock(kDefaultUrl, kBodyDataSize));
   EXPECT_EQ(ERR_IO_PENDING, stream2->SendRequestHeaders(std::move(headers2),
                                                         MORE_DATA_TO_SEND));
-  EXPECT_EQ(kDefaultUrl, stream2->GetUrlFromHeaders().spec());
+  EXPECT_EQ(kDefaultUrl, stream2->url().spec());
 
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(3u, stream2->stream_id());
@@ -4718,7 +4720,7 @@ TEST_F(SpdySessionTest, ResumeSessionWithStalledStream) {
       spdy_util_.ConstructPostHeaderBlock(kDefaultUrl, kBodyDataSize));
   EXPECT_EQ(ERR_IO_PENDING, stream1->SendRequestHeaders(std::move(headers1),
                                                         MORE_DATA_TO_SEND));
-  EXPECT_EQ(kDefaultUrl, stream1->GetUrlFromHeaders().spec());
+  EXPECT_EQ(kDefaultUrl, stream1->url().spec());
 
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(1u, stream1->stream_id());
@@ -4728,7 +4730,7 @@ TEST_F(SpdySessionTest, ResumeSessionWithStalledStream) {
       spdy_util_.ConstructPostHeaderBlock(kDefaultUrl, kBodyDataSize));
   EXPECT_EQ(ERR_IO_PENDING, stream2->SendRequestHeaders(std::move(headers2),
                                                         MORE_DATA_TO_SEND));
-  EXPECT_EQ(kDefaultUrl, stream2->GetUrlFromHeaders().spec());
+  EXPECT_EQ(kDefaultUrl, stream2->url().spec());
 
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(3u, stream2->stream_id());
@@ -4870,7 +4872,7 @@ TEST_F(SpdySessionTest, SendWindowSizeIncreaseWithDeletedStreams) {
       spdy_util_.ConstructPostHeaderBlock(kDefaultUrl, kBodyDataSize));
   EXPECT_EQ(ERR_IO_PENDING, stream1->SendRequestHeaders(std::move(headers1),
                                                         MORE_DATA_TO_SEND));
-  EXPECT_EQ(kDefaultUrl, stream1->GetUrlFromHeaders().spec());
+  EXPECT_EQ(kDefaultUrl, stream1->url().spec());
 
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(1u, stream1->stream_id());
@@ -4880,7 +4882,7 @@ TEST_F(SpdySessionTest, SendWindowSizeIncreaseWithDeletedStreams) {
       spdy_util_.ConstructPostHeaderBlock(kDefaultUrl, kBodyDataSize));
   EXPECT_EQ(ERR_IO_PENDING, stream2->SendRequestHeaders(std::move(headers2),
                                                         MORE_DATA_TO_SEND));
-  EXPECT_EQ(kDefaultUrl, stream2->GetUrlFromHeaders().spec());
+  EXPECT_EQ(kDefaultUrl, stream2->url().spec());
 
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(3u, stream2->stream_id());
@@ -4890,7 +4892,7 @@ TEST_F(SpdySessionTest, SendWindowSizeIncreaseWithDeletedStreams) {
       spdy_util_.ConstructPostHeaderBlock(kDefaultUrl, kBodyDataSize));
   EXPECT_EQ(ERR_IO_PENDING, stream3->SendRequestHeaders(std::move(headers3),
                                                         MORE_DATA_TO_SEND));
-  EXPECT_EQ(kDefaultUrl, stream3->GetUrlFromHeaders().spec());
+  EXPECT_EQ(kDefaultUrl, stream3->url().spec());
 
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(5u, stream3->stream_id());
@@ -4995,7 +4997,7 @@ TEST_F(SpdySessionTest, SendWindowSizeIncreaseWithDeletedSession) {
       spdy_util_.ConstructPostHeaderBlock(kDefaultUrl, kBodyDataSize));
   EXPECT_EQ(ERR_IO_PENDING, stream1->SendRequestHeaders(std::move(headers1),
                                                         MORE_DATA_TO_SEND));
-  EXPECT_EQ(kDefaultUrl, stream1->GetUrlFromHeaders().spec());
+  EXPECT_EQ(kDefaultUrl, stream1->url().spec());
 
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(1u, stream1->stream_id());
@@ -5005,7 +5007,7 @@ TEST_F(SpdySessionTest, SendWindowSizeIncreaseWithDeletedSession) {
       spdy_util_.ConstructPostHeaderBlock(kDefaultUrl, kBodyDataSize));
   EXPECT_EQ(ERR_IO_PENDING, stream2->SendRequestHeaders(std::move(headers2),
                                                         MORE_DATA_TO_SEND));
-  EXPECT_EQ(kDefaultUrl, stream2->GetUrlFromHeaders().spec());
+  EXPECT_EQ(kDefaultUrl, stream2->url().spec());
 
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(3u, stream2->stream_id());
@@ -6024,15 +6026,15 @@ TEST_F(SendInitialSettingsOnNewSpdySessionTest, OverwriteValues) {
 // Unknown parameters should still be sent to the server.
 TEST_F(SendInitialSettingsOnNewSpdySessionTest, UnknownSettings) {
   // The following parameters are not defined in the HTTP/2 specification.
-  session_deps_.http2_settings[static_cast<SpdyKnownSettingsId>(7)] = 1234;
-  session_deps_.http2_settings[static_cast<SpdyKnownSettingsId>(25)] = 5678;
+  session_deps_.http2_settings[7] = 1234;
+  session_deps_.http2_settings[25] = 5678;
 
   SettingsMap expected_settings;
   expected_settings[SETTINGS_HEADER_TABLE_SIZE] = kSpdyMaxHeaderTableSize;
   expected_settings[SETTINGS_MAX_CONCURRENT_STREAMS] =
       kSpdyMaxConcurrentPushedStreams;
-  expected_settings[static_cast<SpdyKnownSettingsId>(7)] = 1234;
-  expected_settings[static_cast<SpdyKnownSettingsId>(25)] = 5678;
+  expected_settings[7] = 1234;
+  expected_settings[25] = 5678;
   RunInitialSettingsTest(expected_settings);
 }
 
@@ -6555,9 +6557,10 @@ TEST(CanPoolTest, CanNotPoolWithBadCTWhenCTRequired) {
       ct::CTPolicyCompliance::CT_POLICY_NOT_ENOUGH_SCTS;
 
   MockRequireCTDelegate require_ct_delegate;
-  EXPECT_CALL(require_ct_delegate, IsCTRequiredForHost("www.example.org"))
+  EXPECT_CALL(require_ct_delegate, IsCTRequiredForHost("www.example.org", _, _))
       .WillRepeatedly(Return(CTRequirementLevel::NOT_REQUIRED));
-  EXPECT_CALL(require_ct_delegate, IsCTRequiredForHost("mail.example.org"))
+  EXPECT_CALL(require_ct_delegate,
+              IsCTRequiredForHost("mail.example.org", _, _))
       .WillRepeatedly(Return(CTRequirementLevel::REQUIRED));
 
   TransportSecurityState tss;
@@ -6581,9 +6584,10 @@ TEST(CanPoolTest, CanPoolWithBadCTWhenCTNotRequired) {
       ct::CTPolicyCompliance::CT_POLICY_NOT_ENOUGH_SCTS;
 
   MockRequireCTDelegate require_ct_delegate;
-  EXPECT_CALL(require_ct_delegate, IsCTRequiredForHost("www.example.org"))
+  EXPECT_CALL(require_ct_delegate, IsCTRequiredForHost("www.example.org", _, _))
       .WillRepeatedly(Return(CTRequirementLevel::NOT_REQUIRED));
-  EXPECT_CALL(require_ct_delegate, IsCTRequiredForHost("mail.example.org"))
+  EXPECT_CALL(require_ct_delegate,
+              IsCTRequiredForHost("mail.example.org", _, _))
       .WillRepeatedly(Return(CTRequirementLevel::NOT_REQUIRED));
 
   TransportSecurityState tss;
@@ -6607,9 +6611,10 @@ TEST(CanPoolTest, CanPoolWithGoodCTWhenCTRequired) {
       ct::CTPolicyCompliance::CT_POLICY_COMPLIES_VIA_SCTS;
 
   MockRequireCTDelegate require_ct_delegate;
-  EXPECT_CALL(require_ct_delegate, IsCTRequiredForHost("www.example.org"))
+  EXPECT_CALL(require_ct_delegate, IsCTRequiredForHost("www.example.org", _, _))
       .WillRepeatedly(Return(CTRequirementLevel::NOT_REQUIRED));
-  EXPECT_CALL(require_ct_delegate, IsCTRequiredForHost("mail.example.org"))
+  EXPECT_CALL(require_ct_delegate,
+              IsCTRequiredForHost("mail.example.org", _, _))
       .WillRepeatedly(Return(CTRequirementLevel::REQUIRED));
 
   TransportSecurityState tss;

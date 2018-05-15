@@ -18,6 +18,7 @@
 #include "base/trace_event/trace_event.h"
 #include "content/browser/tracing/background_tracing_manager_impl.h"
 #include "content/browser/tracing/background_tracing_rule.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
@@ -140,7 +141,8 @@ class BackgroundTracingManagerUploadConfigWrapper {
     EXPECT_EQ(Z_STREAM_END, result);
 
     last_file_contents_.assign(output_str.data(), bytes_written);
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, done_callback);
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                            std::move(done_callback));
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, callback_);
   }
 
@@ -167,7 +169,7 @@ void StartedFinalizingCallback(base::Closure callback,
                                bool value) {
   EXPECT_EQ(expected, value);
   if (!callback.is_null())
-    callback.Run();
+    std::move(callback).Run();
 }
 
 std::unique_ptr<BackgroundTracingConfig> CreatePreemptiveConfig() {

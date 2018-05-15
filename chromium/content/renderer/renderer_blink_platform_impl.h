@@ -25,9 +25,11 @@
 #include "content/renderer/top_level_blame_context.h"
 #include "content/renderer/webpublicsuffixlist_impl.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
-#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBFactory.h"
-#include "third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationType.h"
-#include "third_party/WebKit/public/platform/modules/webdatabase/web_database.mojom.h"
+#include "services/service_manager/public/cpp/interface_provider.h"
+#include "third_party/blink/public/platform/modules/cache_storage/cache_storage.mojom.h"
+#include "third_party/blink/public/platform/modules/indexeddb/web_idb_factory.h"
+#include "third_party/blink/public/platform/modules/screen_orientation/web_screen_orientation_type.h"
+#include "third_party/blink/public/platform/modules/webdatabase/web_database.mojom.h"
 
 namespace IPC {
 class SyncMessageFilter;
@@ -35,7 +37,7 @@ class SyncMessageFilter;
 
 namespace blink {
 namespace scheduler {
-class RendererScheduler;
+class WebMainThreadScheduler;
 class WebThreadBase;
 }
 class WebCanvasCaptureHandler;
@@ -45,16 +47,12 @@ class WebMediaRecorderHandler;
 class WebMediaStream;
 class WebSecurityOrigin;
 class WebServiceWorkerCacheStorage;
-}
+}  // namespace blink
 
 namespace device {
 class Gamepads;
 class MotionData;
 class OrientationData;
-}
-
-namespace service_manager {
-class Connector;
 }
 
 namespace content {
@@ -69,7 +67,7 @@ class WebDatabaseObserverImpl;
 class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
  public:
   explicit RendererBlinkPlatformImpl(
-      blink::scheduler::RendererScheduler* renderer_scheduler);
+      blink::scheduler::WebMainThreadScheduler* main_thread_scheduler);
   ~RendererBlinkPlatformImpl() override;
 
   // Shutdown must be called just prior to shutting down blink.
@@ -134,7 +132,7 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   blink::WebScrollbarBehavior* ScrollbarBehavior() override;
   blink::WebIDBFactory* IdbFactory() override;
   std::unique_ptr<blink::WebServiceWorkerCacheStorage> CreateCacheStorage(
-      const blink::WebSecurityOrigin& security_origin) override;
+      service_manager::InterfaceProvider* mojo_provider) override;
   blink::WebFileSystem* FileSystem() override;
   blink::WebString FileSystemCreateOriginIdentifier(
       const blink::WebSecurityOrigin& origin) override;
@@ -187,6 +185,7 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
       blink::WebMediaPlayer* web_media_player) override;
   std::unique_ptr<blink::WebImageCaptureFrameGrabber>
   CreateImageCaptureFrameGrabber() override;
+  void UpdateWebRTCAPICount(blink::WebRTCAPIName api_name) override;
   std::unique_ptr<blink::WebSocketHandshakeThrottle>
   CreateWebSocketHandshakeThrottle() override;
   std::unique_ptr<blink::WebGraphicsContext3DProvider>
@@ -199,7 +198,8 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   CreateSharedOffscreenGraphicsContext3DProvider() override;
   gpu::GpuMemoryBufferManager* GetGpuMemoryBufferManager() override;
   std::unique_ptr<viz::SharedBitmap> AllocateSharedBitmap(
-      const blink::WebSize& size) override;
+      const blink::WebSize& size,
+      viz::ResourceFormat format) override;
   blink::WebCompositorSupport* CompositorSupport() override;
   blink::WebString ConvertIDNToUnicode(const blink::WebString& host) override;
   service_manager::Connector* GetConnector() override;
@@ -334,7 +334,9 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   base::IDMap<std::unique_ptr<PlatformEventObserverBase>>
       platform_event_observers_;
 
-  blink::scheduler::RendererScheduler* renderer_scheduler_;  // NOT OWNED
+  // NOT OWNED
+  blink::scheduler::WebMainThreadScheduler* main_thread_scheduler_;
+
   TopLevelBlameContext top_level_blame_context_;
 
   std::unique_ptr<LocalStorageCachedAreas> local_storage_cached_areas_;

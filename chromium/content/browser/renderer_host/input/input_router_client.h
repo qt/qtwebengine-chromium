@@ -11,7 +11,7 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/common/input_event_ack_source.h"
 #include "content/public/common/input_event_ack_state.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/blink/public/platform/web_input_event.h"
 
 namespace ui {
 class LatencyInfo;
@@ -53,6 +53,9 @@ class CONTENT_EXPORT InputRouterClient {
 
   // Called when a renderer fling has terminated.
   virtual void DidStopFlinging() = 0;
+
+  // Called when a GSB has started scrolling a viewport.
+  virtual void DidStartScrollingViewport() = 0;
 
   // Called when the input router generates an event. It is intended that the
   // client will do some processing on |gesture_event| and then send it back

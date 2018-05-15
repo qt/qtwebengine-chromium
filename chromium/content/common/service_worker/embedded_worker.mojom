@@ -9,14 +9,15 @@ import "content/common/service_worker/controller_service_worker.mojom";
 import "content/common/service_worker/service_worker_event_dispatcher.mojom";
 import "content/common/service_worker/service_worker_provider.mojom";
 import "mojo/public/mojom/base/string16.mojom";
-import "mojo/common/time.mojom";
-import "mojo/common/unguessable_token.mojom";
+import "mojo/public/mojom/base/time.mojom";
+import "mojo/public/mojom/base/unguessable_token.mojom";
 import "services/service_manager/public/mojom/interface_provider.mojom";
-import "third_party/WebKit/public/mojom/service_worker/service_worker.mojom";
-import "third_party/WebKit/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom";
-import "third_party/WebKit/public/web/console_message.mojom";
-import "third_party/WebKit/public/web/devtools_agent.mojom";
-import "third_party/WebKit/public/web/worker_content_settings_proxy.mojom";
+import "third_party/blink/public/mojom/service_worker/service_worker.mojom";
+import "third_party/blink/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom";
+import "third_party/blink/public/platform/web_feature.mojom";
+import "third_party/blink/public/web/console_message.mojom";
+import "third_party/blink/public/web/devtools_agent.mojom";
+import "third_party/blink/public/web/worker_content_settings_proxy.mojom";
 import "url/mojom/url.mojom";
 
 // Parameters to launch a service worker. This is passed from the browser to the
@@ -37,7 +38,7 @@ struct EmbeddedWorkerStartParams {
   // The id to talk with the DevTools agent for the worker.
   int32 worker_devtools_agent_route_id;
   // Unique token identifying this worker for DevTools.
-  mojo.common.mojom.UnguessableToken devtools_worker_token;
+  mojo_base.mojom.UnguessableToken devtools_worker_token;
   // When true, worker script evaluation is blocked until
   // EmbeddedWorkerInstanceClient::ResumeAfterDownload() is called.
   bool pause_after_download;
@@ -71,9 +72,9 @@ struct EmbeddedWorkerStartParams {
 // Holds timing information about the start worker sequence for UMA.
 struct EmbeddedWorkerStartTiming {
   // When this Blink instance finished initializing.
-  mojo.common.mojom.TimeTicks blink_initialized_time;
+  mojo_base.mojom.TimeTicks blink_initialized_time;
   // When the start worker message was received by the renderer.
-  mojo.common.mojom.TimeTicks start_worker_received_time;
+  mojo_base.mojom.TimeTicks start_worker_received_time;
 };
 
 // EmbeddedWorkerInstanceClient is the renderer-side ("Client") of
@@ -109,6 +110,17 @@ interface EmbeddedWorkerInstanceHost {
   // if the worker thread is continuously busy and the browser's periodic ping
   // message has been missed, the browser will terminate the service worker.
   RequestTermination();
+
+  // Tells the browser process that this service worker used |feature|, for
+  // UseCounter purposes. The browser process propagates the feature usage bit
+  // to all clients controlled by the service worker. See
+  // https://crbug.com/376039 for background.
+  // Note: Because CountFeature() is possible to be called on the main thread
+  // during service worker startup and is also called on the worker thread after
+  // that, we put it here rather than interface ServiceWorkerHost, so that we
+  // can still keep interface ServiceWorkerHost being used solely on the worker
+  // thread in the renderer process.
+  CountFeature(blink.mojom.WebFeature feature);
 
   // Indicates that the worker is ready for inspection.
   OnReadyForInspection();

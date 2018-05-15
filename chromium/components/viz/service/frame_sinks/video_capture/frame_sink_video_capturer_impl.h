@@ -7,10 +7,8 @@
 
 #include <stdint.h>
 
-#include <array>
 #include <queue>
 
-#include "base/containers/flat_map.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
@@ -19,7 +17,6 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "base/unguessable_token.h"
-#include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "components/viz/service/frame_sinks/video_capture/capturable_frame_sink.h"
 #include "components/viz/service/frame_sinks/video_capture/in_flight_frame_delivery.h"
@@ -95,9 +92,11 @@ class VIZ_SERVICE_EXPORT FrameSinkVideoCapturerImpl final
   void SetFormat(media::VideoPixelFormat format,
                  media::ColorSpace color_space) final;
   void SetMinCapturePeriod(base::TimeDelta min_capture_period) final;
+  void SetMinSizeChangePeriod(base::TimeDelta min_period) final;
   void SetResolutionConstraints(const gfx::Size& min_size,
                                 const gfx::Size& max_size,
                                 bool use_fixed_aspect_ratio) final;
+  void SetAutoThrottlingEnabled(bool enabled) final;
   void ChangeTarget(const FrameSinkId& frame_sink_id) final;
   void Start(mojom::FrameSinkVideoConsumerPtr consumer) final;
   void Stop() final;
@@ -128,7 +127,6 @@ class VIZ_SERVICE_EXPORT FrameSinkVideoCapturerImpl final
  private:
   friend class FrameSinkVideoCapturerTest;
 
-  using BeginFrameSourceId = decltype(BeginFrameArgs::source_id);
   using OracleFrameNumber =
       decltype(std::declval<media::VideoCaptureOracle>().next_frame_number());
 
@@ -156,10 +154,9 @@ class VIZ_SERVICE_EXPORT FrameSinkVideoCapturerImpl final
   void RefreshSoon();
 
   // CapturableFrameSink::Client implementation:
-  void OnBeginFrame(const BeginFrameArgs& args) final;
-  void OnFrameDamaged(const BeginFrameAck& ack,
-                      const gfx::Size& frame_size,
-                      const gfx::Rect& damage_rect) final;
+  void OnFrameDamaged(const gfx::Size& frame_size,
+                      const gfx::Rect& damage_rect,
+                      base::TimeTicks target_display_time) final;
 
   // Consults the VideoCaptureOracle to decide whether to capture a frame,
   // then ensures prerequisites are met before initiating the capture: that
@@ -192,6 +189,10 @@ class VIZ_SERVICE_EXPORT FrameSinkVideoCapturerImpl final
                          scoped_refptr<media::VideoFrame> frame,
                          const gfx::Rect& content_rect);
 
+  // For ARGB format, ensures that every dimension of |size| is positive. For
+  // I420 format, ensures that every dimension is even and at least 2.
+  gfx::Size AdjustSizeForPixelFormat(const gfx::Size& size);
+
   // Owner/Manager of this instance.
   FrameSinkVideoCapturerManager* const frame_sink_manager_;
 
@@ -206,7 +207,7 @@ class VIZ_SERVICE_EXPORT FrameSinkVideoCapturerImpl final
 
   // Use the default base::TimeTicks clock; but allow unit tests to provide a
   // replacement.
-  base::TickClock* clock_;
+  const base::TickClock* clock_;
 
   // Current image format.
   media::VideoPixelFormat pixel_format_ = kDefaultPixelFormat;
@@ -227,13 +228,6 @@ class VIZ_SERVICE_EXPORT FrameSinkVideoCapturerImpl final
   // The current video frame consumer. This is set when Start() is called and
   // cleared when Stop() is called.
   mojom::FrameSinkVideoConsumerPtr consumer_;
-
-  // A cache of recently-recorded future frame display times, according to the
-  // BeginFrameArgs passed to OnBeginFrame() calls. There is one TimeRingBuffer
-  // per BeginFrameSource. TimeRingBuffer is an array mapping
-  // BeginFrameArgs::sequence_number to the expected display time.
-  using TimeRingBuffer = std::array<base::TimeTicks, kDesignLimitMaxFrames>;
-  base::flat_map<BeginFrameSourceId, TimeRingBuffer> frame_display_times_;
 
   // The portion of the source content that has changed, but has not yet been
   // captured.
@@ -290,11 +284,6 @@ class VIZ_SERVICE_EXPORT FrameSinkVideoCapturerImpl final
   // A weak pointer factory used for cancelling the results from any in-flight
   // copy output requests.
   base::WeakPtrFactory<FrameSinkVideoCapturerImpl> capture_weak_factory_;
-
-  // Retain entries in |frame_display_times_| that contain timestamps newer than
-  // this long ago.
-  static constexpr base::TimeDelta kDisplayTimeCacheKeepAliveInterval =
-      base::TimeDelta::FromMilliseconds(500);
 
   DISALLOW_COPY_AND_ASSIGN(FrameSinkVideoCapturerImpl);
 };

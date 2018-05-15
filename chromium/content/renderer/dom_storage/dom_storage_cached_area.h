@@ -14,12 +14,12 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/nullable_string16.h"
 #include "content/common/content_export.h"
-#include "third_party/WebKit/public/platform/WebScopedVirtualTimePauser.h"
+#include "third_party/blink/public/platform/web_scoped_virtual_time_pauser.h"
 #include "url/gurl.h"
 
 namespace blink {
 namespace scheduler {
-class RendererScheduler;
+class WebMainThreadScheduler;
 }
 }  // namespace blink
 
@@ -37,10 +37,11 @@ class DOMStorageProxy;
 class CONTENT_EXPORT DOMStorageCachedArea
     : public base::RefCounted<DOMStorageCachedArea> {
  public:
-  DOMStorageCachedArea(const std::string& namespace_id,
-                       const GURL& origin,
-                       DOMStorageProxy* proxy,
-                       blink::scheduler::RendererScheduler* renderer_scheduler);
+  DOMStorageCachedArea(
+      const std::string& namespace_id,
+      const GURL& origin,
+      DOMStorageProxy* proxy,
+      blink::scheduler::WebMainThreadScheduler* main_thread_scheduler);
 
   const std::string& namespace_id() const { return namespace_id_; }
   const GURL& origin() const { return origin_; }
@@ -101,7 +102,10 @@ class CONTENT_EXPORT DOMStorageCachedArea
   GURL origin_;
   scoped_refptr<DOMStorageMap> map_;
   scoped_refptr<DOMStorageProxy> proxy_;
-  blink::scheduler::RendererScheduler* renderer_scheduler_;  // NOT OWNED
+
+  // Not owned.
+  blink::scheduler::WebMainThreadScheduler* main_thread_scheduler_;
+
   base::WeakPtrFactory<DOMStorageCachedArea> weak_factory_;
 };
 

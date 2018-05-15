@@ -12,8 +12,8 @@
 #include "cc/paint/paint_filter.h"
 #include "cc/paint/paint_op_buffer.h"
 #include "cc/paint/render_surface_filters.h"
-#include "third_party/WebKit/public/platform/WebFloatRect.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/blink/public/platform/web_float_rect.h"
+#include "third_party/blink/public/platform/web_rect.h"
 #include "third_party/skia/include/core/SkColorFilter.h"
 #include "third_party/skia/include/core/SkMatrix44.h"
 #include "ui/gfx/geometry/rect_conversions.h"
@@ -84,7 +84,7 @@ void WebDisplayItemListImpl::AppendEndClipPathItem() {
 
 void WebDisplayItemListImpl::AppendFloatClipItem(
     const blink::WebFloatRect& clip_rect) {
-  bool antialias = false;
+  bool antialias = true;
   display_item_list_->StartPaint();
   display_item_list_->push<cc::SaveOp>();
   display_item_list_->push<cc::ClipRectOp>(gfx::RectFToSkRect(clip_rect),

@@ -54,6 +54,11 @@ void HostFrameSinkManager::SetConnectionLostCallback(
   connection_lost_callback_ = std::move(callback);
 }
 
+void HostFrameSinkManager::SetBadMessageReceivedFromGpuCallback(
+    base::RepeatingClosure callback) {
+  bad_message_received_from_gpu_callback_ = std::move(callback);
+}
+
 void HostFrameSinkManager::RegisterFrameSinkId(const FrameSinkId& frame_sink_id,
                                                HostFrameSinkClient* client) {
   DCHECK(frame_sink_id.is_valid());
@@ -138,7 +143,8 @@ void HostFrameSinkManager::CreateRootCompositorFrameSink(
   data.has_created_compositor_frame_sink = true;
 
   frame_sink_manager_->CreateRootCompositorFrameSink(std::move(params));
-  display_hit_test_query_[frame_sink_id] = std::make_unique<HitTestQuery>();
+  display_hit_test_query_[frame_sink_id] =
+      std::make_unique<HitTestQuery>(bad_message_received_from_gpu_callback_);
 }
 
 void HostFrameSinkManager::CreateCompositorFrameSink(
@@ -246,6 +252,12 @@ void HostFrameSinkManager::CreateVideoCapturer(
 void HostFrameSinkManager::EvictSurfaces(
     const std::vector<SurfaceId>& surface_ids) {
   frame_sink_manager_->EvictSurfaces(surface_ids);
+}
+
+void HostFrameSinkManager::RequestCopyOfOutput(
+    const SurfaceId& surface_id,
+    std::unique_ptr<CopyOutputRequest> request) {
+  frame_sink_manager_->RequestCopyOfOutput(surface_id, std::move(request));
 }
 
 std::unique_ptr<CompositorFrameSinkSupport>
@@ -391,11 +403,6 @@ void HostFrameSinkManager::OnFirstSurfaceActivation(
     frame_sink_data.client->OnFirstSurfaceActivation(surface_info);
 }
 
-void HostFrameSinkManager::OnClientConnectionClosed(
-    const FrameSinkId& frame_sink_id) {
-  // TODO(kylechar): Notify observers.
-}
-
 void HostFrameSinkManager::OnAggregatedHitTestRegionListUpdated(
     const FrameSinkId& frame_sink_id,
     mojo::ScopedSharedBufferHandle active_handle,
@@ -421,12 +428,6 @@ void HostFrameSinkManager::SwitchActiveAggregatedHitTestRegionList(
   // in-flight hit-test data.
   if (iter == display_hit_test_query_.end())
     return;
-
-  if (active_handle_index != 0u && active_handle_index != 1u) {
-    // TODO(riajiang): Report security fault. http://crbug.com/746470
-    NOTREACHED();
-    return;
-  }
   iter->second->SwitchActiveAggregatedHitTestRegionList(active_handle_index);
 }
 

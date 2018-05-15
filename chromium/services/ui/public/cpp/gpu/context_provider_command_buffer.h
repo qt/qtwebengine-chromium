@@ -27,18 +27,19 @@
 #include "url/gurl.h"
 
 namespace gpu {
+class CommandBufferHelper;
 class CommandBufferProxyImpl;
 class GpuChannelHost;
 struct GpuFeatureInfo;
 class GpuMemoryBufferManager;
+class ImplementationBase;
 class TransferBuffer;
 namespace gles2 {
-class GLES2CmdHelper;
 class GLES2Implementation;
 class GLES2TraceImplementation;
 }
 namespace raster {
-class RasterImplementationGLES;
+class RasterInterface;
 }
 }
 
@@ -65,6 +66,7 @@ class ContextProviderCommandBuffer
       const GURL& active_url,
       bool automatic_flushes,
       bool support_locking,
+      bool support_grcontext,
       const gpu::SharedMemoryLimits& memory_limits,
       const gpu::ContextCreationAttribs& attributes,
       ContextProviderCommandBuffer* shared_context_provider,
@@ -84,7 +86,6 @@ class ContextProviderCommandBuffer
   gpu::ContextSupport* ContextSupport() override;
   class GrContext* GrContext() override;
   viz::ContextCacheController* CacheController() override;
-  void InvalidateGrContext(uint32_t state) override;
   base::Lock* GetLock() override;
   const gpu::Capabilities& ContextCapabilities() const override;
   const gpu::GpuFeatureInfo& GetGpuFeatureInfo() const override;
@@ -140,6 +141,7 @@ class ContextProviderCommandBuffer
   const GURL active_url_;
   const bool automatic_flushes_;
   const bool support_locking_;
+  const bool support_grcontext_;
   const gpu::SharedMemoryLimits memory_limits_;
   const gpu::ContextCreationAttribs attributes_;
   const command_buffer_metrics::ContextType context_type_;
@@ -151,11 +153,15 @@ class ContextProviderCommandBuffer
 
   base::Lock context_lock_;  // Referenced by command_buffer_.
   std::unique_ptr<gpu::CommandBufferProxyImpl> command_buffer_;
-  std::unique_ptr<gpu::gles2::GLES2CmdHelper> gles2_helper_;
+  std::unique_ptr<gpu::CommandBufferHelper> helper_;
   std::unique_ptr<gpu::TransferBuffer> transfer_buffer_;
+
+  // Owned by either gles2_impl_ or raster_interface_, not both.
+  gpu::ImplementationBase* impl_;
   std::unique_ptr<gpu::gles2::GLES2Implementation> gles2_impl_;
   std::unique_ptr<gpu::gles2::GLES2TraceImplementation> trace_impl_;
-  std::unique_ptr<gpu::raster::RasterImplementationGLES> raster_impl_;
+  std::unique_ptr<gpu::raster::RasterInterface> raster_interface_;
+
   std::unique_ptr<skia_bindings::GrContextForGLES2Interface> gr_context_;
   std::unique_ptr<viz::ContextCacheController> cache_controller_;
 

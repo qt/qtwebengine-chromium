@@ -166,7 +166,12 @@ class AudioCodingModuleTestOldApi : public ::testing::Test {
   void TearDown() {}
 
   void SetUp() {
-    acm_.reset(AudioCodingModule::Create(clock_));
+    acm_.reset(AudioCodingModule::Create([this] {
+      AudioCodingModule::Config config;
+      config.clock = clock_;
+      config.decoder_factory = CreateBuiltinAudioDecoderFactory();
+      return config;
+    }()));
 
     rtp_utility_->Populate(&rtp_header_);
 
@@ -1053,9 +1058,11 @@ TEST_F(AcmReceiverBitExactnessOldApi, 48kHzOutputExternalDecoder) {
                                        : fact_->IsSupportedDecoder(format);
     }
     std::unique_ptr<AudioDecoder> MakeAudioDecoder(
-        const SdpAudioFormat& format) override {
-      return format.name == "MockPCMu" ? std::move(mock_decoder_)
-                                       : fact_->MakeAudioDecoder(format);
+        const SdpAudioFormat& format,
+        rtc::Optional<AudioCodecPairId> codec_pair_id) override {
+      return format.name == "MockPCMu"
+                 ? std::move(mock_decoder_)
+                 : fact_->MakeAudioDecoder(format, codec_pair_id);
     }
 
    private:

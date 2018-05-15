@@ -11,13 +11,17 @@
 #include "base/time/time.h"
 #include "components/domain_reliability/monitor.h"
 #include "components/domain_reliability/test_util.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/permission_manager.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/test/test_browser_context.h"
+#include "content/public/test/test_browser_thread_bundle.h"
+#include "content/public/test/test_utils.h"
 #include "net/base/host_port_pair.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/modules/permissions/permission_status.mojom.h"
+#include "third_party/blink/public/platform/modules/permissions/permission_status.mojom.h"
 
 namespace domain_reliability {
 
@@ -53,6 +57,17 @@ class TestPermissionManager : public content::PermissionManager {
     last_embedding_origin_ = embedding_origin;
 
     return permission_status_;
+  }
+
+  blink::mojom::PermissionStatus GetPermissionStatusForFrame(
+      content::PermissionType permission,
+      content::RenderFrameHost* render_frame_host,
+      const GURL& requesting_origin) override {
+    return GetPermissionStatus(
+        permission, requesting_origin,
+        content::WebContents::FromRenderFrameHost(render_frame_host)
+            ->GetLastCommittedURL()
+            .GetOrigin());
   }
 
   int RequestPermission(
@@ -122,16 +137,20 @@ class DomainReliabilityServiceTest : public testing::Test {
 
   DomainReliabilityServiceTest()
       : upload_reporter_string_("test"),
-        permission_manager_(new TestPermissionManager()),
-        ui_task_runner_(new base::TestSimpleTaskRunner()),
-        network_task_runner_(new base::TestSimpleTaskRunner()),
-        url_request_context_getter_(
-            new net::TestURLRequestContextGetter(network_task_runner_)) {
+        permission_manager_(new TestPermissionManager()) {
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner =
+        content::BrowserThread::GetTaskRunnerForThread(
+            content::BrowserThread::UI);
+    scoped_refptr<base::SingleThreadTaskRunner> network_task_runner =
+        content::BrowserThread::GetTaskRunnerForThread(
+            content::BrowserThread::IO);
+    url_request_context_getter_ =
+        new net::TestURLRequestContextGetter(network_task_runner);
     browser_context_.SetPermissionManager(
         base::WrapUnique(permission_manager_));
     service_ = base::WrapUnique(DomainReliabilityService::Create(
         upload_reporter_string_, &browser_context_));
-    monitor_ = service_->CreateMonitor(ui_task_runner_, network_task_runner_);
+    monitor_ = service_->CreateMonitor(ui_task_runner, network_task_runner);
     monitor_->MoveToNetworkThread();
     monitor_->InitURLRequestContext(url_request_context_getter_);
     monitor_->SetDiscardUploads(true);
@@ -150,7 +169,7 @@ class DomainReliabilityServiceTest : public testing::Test {
     return monitor_->uploader_->GetDiscardedUploadCount();
   }
 
-  base::MessageLoopForIO message_loop_;
+  content::TestBrowserThreadBundle thread_bundle_;
 
   std::string upload_reporter_string_;
 
@@ -160,9 +179,6 @@ class DomainReliabilityServiceTest : public testing::Test {
   TestPermissionManager* permission_manager_;
 
   std::unique_ptr<DomainReliabilityService> service_;
-
-  scoped_refptr<base::TestSimpleTaskRunner> ui_task_runner_;
-  scoped_refptr<base::TestSimpleTaskRunner> network_task_runner_;
 
   scoped_refptr<net::URLRequestContextGetter> url_request_context_getter_;
 
@@ -200,10 +216,10 @@ TEST_F(DomainReliabilityServiceTest, UploadAllowed) {
 
   monitor_->ForceUploadsForTesting();
 
-  ui_task_runner_->RunPendingTasks();
+  content::RunAllPendingInMessageLoop(content::BrowserThread::UI);
   EXPECT_EQ(1, permission_manager_->get_permission_status_count());
 
-  network_task_runner_->RunPendingTasks();
+  content::RunAllPendingInMessageLoop(content::BrowserThread::IO);
   EXPECT_EQ(1, GetDiscardedUploadCount());
 }
 
@@ -231,10 +247,10 @@ TEST_F(DomainReliabilityServiceTest, UploadForbidden) {
 
   monitor_->ForceUploadsForTesting();
 
-  ui_task_runner_->RunPendingTasks();
+  content::RunAllPendingInMessageLoop(content::BrowserThread::UI);
   EXPECT_EQ(1, permission_manager_->get_permission_status_count());
 
-  network_task_runner_->RunPendingTasks();
+  content::RunAllPendingInMessageLoop(content::BrowserThread::IO);
   EXPECT_EQ(0, GetDiscardedUploadCount());
 }
 
@@ -265,10 +281,10 @@ TEST_F(DomainReliabilityServiceTest, MonitorDestroyedBeforeCheckRuns) {
   monitor_->Shutdown();
   monitor_.reset();
 
-  ui_task_runner_->RunPendingTasks();
+  content::RunAllPendingInMessageLoop(content::BrowserThread::UI);
   EXPECT_EQ(1, permission_manager_->get_permission_status_count());
 
-  network_task_runner_->RunPendingTasks();
+  content::RunAllPendingInMessageLoop(content::BrowserThread::IO);
   // Makes no sense to check upload count, since monitor was destroyed.
 }
 
@@ -296,13 +312,13 @@ TEST_F(DomainReliabilityServiceTest, MonitorDestroyedBeforeCheckReturns) {
 
   monitor_->ForceUploadsForTesting();
 
-  ui_task_runner_->RunPendingTasks();
+  content::RunAllPendingInMessageLoop(content::BrowserThread::UI);
   EXPECT_EQ(1, permission_manager_->get_permission_status_count());
 
   monitor_->Shutdown();
   monitor_.reset();
 
-  network_task_runner_->RunPendingTasks();
+  content::RunAllPendingInMessageLoop(content::BrowserThread::IO);
   // Makes no sense to check upload count, since monitor was destroyed.
 }
 

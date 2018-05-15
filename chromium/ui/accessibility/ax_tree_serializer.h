@@ -200,12 +200,14 @@ AXTreeSerializer<AXSourceNode, AXNodeData, AXTreeData>::~AXTreeSerializer() {
 template <typename AXSourceNode, typename AXNodeData, typename AXTreeData>
 void AXTreeSerializer<AXSourceNode, AXNodeData, AXTreeData>::Reset() {
   client_tree_data_ = AXTreeData();
-  if (!client_root_)
-    return;
 
-  DeleteClientSubtree(client_root_);
-  client_id_map_.erase(client_root_->id);
-  delete client_root_;
+  // Normally we use DeleteClientSubtree to remove nodes from the tree,
+  // but Reset() needs to work even if the tree is in a broken state.
+  // Instead, iterate over |client_id_map_| to ensure we clear all nodes and
+  // start from scratch.
+  for (auto&& item : client_id_map_)
+    delete item.second;
+  client_id_map_.clear();
   client_root_ = nullptr;
 }
 
@@ -321,10 +323,11 @@ template <typename AXSourceNode, typename AXNodeData, typename AXTreeData>
 bool AXTreeSerializer<AXSourceNode, AXNodeData, AXTreeData>::SerializeChanges(
     AXSourceNode node,
     AXTreeUpdateBase<AXNodeData, AXTreeData>* out_update) {
-  // Send the tree data if it's changed since the last update.
+  // Send the tree data if it's changed since the last update, or if
+  // out_update->has_tree_data is already set to true.
   AXTreeData new_tree_data;
   if (tree_->GetTreeData(&new_tree_data) &&
-      new_tree_data != client_tree_data_) {
+      (out_update->has_tree_data || new_tree_data != client_tree_data_)) {
     out_update->has_tree_data = true;
     out_update->tree_data = new_tree_data;
     client_tree_data_ = new_tree_data;

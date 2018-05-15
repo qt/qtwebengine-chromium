@@ -84,6 +84,9 @@ void NotifyCaretBoundsChanged(ui::InputMethod* input_method) {
 
 }  // namespace
 
+// static
+bool Widget::g_disable_activation_change_handling_ = false;
+
 // A default implementation of WidgetDelegate, used by Widget when no
 // WidgetDelegate is supplied.
 class DefaultWidgetDelegate : public WidgetDelegate {
@@ -324,6 +327,9 @@ void Widget::Init(const InitParams& in_params) {
   widget_delegate_ = params.delegate ?
       params.delegate : new DefaultWidgetDelegate(this);
   widget_delegate_->set_can_activate(can_activate);
+
+  // Henceforth, ensure the delegate outlives the Widget.
+  widget_delegate_->can_delete_this_ = false;
 
   ownership_ = params.ownership;
   native_widget_ = CreateNativeWidget(params, this)->AsNativeWidgetPrivate();
@@ -1030,7 +1036,10 @@ bool Widget::IsAlwaysRenderAsActive() const {
   return always_render_as_active_;
 }
 
-void Widget::OnNativeWidgetActivationChanged(bool active) {
+bool Widget::OnNativeWidgetActivationChanged(bool active) {
+  if (g_disable_activation_change_handling_)
+    return false;
+
   // On windows we may end up here before we've completed initialization (from
   // an WM_NCACTIVATE). If that happens the WidgetDelegate likely doesn't know
   // the Widget and will crash attempting to access it.
@@ -1042,6 +1051,8 @@ void Widget::OnNativeWidgetActivationChanged(bool active) {
 
   if (non_client_view())
     non_client_view()->frame_view()->ActivationChanged(active);
+
+  return true;
 }
 
 void Widget::OnNativeFocus() {
@@ -1092,6 +1103,7 @@ void Widget::OnNativeWidgetDestroying() {
 void Widget::OnNativeWidgetDestroyed() {
   for (WidgetObserver& observer : observers_)
     observer.OnWidgetDestroyed(this);
+  widget_delegate_->can_delete_this_ = true;
   widget_delegate_->DeleteDelegate();
   widget_delegate_ = NULL;
   native_widget_destroyed_ = true;

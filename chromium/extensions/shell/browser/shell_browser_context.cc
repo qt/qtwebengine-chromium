@@ -41,6 +41,7 @@ ShellBrowserContext::ShellBrowserContext(
       browser_main_parts_(browser_main_parts) {}
 
 ShellBrowserContext::~ShellBrowserContext() {
+  content::BrowserContext::NotifyWillBeDestroyed(this);
 }
 
 content::BrowserPluginGuestManager* ShellBrowserContext::GetGuestManager() {
@@ -58,11 +59,8 @@ net::URLRequestContextGetter* ShellBrowserContext::CreateRequestContext(
   // Handle only chrome-extension:// requests.
   InfoMap* extension_info_map =
       browser_main_parts_->extension_system()->info_map();
-  (*protocol_handlers)[kExtensionScheme] =
-      linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
-          CreateExtensionProtocolHandler(false /* is_incognito */,
-                                         extension_info_map)
-              .release());
+  (*protocol_handlers)[kExtensionScheme] = CreateExtensionProtocolHandler(
+      false /* is_incognito */, extension_info_map);
 
   set_url_request_context_getter(new ShellURLRequestContextGetter(
       this, IgnoreCertificateErrors(), GetPath(),

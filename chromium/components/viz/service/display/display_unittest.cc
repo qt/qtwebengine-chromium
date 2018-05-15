@@ -206,10 +206,9 @@ TEST_F(DisplayTest, DisplayDamaged) {
   display_->Initialize(&client, manager_.surface_manager());
   display_->SetColorSpace(color_space_1, color_space_1);
 
-  LocalSurfaceId local_surface_id(id_allocator_.GenerateId());
   EXPECT_FALSE(scheduler_->damaged);
   EXPECT_FALSE(scheduler_->has_new_root_surface);
-  display_->SetLocalSurfaceId(local_surface_id, 1.f);
+  display_->SetLocalSurfaceId(id_allocator_.GenerateId(), 1.f);
   EXPECT_FALSE(scheduler_->damaged);
   EXPECT_FALSE(scheduler_->display_resized_);
   EXPECT_TRUE(scheduler_->has_new_root_surface);
@@ -229,7 +228,7 @@ TEST_F(DisplayTest, DisplayDamaged) {
   pass_list.push_back(std::move(pass));
 
   scheduler_->ResetDamageForTest();
-  SubmitCompositorFrame(&pass_list, local_surface_id);
+  SubmitCompositorFrame(&pass_list, id_allocator_.GetCurrentLocalSurfaceId());
   EXPECT_TRUE(scheduler_->damaged);
   EXPECT_FALSE(scheduler_->display_resized_);
   EXPECT_FALSE(scheduler_->has_new_root_surface);
@@ -254,7 +253,7 @@ TEST_F(DisplayTest, DisplayDamaged) {
 
     pass_list.push_back(std::move(pass));
     scheduler_->ResetDamageForTest();
-    SubmitCompositorFrame(&pass_list, local_surface_id);
+    SubmitCompositorFrame(&pass_list, id_allocator_.GetCurrentLocalSurfaceId());
     EXPECT_TRUE(scheduler_->damaged);
     EXPECT_FALSE(scheduler_->display_resized_);
     EXPECT_FALSE(scheduler_->has_new_root_surface);
@@ -283,7 +282,7 @@ TEST_F(DisplayTest, DisplayDamaged) {
 
     pass_list.push_back(std::move(pass));
     scheduler_->ResetDamageForTest();
-    SubmitCompositorFrame(&pass_list, local_surface_id);
+    SubmitCompositorFrame(&pass_list, id_allocator_.GetCurrentLocalSurfaceId());
     EXPECT_TRUE(scheduler_->damaged);
     EXPECT_FALSE(scheduler_->display_resized_);
     EXPECT_FALSE(scheduler_->has_new_root_surface);
@@ -297,8 +296,7 @@ TEST_F(DisplayTest, DisplayDamaged) {
   // Pass is wrong size so shouldn't be swapped. However, damage should
   // result in latency info being stored for the next swap.
   {
-    local_surface_id = id_allocator_.GenerateId();
-    display_->SetLocalSurfaceId(local_surface_id, 1.f);
+    display_->SetLocalSurfaceId(id_allocator_.GenerateId(), 1.f);
 
     scheduler_->ResetDamageForTest();
 
@@ -309,7 +307,8 @@ TEST_F(DisplayTest, DisplayDamaged) {
                                 .AddLatencyInfo(ui::LatencyInfo())
                                 .Build();
 
-    support_->SubmitCompositorFrame(local_surface_id, std::move(frame));
+    support_->SubmitCompositorFrame(id_allocator_.GetCurrentLocalSurfaceId(),
+                                    std::move(frame));
     EXPECT_TRUE(scheduler_->damaged);
     EXPECT_FALSE(scheduler_->display_resized_);
     EXPECT_FALSE(scheduler_->has_new_root_surface);
@@ -327,12 +326,11 @@ TEST_F(DisplayTest, DisplayDamaged) {
     pass->damage_rect = gfx::Rect(10, 10, 0, 0);
     pass->id = 1u;
 
-    local_surface_id = id_allocator_.GenerateId();
-    display_->SetLocalSurfaceId(local_surface_id, 1.f);
+    display_->SetLocalSurfaceId(id_allocator_.GenerateId(), 1.f);
 
     pass_list.push_back(std::move(pass));
     scheduler_->ResetDamageForTest();
-    SubmitCompositorFrame(&pass_list, local_surface_id);
+    SubmitCompositorFrame(&pass_list, id_allocator_.GetCurrentLocalSurfaceId());
     EXPECT_TRUE(scheduler_->damaged);
     EXPECT_FALSE(scheduler_->display_resized_);
     EXPECT_FALSE(scheduler_->has_new_root_surface);
@@ -362,7 +360,7 @@ TEST_F(DisplayTest, DisplayDamaged) {
 
     pass_list.push_back(std::move(pass));
     scheduler_->ResetDamageForTest();
-    SubmitCompositorFrame(&pass_list, local_surface_id);
+    SubmitCompositorFrame(&pass_list, id_allocator_.GetCurrentLocalSurfaceId());
     EXPECT_TRUE(scheduler_->damaged);
     EXPECT_FALSE(scheduler_->display_resized_);
     EXPECT_FALSE(scheduler_->has_new_root_surface);
@@ -386,7 +384,8 @@ TEST_F(DisplayTest, DisplayDamaged) {
                                 .AddLatencyInfo(ui::LatencyInfo())
                                 .Build();
 
-    support_->SubmitCompositorFrame(local_surface_id, std::move(frame));
+    support_->SubmitCompositorFrame(id_allocator_.GetCurrentLocalSurfaceId(),
+                                    std::move(frame));
     EXPECT_TRUE(scheduler_->damaged);
     EXPECT_FALSE(scheduler_->display_resized_);
     EXPECT_FALSE(scheduler_->has_new_root_surface);
@@ -400,8 +399,7 @@ TEST_F(DisplayTest, DisplayDamaged) {
 
   // Resize should cause a swap if no frame was swapped at the previous size.
   {
-    local_surface_id = id_allocator_.GenerateId();
-    display_->SetLocalSurfaceId(local_surface_id, 1.f);
+    display_->SetLocalSurfaceId(id_allocator_.GenerateId(), 1.f);
     scheduler_->swapped = false;
     display_->Resize(gfx::Size(200, 200));
     EXPECT_FALSE(scheduler_->swapped);
@@ -414,7 +412,8 @@ TEST_F(DisplayTest, DisplayDamaged) {
                                 .AddRenderPass(kOutputRect, kDamageRect)
                                 .Build();
 
-    support_->SubmitCompositorFrame(local_surface_id, std::move(frame));
+    support_->SubmitCompositorFrame(id_allocator_.GetCurrentLocalSurfaceId(),
+                                    std::move(frame));
     EXPECT_TRUE(scheduler_->damaged);
     EXPECT_FALSE(scheduler_->display_resized_);
     EXPECT_FALSE(scheduler_->has_new_root_surface);
@@ -431,8 +430,7 @@ TEST_F(DisplayTest, DisplayDamaged) {
 
   // Surface that's damaged completely should be resized and swapped.
   {
-    local_surface_id = id_allocator_.GenerateId();
-    display_->SetLocalSurfaceId(local_surface_id, 1.0f);
+    display_->SetLocalSurfaceId(id_allocator_.GenerateId(), 1.0f);
     pass = RenderPass::Create();
     pass->output_rect = gfx::Rect(0, 0, 99, 99);
     pass->damage_rect = gfx::Rect(0, 0, 99, 99);
@@ -440,7 +438,7 @@ TEST_F(DisplayTest, DisplayDamaged) {
 
     pass_list.push_back(std::move(pass));
     scheduler_->ResetDamageForTest();
-    SubmitCompositorFrame(&pass_list, local_surface_id);
+    SubmitCompositorFrame(&pass_list, id_allocator_.GetCurrentLocalSurfaceId());
     EXPECT_TRUE(scheduler_->damaged);
     EXPECT_FALSE(scheduler_->display_resized_);
     EXPECT_FALSE(scheduler_->has_new_root_surface);
@@ -2074,6 +2072,62 @@ TEST_F(DisplayTest, CompositorFrameWithOpaquenessChange) {
   TearDownDisplay();
 }
 
+// Test if draw occlusion skips 3d objects. https://crbug.com/833748
+TEST_F(DisplayTest, CompositorFrameZTranslate) {
+  RendererSettings settings;
+  settings.kMinimumDrawOcclusionSize.set_width(0);
+  SetUpDisplay(settings, TestWebGraphicsContext3D::Create());
+
+  StubDisplayClient client;
+  display_->Initialize(&client, manager_.surface_manager());
+
+  CompositorFrame frame = MakeDefaultCompositorFrame();
+  gfx::Rect rect1(0, 0, 100, 100);
+  gfx::Rect rect2(0, 0, 200, 100);
+
+  gfx::Transform translate_back;
+  translate_back.Translate3d(0, 0, 100);
+  bool is_clipped = false;
+  bool are_contents_opaque = true;
+  float opacity = 1.f;
+  SharedQuadState* shared_quad_state =
+      frame.render_pass_list.front()->CreateAndAppendSharedQuadState();
+  auto* quad = frame.render_pass_list.front()
+                   ->quad_list.AllocateAndConstruct<SolidColorDrawQuad>();
+  SharedQuadState* shared_quad_state2 =
+      frame.render_pass_list.front()->CreateAndAppendSharedQuadState();
+  auto* quad2 = frame.render_pass_list.front()
+                    ->quad_list.AllocateAndConstruct<SolidColorDrawQuad>();
+
+  // 2 rects inside of 3d object is completely overlapping.
+  //                         +-----+
+  //                         |     |
+  //                         +-----+
+  {
+    shared_quad_state->SetAll(translate_back, rect1, rect1, rect1, is_clipped,
+                              are_contents_opaque, opacity,
+                              SkBlendMode::kSrcOver, 1);
+    shared_quad_state2->SetAll(gfx::Transform(), rect1, rect1, rect1,
+                               is_clipped, are_contents_opaque, opacity,
+                               SkBlendMode::kSrcOver, 1);
+
+    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect1, SK_ColorBLACK, false);
+    EXPECT_EQ(2u, frame.render_pass_list.front()->quad_list.size());
+    display_->RemoveOverdrawQuads(&frame);
+    // Since both |quad| and |quad2| are inside of a 3d object, DrawOcclusion
+    // will not be applied to them.
+    EXPECT_EQ(2u, frame.render_pass_list.front()->quad_list.size());
+    EXPECT_EQ(rect1.ToString(), frame.render_pass_list.front()
+                                    ->quad_list.ElementAt(0)
+                                    ->rect.ToString());
+    EXPECT_EQ(rect2.ToString(), frame.render_pass_list.front()
+                                    ->quad_list.ElementAt(1)
+                                    ->rect.ToString());
+  }
+  TearDownDisplay();
+}
+
 TEST_F(DisplayTest, CompositorFrameWithTranslateTransformer) {
   RendererSettings settings;
   settings.kMinimumDrawOcclusionSize.set_width(0);
@@ -3085,6 +3139,48 @@ TEST_F(DisplayTest, CompositorFrameWithNonInvertibleTransform) {
     display_->RemoveOverdrawQuads(&frame);
     // |quad3| follows an non-invertible transform and it's covered by the
     // occlusion rect. So |quad3| is removed from the |frame|.
+    EXPECT_EQ(1u, frame.render_pass_list.front()->quad_list.size());
+    EXPECT_EQ(rect1.ToString(), frame.render_pass_list.front()
+                                    ->quad_list.ElementAt(0)
+                                    ->visible_rect.ToString());
+  }
+  TearDownDisplay();
+}
+
+// Check if draw occlusion works with very large DrawQuad. crbug.com/824528.
+TEST_F(DisplayTest, DrawOcclusionWithLargeDrawQuad) {
+  SetUpDisplay(RendererSettings(), TestWebGraphicsContext3D::Create());
+
+  StubDisplayClient client;
+  display_->Initialize(&client, manager_.surface_manager());
+
+  CompositorFrame frame = MakeDefaultCompositorFrame();
+  // The size of this DrawQuad will be 237790x237790 > 2^32 (uint32_t.max())
+  // which caused the integer overflow in the bug.
+  gfx::Rect rect1(237790, 237790);
+
+  bool is_clipped = false;
+  bool are_contents_opaque = true;
+  float opacity = 1.f;
+  SharedQuadState* shared_quad_state =
+      frame.render_pass_list.front()->CreateAndAppendSharedQuadState();
+  auto* quad = frame.render_pass_list.front()
+                   ->quad_list.AllocateAndConstruct<SolidColorDrawQuad>();
+
+  // +----+
+  // |    |
+  // +----+
+  {
+    shared_quad_state->SetAll(gfx::Transform(), rect1, rect1, rect1, is_clipped,
+                              are_contents_opaque, opacity,
+                              SkBlendMode::kSrcOver, 0);
+
+    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
+    EXPECT_EQ(1u, frame.render_pass_list.front()->quad_list.size());
+    display_->RemoveOverdrawQuads(&frame);
+    // This is a base case, the compositor frame contains only one
+    // DrawQuad, so the size of quad_list remains unchanged after calling
+    // RemoveOverdrawQuads.
     EXPECT_EQ(1u, frame.render_pass_list.front()->quad_list.size());
     EXPECT_EQ(rect1.ToString(), frame.render_pass_list.front()
                                     ->quad_list.ElementAt(0)

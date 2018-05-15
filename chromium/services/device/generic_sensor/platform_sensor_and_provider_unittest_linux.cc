@@ -4,7 +4,6 @@
 
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
@@ -749,6 +748,68 @@ TEST_F(PlatformSensorAndProviderLinuxTest,
   EXPECT_THAT(buffer->reading.als.value, sensor_value[0]);
 
   EXPECT_TRUE(sensor->StopListening(client.get(), configuration));
+}
+
+// Tests that ABSOLUTE_ORIENTATION_EULER_ANGLES sensor is successfully created.
+TEST_F(PlatformSensorAndProviderLinuxTest,
+       CheckAbsoluteOrientationEulerAnglesSensor) {
+  double sensor_value[3] = {1, 2, 3};
+  InitializeSupportedSensor(
+      SensorType::ACCELEROMETER, kAccelerometerFrequencyValue,
+      kAccelerometerOffsetValue, kAccelerometerScalingValue, sensor_value);
+  InitializeSupportedSensor(
+      SensorType::MAGNETOMETER, kMagnetometerFrequencyValue,
+      kMagnetometerOffsetValue, kMagnetometerScalingValue, sensor_value);
+  InitializeMockUdevMethods(sensors_dir_.GetPath());
+  SetServiceStart();
+
+  auto sensor = CreateSensor(SensorType::ABSOLUTE_ORIENTATION_EULER_ANGLES);
+  EXPECT_TRUE(sensor);
+}
+
+// Tests that ABSOLUTE_ORIENTATION_QUATERNION sensor is successfully created.
+TEST_F(PlatformSensorAndProviderLinuxTest,
+       CheckAbsoluteOrientationQuaternionSensor) {
+  double sensor_value[3] = {1, 2, 3};
+  InitializeSupportedSensor(
+      SensorType::ACCELEROMETER, kAccelerometerFrequencyValue,
+      kAccelerometerOffsetValue, kAccelerometerScalingValue, sensor_value);
+  InitializeSupportedSensor(
+      SensorType::MAGNETOMETER, kMagnetometerFrequencyValue,
+      kMagnetometerOffsetValue, kMagnetometerScalingValue, sensor_value);
+  InitializeMockUdevMethods(sensors_dir_.GetPath());
+  SetServiceStart();
+
+  auto sensor = CreateSensor(SensorType::ABSOLUTE_ORIENTATION_QUATERNION);
+  EXPECT_TRUE(sensor);
+}
+
+// Tests that RELATIVE_ORIENTATION_EULER_ANGLES sensor is successfully created.
+TEST_F(PlatformSensorAndProviderLinuxTest,
+       CheckRelativeOrientationEulerAnglesSensor) {
+  double sensor_value[3] = {1, 2, 3};
+  InitializeSupportedSensor(
+      SensorType::ACCELEROMETER, kAccelerometerFrequencyValue,
+      kAccelerometerOffsetValue, kAccelerometerScalingValue, sensor_value);
+  InitializeMockUdevMethods(sensors_dir_.GetPath());
+  SetServiceStart();
+
+  auto sensor = CreateSensor(SensorType::RELATIVE_ORIENTATION_EULER_ANGLES);
+  EXPECT_TRUE(sensor);
+}
+
+// Tests that RELATIVE_ORIENTATION_QUATERNION sensor is successfully created.
+TEST_F(PlatformSensorAndProviderLinuxTest,
+       CheckRelativeOrientationQuaternionSensor) {
+  double sensor_value[3] = {1, 2, 3};
+  InitializeSupportedSensor(
+      SensorType::ACCELEROMETER, kAccelerometerFrequencyValue,
+      kAccelerometerOffsetValue, kAccelerometerScalingValue, sensor_value);
+  InitializeMockUdevMethods(sensors_dir_.GetPath());
+  SetServiceStart();
+
+  auto sensor = CreateSensor(SensorType::RELATIVE_ORIENTATION_QUATERNION);
+  EXPECT_TRUE(sensor);
 }
 
 }  // namespace device

@@ -11,11 +11,14 @@
 #include "content/renderer/media/stream/mock_constraint_factory.h"
 #include "media/base/limits.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebMediaConstraints.h"
+#include "third_party/blink/public/platform/web_media_constraints.h"
 
 namespace content {
 
 namespace {
+
+const double kDefaultScreenCastAspectRatio =
+    static_cast<double>(kDefaultScreenCastWidth) / kDefaultScreenCastHeight;
 
 void CheckNonResolutionDefaults(const VideoCaptureSettings& result) {
   EXPECT_EQ(kDefaultScreenCastFrameRate, result.FrameRate());
@@ -61,7 +64,9 @@ class MediaStreamConstraintsUtilVideoContentTest : public testing::Test {
           std::string(kMediaStreamSourceScreen)) {
     blink::WebMediaConstraints constraints =
         constraint_factory_.CreateWebMediaConstraints();
-    return SelectSettingsVideoContentCapture(constraints, stream_source);
+    return SelectSettingsVideoContentCapture(constraints, stream_source,
+                                             kDefaultScreenCastWidth,
+                                             kDefaultScreenCastHeight);
   }
 
   MockConstraintFactory constraint_factory_;

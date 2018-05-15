@@ -9,9 +9,9 @@
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/public/platform/WebCallbacks.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
+#include "third_party/blink/public/platform/web_callbacks.h"
+#include "third_party/blink/public/platform/web_media_stream_source.h"
+#include "third_party/blink/public/platform/web_media_stream_track.h"
 #include "third_party/libyuv/include/libyuv.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkSurface.h"
@@ -75,7 +75,7 @@ void ImageCaptureFrameGrabber::SingleShotFrameHandler::OnVideoFrameOnIOThread(
   SkPixmap pixmap;
   if (!skia::GetWritablePixels(surface->getCanvas(), &pixmap)) {
     DLOG(ERROR) << "Error trying to map SkSurface's pixels";
-    callback.Run(sk_sp<SkImage>());
+    std::move(callback).Run(sk_sp<SkImage>());
     return;
   }
 
@@ -103,7 +103,7 @@ void ImageCaptureFrameGrabber::SingleShotFrameHandler::OnVideoFrameOnIOThread(
                              pixmap.height());
   }
 
-  callback.Run(surface->makeImageSnapshot());
+  std::move(callback).Run(surface->makeImageSnapshot());
 }
 
 ImageCaptureFrameGrabber::ImageCaptureFrameGrabber()

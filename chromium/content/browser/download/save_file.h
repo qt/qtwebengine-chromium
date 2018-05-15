@@ -10,7 +10,7 @@
 
 #include "base/files/file_path.h"
 #include "base/macros.h"
-#include "content/browser/download/base_file.h"
+#include "components/download/public/common/base_file.h"
 #include "content/browser/download/save_types.h"
 
 namespace content {
@@ -43,14 +43,13 @@ class SaveFile {
   // Accessors.
   SaveItemId save_item_id() const { return info_->save_item_id; }
   int render_process_id() const { return info_->render_process_id; }
-  int request_id() const { return info_->request_id; }
   SaveFileCreateInfo::SaveFileSource save_source() const {
     return info_->save_source;
   }
   const SaveFileCreateInfo& create_info() const { return *info_; }
 
  private:
-  BaseFile file_;
+  download::BaseFile file_;
   std::unique_ptr<SaveFileCreateInfo> info_;
 
   DISALLOW_COPY_AND_ASSIGN(SaveFile);

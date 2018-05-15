@@ -75,12 +75,8 @@ class WebSocketStreamCreateTestBase {
       ssl_error_callbacks_;
   SSLInfo ssl_info_;
   bool ssl_fatal_;
-  std::vector<std::unique_ptr<SSLSocketDataProvider>> ssl_data_;
   URLRequest* url_request_;
 
-  // This temporarily sets WebSocketEndpointLockManager unlock delay to zero
-  // during tests.
-  ScopedWebSocketEndpointZeroUnlockDelay zero_unlock_delay_;
   base::RunLoop connect_run_loop_;
 
  private:

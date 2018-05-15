@@ -55,7 +55,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/constants.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
-#include "third_party/WebKit/public/common/associated_interfaces/associated_interface_provider.h"
+#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/icu/source/i18n/unicode/coll.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
@@ -467,9 +467,9 @@ void MediaRouterUI::InitCommon(content::WebContents* initiator) {
   }
 
   initiator_ = initiator;
-  SessionID::id_type tab_id = SessionTabHelper::IdForTab(initiator);
-  if (tab_id != -1) {
-    MediaSource mirroring_source(MediaSourceForTab(tab_id));
+  SessionID tab_id = SessionTabHelper::IdForTab(initiator);
+  if (tab_id.is_valid()) {
+    MediaSource mirroring_source(MediaSourceForTab(tab_id.id()));
     query_result_manager_->SetSourcesForCastMode(MediaCastMode::TAB_MIRROR,
                                                  {mirroring_source}, origin);
   }
@@ -618,8 +618,8 @@ bool MediaRouterUI::CreateRoute(const MediaSink::Id& sink_id,
     GURL url = media_router_file_dialog_->GetLastSelectedFileUrl();
     tab_contents = OpenTabWithUrl(url);
 
-    SessionID::id_type tab_id = SessionTabHelper::IdForTab(tab_contents);
-    source_id = MediaSourceForTab(tab_id).id();
+    SessionID tab_id = SessionTabHelper::IdForTab(tab_contents);
+    source_id = MediaSourceForTab(tab_id.id()).id();
 
     SetLocalFileRouteParameters(sink_id, &origin, url, tab_contents,
                                 &route_response_callbacks, &timeout,
@@ -818,14 +818,14 @@ void MediaRouterUI::SearchSinksAndCreateRoute(
 bool MediaRouterUI::UserSelectedTabMirroringForCurrentOrigin() const {
   const base::ListValue* origins =
       Profile::FromWebUI(web_ui())->GetPrefs()->GetList(
-          prefs::kMediaRouterTabMirroringSources);
+          ::prefs::kMediaRouterTabMirroringSources);
   return origins->Find(base::Value(GetSerializedInitiatorOrigin())) !=
          origins->end();
 }
 
 void MediaRouterUI::RecordCastModeSelection(MediaCastMode cast_mode) {
   ListPrefUpdate update(Profile::FromWebUI(web_ui())->GetPrefs(),
-                        prefs::kMediaRouterTabMirroringSources);
+                        ::prefs::kMediaRouterTabMirroringSources);
 
   switch (cast_mode) {
     case MediaCastMode::PRESENTATION:
@@ -1077,7 +1077,9 @@ void MediaRouterUI::OnUIInitialDataReceived() {
 }
 
 void MediaRouterUI::UpdateMaxDialogHeight(int height) {
-  handler_->UpdateMaxDialogHeight(height);
+  if (ui_initialized_) {
+    handler_->UpdateMaxDialogHeight(height);
+  }
 }
 
 MediaRouteController* MediaRouterUI::GetMediaRouteController() const {

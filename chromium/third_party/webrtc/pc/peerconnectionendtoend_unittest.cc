@@ -12,6 +12,7 @@
 
 #include "api/audio_codecs/L16/audio_decoder_L16.h"
 #include "api/audio_codecs/L16/audio_encoder_L16.h"
+#include "api/audio_codecs/audio_codec_pair_id.h"
 #include "api/audio_codecs/audio_decoder_factory_template.h"
 #include "api/audio_codecs/audio_encoder_factory_template.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
@@ -75,21 +76,32 @@ class PeerConnectionEndToEndBaseTest : public sigslot::has_slots<>,
 #endif
   }
 
-  void CreatePcs(const MediaConstraintsInterface* pc_constraints,
-                 const rtc::scoped_refptr<webrtc::AudioEncoderFactory>&
-                     audio_encoder_factory,
-                 const rtc::scoped_refptr<webrtc::AudioDecoderFactory>&
-                     audio_decoder_factory) {
-    EXPECT_TRUE(caller_->CreatePc(
-        pc_constraints, config_, audio_encoder_factory, audio_decoder_factory));
-    EXPECT_TRUE(callee_->CreatePc(
-        pc_constraints, config_, audio_encoder_factory, audio_decoder_factory));
+  void CreatePcs(
+      const MediaConstraintsInterface* pc_constraints,
+      rtc::scoped_refptr<webrtc::AudioEncoderFactory> audio_encoder_factory1,
+      rtc::scoped_refptr<webrtc::AudioDecoderFactory> audio_decoder_factory1,
+      rtc::scoped_refptr<webrtc::AudioEncoderFactory> audio_encoder_factory2,
+      rtc::scoped_refptr<webrtc::AudioDecoderFactory> audio_decoder_factory2) {
+    EXPECT_TRUE(caller_->CreatePc(pc_constraints, config_,
+                                  audio_encoder_factory1,
+                                  audio_decoder_factory1));
+    EXPECT_TRUE(callee_->CreatePc(pc_constraints, config_,
+                                  audio_encoder_factory2,
+                                  audio_decoder_factory2));
     PeerConnectionTestWrapper::Connect(caller_.get(), callee_.get());
 
     caller_->SignalOnDataChannel.connect(
         this, &PeerConnectionEndToEndBaseTest::OnCallerAddedDataChanel);
     callee_->SignalOnDataChannel.connect(
         this, &PeerConnectionEndToEndBaseTest::OnCalleeAddedDataChannel);
+  }
+
+  void CreatePcs(
+      const MediaConstraintsInterface* pc_constraints,
+      rtc::scoped_refptr<webrtc::AudioEncoderFactory> audio_encoder_factory,
+      rtc::scoped_refptr<webrtc::AudioDecoderFactory> audio_decoder_factory) {
+    CreatePcs(pc_constraints, audio_encoder_factory, audio_decoder_factory,
+              audio_encoder_factory, audio_decoder_factory);
   }
 
   void GetAndAddUserMedia() {
@@ -260,13 +272,15 @@ CreateForwardingMockDecoderFactory(
           Invoke([real_decoder_factory](const webrtc::SdpAudioFormat& format) {
             return real_decoder_factory->IsSupportedDecoder(format);
           }));
-  EXPECT_CALL(*mock_decoder_factory, MakeAudioDecoderMock(_, _))
+  EXPECT_CALL(*mock_decoder_factory, MakeAudioDecoderMock(_, _, _))
       .Times(AtLeast(2))
       .WillRepeatedly(
           Invoke([real_decoder_factory](
                      const webrtc::SdpAudioFormat& format,
+                     rtc::Optional<webrtc::AudioCodecPairId> codec_pair_id,
                      std::unique_ptr<webrtc::AudioDecoder>* return_value) {
-            auto real_decoder = real_decoder_factory->MakeAudioDecoder(format);
+            auto real_decoder =
+                real_decoder_factory->MakeAudioDecoder(format, codec_pair_id);
             *return_value =
                 real_decoder
                     ? CreateForwardingMockDecoder(std::move(real_decoder))
@@ -305,8 +319,10 @@ struct AudioEncoderUnicornSparklesRainbow {
   }
   static std::unique_ptr<webrtc::AudioEncoder> MakeAudioEncoder(
       const Config& config,
-      int payload_type) {
-    return webrtc::AudioEncoderL16::MakeAudioEncoder(config, payload_type);
+      int payload_type,
+      rtc::Optional<webrtc::AudioCodecPairId> codec_pair_id = rtc::nullopt) {
+    return webrtc::AudioEncoderL16::MakeAudioEncoder(config, payload_type,
+                                                     codec_pair_id);
   }
 };
 
@@ -336,8 +352,9 @@ struct AudioDecoderUnicornSparklesRainbow {
     }
   }
   static std::unique_ptr<webrtc::AudioDecoder> MakeAudioDecoder(
-      const Config& config) {
-    return webrtc::AudioDecoderL16::MakeAudioDecoder(config);
+      const Config& config,
+      rtc::Optional<webrtc::AudioCodecPairId> codec_pair_id = rtc::nullopt) {
+    return webrtc::AudioDecoderL16::MakeAudioDecoder(config, codec_pair_id);
   }
 };
 
@@ -375,13 +392,94 @@ TEST_P(PeerConnectionEndToEndTest, CallWithLegacySdp) {
 #endif  // !defined(ADDRESS_SANITIZER)
 
 TEST_P(PeerConnectionEndToEndTest, CallWithCustomCodec) {
-  CreatePcs(
-      nullptr,
-      webrtc::CreateAudioEncoderFactory<AudioEncoderUnicornSparklesRainbow>(),
-      webrtc::CreateAudioDecoderFactory<AudioDecoderUnicornSparklesRainbow>());
+  class IdLoggingAudioEncoderFactory : public webrtc::AudioEncoderFactory {
+   public:
+    IdLoggingAudioEncoderFactory(
+        rtc::scoped_refptr<AudioEncoderFactory> real_factory,
+        std::vector<webrtc::AudioCodecPairId>* const codec_ids)
+        : fact_(real_factory), codec_ids_(codec_ids) {}
+    std::vector<webrtc::AudioCodecSpec> GetSupportedEncoders() override {
+      return fact_->GetSupportedEncoders();
+    }
+    rtc::Optional<webrtc::AudioCodecInfo> QueryAudioEncoder(
+        const webrtc::SdpAudioFormat& format) override {
+      return fact_->QueryAudioEncoder(format);
+    }
+    std::unique_ptr<webrtc::AudioEncoder> MakeAudioEncoder(
+        int payload_type,
+        const webrtc::SdpAudioFormat& format,
+        rtc::Optional<webrtc::AudioCodecPairId> codec_pair_id) override {
+      EXPECT_TRUE(codec_pair_id.has_value());
+      codec_ids_->push_back(*codec_pair_id);
+      return fact_->MakeAudioEncoder(payload_type, format, codec_pair_id);
+    }
+
+   private:
+    const rtc::scoped_refptr<webrtc::AudioEncoderFactory> fact_;
+    std::vector<webrtc::AudioCodecPairId>* const codec_ids_;
+  };
+
+  class IdLoggingAudioDecoderFactory : public webrtc::AudioDecoderFactory {
+   public:
+    IdLoggingAudioDecoderFactory(
+        rtc::scoped_refptr<AudioDecoderFactory> real_factory,
+        std::vector<webrtc::AudioCodecPairId>* const codec_ids)
+        : fact_(real_factory), codec_ids_(codec_ids) {}
+    std::vector<webrtc::AudioCodecSpec> GetSupportedDecoders() override {
+      return fact_->GetSupportedDecoders();
+    }
+    bool IsSupportedDecoder(const webrtc::SdpAudioFormat& format) override {
+      return fact_->IsSupportedDecoder(format);
+    }
+    std::unique_ptr<webrtc::AudioDecoder> MakeAudioDecoder(
+        const webrtc::SdpAudioFormat& format,
+        rtc::Optional<webrtc::AudioCodecPairId> codec_pair_id) override {
+      EXPECT_TRUE(codec_pair_id.has_value());
+      codec_ids_->push_back(*codec_pair_id);
+      return fact_->MakeAudioDecoder(format, codec_pair_id);
+    }
+
+   private:
+    const rtc::scoped_refptr<webrtc::AudioDecoderFactory> fact_;
+    std::vector<webrtc::AudioCodecPairId>* const codec_ids_;
+  };
+
+  std::vector<webrtc::AudioCodecPairId> encoder_id1, encoder_id2, decoder_id1,
+      decoder_id2;
+  CreatePcs(nullptr,
+            rtc::scoped_refptr<webrtc::AudioEncoderFactory>(
+                new rtc::RefCountedObject<IdLoggingAudioEncoderFactory>(
+                    webrtc::CreateAudioEncoderFactory<
+                        AudioEncoderUnicornSparklesRainbow>(),
+                    &encoder_id1)),
+            rtc::scoped_refptr<webrtc::AudioDecoderFactory>(
+                new rtc::RefCountedObject<IdLoggingAudioDecoderFactory>(
+                    webrtc::CreateAudioDecoderFactory<
+                        AudioDecoderUnicornSparklesRainbow>(),
+                    &decoder_id1)),
+            rtc::scoped_refptr<webrtc::AudioEncoderFactory>(
+                new rtc::RefCountedObject<IdLoggingAudioEncoderFactory>(
+                    webrtc::CreateAudioEncoderFactory<
+                        AudioEncoderUnicornSparklesRainbow>(),
+                    &encoder_id2)),
+            rtc::scoped_refptr<webrtc::AudioDecoderFactory>(
+                new rtc::RefCountedObject<IdLoggingAudioDecoderFactory>(
+                    webrtc::CreateAudioDecoderFactory<
+                        AudioDecoderUnicornSparklesRainbow>(),
+                    &decoder_id2)));
   GetAndAddUserMedia();
   Negotiate();
   WaitForCallEstablished();
+
+  // Each codec factory has been used to create one codec. The first pair got
+  // the same ID because they were passed to the same PeerConnectionFactory,
+  // and the second pair got the same ID---but these two IDs are not equal,
+  // because each PeerConnectionFactory has its own ID.
+  EXPECT_EQ(1, encoder_id1.size());
+  EXPECT_EQ(1, encoder_id2.size());
+  EXPECT_EQ(encoder_id1, decoder_id1);
+  EXPECT_EQ(encoder_id2, decoder_id2);
+  EXPECT_NE(encoder_id1, encoder_id2);
 }
 
 #ifdef HAVE_SCTP

@@ -94,7 +94,7 @@ void DidOpenFile(base::WeakPtr<PepperFileIOHost> file_host,
                  base::File file,
                  base::OnceClosure on_close_callback) {
   if (file_host) {
-    callback.Run(std::move(file), std::move(on_close_callback));
+    std::move(callback).Run(std::move(file), std::move(on_close_callback));
   } else {
     task_runner->PostTaskAndReply(
         FROM_HERE, base::BindOnce(&FileCloser, std::move(file)),
@@ -295,8 +295,8 @@ void PepperFileIOHost::GotResolvedRenderProcessId(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   resolved_render_process_id_ = resolved_render_process_id;
   file_.CreateOrOpen(path, file_flags,
-                     base::Bind(&PepperFileIOHost::OnLocalFileOpened,
-                                AsWeakPtr(), reply_context, path));
+                     base::BindOnce(&PepperFileIOHost::OnLocalFileOpened,
+                                    AsWeakPtr(), reply_context, path));
 }
 
 int32_t PepperFileIOHost::OnHostMsgTouch(
@@ -309,11 +309,9 @@ int32_t PepperFileIOHost::OnHostMsgTouch(
     return rv;
 
   if (!file_.SetTimes(
-          PPTimeToTime(last_access_time),
-          PPTimeToTime(last_modified_time),
-          base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
-                     AsWeakPtr(),
-                     context->MakeReplyMessageContext()))) {
+          PPTimeToTime(last_access_time), PPTimeToTime(last_modified_time),
+          base::BindOnce(&PepperFileIOHost::ExecutePlatformGeneralCallback,
+                         AsWeakPtr(), context->MakeReplyMessageContext()))) {
     return PP_ERROR_FAILED;
   }
 
@@ -336,9 +334,8 @@ int32_t PepperFileIOHost::OnHostMsgSetLength(
 
   if (!file_.SetLength(
           length,
-          base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
-                     AsWeakPtr(),
-                     context->MakeReplyMessageContext()))) {
+          base::BindOnce(&PepperFileIOHost::ExecutePlatformGeneralCallback,
+                         AsWeakPtr(), context->MakeReplyMessageContext()))) {
     return PP_ERROR_FAILED;
   }
 
@@ -354,9 +351,8 @@ int32_t PepperFileIOHost::OnHostMsgFlush(
     return rv;
 
   if (!file_.Flush(
-          base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
-                     AsWeakPtr(),
-                     context->MakeReplyMessageContext()))) {
+          base::BindOnce(&PepperFileIOHost::ExecutePlatformGeneralCallback,
+                         AsWeakPtr(), context->MakeReplyMessageContext()))) {
     return PP_ERROR_FAILED;
   }
 
@@ -373,8 +369,7 @@ int32_t PepperFileIOHost::OnHostMsgClose(
   }
 
   if (file_.IsValid()) {
-    file_.Close(base::Bind(&PepperFileIOHost::DidCloseFile,
-                           AsWeakPtr()));
+    file_.Close(base::BindOnce(&PepperFileIOHost::DidCloseFile, AsWeakPtr()));
   }
   return PP_OK;
 }

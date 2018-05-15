@@ -17,7 +17,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_math.h"
 #include "base/single_thread_task_runner.h"
@@ -28,6 +28,7 @@
 #include "base/timer/elapsed_timer.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
+#include "build/build_config.h"
 #include "cc/base/devtools_instrumentation.h"
 #include "cc/base/histograms.h"
 #include "cc/base/math_util.h"
@@ -336,7 +337,7 @@ void LayerTreeHost::FinishCommitOnImplThread(
   if (did_navigate) {
     TRACE_EVENT0("cc,benchmark", "LayerTreeHost::DidNavigate");
     proxy_->ClearHistoryOnNavigation();
-    host_impl->ClearImageCacheOnNavigation();
+    host_impl->DidNavigate();
   }
 
   {
@@ -669,12 +670,16 @@ bool LayerTreeHost::UpdateLayers() {
   micro_benchmark_controller_.DidUpdateLayers();
 
   if (const char* client_name = GetClientNameForMetrics()) {
+    auto elapsed = timer.Elapsed().InMicroseconds();
+
     std::string histogram_name =
-        base::StringPrintf("Compositing.%s.LayersUpdateTime.%d", client_name,
-                           GetLayersUpdateTimeHistogramBucket(NumLayers()));
-    base::Histogram::FactoryGet(histogram_name, 0, 10000000, 50,
-                                base::HistogramBase::kUmaTargetedHistogramFlag)
-        ->Add(timer.Elapsed().InMicroseconds());
+        base::StringPrintf("Compositing.%s.LayersUpdateTime", client_name);
+    base::UmaHistogramCounts10M(histogram_name, elapsed);
+
+    // Also add UpdateLayers metrics bucketed by the layer count.
+    base::StringAppendF(&histogram_name, ".%d",
+                        GetLayersUpdateTimeHistogramBucket(NumLayers()));
+    base::UmaHistogramCounts10M(histogram_name, elapsed);
   }
 
   return result;
@@ -1050,11 +1055,6 @@ void LayerTreeHost::SetViewportSizeAndScale(
     const gfx::Size& device_viewport_size,
     float device_scale_factor,
     const viz::LocalSurfaceId& local_surface_id) {
-  DCHECK(!local_surface_id.is_valid() || !device_viewport_size.IsEmpty())
-      << "A valid LocalSurfaceId has been provided with an empty device "
-         "viewport size "
-      << local_surface_id;
-  // TODO(ccameron): Add CHECKs here for surface invariants violations.
   if (settings_.enable_surface_synchronization)
     SetLocalSurfaceId(local_surface_id);
 
@@ -1080,7 +1080,21 @@ void LayerTreeHost::SetViewportSizeAndScale(
   if (changed) {
     SetPropertyTreesNeedRebuild();
     SetNeedsCommit();
+#if defined(OS_MACOSX)
+    // TODO(ccameron): This check is not valid on Aura or Mus yet, but should
+    // be.
+    CHECK(!has_pushed_local_surface_id_ || !local_surface_id_.is_valid());
+#endif
   }
+}
+
+void LayerTreeHost::SetViewportVisibleRect(const gfx::Rect& visible_rect) {
+  if (visible_rect == viewport_visible_rect_)
+    return;
+
+  viewport_visible_rect_ = visible_rect;
+  SetPropertyTreesNeedRebuild();
+  SetNeedsCommit();
 }
 
 void LayerTreeHost::SetBrowserControlsHeight(float top_height,
@@ -1171,6 +1185,7 @@ void LayerTreeHost::SetLocalSurfaceId(
   if (local_surface_id_ == local_surface_id)
     return;
   local_surface_id_ = local_surface_id;
+  has_pushed_local_surface_id_ = false;
   UpdateDeferCommitsInternal();
   SetNeedsCommit();
 }
@@ -1361,6 +1376,7 @@ void LayerTreeHost::PushLayerTreePropertiesTo(LayerTreeImpl* tree_impl) {
   tree_impl->set_content_source_id(content_source_id_);
 
   tree_impl->set_local_surface_id(local_surface_id_);
+  has_pushed_local_surface_id_ = true;
 
   if (pending_page_scale_animation_) {
     tree_impl->SetPendingPageScaleAnimation(
@@ -1389,6 +1405,7 @@ void LayerTreeHost::PushLayerTreeHostPropertiesTo(
   RecordGpuRasterizationHistogram(host_impl);
 
   host_impl->SetViewportSize(device_viewport_size_);
+  host_impl->SetViewportVisibleRect(viewport_visible_rect_);
   host_impl->SetDebugState(debug_state_);
 }
 

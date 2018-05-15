@@ -16,7 +16,7 @@
 #include "content/renderer/input/input_handler_manager_client.h"
 #include "content/renderer/input/main_thread_event_queue.h"
 #include "ipc/message_filter.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/blink/public/platform/web_input_event.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -73,6 +73,7 @@ class CONTENT_EXPORT InputEventFilter : public InputHandlerManagerClient,
   void DidOverscroll(int routing_id,
                      const ui::DidOverscrollParams& params) override;
   void DidStopFlinging(int routing_id) override;
+  void DidStartScrollingViewport(int routing_id) override;
   void DispatchNonBlockingEventToMainThread(
       int routing_id,
       ui::WebScopedInputEvent event,

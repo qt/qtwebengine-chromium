@@ -11,14 +11,14 @@
 #include <utility>
 
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "content/common/speech_recognition_messages.h"
-#include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/web/WebSpeechGrammar.h"
-#include "third_party/WebKit/public/web/WebSpeechRecognitionParams.h"
-#include "third_party/WebKit/public/web/WebSpeechRecognitionResult.h"
-#include "third_party/WebKit/public/web/WebSpeechRecognizerClient.h"
+#include "content/renderer/render_frame_impl.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_vector.h"
+#include "third_party/blink/public/web/web_speech_grammar.h"
+#include "third_party/blink/public/web/web_speech_recognition_params.h"
+#include "third_party/blink/public/web/web_speech_recognition_result.h"
 
 using blink::WebVector;
 using blink::WebString;
@@ -31,17 +31,11 @@ using blink::WebSpeechRecognizerClient;
 namespace content {
 
 SpeechRecognitionDispatcher::SpeechRecognitionDispatcher(
-    RenderViewImpl* render_view)
-    : RenderViewObserver(render_view),
-      recognizer_client_(nullptr),
+    RenderFrame* render_frame)
+    : RenderFrameObserver(render_frame),
       next_id_(1) {}
 
-SpeechRecognitionDispatcher::~SpeechRecognitionDispatcher() {}
-
-void SpeechRecognitionDispatcher::AbortAllRecognitions() {
-  Send(new SpeechRecognitionHostMsg_AbortAllRequests(
-      routing_id()));
-}
+SpeechRecognitionDispatcher::~SpeechRecognitionDispatcher() = default;
 
 bool SpeechRecognitionDispatcher::OnMessageReceived(
     const IPC::Message& message) {
@@ -65,11 +59,18 @@ void SpeechRecognitionDispatcher::OnDestruct() {
   delete this;
 }
 
+void SpeechRecognitionDispatcher::WasHidden() {
+#if defined(OS_ANDROID) && BUILDFLAG(ENABLE_WEBRTC)
+  Send(new SpeechRecognitionHostMsg_AbortAllRequests(routing_id()));
+#endif
+}
+
 void SpeechRecognitionDispatcher::Start(
     const WebSpeechRecognitionHandle& handle,
     const WebSpeechRecognitionParams& params,
-    WebSpeechRecognizerClient* recognizer_client) {
-  DCHECK(!recognizer_client_ || recognizer_client_ == recognizer_client);
+    const WebSpeechRecognizerClient& recognizer_client) {
+  DCHECK(recognizer_client_.IsNull() ||
+         recognizer_client_ == recognizer_client);
   recognizer_client_ = recognizer_client;
 
   SpeechRecognitionHostMsg_StartRequest_Params msg_params;
@@ -82,7 +83,7 @@ void SpeechRecognitionDispatcher::Start(
   msg_params.continuous = params.Continuous();
   msg_params.interim_results = params.InterimResults();
   msg_params.origin_url = params.Origin().ToString().Utf8();
-  msg_params.render_view_id = routing_id();
+  msg_params.render_frame_id = routing_id();
   msg_params.request_id = GetOrCreateIDForHandle(handle);
 
   // The handle mapping will be removed in |OnRecognitionEnd|.
@@ -91,7 +92,7 @@ void SpeechRecognitionDispatcher::Start(
 
 void SpeechRecognitionDispatcher::Stop(
     const WebSpeechRecognitionHandle& handle,
-    WebSpeechRecognizerClient* recognizer_client) {
+    const WebSpeechRecognizerClient& recognizer_client) {
   // Ignore a |stop| issued without a matching |start|.
   if (recognizer_client_ != recognizer_client || !HandleExists(handle))
     return;
@@ -101,7 +102,7 @@ void SpeechRecognitionDispatcher::Stop(
 
 void SpeechRecognitionDispatcher::Abort(
     const WebSpeechRecognitionHandle& handle,
-    WebSpeechRecognizerClient* recognizer_client) {
+    const WebSpeechRecognizerClient& recognizer_client) {
   // Ignore an |abort| issued without a matching |start|.
   if (recognizer_client_ != recognizer_client || !HandleExists(handle))
     return;
@@ -110,23 +111,23 @@ void SpeechRecognitionDispatcher::Abort(
 }
 
 void SpeechRecognitionDispatcher::OnRecognitionStarted(int request_id) {
-  recognizer_client_->DidStart(GetHandleFromID(request_id));
+  recognizer_client_.DidStart(GetHandleFromID(request_id));
 }
 
 void SpeechRecognitionDispatcher::OnAudioStarted(int request_id) {
-  recognizer_client_->DidStartAudio(GetHandleFromID(request_id));
+  recognizer_client_.DidStartAudio(GetHandleFromID(request_id));
 }
 
 void SpeechRecognitionDispatcher::OnSoundStarted(int request_id) {
-  recognizer_client_->DidStartSound(GetHandleFromID(request_id));
+  recognizer_client_.DidStartSound(GetHandleFromID(request_id));
 }
 
 void SpeechRecognitionDispatcher::OnSoundEnded(int request_id) {
-  recognizer_client_->DidEndSound(GetHandleFromID(request_id));
+  recognizer_client_.DidEndSound(GetHandleFromID(request_id));
 }
 
 void SpeechRecognitionDispatcher::OnAudioEnded(int request_id) {
-  recognizer_client_->DidEndAudio(GetHandleFromID(request_id));
+  recognizer_client_.DidEndAudio(GetHandleFromID(request_id));
 }
 
 static WebSpeechRecognizerClient::ErrorCode WebKitErrorCode(
@@ -162,13 +163,12 @@ static WebSpeechRecognizerClient::ErrorCode WebKitErrorCode(
 void SpeechRecognitionDispatcher::OnErrorOccurred(
     int request_id, const SpeechRecognitionError& error) {
   if (error.code == SPEECH_RECOGNITION_ERROR_NO_MATCH) {
-    recognizer_client_->DidReceiveNoMatch(GetHandleFromID(request_id),
-                                          WebSpeechRecognitionResult());
+    recognizer_client_.DidReceiveNoMatch(GetHandleFromID(request_id),
+                                         WebSpeechRecognitionResult());
   } else {
-    recognizer_client_->DidReceiveError(
-        GetHandleFromID(request_id),
-        WebString(),  // TODO(primiano): message?
-        WebKitErrorCode(error.code));
+    recognizer_client_.DidReceiveError(GetHandleFromID(request_id),
+                                       WebString(),  // TODO(primiano): message?
+                                       WebKitErrorCode(error.code));
   }
 }
 
@@ -185,7 +185,7 @@ void SpeechRecognitionDispatcher::OnRecognitionEnded(int request_id) {
     // didEnd may call back synchronously to start a new recognition session,
     // and we don't want to delete the handle from the map after that happens.
     handle_map_.erase(request_id);
-    recognizer_client_->DidEnd(handle);
+    recognizer_client_.DidEnd(handle);
   }
 }
 
@@ -216,8 +216,8 @@ void SpeechRecognitionDispatcher::OnResultsRetrieved(
     webkit_result->Assign(transcripts, confidences, !result.is_provisional);
   }
 
-  recognizer_client_->DidReceiveResults(GetHandleFromID(request_id), final,
-                                        provisional);
+  recognizer_client_.DidReceiveResults(GetHandleFromID(request_id), final,
+                                       provisional);
 }
 
 int SpeechRecognitionDispatcher::GetOrCreateIDForHandle(

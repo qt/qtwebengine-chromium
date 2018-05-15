@@ -72,17 +72,17 @@ bool WaitForSocketReadable(int raw_socket_fd, int raw_cancel_fd) {
 
 class MojoCameraClientObserver : public CameraClientObserver {
  public:
-  explicit MojoCameraClientObserver(arc::mojom::CameraHalClientPtr client)
+  explicit MojoCameraClientObserver(cros::mojom::CameraHalClientPtr client)
       : client_(std::move(client)) {}
 
-  void OnChannelCreated(arc::mojom::CameraModulePtr camera_module) override {
+  void OnChannelCreated(cros::mojom::CameraModulePtr camera_module) override {
     client_->SetUpChannel(std::move(camera_module));
   }
 
-  arc::mojom::CameraHalClientPtr& client() { return client_; }
+  cros::mojom::CameraHalClientPtr& client() { return client_; }
 
  private:
-  arc::mojom::CameraHalClientPtr client_;
+  cros::mojom::CameraHalClientPtr client_;
   DISALLOW_IMPLICIT_CONSTRUCTORS(MojoCameraClientObserver);
 };
 
@@ -114,11 +114,13 @@ bool CameraHalDispatcherImpl::StartThreads() {
 }
 
 bool CameraHalDispatcherImpl::Start(
-    MojoJpegDecodeAcceleratorFactoryCB jda_factory) {
+    MojoJpegDecodeAcceleratorFactoryCB jda_factory,
+    MojoJpegEncodeAcceleratorFactoryCB jea_factory) {
   if (!StartThreads()) {
     return false;
   }
-  jda_factory_ = jda_factory;
+  jda_factory_ = std::move(jda_factory);
+  jea_factory_ = std::move(jea_factory);
   base::WaitableEvent started(base::WaitableEvent::ResetPolicy::MANUAL,
                               base::WaitableEvent::InitialState::NOT_SIGNALED);
   blocking_io_task_runner_->PostTask(
@@ -162,7 +164,7 @@ CameraHalDispatcherImpl::~CameraHalDispatcherImpl() {
 }
 
 void CameraHalDispatcherImpl::RegisterServer(
-    arc::mojom::CameraHalServerPtr camera_hal_server) {
+    cros::mojom::CameraHalServerPtr camera_hal_server) {
   DCHECK(proxy_task_runner_->BelongsToCurrentThread());
 
   if (camera_hal_server_) {
@@ -183,7 +185,7 @@ void CameraHalDispatcherImpl::RegisterServer(
 }
 
 void CameraHalDispatcherImpl::RegisterClient(
-    arc::mojom::CameraHalClientPtr client) {
+    cros::mojom::CameraHalClientPtr client) {
   DCHECK(proxy_task_runner_->BelongsToCurrentThread());
   auto client_observer =
       std::make_unique<MojoCameraClientObserver>(std::move(client));
@@ -197,6 +199,11 @@ void CameraHalDispatcherImpl::RegisterClient(
 void CameraHalDispatcherImpl::GetJpegDecodeAccelerator(
     media::mojom::JpegDecodeAcceleratorRequest jda_request) {
   jda_factory_.Run(std::move(jda_request));
+}
+
+void CameraHalDispatcherImpl::GetJpegEncodeAccelerator(
+    media::mojom::JpegEncodeAcceleratorRequest jea_request) {
+  jea_factory_.Run(std::move(jea_request));
 }
 
 void CameraHalDispatcherImpl::CreateSocket(base::WaitableEvent* started) {
@@ -318,8 +325,8 @@ void CameraHalDispatcherImpl::AddClientObserverOnProxyThread(
 void CameraHalDispatcherImpl::EstablishMojoChannel(
     CameraClientObserver* client_observer) {
   DCHECK(proxy_task_runner_->BelongsToCurrentThread());
-  arc::mojom::CameraModulePtr camera_module_ptr;
-  arc::mojom::CameraModuleRequest camera_module_request =
+  cros::mojom::CameraModulePtr camera_module_ptr;
+  cros::mojom::CameraModuleRequest camera_module_request =
       mojo::MakeRequest(&camera_module_ptr);
   camera_hal_server_->CreateChannel(std::move(camera_module_request));
   client_observer->OnChannelCreated(std::move(camera_module_ptr));
@@ -329,7 +336,7 @@ void CameraHalDispatcherImpl::OnPeerConnected(
     mojo::ScopedMessagePipeHandle message_pipe) {
   DCHECK(proxy_task_runner_->BelongsToCurrentThread());
   binding_set_.AddBinding(
-      this, arc::mojom::CameraHalDispatcherRequest(std::move(message_pipe)));
+      this, cros::mojom::CameraHalDispatcherRequest(std::move(message_pipe)));
   VLOG(1) << "New CameraHalDispatcher binding added";
 }
 

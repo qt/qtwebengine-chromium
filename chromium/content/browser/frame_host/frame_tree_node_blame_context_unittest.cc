@@ -17,7 +17,7 @@
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/common/frame/frame_policy.h"
+#include "third_party/blink/public/common/frame/frame_policy.h"
 
 namespace content {
 
@@ -103,7 +103,7 @@ class FrameTreeNodeBlameContextTest : public RenderViewHostImplTestHarness {
           blink::WebTreeScopeType::kDocument, std::string(),
           base::StringPrintf("uniqueName%d", child_id), false,
           base::UnguessableToken::Create(), blink::FramePolicy(),
-          FrameOwnerProperties());
+          FrameOwnerProperties(), false);
       FrameTreeNode* child = node->child_at(child_num - 1);
       consumption += CreateSubframes(child, child_id, shape + consumption);
     }

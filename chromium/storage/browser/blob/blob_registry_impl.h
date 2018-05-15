@@ -12,7 +12,7 @@
 #include "mojo/public/cpp/bindings/strong_associated_binding.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/storage_browser_export.h"
-#include "third_party/WebKit/public/mojom/blob/blob_registry.mojom.h"
+#include "third_party/blink/public/mojom/blob/blob_registry.mojom.h"
 
 namespace storage {
 
@@ -46,11 +46,13 @@ class STORAGE_EXPORT BlobRegistryImpl : public blink::mojom::BlobRegistry {
                 const std::string& content_disposition,
                 std::vector<blink::mojom::DataElementPtr> elements,
                 RegisterCallback callback) override;
-  void RegisterFromStream(const std::string& content_type,
-                          const std::string& content_disposition,
-                          uint64_t expected_length,
-                          mojo::ScopedDataPipeConsumerHandle data,
-                          RegisterFromStreamCallback callback) override;
+  void RegisterFromStream(
+      const std::string& content_type,
+      const std::string& content_disposition,
+      uint64_t expected_length,
+      mojo::ScopedDataPipeConsumerHandle data,
+      blink::mojom::ProgressClientAssociatedPtrInfo progress_client,
+      RegisterFromStreamCallback callback) override;
   void GetBlobFromUUID(blink::mojom::BlobRequest blob,
                        const std::string& uuid,
                        GetBlobFromUUIDCallback callback) override;
@@ -69,6 +71,8 @@ class STORAGE_EXPORT BlobRegistryImpl : public blink::mojom::BlobRegistry {
 
  private:
   class BlobUnderConstruction;
+
+  void BlobBuildAborted(const std::string& uuid);
 
   void StreamingBlobDone(RegisterFromStreamCallback callback,
                          BlobBuilderFromStream* builder,

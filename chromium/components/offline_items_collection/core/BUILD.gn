@@ -9,6 +9,7 @@ if (is_android) {
 
 static_library("core") {
   sources = [
+    "fail_state.h",
     "offline_content_aggregator.cc",
     "offline_content_aggregator.h",
     "offline_content_provider.h",
@@ -29,6 +30,7 @@ static_library("core") {
   ]
 
   deps = [
+    "utilities:utilities",
     "//ui/gfx/geometry",
   ]
 
@@ -56,6 +58,7 @@ source_set("unit_tests") {
 
   deps = [
     ":core",
+    "utilities:unit_tests",
     "//base/test:test_support",
     "//components/offline_items_collection/core/test_support",
   ]
@@ -99,6 +102,7 @@ if (is_android) {
     visibility = [ ":*" ]
 
     sources = [
+      "fail_state.h",
       "offline_item.h",
       "offline_item_filter.h",
       "offline_item_state.h",

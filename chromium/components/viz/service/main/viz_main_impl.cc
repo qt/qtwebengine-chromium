@@ -13,7 +13,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "build/build_config.h"
-#include "components/viz/service/display_embedder/compositing_mode_reporter_impl.h"
+#include "components/viz/common/switches.h"
 #include "components/viz/service/display_embedder/gpu_display_provider.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/gl/gpu_service_impl.h"
@@ -24,11 +24,12 @@
 #include "gpu/ipc/gpu_in_process_thread_service.h"
 #include "gpu/ipc/service/gpu_memory_buffer_factory.h"
 #include "gpu/ipc/service/gpu_watchdog_thread.h"
-#include "media/gpu/features.h"
+#include "media/gpu/buildflags.h"
 #include "services/metrics/public/cpp/delegating_ukm_recorder.h"
 #include "services/metrics/public/cpp/mojo_ukm_recorder.h"
 #include "services/metrics/public/mojom/constants.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
+#include "ui/gfx/switches.h"
 
 #if defined(OS_CHROMEOS) && BUILDFLAG(USE_VAAPI)
 #include "media/gpu/vaapi/vaapi_wrapper.h"
@@ -133,6 +134,9 @@ VizMainImpl::VizMainImpl(Delegate* delegate,
   if (dependencies_.create_display_compositor) {
     compositor_thread_ = CreateAndStartCompositorThread();
     compositor_thread_task_runner_ = compositor_thread_->task_runner();
+    if (delegate_)
+      delegate_->PostCompositorThreadCreated(
+          compositor_thread_task_runner_.get());
   }
 
   CreateUkmRecorderIfNeeded(dependencies.connector);
@@ -272,18 +276,13 @@ void VizMainImpl::CreateFrameSinkManagerOnCompositorThread(
     mojom::FrameSinkManagerParamsPtr params) {
   DCHECK(!frame_sink_manager_);
 
-  if (params->compositing_mode_watcher) {
-    mojom::CompositingModeWatcherPtr host_mode_watcher(
-        std::move(params->compositing_mode_watcher));
-    compositing_mode_reporter_ =
-        std::make_unique<CompositingModeReporterImpl>();
-    compositing_mode_reporter_->AddCompositingModeWatcher(
-        std::move(host_mode_watcher));
-  }
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
   display_provider_ = std::make_unique<GpuDisplayProvider>(
       params->restart_id, gpu_command_service_,
-      gpu_service_->gpu_channel_manager(), compositing_mode_reporter_.get());
+      gpu_service_->gpu_channel_manager(),
+      command_line->HasSwitch(switches::kHeadless),
+      command_line->HasSwitch(switches::kRunAllCompositorStagesBeforeDraw));
 
   mojom::FrameSinkManagerClientPtr client(
       std::move(params->frame_sink_manager_client));
@@ -297,7 +296,6 @@ void VizMainImpl::CreateFrameSinkManagerOnCompositorThread(
 }
 
 void VizMainImpl::TearDownOnCompositorThread() {
-  compositing_mode_reporter_.reset();
   frame_sink_manager_.reset();
   display_provider_.reset();
 }

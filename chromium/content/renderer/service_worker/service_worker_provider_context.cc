@@ -17,7 +17,6 @@
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/service_names.mojom.h"
-#include "content/public/common/shared_url_loader_factory.h"
 #include "content/renderer/service_worker/controller_service_worker_connector.h"
 #include "content/renderer/service_worker/service_worker_dispatcher.h"
 #include "content/renderer/service_worker/service_worker_subresource_loader.h"
@@ -26,18 +25,19 @@
 #include "content/renderer/worker_thread_registry.h"
 #include "mojo/public/cpp/bindings/strong_associated_binding.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
 // Holds state for service worker clients.
 struct ServiceWorkerProviderContext::ProviderStateForClient {
   explicit ProviderStateForClient(
-      scoped_refptr<SharedURLLoaderFactory> default_loader_factory)
+      scoped_refptr<network::SharedURLLoaderFactory> default_loader_factory)
       : default_loader_factory(std::move(default_loader_factory)) {}
   ~ProviderStateForClient() = default;
 
@@ -53,7 +53,7 @@ struct ServiceWorkerProviderContext::ProviderStateForClient {
 
   // S13nServiceWorker:
   // Used when we create |subresource_loader_factory|.
-  scoped_refptr<SharedURLLoaderFactory> default_loader_factory;
+  scoped_refptr<network::SharedURLLoaderFactory> default_loader_factory;
 
   // Tracks feature usage for UseCounter.
   std::set<blink::mojom::WebFeature> used_features;
@@ -100,7 +100,7 @@ ServiceWorkerProviderContext::ServiceWorkerProviderContext(
     mojom::ServiceWorkerContainerAssociatedRequest request,
     mojom::ServiceWorkerContainerHostAssociatedPtrInfo host_ptr_info,
     mojom::ControllerServiceWorkerInfoPtr controller_info,
-    scoped_refptr<SharedURLLoaderFactory> default_loader_factory)
+    scoped_refptr<network::SharedURLLoaderFactory> default_loader_factory)
     : provider_type_(provider_type),
       provider_id_(provider_id),
       main_thread_task_runner_(base::ThreadTaskRunnerHandle::Get()),
@@ -199,9 +199,8 @@ ServiceWorkerProviderContext::GetSubresourceLoaderFactory() {
   }
   DCHECK(ServiceWorkerUtils::IsServicificationEnabled());
   if (!state->subresource_loader_factory) {
-    mojo::MakeStrongBinding(
-        std::make_unique<ServiceWorkerSubresourceLoaderFactory>(
-            state->controller_connector, state->default_loader_factory),
+    ServiceWorkerSubresourceLoaderFactory::Create(
+        state->controller_connector, state->default_loader_factory,
         mojo::MakeRequest(&state->subresource_loader_factory));
   }
   return state->subresource_loader_factory.get();
@@ -280,6 +279,12 @@ void ServiceWorkerProviderContext::OnNetworkProviderDestroyed() {
   container_host_.reset();
   if (state_for_client_ && state_for_client_->controller_connector)
     state_for_client_->controller_connector->OnContainerHostConnectionClosed();
+}
+
+void ServiceWorkerProviderContext::PingContainerHost(
+    base::OnceClosure callback) {
+  DCHECK(main_thread_task_runner_->RunsTasksInCurrentSequence());
+  container_host_->Ping(std::move(callback));
 }
 
 void ServiceWorkerProviderContext::UnregisterWorkerFetchContext(
@@ -421,9 +426,7 @@ bool ServiceWorkerProviderContext::CanCreateSubresourceLoaderFactory() const {
   // Expected that it is called only for clients.
   DCHECK(state_for_client_);
   // |state_for_client_->default_loader_factory| could be null
-  // for SharedWorker case (which is not supported by S13nServiceWorker
-  // yet, https://crbug.com/796819) and in unit tests, return early in such
-  // cases too.
+  // in unit tests.
   return (ServiceWorkerUtils::IsServicificationEnabled() &&
           state_for_client_->default_loader_factory);
 }

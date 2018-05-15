@@ -110,6 +110,7 @@ Browsing list:**
   **Restrict-View-Google** label
   * Change **Type-Bug-Security** label to **Type-Bug**
   * Add the **Security** component
+  * See below for reporting URLs to SafeBrowsing
 * **If the report is a potentially valid bug but is not a security vulnerability:**
   * remove the **Restrict-View-SecurityTeam** label. If necessary, add one of the
   other **Restrict-View-?** labels:
@@ -128,8 +129,8 @@ information, add the **Needs-Feedback** label and wait for 24 hours for a respon
 
 #### Step 1. Reproduce legitimate-sounding issues.
 
-If you can't reproduce the issue, ask for help on IRC (#chrome-security), or
-find an area owner to help.
+If you can't reproduce the issue, ask for help on IRC (#chrome-security) or the
+Chrome Security chat, or find an area owner to help.
 
 Tips for reproducing bugs:
 
@@ -188,16 +189,25 @@ Generally, see [the Security Labels document](security-labels.md).
 **Ensure the comment adequately explains any status changes.** Severity,
 milestone, and priority assignment generally require explanatory text.
 
-* Report suspected malicious URLs to SafeBrowsing.
+* Report suspected malicious URLs to SafeBrowsing:
   * Public URL:
-  [https://www.google.com/safebrowsing/report_badware/](https://www.google.com/safebrowsing/report_badware/)
-  * Googlers: see instructions at [go/report-safe-browsing](go/report-safe-browsing)
-* Report suspected malicious file attachments to SafeBrowsing and VirusTotal.
+  [https://support.google.com/websearch/contact/safe_browsing](https://support.google.com/websearch/contact/safe_browsing)
+  * Googlers: see instructions at [go/safebrowsing-escalation](https://goto.google.com/safebrowsing-escalation)
+  * Report suspected malicious file attachments to SafeBrowsing and VirusTotal.
 * Make sure the report is properly forwarded when the vulnerability is in an
 upstream project, the OS, or some other dependency.
 * For vulnerabilities in services Chrome uses (e.g. Omaha, Chrome Web Store,
 SafeBrowsing), make sure the affected team is informed and has access to the
 necessary bugs.
+
+##### Labeling For Chrome On iOS
+
+* Reproduce using iOS device, desktop Safari, or [Browserstack](http://browserstack.com/)
+* Assign severity, impact, milestone, and component labels
+* CC Apple friends (if you don't know who they are, ping awhalley@)
+* Label **ExternalDependency**
+* File the bug at [bugs.webkit.org](https://bugs.webkit.org) or with
+  product-security@apple.com.
 
 ### Find An Owner To Fix The Bug
 

@@ -6,7 +6,6 @@
 
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
-#include "base/memory/ptr_util.h"
 #include "base/threading/thread_local.h"
 #include "services/ui/public/interfaces/window_tree.mojom.h"
 #include "ui/aura/client/aura_constants.h"
@@ -25,8 +24,6 @@
 #include "ui/events/platform/platform_event_source.h"
 
 #if defined(USE_OZONE)
-#include "ui/gfx/client_native_pixmap_factory.h"
-#include "ui/ozone/public/client_native_pixmap_factory_ozone.h"
 #include "ui/ozone/public/ozone_platform.h"
 #include "ui/ozone/public/ozone_switches.h"
 #endif
@@ -49,10 +46,6 @@ Env::~Env() {
     ui::OSExchangeDataProviderFactory::SetFactory(nullptr);
   if (is_override_input_injector_factory_)
     ui::SetSystemInputInjectorFactory(nullptr);
-
-#if defined(USE_OZONE)
-  gfx::ClientNativePixmapFactory::ResetInstance();
-#endif
 
   for (EnvObserver& observer : observers_)
     observer.OnWillDestroyEnv();
@@ -158,6 +151,9 @@ void Env::ScheduleEmbed(
 ////////////////////////////////////////////////////////////////////////////////
 // Env, private:
 
+// static
+bool Env::initial_throttle_input_on_resize_ = true;
+
 Env::Env(Mode mode)
     : mode_(mode),
       env_controller_(new EnvInputStateController),
@@ -172,10 +168,6 @@ Env::Env(Mode mode)
 }
 
 void Env::Init() {
-#if defined(USE_OZONE)
-  ui::CreateClientNativePixmapFactoryOzone();
-  DCHECK(gfx::ClientNativePixmapFactory::GetInstance());
-#endif
   if (mode_ == Mode::MUS) {
     EnableMusOSExchangeDataProvider();
     EnableMusOverrideInputInjector();

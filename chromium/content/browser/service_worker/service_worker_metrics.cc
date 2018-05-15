@@ -613,19 +613,6 @@ void ServiceWorkerMetrics::RecordInstallEventStatus(
                             SERVICE_WORKER_ERROR_MAX_VALUE);
 }
 
-void ServiceWorkerMetrics::RecordForeignFetchRegistrationCount(
-    size_t scope_count,
-    size_t origin_count) {
-  UMA_HISTOGRAM_COUNTS_100("ServiceWorker.ForeignFetch.ScopeCount",
-                           scope_count);
-  if (scope_count > 0) {
-    // Only record number of origins if service worker registered for at least
-    // one foreign fetch scope.
-    UMA_HISTOGRAM_COUNTS_100("ServiceWorker.ForeignFetch.OriginCount",
-                             origin_count);
-  }
-}
-
 void ServiceWorkerMetrics::RecordEventDispatchingDelay(EventType event_type,
                                                        base::TimeDelta time,
                                                        Site site_for_metrics) {
@@ -769,20 +756,17 @@ void ServiceWorkerMetrics::RecordStatusZeroResponseError(
     blink::mojom::ServiceWorkerResponseError error) {
   if (is_main_resource) {
     UMA_HISTOGRAM_ENUMERATION(
-        "ServiceWorker.URLRequestJob.MainResource.StatusZeroError", error,
-        static_cast<int>(blink::mojom::ServiceWorkerResponseError::kLast) + 1);
+        "ServiceWorker.URLRequestJob.MainResource.StatusZeroError", error);
   } else {
     UMA_HISTOGRAM_ENUMERATION(
-        "ServiceWorker.URLRequestJob.Subresource.StatusZeroError", error,
-        static_cast<int>(blink::mojom::ServiceWorkerResponseError::kLast) + 1);
+        "ServiceWorker.URLRequestJob.Subresource.StatusZeroError", error);
   }
 }
 
 void ServiceWorkerMetrics::RecordFallbackedRequestMode(
     network::mojom::FetchRequestMode mode) {
-  UMA_HISTOGRAM_ENUMERATION(
-      "ServiceWorker.URLRequestJob.FallbackedRequestMode", mode,
-      static_cast<int>(network::mojom::FetchRequestMode::kLast) + 1);
+  UMA_HISTOGRAM_ENUMERATION("ServiceWorker.URLRequestJob.FallbackedRequestMode",
+                            mode);
 }
 
 void ServiceWorkerMetrics::RecordProcessCreated(bool is_new_process) {

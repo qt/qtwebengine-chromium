@@ -33,7 +33,8 @@
 #include "net/http/http_server_properties_manager.h"
 #include "net/http/transport_security_persister.h"
 #include "net/http/transport_security_state.h"
-#include "net/net_features.h"
+#include "net/log/net_log.h"
+#include "net/net_buildflags.h"
 #include "net/nqe/network_quality_estimator.h"
 #include "net/quic/chromium/quic_stream_factory.h"
 #include "net/ssl/channel_id_service.h"
@@ -125,7 +126,7 @@ class BasicNetworkDelegate : public NetworkDelegateImpl {
   }
 
   bool OnCanSetCookie(const URLRequest& request,
-                      const net::CanonicalCookie& cookie,
+                      const CanonicalCookie& cookie,
                       CookieOptions* options) override {
     return true;
   }
@@ -197,7 +198,6 @@ URLRequestContextBuilder::HttpCacheParams::~HttpCacheParams() = default;
 URLRequestContextBuilder::URLRequestContextBuilder()
     : enable_brotli_(false),
       network_quality_estimator_(nullptr),
-      shared_http_user_agent_settings_(nullptr),
       data_enabled_(false),
 #if !BUILDFLAG(DISABLE_FILE_SUPPORT)
       file_enabled_(false),
@@ -253,18 +253,17 @@ void URLRequestContextBuilder::SetHttpNetworkSessionComponents(
 
 void URLRequestContextBuilder::set_accept_language(
     const std::string& accept_language) {
-  DCHECK(!shared_http_user_agent_settings_);
+  DCHECK(!http_user_agent_settings_);
   accept_language_ = accept_language;
 }
 void URLRequestContextBuilder::set_user_agent(const std::string& user_agent) {
-  DCHECK(!shared_http_user_agent_settings_);
+  DCHECK(!http_user_agent_settings_);
   user_agent_ = user_agent;
 }
-void URLRequestContextBuilder::set_shared_http_user_agent_settings(
-    HttpUserAgentSettings* shared_http_user_agent_settings) {
-  DCHECK(accept_language_.empty());
-  DCHECK(user_agent_.empty());
-  shared_http_user_agent_settings_ = shared_http_user_agent_settings;
+
+void URLRequestContextBuilder::set_http_user_agent_settings(
+    std::unique_ptr<HttpUserAgentSettings> http_user_agent_settings) {
+  http_user_agent_settings_ = std::move(http_user_agent_settings);
 }
 
 void URLRequestContextBuilder::EnableHttpCache(const HttpCacheParams& params) {
@@ -300,7 +299,7 @@ void URLRequestContextBuilder::SetCertVerifier(
 
 #if BUILDFLAG(ENABLE_REPORTING)
 void URLRequestContextBuilder::set_reporting_policy(
-    std::unique_ptr<net::ReportingPolicy> reporting_policy) {
+    std::unique_ptr<ReportingPolicy> reporting_policy) {
   reporting_policy_ = std::move(reporting_policy);
 }
 #endif  // BUILDFLAG(ENABLE_REPORTING)
@@ -395,8 +394,8 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
   context->set_enable_brotli(enable_brotli_);
   context->set_network_quality_estimator(network_quality_estimator_);
 
-  if (shared_http_user_agent_settings_) {
-    context->set_http_user_agent_settings(shared_http_user_agent_settings_);
+  if (http_user_agent_settings_) {
+    storage->set_http_user_agent_settings(std::move(http_user_agent_settings_));
   } else {
     storage->set_http_user_agent_settings(
         std::make_unique<StaticHttpUserAgentSettings>(accept_language_,
@@ -428,7 +427,7 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
   if (ssl_config_service_) {
     // This takes a raw pointer, but |storage| will hold onto a reference to the
     // service.
-    storage->set_ssl_config_service(ssl_config_service_.get());
+    storage->set_ssl_config_service(ssl_config_service_);
   } else {
     storage->set_ssl_config_service(new SSLConfigServiceDefaults);
   }
@@ -517,10 +516,10 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
               base::ThreadTaskRunnerHandle::Get().get());
     }
 #endif  // !defined(OS_LINUX) && !defined(OS_ANDROID)
-    proxy_resolution_service_ =
-        CreateProxyService(std::move(proxy_config_service_), context.get(),
-                           context->host_resolver(),
-                           context->network_delegate(), context->net_log());
+    proxy_resolution_service_ = CreateProxyResolutionService(
+        std::move(proxy_config_service_), context.get(),
+        context->host_resolver(), context->network_delegate(),
+        context->net_log());
     proxy_resolution_service_->set_quick_check_enabled(pac_quick_check_enabled_);
     proxy_resolution_service_->set_sanitize_url_policy(pac_sanitize_url_policy_);
   }
@@ -614,13 +613,13 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
   }
 #endif  // !BUILDFLAG(DISABLE_FTP_SUPPORT)
 
-  std::unique_ptr<net::URLRequestJobFactory> top_job_factory(job_factory);
+  std::unique_ptr<URLRequestJobFactory> top_job_factory(job_factory);
   if (!url_request_interceptors_.empty()) {
     // Set up interceptors in the reverse order.
 
     for (auto i = url_request_interceptors_.rbegin();
          i != url_request_interceptors_.rend(); ++i) {
-      top_job_factory.reset(new net::URLRequestInterceptingJobFactory(
+      top_job_factory.reset(new URLRequestInterceptingJobFactory(
           std::move(top_job_factory), std::move(*i)));
     }
     url_request_interceptors_.clear();
@@ -660,7 +659,7 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
 }
 
 std::unique_ptr<ProxyResolutionService>
-URLRequestContextBuilder::CreateProxyService(
+URLRequestContextBuilder::CreateProxyResolutionService(
     std::unique_ptr<ProxyConfigService> proxy_config_service,
     URLRequestContext* url_request_context,
     HostResolver* host_resolver,

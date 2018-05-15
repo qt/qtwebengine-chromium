@@ -26,9 +26,9 @@
 #include "services/device/public/cpp/generic_sensor/sensor_traits.h"
 #include "services/device/public/mojom/constants.mojom.h"
 #include "services/device/public/mojom/sensor_provider.mojom.h"
-#include "third_party/WebKit/public/platform/modules/device_orientation/WebDeviceMotionListener.h"
-#include "third_party/WebKit/public/platform/modules/device_orientation/WebDeviceOrientationListener.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/blink/public/platform/modules/device_orientation/web_device_motion_listener.h"
+#include "third_party/blink/public/platform/modules/device_orientation/web_device_orientation_listener.h"
+#include "third_party/blink/public/web/web_local_frame.h"
 
 namespace content {
 
@@ -324,10 +324,6 @@ class CONTENT_EXPORT DeviceSensorEventPump
 
   DISALLOW_COPY_AND_ASSIGN(DeviceSensorEventPump);
 };
-
-template class DeviceSensorEventPump<blink::WebDeviceMotionListener>;
-template class DeviceSensorEventPump<blink::WebDeviceOrientationListener>;
-
 }  // namespace content
 
 #endif  // CONTENT_RENDERER_DEVICE_SENSORS_DEVICE_SENSOR_EVENT_PUMP_H_

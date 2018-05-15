@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/macros.h"
@@ -83,7 +82,11 @@ class MockUpdateClient : public UpdateClient {
 
   void Update(const std::vector<std::string>& ids,
               CrxDataCallback crx_data_callback,
+              bool is_foreground,
               Callback callback) override {
+    // All update calls initiated by the component update service are
+    // automatically triggered as background updates without user intervention.
+    EXPECT_FALSE(is_foreground);
     DoUpdate(ids, std::move(crx_data_callback));
     std::move(callback).Run(update_client::Error::NONE);
   }

@@ -12,11 +12,13 @@
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
-#include "content/browser/devtools/shared_worker_devtools_manager.h"
 #include "content/browser/shared_worker/shared_worker_host.h"
 #include "content/browser/shared_worker/shared_worker_instance.h"
+#include "content/browser/shared_worker/shared_worker_script_loader_factory.h"
+#include "content/browser/storage_partition_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/service_worker/service_worker_provider.mojom.h"
+#include "content/common/service_worker/service_worker_utils.h"
 #include "content/common/shared_worker/shared_worker_client.mojom.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -24,7 +26,8 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/bind_interface_helpers.h"
-#include "third_party/WebKit/public/common/message_port/message_port_channel.h"
+#include "mojo/public/cpp/bindings/strong_associated_binding.h"
+#include "third_party/blink/public/common/message_port/message_port_channel.h"
 #include "url/origin.h"
 
 namespace content {
@@ -35,9 +38,38 @@ bool IsShuttingDown(RenderProcessHost* host) {
          host->IsKeepAliveRefCountDisabled();
 }
 
+void CreateScriptLoaderOnIO(
+    scoped_refptr<URLLoaderFactoryGetter> loader_factory_getter,
+    scoped_refptr<ServiceWorkerContextWrapper> context,
+    int process_id,
+    base::OnceCallback<void(mojom::ServiceWorkerProviderInfoForSharedWorkerPtr,
+                            network::mojom::URLLoaderFactoryAssociatedPtrInfo)>
+        callback) {
+  // Set up for service worker.
+  auto provider_info = mojom::ServiceWorkerProviderInfoForSharedWorker::New();
+  base::WeakPtr<ServiceWorkerProviderHost> host =
+      context->PreCreateHostForSharedWorker(process_id, &provider_info);
+
+  // Create the SharedWorkerScriptLoaderFactory.
+  network::mojom::URLLoaderFactoryAssociatedPtrInfo script_loader_factory;
+  mojo::MakeStrongAssociatedBinding(
+      std::make_unique<SharedWorkerScriptLoaderFactory>(
+          context.get(), host->AsWeakPtr(), context->resource_context(),
+          std::move(loader_factory_getter)),
+      mojo::MakeRequest(&script_loader_factory));
+
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::BindOnce(std::move(callback), std::move(provider_info),
+                     std::move(script_loader_factory)));
+}
+
 }  // namespace
 
-SharedWorkerServiceImpl::SharedWorkerServiceImpl() {}
+SharedWorkerServiceImpl::SharedWorkerServiceImpl(
+    scoped_refptr<ServiceWorkerContextWrapper> service_worker_context)
+    : service_worker_context_(std::move(service_worker_context)),
+      weak_factory_(this) {}
 
 SharedWorkerServiceImpl::~SharedWorkerServiceImpl() {}
 
@@ -128,8 +160,26 @@ void SharedWorkerServiceImpl::ConnectToWorker(
     DestroyHost(host);
   }
 
+  // Bounce to the IO thread to setup service worker support in case the request
+  // for the worker script will need to be intercepted by service workers.
+  // TODO(falken): Move service worker to the UI thread.
+  if (ServiceWorkerUtils::IsServicificationEnabled()) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::BindOnce(&CreateScriptLoaderOnIO,
+                       service_worker_context_->storage_partition()
+                           ->url_loader_factory_getter(),
+                       service_worker_context_, process_id,
+                       base::BindOnce(&SharedWorkerServiceImpl::CreateWorker,
+                                      weak_factory_.GetWeakPtr(),
+                                      std::move(instance), std::move(client),
+                                      process_id, frame_id, message_port)));
+    return;
+  }
+
   CreateWorker(std::move(instance), std::move(client), process_id, frame_id,
-               message_port);
+               message_port, nullptr /*  service_worker_provider_info */,
+               {} /* script_loader_factory */);
 }
 
 void SharedWorkerServiceImpl::DestroyHost(SharedWorkerHost* host) {
@@ -142,7 +192,8 @@ void SharedWorkerServiceImpl::DestroyHost(SharedWorkerHost* host) {
     std::move(terminate_all_workers_callback_).Run();
 
   if (!IsShuttingDown(process_host))
-    process_host->DecrementKeepAliveRefCount();
+    process_host->DecrementKeepAliveRefCount(
+        RenderProcessHost::KeepAliveClientType::kSharedWorker);
 }
 
 void SharedWorkerServiceImpl::CreateWorker(
@@ -150,9 +201,12 @@ void SharedWorkerServiceImpl::CreateWorker(
     mojom::SharedWorkerClientPtr client,
     int process_id,
     int frame_id,
-    const blink::MessagePortChannel& message_port) {
-  // Re-use the process that requested the shared worker.
-  int worker_process_id = process_id;
+    const blink::MessagePortChannel& message_port,
+    mojom::ServiceWorkerProviderInfoForSharedWorkerPtr
+        service_worker_provider_info,
+    network::mojom::URLLoaderFactoryAssociatedPtrInfo
+        script_loader_factory_info) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   RenderProcessHost* process_host = RenderProcessHost::FromID(process_id);
   // If the requesting process is shutting down, then just drop this request on
@@ -161,26 +215,19 @@ void SharedWorkerServiceImpl::CreateWorker(
     return;
 
   // Keep the renderer process alive that will be hosting the shared worker.
-  process_host->IncrementKeepAliveRefCount();
-
-  auto host = std::make_unique<SharedWorkerHost>(this, std::move(instance),
-                                                 worker_process_id);
-
-  bool pause_on_start;
-  base::UnguessableToken devtools_worker_token;
-  SharedWorkerDevToolsManager::GetInstance()->WorkerCreated(
-      host.get(), &pause_on_start, &devtools_worker_token);
+  process_host->IncrementKeepAliveRefCount(
+      RenderProcessHost::KeepAliveClientType::kSharedWorker);
+  auto host =
+      std::make_unique<SharedWorkerHost>(this, std::move(instance), process_id);
 
   // Get the factory used to instantiate the new shared worker instance in
   // the target process.
   mojom::SharedWorkerFactoryPtr factory;
   BindInterface(process_host, &factory);
 
-  host->Start(std::move(factory), pause_on_start, devtools_worker_token);
+  host->Start(std::move(factory), std::move(service_worker_provider_info),
+              std::move(script_loader_factory_info));
   host->AddClient(std::move(client), process_id, frame_id, message_port);
-
-  const GURL url = host->instance()->url();
-  const std::string name = host->instance()->name();
 
   worker_hosts_.insert(std::move(host));
 }

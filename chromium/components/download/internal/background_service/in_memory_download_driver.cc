@@ -4,6 +4,9 @@
 
 #include "components/download/internal/background_service/in_memory_download_driver.h"
 
+#include "components/download/internal/background_service/in_memory_download.h"
+#include "services/network/public/cpp/resource_request_body.h"
+
 namespace download {
 
 namespace {
@@ -28,29 +31,32 @@ DriverEntry CreateDriverEntry(const InMemoryDownload& download) {
   DriverEntry entry;
   entry.guid = download.guid();
   entry.state = ToDriverEntryState(download.state());
-  // TODO(xingliu): Support pause. See https://crbug.com/809674.
-  entry.paused = false;
-  entry.done = entry.state == DriverEntry::State::INTERRUPTED ||
-               entry.state == DriverEntry::State::COMPLETE ||
+  entry.paused = download.paused();
+  entry.done = entry.state == DriverEntry::State::COMPLETE ||
                entry.state == DriverEntry::State::CANCELLED;
   entry.bytes_downloaded = download.bytes_downloaded();
   entry.response_headers = download.response_headers();
   if (entry.response_headers) {
     entry.expected_total_size = entry.response_headers->GetContentLength();
   }
-  // TODO(xingliu): Support resumption. UrlFetcher doesn't expose url chain.
-  // Figure out if empty url chain is OK and how url chain is used.
+  // Currently incognito mode network backend can't resume in the middle.
   entry.can_resume = false;
+
+  if (download.state() == InMemoryDownload::State::COMPLETE) {
+    auto blob_handle = download.ResultAsBlob();
+    if (blob_handle)
+      entry.blob_handle = base::Optional<storage::BlobDataHandle>(*blob_handle);
+  }
   return entry;
 }
 
 }  // namespace
 
 InMemoryDownloadFactory::InMemoryDownloadFactory(
-    scoped_refptr<net::URLRequestContextGetter> request_context_getter,
+    network::mojom::URLLoaderFactory* url_loader_factory,
     BlobTaskProxy::BlobContextGetter blob_context_getter,
     scoped_refptr<base::SingleThreadTaskRunner> io_task_runner)
-    : request_context_getter_(request_context_getter),
+    : url_loader_factory_(url_loader_factory),
       blob_context_getter_(blob_context_getter),
       io_task_runner_(io_task_runner) {}
 
@@ -61,9 +67,10 @@ std::unique_ptr<InMemoryDownload> InMemoryDownloadFactory::Create(
     const RequestParams& request_params,
     const net::NetworkTrafficAnnotationTag& traffic_annotation,
     InMemoryDownload::Delegate* delegate) {
+  DCHECK(url_loader_factory_);
   return std::make_unique<InMemoryDownloadImpl>(
-      guid, request_params, traffic_annotation, delegate,
-      request_context_getter_, blob_context_getter_, io_task_runner_);
+      guid, request_params, traffic_annotation, delegate, url_loader_factory_,
+      blob_context_getter_, io_task_runner_);
 }
 
 InMemoryDownloadDriver::InMemoryDownloadDriver(
@@ -91,6 +98,7 @@ void InMemoryDownloadDriver::Start(
     const RequestParams& request_params,
     const std::string& guid,
     const base::FilePath& file_path,
+    scoped_refptr<network::ResourceRequestBody> post_body,
     const net::NetworkTrafficAnnotationTag& traffic_annotation) {
   std::unique_ptr<InMemoryDownload> download =
       download_factory_->Create(guid, request_params, traffic_annotation, this);

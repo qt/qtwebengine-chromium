@@ -25,8 +25,7 @@
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "base/values.h"
-#include "crypto/ec_private_key.h"
-#include "crypto/ec_signature_creator.h"
+#include "net/base/url_util.h"
 #include "net/cert/asn1_util.h"
 #include "net/cert/cert_verify_result.h"
 #include "net/cert/ct_policy_status.h"
@@ -152,7 +151,7 @@ enum PushedStreamVaryResponseHeaderValues ParseVaryInPushedResponse(
   return kVaryHasNoAcceptEncoding;
 }
 
-bool IsSpdySettingAtDefaultInitialValue(SpdyKnownSettingsId setting_id,
+bool IsSpdySettingAtDefaultInitialValue(SpdySettingsId setting_id,
                                         uint32_t value) {
   switch (setting_id) {
     case SETTINGS_HEADER_TABLE_SIZE:
@@ -252,7 +251,7 @@ std::unique_ptr<base::Value> NetLogSpdySendSettingsCallback(
   auto settings_list = std::make_unique<base::ListValue>();
   for (SettingsMap::const_iterator it = settings->begin();
        it != settings->end(); ++it) {
-    const SpdyKnownSettingsId id = it->first;
+    const SpdySettingsId id = it->first;
     const uint32_t value = it->second;
     settings_list->AppendString(SpdyStringPrintf(
         "[id:%u (%s) value:%u]", id, SettingsIdToString(id).c_str(), value));
@@ -262,7 +261,7 @@ std::unique_ptr<base::Value> NetLogSpdySendSettingsCallback(
 }
 
 std::unique_ptr<base::Value> NetLogSpdyRecvSettingCallback(
-    SpdyKnownSettingsId id,
+    SpdySettingsId id,
     uint32_t value,
     NetLogCaptureMode /* capture_mode */) {
   auto dict = std::make_unique<base::DictionaryValue>();
@@ -626,10 +625,11 @@ int SpdyStreamRequest::StartRequest(
   DCHECK(!session_);
   DCHECK(!stream_);
   DCHECK(callback_.is_null());
+  DCHECK(url.is_valid()) << url.possibly_invalid_spec();
 
   type_ = type;
   session_ = session;
-  url_ = url;
+  url_ = SimplifyUrlForRequest(url);
   priority_ = priority;
   socket_tag_ = socket_tag;
   net_log_ = net_log;
@@ -1693,7 +1693,7 @@ void SpdySession::TryCreatePushStream(SpdyStreamId stream_id,
   }
 
   // Cross-origin push validation.
-  GURL associated_url(associated_it->second->GetUrlFromHeaders());
+  GURL associated_url(associated_it->second->url());
   if (associated_url.GetOrigin() != gurl.GetOrigin()) {
     if (is_trusted_proxy_) {
       if (!gurl.SchemeIs(url::kHttpScheme)) {
@@ -1737,11 +1737,32 @@ void SpdySession::TryCreatePushStream(SpdyStreamId stream_id,
                  stream_id),
       base::TimeDelta::FromSeconds(kPushedStreamLifetimeSeconds));
 
-  // TODO(https://crbug.com/656607): Add proper annotation here.
+  net::NetworkTrafficAnnotationTag traffic_annotation =
+      net::DefineNetworkTrafficAnnotation("spdy_push_stream", R"(
+        semantics {
+          sender: "Spdy Session"
+          description:
+            "When a web server needs to push a response to a client, an "
+            "incoming stream is created to reply the client with pushed "
+            "message instead of a message from the network."
+          trigger:
+            "A request by a server to push a response to the client."
+          data: "None."
+          destination: OTHER
+          destination_other:
+            "This stream is not used for sending data."
+        }
+        policy {
+          cookies_allowed: NO
+          setting: "This feature cannot be disabled."
+          policy_exception_justification: "Essential for navigation."
+        }
+    )");
+
   auto stream = std::make_unique<SpdyStream>(
       SPDY_PUSH_STREAM, GetWeakPtr(), gurl, request_priority,
       stream_initial_send_window_size_, stream_max_recv_window_size_, net_log_,
-      NO_TRAFFIC_ANNOTATION_BUG_656607);
+      traffic_annotation);
   stream->set_stream_id(stream_id);
 
   // Convert RequestPriority to a SpdyPriority to send in a PRIORITY frame.
@@ -2901,7 +2922,7 @@ void SpdySession::OnSettingsAck() {
     net_log_.AddEvent(NetLogEventType::HTTP2_SESSION_RECV_SETTINGS_ACK);
 }
 
-void SpdySession::OnSetting(SpdyKnownSettingsId id, uint32_t value) {
+void SpdySession::OnSetting(SpdySettingsId id, uint32_t value) {
   CHECK(in_io_loop_);
 
   HandleSetting(id, value);

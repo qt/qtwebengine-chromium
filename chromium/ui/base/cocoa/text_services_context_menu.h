@@ -15,8 +15,6 @@ namespace ui {
 
 // This class is used to append and handle the Speech and BiDi submenu for the
 // context menu.
-// TODO (spqchan): Replace the Speech and BiDi logic in RenderViewContextMenu
-// with TextServicesContextMenu.
 class UI_BASE_EXPORT TextServicesContextMenu
     : public SimpleMenuModel::Delegate {
  public:
@@ -51,6 +49,9 @@ class UI_BASE_EXPORT TextServicesContextMenu
   // Appends items to the context menu applicable to editable content. A
   // submenu is added for bidirection, which |this| serves as a delegate for.
   void AppendEditableItems(SimpleMenuModel* model);
+
+  // Returns true if |command_id| is handled by this class.
+  bool SupportsCommand(int command_id) const;
 
   // SimpleMenuModel::Delegate:
   bool IsCommandIdChecked(int command_id) const override;

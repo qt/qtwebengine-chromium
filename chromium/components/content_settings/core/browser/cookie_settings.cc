@@ -13,9 +13,10 @@
 #include "components/content_settings/core/common/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
-#include "extensions/features/features.h"
+#include "extensions/buildflags/buildflags.h"
 #include "net/base/net_errors.h"
 #include "net/base/static_cookie_policy.h"
+#include "net/cookies/cookie_util.h"
 #include "url/gurl.h"
 
 namespace {
@@ -30,12 +31,6 @@ bool IsAllowed(ContentSetting setting) {
   DCHECK(IsValidSetting(setting));
   return (setting == CONTENT_SETTING_ALLOW ||
           setting == CONTENT_SETTING_SESSION_ONLY);
-}
-
-GURL ToHttps(GURL url) {
-  GURL::Replacements replace_scheme;
-  replace_scheme.SetSchemeStr(url::kHttpsScheme);
-  return url.ReplaceComponents(replace_scheme);
 }
 
 }  // namespace
@@ -77,18 +72,34 @@ bool CookieSettings::IsCookieSessionOnly(const GURL& origin) const {
   return (setting == CONTENT_SETTING_SESSION_ONLY);
 }
 
-bool CookieSettings::ShouldDeleteCookieOnExit(const GURL& origin) const {
+bool CookieSettings::ShouldDeleteCookieOnExit(
+    const ContentSettingsForOneType& cookie_settings,
+    const std::string& domain,
+    bool is_https) const {
+  GURL origin = net::cookie_util::CookieOriginToURL(domain, is_https);
   ContentSetting setting;
   GetCookieSetting(origin, origin, nullptr, &setting);
   DCHECK(IsValidSetting(setting));
-
-  if (setting == CONTENT_SETTING_BLOCK && origin.SchemeIs(url::kHttpScheme)) {
-    // Keep blocked, non-secure cookies if the secure origin is set to ALLOW.
-    GURL https_origin = ToHttps(origin);
-    return ShouldDeleteCookieOnExit(https_origin);
+  if (setting == CONTENT_SETTING_ALLOW)
+    return false;
+  // Non-secure cookies are readable by secure sites. We need to check for
+  // https pattern if http is not allowed. The section below is independent
+  // of the scheme so we can just retry from here.
+  if (!is_https)
+    return ShouldDeleteCookieOnExit(cookie_settings, domain, true);
+  // Check if there is a more precise rule that "domain matches" this cookie.
+  bool matches_session_only_rule = false;
+  for (const auto& entry : cookie_settings) {
+    const std::string& host = entry.primary_pattern.GetHost();
+    if (net::cookie_util::IsDomainMatch(domain, host)) {
+      if (entry.GetContentSetting() == CONTENT_SETTING_ALLOW) {
+        return false;
+      } else if (entry.GetContentSetting() == CONTENT_SETTING_SESSION_ONLY) {
+        matches_session_only_rule = true;
+      }
+    }
   }
-  return (setting == CONTENT_SETTING_SESSION_ONLY) ||
-         (setting == CONTENT_SETTING_BLOCK);
+  return setting == CONTENT_SETTING_SESSION_ONLY || matches_session_only_rule;
 }
 
 void CookieSettings::GetCookieSettings(

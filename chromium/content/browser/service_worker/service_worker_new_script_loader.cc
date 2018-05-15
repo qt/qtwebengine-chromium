@@ -18,7 +18,7 @@
 #include "content/common/service_worker/service_worker_utils.h"
 #include "net/cert/cert_status_flags.h"
 #include "services/network/public/cpp/resource_response.h"
-#include "third_party/WebKit/public/common/mime_util/mime_util.h"
+#include "third_party/blink/public/common/mime_util/mime_util.h"
 
 namespace content {
 
@@ -40,7 +40,9 @@ ServiceWorkerNewScriptLoader::ServiceWorkerNewScriptLoader(
       resource_type_(static_cast<ResourceType>(resource_request.resource_type)),
       version_(version),
       network_client_binding_(this),
-      network_watcher_(FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL),
+      network_watcher_(FROM_HERE,
+                       mojo::SimpleWatcher::ArmingPolicy::MANUAL,
+                       base::SequencedTaskRunnerHandle::Get()),
       client_(std::move(client)),
       weak_factory_(this) {
   // ServiceWorkerNewScriptLoader is used for fetching the service worker main
@@ -94,6 +96,10 @@ ServiceWorkerNewScriptLoader::ServiceWorkerNewScriptLoader(
                                                      cache_resource_id);
   AdvanceState(State::kStarted);
 
+  // Disable MIME sniffing sniffing. The spec requires the header list to have
+  // a JavaScript MIME type. Therefore, no sniffing is needed.
+  options &= ~network::mojom::kURLLoadOptionSniffMimeType;
+
   network::mojom::URLLoaderClientPtr network_client;
   network_client_binding_.Bind(mojo::MakeRequest(&network_client));
   loader_factory_getter->GetNetworkFactory()->CreateLoaderAndStart(
@@ -130,10 +136,10 @@ void ServiceWorkerNewScriptLoader::ResumeReadingBodyFromNet() {
 
 void ServiceWorkerNewScriptLoader::OnReceiveResponse(
     const network::ResourceResponseHead& response_head,
-    const base::Optional<net::SSLInfo>& ssl_info,
     network::mojom::DownloadedTempFilePtr downloaded_file) {
   if (!version_->context() || version_->is_redundant()) {
-    CommitCompleted(network::URLLoaderCompletionStatus(net::ERR_FAILED));
+    CommitCompleted(network::URLLoaderCompletionStatus(net::ERR_FAILED),
+                    kServiceWorkerFetchScriptError);
     return;
   }
 
@@ -141,8 +147,8 @@ void ServiceWorkerNewScriptLoader::OnReceiveResponse(
   // At least we need headers and SSL info.
   auto response_info = std::make_unique<net::HttpResponseInfo>();
   response_info->headers = response_head.headers;
-  if (ssl_info.has_value())
-    response_info->ssl_info = *ssl_info;
+  if (response_head.ssl_info.has_value())
+    response_info->ssl_info = *response_head.ssl_info;
   response_info->was_fetched_via_spdy = response_head.was_fetched_via_spdy;
   response_info->was_alpn_negotiated = response_head.was_alpn_negotiated;
   response_info->alpn_negotiated_protocol =
@@ -155,10 +161,12 @@ void ServiceWorkerNewScriptLoader::OnReceiveResponse(
 
   if (response_head.headers->response_code() / 100 != 2) {
     // Non-2XX HTTP status code is handled as an error.
-    // TODO(nhiroki): Show an error message equivalent to kBadHTTPResponseError
-    // in service_worker_write_to_cache_job.cc.
+    std::string error_message =
+        base::StringPrintf(kServiceWorkerBadHTTPResponseError,
+                           response_head.headers->response_code());
     CommitCompleted(
-        network::URLLoaderCompletionStatus(net::ERR_INVALID_RESPONSE));
+        network::URLLoaderCompletionStatus(net::ERR_INVALID_RESPONSE),
+        error_message);
     return;
   }
 
@@ -166,25 +174,28 @@ void ServiceWorkerNewScriptLoader::OnReceiveResponse(
   if (net::IsCertStatusError(response_head.cert_status) &&
       !base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kIgnoreCertificateErrors)) {
-    // TODO(nhiroki): Show an error message equivalent to kSSLError in
-    // service_worker_write_to_cache_job.cc.
-    CommitCompleted(network::URLLoaderCompletionStatus(
-        net::MapCertStatusToNetError(response_head.cert_status)));
+    CommitCompleted(
+        network::URLLoaderCompletionStatus(
+            net::MapCertStatusToNetError(response_head.cert_status)),
+        kServiceWorkerSSLError);
     return;
   }
 
   if (resource_type_ == RESOURCE_TYPE_SERVICE_WORKER) {
     if (!blink::IsSupportedJavascriptMimeType(response_head.mime_type)) {
-      // TODO(nhiroki): Show an error message equivalent to kNoMIMEError or
-      // kBadMIMEError in service_worker_write_to_cache_job.cc.
+      std::string error_message =
+          response_head.mime_type.empty()
+              ? kServiceWorkerNoMIMEError
+              : base::StringPrintf(kServiceWorkerBadMIMEError,
+                                   response_head.mime_type.c_str());
       CommitCompleted(
-          network::URLLoaderCompletionStatus(net::ERR_INSECURE_RESPONSE));
+          network::URLLoaderCompletionStatus(net::ERR_INSECURE_RESPONSE),
+          error_message);
       return;
     }
 
     // Check the path restriction defined in the spec:
     // https://w3c.github.io/ServiceWorker/#service-worker-script-response
-    const char kServiceWorkerAllowed[] = "Service-Worker-Allowed";
     std::string service_worker_allowed;
     bool has_header = response_head.headers->EnumerateHeader(
         nullptr, kServiceWorkerAllowed, &service_worker_allowed);
@@ -192,9 +203,9 @@ void ServiceWorkerNewScriptLoader::OnReceiveResponse(
     if (!ServiceWorkerUtils::IsPathRestrictionSatisfied(
             version_->scope(), request_url_,
             has_header ? &service_worker_allowed : nullptr, &error_message)) {
-      // TODO(nhiroki): Report |error_message|.
       CommitCompleted(
-          network::URLLoaderCompletionStatus(net::ERR_INSECURE_RESPONSE));
+          network::URLLoaderCompletionStatus(net::ERR_INSECURE_RESPONSE),
+          error_message);
       return;
     }
 
@@ -204,8 +215,7 @@ void ServiceWorkerNewScriptLoader::OnReceiveResponse(
   WriteHeaders(
       base::MakeRefCounted<HttpResponseInfoIOBuffer>(response_info.release()));
 
-  client_->OnReceiveResponse(response_head, ssl_info,
-                             std::move(downloaded_file));
+  client_->OnReceiveResponse(response_head, std::move(downloaded_file));
 }
 
 void ServiceWorkerNewScriptLoader::OnReceiveRedirect(
@@ -215,10 +225,8 @@ void ServiceWorkerNewScriptLoader::OnReceiveRedirect(
   //
   // Step 7.5: "Set request's redirect mode to "error"."
   // https://w3c.github.io/ServiceWorker/#update-algorithm
-  //
-  // TODO(nhiroki): Show an error message equivalent to kRedirectError in
-  // service_worker_write_to_cache_job.cc.
-  CommitCompleted(network::URLLoaderCompletionStatus(net::ERR_UNSAFE_REDIRECT));
+  CommitCompleted(network::URLLoaderCompletionStatus(net::ERR_UNSAFE_REDIRECT),
+                  kServiceWorkerRedirectError);
 }
 
 void ServiceWorkerNewScriptLoader::OnDataDownloaded(int64_t data_len,
@@ -250,7 +258,8 @@ void ServiceWorkerNewScriptLoader::OnStartLoadingResponseBody(
   mojo::ScopedDataPipeConsumerHandle client_consumer;
   if (mojo::CreateDataPipe(nullptr, &client_producer_, &client_consumer) !=
       MOJO_RESULT_OK) {
-    CommitCompleted(network::URLLoaderCompletionStatus(net::ERR_FAILED));
+    CommitCompleted(network::URLLoaderCompletionStatus(net::ERR_FAILED),
+                    kServiceWorkerFetchScriptError);
     return;
   }
 
@@ -264,7 +273,7 @@ void ServiceWorkerNewScriptLoader::OnStartLoadingResponseBody(
 void ServiceWorkerNewScriptLoader::OnComplete(
     const network::URLLoaderCompletionStatus& status) {
   if (status.error_code != net::OK) {
-    CommitCompleted(status);
+    CommitCompleted(status, kServiceWorkerFetchScriptError);
     return;
   }
 
@@ -279,7 +288,8 @@ void ServiceWorkerNewScriptLoader::OnComplete(
       // storage.
       return;
     case State::kWroteData:
-      CommitCompleted(network::URLLoaderCompletionStatus(net::OK));
+      CommitCompleted(network::URLLoaderCompletionStatus(net::OK),
+                      std::string() /* status_message */);
       return;
   }
   NOTREACHED() << static_cast<int>(state_);
@@ -328,7 +338,8 @@ void ServiceWorkerNewScriptLoader::WriteHeaders(
 void ServiceWorkerNewScriptLoader::OnWriteHeadersComplete(net::Error error) {
   DCHECK_NE(net::ERR_IO_PENDING, error);
   if (error != net::OK) {
-    CommitCompleted(network::URLLoaderCompletionStatus(error));
+    CommitCompleted(network::URLLoaderCompletionStatus(error),
+                    kServiceWorkerFetchScriptError);
     return;
   }
   AdvanceState(State::kWroteHeaders);
@@ -371,7 +382,8 @@ void ServiceWorkerNewScriptLoader::OnNetworkDataAvailable(MojoResult) {
       // notified via OnComplete().
       AdvanceState(State::kWroteData);
       if (network_load_completed_)
-        CommitCompleted(network::URLLoaderCompletionStatus(net::OK));
+        CommitCompleted(network::URLLoaderCompletionStatus(net::OK),
+                        std::string() /* status_message */);
       return;
     case MOJO_RESULT_SHOULD_WAIT:
       network_watcher_.ArmOrNotify();
@@ -387,15 +399,16 @@ void ServiceWorkerNewScriptLoader::WriteData(
   // next time.
   uint32_t bytes_written = std::min<uint32_t>(kReadBufferSize, bytes_available);
 
-  auto buffer = base::MakeRefCounted<network::MojoToNetIOBuffer>(
-      pending_buffer.get(), bytes_written);
+  auto buffer =
+      base::MakeRefCounted<net::WrappedIOBuffer>(pending_buffer->buffer());
   MojoResult result = client_producer_->WriteData(
       buffer->data(), &bytes_written, MOJO_WRITE_DATA_FLAG_NONE);
   switch (result) {
     case MOJO_RESULT_OK:
       break;
     case MOJO_RESULT_FAILED_PRECONDITION:
-      CommitCompleted(network::URLLoaderCompletionStatus(net::ERR_FAILED));
+      CommitCompleted(network::URLLoaderCompletionStatus(net::ERR_FAILED),
+                      kServiceWorkerFetchScriptError);
       return;
     case MOJO_RESULT_SHOULD_WAIT:
       // No data was written to |client_producer_| because the pipe was full.
@@ -432,7 +445,8 @@ void ServiceWorkerNewScriptLoader::OnWriteDataComplete(
     net::Error error) {
   DCHECK_NE(net::ERR_IO_PENDING, error);
   if (error != net::OK) {
-    CommitCompleted(network::URLLoaderCompletionStatus(error));
+    CommitCompleted(network::URLLoaderCompletionStatus(error),
+                    kServiceWorkerFetchScriptError);
     return;
   }
   DCHECK(pending_buffer);
@@ -443,7 +457,8 @@ void ServiceWorkerNewScriptLoader::OnWriteDataComplete(
 }
 
 void ServiceWorkerNewScriptLoader::CommitCompleted(
-    const network::URLLoaderCompletionStatus& status) {
+    const network::URLLoaderCompletionStatus& status,
+    const std::string& status_message) {
   AdvanceState(State::kCompleted);
   net::Error error_code = static_cast<net::Error>(status.error_code);
   int bytes_written = -1;
@@ -459,16 +474,13 @@ void ServiceWorkerNewScriptLoader::CommitCompleted(
   } else {
     // AddMessageConsole must be called before notifying that an error occurred
     // because the worker stops soon after receiving the error response.
-    // TODO(nhiroki): Provide more accurate error message instead of
-    // |kFetchScriptError|.
     // TODO(nhiroki): Consider replacing this hacky way with the new error code
     // handling mechanism in URLLoader.
     version_->embedded_worker()->AddMessageToConsole(
-        blink::WebConsoleMessage::kLevelError, kFetchScriptError);
+        blink::WebConsoleMessage::kLevelError, status_message);
   }
   version_->script_cache_map()->NotifyFinishedCaching(
-      request_url_, bytes_written, error_code,
-      std::string() /* status_message */);
+      request_url_, bytes_written, error_code, status_message);
 
   // TODO(nhiroki): Record ServiceWorkerMetrics::CountWriteResponseResult().
   // (https://crbug.com/762357)

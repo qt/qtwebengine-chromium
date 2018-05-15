@@ -96,7 +96,7 @@ void SurfaceManager::SetActivationDeadlineInFramesForTesting(
   activation_deadline_in_frames_ = activation_deadline_in_frames;
 }
 
-void SurfaceManager::SetTickClockForTesting(base::TickClock* tick_clock) {
+void SurfaceManager::SetTickClockForTesting(const base::TickClock* tick_clock) {
   tick_clock_ = tick_clock;
 }
 
@@ -197,6 +197,13 @@ std::string SurfaceManager::GetFrameSinkDebugLabel(
 
 const SurfaceId& SurfaceManager::GetRootSurfaceId() const {
   return root_surface_id_;
+}
+
+std::vector<SurfaceId> SurfaceManager::GetCreatedSurfaceIds() const {
+  std::vector<SurfaceId> surface_ids;
+  for (auto& map_entry : surface_map_)
+    surface_ids.push_back(map_entry.first);
+  return surface_ids;
 }
 
 void SurfaceManager::AddSurfaceReferences(
@@ -330,6 +337,9 @@ void SurfaceManager::AddSurfaceReferenceImpl(const SurfaceId& parent_id,
   references_[parent_id].children.insert(child_id);
   references_[child_id].parents.insert(parent_id);
 
+  for (auto& observer : observer_list_)
+    observer.OnAddedSurfaceReference(parent_id, child_id);
+
   if (HasTemporaryReference(child_id))
     RemoveTemporaryReference(child_id, RemovedReason::EMBEDDED);
 }
@@ -340,6 +350,9 @@ void SurfaceManager::RemoveSurfaceReferenceImpl(const SurfaceId& parent_id,
   auto iter_child = references_.find(child_id);
   if (iter_parent == references_.end() || iter_child == references_.end())
     return;
+
+  for (auto& observer : observer_list_)
+    observer.OnRemovedSurfaceReference(parent_id, child_id);
 
   iter_parent->second.children.erase(child_id);
   iter_child->second.parents.erase(parent_id);
@@ -462,12 +475,12 @@ Surface* SurfaceManager::GetLatestInFlightSurface(
       continue;
     }
 
-    // If the nonce doesn't match the primary or fallback's then the parent does
-    // not have permission to embed this surface.
-    if (local_surface_id.nonce() !=
-            fallback_surface_id.local_surface_id().nonce() &&
-        local_surface_id.nonce() !=
-            primary_surface_id.local_surface_id().nonce()) {
+    // If the embed_token doesn't match the primary or fallback's then the
+    // parent does not have permission to embed this surface.
+    if (local_surface_id.embed_token() !=
+            fallback_surface_id.local_surface_id().embed_token() &&
+        local_surface_id.embed_token() !=
+            primary_surface_id.local_surface_id().embed_token()) {
       continue;
     }
 

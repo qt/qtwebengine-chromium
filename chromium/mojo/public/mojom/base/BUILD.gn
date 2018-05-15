@@ -8,10 +8,36 @@ mojom_component("base") {
   sources = [
     "big_buffer.mojom",
     "big_string.mojom",
+    "file.mojom",
+    "file_error.mojom",
+    "file_info.mojom",
+    "file_path.mojom",
+    "memory_allocator_dump_cross_process_uid.mojom",
+    "process_id.mojom",
     "ref_counted_memory.mojom",
+    "shared_memory.mojom",
     "string16.mojom",
+    "text_direction.mojom",
+    "thread_priority.mojom",
+    "time.mojom",
+    "unguessable_token.mojom",
+    "values.mojom",
   ]
+
+  if (is_win) {
+    sources += [ "logfont_win.mojom" ]
+  }
+
+  if (is_posix && !is_android && !is_fuchsia && !is_mac) {
+    enabled_features = [ "shared_memory_region_uses_fd_pair" ]
+  }
 
   output_prefix = "mojo_base_mojom"
   macro_prefix = "MOJO_BASE_MOJOM"
+}
+
+mojom("read_only_buffer") {
+  sources = [
+    "read_only_buffer.mojom",
+  ]
 }

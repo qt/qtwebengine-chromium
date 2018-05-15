@@ -4,7 +4,7 @@
 
 import("//build/config/chrome_build.gni")
 import("//build/config/features.gni")
-import("//ppapi/features/features.gni")
+import("//ppapi/buildflags/buildflags.gni")
 
 # Implements "content_main" given the defines and visibility. On Windows this
 # is compiled with a different define for browser and child, but all code needs
@@ -32,8 +32,8 @@ template("implement_content_app") {
     "//services/service_manager/embedder",
     "//services/service_manager/public/mojom",
     "//services/service_manager/runner/common",
-    "//mojo/edk/system",
-    "//ppapi/features",
+    "//mojo/edk",
+    "//ppapi/buildflags",
     "//ui/base",
     "//ui/gfx",
     "//ui/gfx/geometry",
@@ -53,7 +53,6 @@ template("implement_content_app") {
       "//device/bluetooth",
       "//device/gamepad",
       "//device/geolocation",
-      "//device/sensors",
       "//device/usb",
       "//gpu",
       "//media",
@@ -68,7 +67,7 @@ template("implement_content_app") {
     ]
   }
 
-  if (is_linux && enable_plugins) {
+  if (!is_multi_dll_chrome && enable_plugins) {
     content_app_deps += [ "//content/ppapi_plugin:ppapi_plugin_sources" ]
   }
 

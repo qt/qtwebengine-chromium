@@ -17,9 +17,146 @@
 
 namespace rx
 {
+namespace
+{
+void MapSwizzleState(GLenum internalFormat,
+                     const gl::SwizzleState &swizzleState,
+                     gl::SwizzleState *swizzleStateOut)
+{
+    switch (internalFormat)
+    {
+        case GL_LUMINANCE8_OES:
+            swizzleStateOut->swizzleRed   = swizzleState.swizzleRed;
+            swizzleStateOut->swizzleGreen = swizzleState.swizzleRed;
+            swizzleStateOut->swizzleBlue  = swizzleState.swizzleRed;
+            swizzleStateOut->swizzleAlpha = GL_ONE;
+            break;
+        case GL_LUMINANCE8_ALPHA8_OES:
+            swizzleStateOut->swizzleRed   = swizzleState.swizzleRed;
+            swizzleStateOut->swizzleGreen = swizzleState.swizzleRed;
+            swizzleStateOut->swizzleBlue  = swizzleState.swizzleRed;
+            swizzleStateOut->swizzleAlpha = swizzleState.swizzleGreen;
+            break;
+        case GL_ALPHA8_OES:
+            swizzleStateOut->swizzleRed   = GL_ZERO;
+            swizzleStateOut->swizzleGreen = GL_ZERO;
+            swizzleStateOut->swizzleBlue  = GL_ZERO;
+            swizzleStateOut->swizzleAlpha = swizzleState.swizzleRed;
+            break;
+        default:
+            *swizzleStateOut = swizzleState;
+            break;
+    }
+}
 
+constexpr VkBufferUsageFlags kStagingBufferFlags =
+    (VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+constexpr size_t kStagingBufferSize = 1024 * 16;
+}  // anonymous namespace
+
+// StagingStorage implementation.
+StagingStorage::StagingStorage()
+    : mStagingBuffer(kStagingBufferFlags, kStagingBufferSize), mCurrentBufferHandle(VK_NULL_HANDLE)
+{
+    mStagingBuffer.init(1);
+}
+
+StagingStorage::~StagingStorage()
+{
+}
+
+void StagingStorage::release(RendererVk *renderer)
+{
+    mStagingBuffer.release(renderer);
+}
+
+gl::Error StagingStorage::stageSubresourceUpdate(ContextVk *contextVk,
+                                                 const gl::Extents &extents,
+                                                 const gl::InternalFormat &formatInfo,
+                                                 const gl::PixelUnpackState &unpack,
+                                                 GLenum type,
+                                                 const uint8_t *pixels)
+{
+    GLuint inputRowPitch = 0;
+    ANGLE_TRY_RESULT(
+        formatInfo.computeRowPitch(type, extents.width, unpack.alignment, unpack.rowLength),
+        inputRowPitch);
+
+    GLuint inputDepthPitch = 0;
+    ANGLE_TRY_RESULT(
+        formatInfo.computeDepthPitch(extents.height, unpack.imageHeight, inputRowPitch),
+        inputDepthPitch);
+
+    // TODO(jmadill): skip images for 3D Textures.
+    bool applySkipImages = false;
+
+    GLuint inputSkipBytes = 0;
+    ANGLE_TRY_RESULT(
+        formatInfo.computeSkipBytes(inputRowPitch, inputDepthPitch, unpack, applySkipImages),
+        inputSkipBytes);
+
+    RendererVk *renderer = contextVk->getRenderer();
+
+    const vk::Format &vkFormat         = renderer->getFormat(formatInfo.sizedInternalFormat);
+    const angle::Format &storageFormat = vkFormat.textureFormat();
+
+    size_t outputRowPitch   = storageFormat.pixelBytes * extents.width;
+    size_t outputDepthPitch = outputRowPitch * extents.height;
+
+    uint8_t *stagingPointer = nullptr;
+    bool newBufferAllocated = false;
+    uint32_t stagingOffset  = 0;
+    size_t allocationSize   = outputDepthPitch * extents.depth;
+    mStagingBuffer.allocate(renderer, allocationSize, &stagingPointer, &mCurrentBufferHandle,
+                            &stagingOffset, &newBufferAllocated);
+
+    const uint8_t *source = pixels + inputSkipBytes;
+
+    LoadImageFunctionInfo loadFunction = vkFormat.loadFunctions(type);
+
+    loadFunction.loadFunction(extents.width, extents.height, extents.depth, source, inputRowPitch,
+                              inputDepthPitch, stagingPointer, outputRowPitch, outputDepthPitch);
+
+    mCurrentCopyRegion.bufferOffset                    = static_cast<VkDeviceSize>(stagingOffset);
+    mCurrentCopyRegion.bufferRowLength                 = extents.width;
+    mCurrentCopyRegion.bufferImageHeight               = extents.height;
+    mCurrentCopyRegion.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    mCurrentCopyRegion.imageSubresource.mipLevel       = 0;
+    mCurrentCopyRegion.imageSubresource.baseArrayLayer = 0;
+    mCurrentCopyRegion.imageSubresource.layerCount     = 1;
+
+    gl_vk::GetOffset(gl::Offset(), &mCurrentCopyRegion.imageOffset);
+    gl_vk::GetExtent(extents, &mCurrentCopyRegion.imageExtent);
+
+    return gl::NoError();
+}
+
+vk::Error StagingStorage::flushUpdatesToImage(RendererVk *renderer,
+                                              vk::ImageHelper *image,
+                                              vk::CommandBuffer *commandBuffer)
+{
+    if (mCurrentBufferHandle != VK_NULL_HANDLE)
+    {
+        // Conservatively flush all writes to the image. We could use a more restricted barrier.
+        image->changeLayoutWithStages(
+            VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, commandBuffer);
+
+        ANGLE_TRY(mStagingBuffer.flush(renderer->getDevice()));
+        commandBuffer->copyBufferToImage(mCurrentBufferHandle, image->getImage(),
+                                         image->getCurrentLayout(), 1, &mCurrentCopyRegion);
+        mCurrentBufferHandle = VK_NULL_HANDLE;
+    }
+
+    return vk::NoError();
+}
+
+// TextureVk implementation.
 TextureVk::TextureVk(const gl::TextureState &state) : TextureImpl(state)
 {
+    mRenderTarget.image     = &mImage;
+    mRenderTarget.imageView = &mImageView;
+    mRenderTarget.resource  = this;
 }
 
 TextureVk::~TextureVk()
@@ -31,17 +168,16 @@ gl::Error TextureVk::onDestroy(const gl::Context *context)
     ContextVk *contextVk = vk::GetImpl(context);
     RendererVk *renderer = contextVk->getRenderer();
 
-    renderer->releaseResource(*this, &mImage);
-    renderer->releaseResource(*this, &mDeviceMemory);
-    renderer->releaseResource(*this, &mImageView);
+    releaseImage(context, renderer);
     renderer->releaseResource(*this, &mSampler);
+
+    mStagingStorage.release(renderer);
 
     return gl::NoError();
 }
 
 gl::Error TextureVk::setImage(const gl::Context *context,
-                              GLenum target,
-                              size_t level,
+                              const gl::ImageIndex &index,
                               GLenum internalFormat,
                               const gl::Extents &size,
                               GLenum format,
@@ -54,87 +190,32 @@ gl::Error TextureVk::setImage(const gl::Context *context,
     VkDevice device      = contextVk->getDevice();
 
     // TODO(jmadill): support multi-level textures.
-    ASSERT(level == 0);
+    ASSERT(index.mipIndex == 0);
+
+    // Convert internalFormat to sized internal format.
+    const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(internalFormat, type);
 
     if (mImage.valid())
     {
-        const gl::ImageDesc &desc = mState.getImageDesc(target, level);
-
-        // TODO(jmadill): Consider comparing stored vk::Format.
-        if (desc.size != size ||
-            !gl::Format::SameSized(desc.format, gl::Format(internalFormat, type)))
+        const gl::ImageDesc &desc  = mState.getImageDesc(index);
+        const vk::Format &vkFormat = renderer->getFormat(formatInfo.sizedInternalFormat);
+        if (desc.size != size || mImage.getFormat() != vkFormat)
         {
-            renderer->releaseResource(*this, &mImage);
-            renderer->releaseResource(*this, &mDeviceMemory);
-            renderer->releaseResource(*this, &mImageView);
+            releaseImage(context, renderer);
         }
     }
 
-    mRenderTarget.reset();
-
     // Early-out on empty textures, don't create a zero-sized storage.
-    if (size.width == 0 || size.height == 0 || size.depth == 0)
+    if (size.empty())
     {
         return gl::NoError();
     }
 
-    // TODO(jmadill): support other types of textures.
-    ASSERT(target == GL_TEXTURE_2D);
-
-    // Convert internalFormat to sized internal format.
-    const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(internalFormat, type);
-    const vk::Format &vkFormat           = renderer->getFormat(formatInfo.sizedInternalFormat);
-
-    if (!mImage.valid())
+    // TODO(jmadill): Cube map textures. http://anglebug.com/2318
+    if (index.target != gl::TextureTarget::_2D)
     {
-        ASSERT(!mDeviceMemory.valid() && !mImageView.valid());
-
-        VkImageCreateInfo imageInfo;
-        imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageInfo.pNext         = nullptr;
-        imageInfo.flags         = 0;
-        imageInfo.imageType     = VK_IMAGE_TYPE_2D;
-        imageInfo.format        = vkFormat.vkTextureFormat;
-        imageInfo.extent.width  = size.width;
-        imageInfo.extent.height = size.height;
-        imageInfo.extent.depth  = size.depth;
-        imageInfo.mipLevels     = 1;
-        imageInfo.arrayLayers   = 1;
-        imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
-        imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
-
-        // TODO(jmadill): Are all these image transfer bits necessary?
-        imageInfo.usage = (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-        imageInfo.sharingMode           = VK_SHARING_MODE_EXCLUSIVE;
-        imageInfo.queueFamilyIndexCount = 0;
-        imageInfo.pQueueFamilyIndices   = nullptr;
-        imageInfo.initialLayout         = VK_IMAGE_LAYOUT_UNDEFINED;
-
-        ANGLE_TRY(mImage.init(device, imageInfo));
-
-        VkMemoryPropertyFlags flags = (VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        size_t requiredSize         = 0;
-        ANGLE_TRY(vk::AllocateImageMemory(renderer, flags, &mImage, &mDeviceMemory, &requiredSize));
-
-        VkImageViewCreateInfo viewInfo;
-        viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewInfo.pNext                           = nullptr;
-        viewInfo.flags                           = 0;
-        viewInfo.image                           = mImage.getHandle();
-        viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format                          = vkFormat.vkTextureFormat;
-        viewInfo.components.r                    = VK_COMPONENT_SWIZZLE_R;
-        viewInfo.components.g                    = VK_COMPONENT_SWIZZLE_G;
-        viewInfo.components.b                    = VK_COMPONENT_SWIZZLE_B;
-        viewInfo.components.a                    = VK_COMPONENT_SWIZZLE_A;
-        viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-        viewInfo.subresourceRange.baseMipLevel   = 0;
-        viewInfo.subresourceRange.levelCount     = 1;
-        viewInfo.subresourceRange.baseArrayLayer = 0;
-        viewInfo.subresourceRange.layerCount     = 1;
-
-        ANGLE_TRY(mImageView.init(device, viewInfo));
+        UNIMPLEMENTED();
+        return gl::InternalError();
     }
 
     if (!mSampler.valid())
@@ -164,25 +245,21 @@ gl::Error TextureVk::setImage(const gl::Context *context,
         ANGLE_TRY(mSampler.init(device, samplerInfo));
     }
 
-    mRenderTarget.image     = &mImage;
-    mRenderTarget.imageView = &mImageView;
-    mRenderTarget.format    = &vkFormat;
-    mRenderTarget.extents   = size;
-    mRenderTarget.samples   = VK_SAMPLE_COUNT_1_BIT;
-    mRenderTarget.resource  = this;
+    // Create a new graph node to store image initialization commands.
+    getNewWritingNode(renderer);
 
     // Handle initial data.
     if (pixels)
     {
-        ANGLE_TRY(setSubImageImpl(contextVk, formatInfo, unpack, type, pixels));
+        ANGLE_TRY(mStagingStorage.stageSubresourceUpdate(contextVk, size, formatInfo, unpack, type,
+                                                         pixels));
     }
 
     return gl::NoError();
 }
 
 gl::Error TextureVk::setSubImage(const gl::Context *context,
-                                 GLenum target,
-                                 size_t level,
+                                 const gl::ImageIndex &index,
                                  const gl::Box &area,
                                  GLenum format,
                                  GLenum type,
@@ -191,90 +268,14 @@ gl::Error TextureVk::setSubImage(const gl::Context *context,
 {
     ContextVk *contextVk                 = vk::GetImpl(context);
     const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(format, type);
-    ANGLE_TRY(setSubImageImpl(contextVk, formatInfo, unpack, type, pixels));
-    return gl::NoError();
-}
-
-gl::Error TextureVk::setSubImageImpl(ContextVk *contextVk,
-                                     const gl::InternalFormat &formatInfo,
-                                     const gl::PixelUnpackState &unpack,
-                                     GLenum type,
-                                     const uint8_t *pixels)
-{
-    RendererVk *renderer       = contextVk->getRenderer();
-    VkDevice device            = renderer->getDevice();
-    const gl::Extents &size    = mRenderTarget.extents;
-    const vk::Format &vkFormat = *mRenderTarget.format;
-
-    vk::StagingImage stagingImage;
-    ANGLE_TRY(stagingImage.init(contextVk, TextureDimension::TEX_2D, vkFormat, size,
-                                vk::StagingUsage::Write));
-
-    GLuint inputRowPitch = 0;
-    ANGLE_TRY_RESULT(
-        formatInfo.computeRowPitch(type, size.width, unpack.alignment, unpack.rowLength),
-        inputRowPitch);
-
-    GLuint inputDepthPitch = 0;
-    ANGLE_TRY_RESULT(formatInfo.computeDepthPitch(size.height, unpack.imageHeight, inputRowPitch),
-                     inputDepthPitch);
-
-    // TODO(jmadill): skip images for 3D Textures.
-    bool applySkipImages = false;
-
-    GLuint inputSkipBytes = 0;
-    ANGLE_TRY_RESULT(
-        formatInfo.computeSkipBytes(inputRowPitch, inputDepthPitch, unpack, applySkipImages),
-        inputSkipBytes);
-
-    auto loadFunction = vkFormat.loadFunctions(type);
-
-    uint8_t *mapPointer = nullptr;
-    ANGLE_TRY(stagingImage.getDeviceMemory().map(device, 0, VK_WHOLE_SIZE, 0, &mapPointer));
-
-    const uint8_t *source = pixels + inputSkipBytes;
-
-    // Get the subresource layout. This has important parameters like row pitch.
-    // TODO(jmadill): Fill out this structure based on input parameters.
-    VkImageSubresource subresource;
-    subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    subresource.mipLevel   = 0;
-    subresource.arrayLayer = 0;
-
-    VkSubresourceLayout subresourceLayout;
-    vkGetImageSubresourceLayout(device, stagingImage.getImage().getHandle(), &subresource,
-                                &subresourceLayout);
-
-    loadFunction.loadFunction(size.width, size.height, size.depth, source, inputRowPitch,
-                              inputDepthPitch, mapPointer,
-                              static_cast<size_t>(subresourceLayout.rowPitch),
-                              static_cast<size_t>(subresourceLayout.depthPitch));
-
-    stagingImage.getDeviceMemory().unmap(device);
-
-    vk::CommandBuffer *commandBuffer = nullptr;
-    ANGLE_TRY(beginWriteResource(renderer, &commandBuffer));
-
-    stagingImage.getImage().changeLayoutWithStages(
-        VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, commandBuffer);
-    mImage.changeLayoutWithStages(VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                  VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                                  VK_PIPELINE_STAGE_TRANSFER_BIT, commandBuffer);
-
-    gl::Box wholeRegion(0, 0, 0, size.width, size.height, size.depth);
-    commandBuffer->copySingleImage(stagingImage.getImage(), mImage, wholeRegion,
-                                   VK_IMAGE_ASPECT_COLOR_BIT);
-
-    // Immediately release staging image.
-    // TODO(jmadill): Staging image re-use.
-    renderer->releaseObject(renderer->getCurrentQueueSerial(), &stagingImage);
+    ANGLE_TRY(mStagingStorage.stageSubresourceUpdate(
+        contextVk, gl::Extents(area.width, area.height, area.depth), formatInfo, unpack, type,
+        pixels));
     return gl::NoError();
 }
 
 gl::Error TextureVk::setCompressedImage(const gl::Context *context,
-                                        GLenum target,
-                                        size_t level,
+                                        const gl::ImageIndex &index,
                                         GLenum internalFormat,
                                         const gl::Extents &size,
                                         const gl::PixelUnpackState &unpack,
@@ -286,8 +287,7 @@ gl::Error TextureVk::setCompressedImage(const gl::Context *context,
 }
 
 gl::Error TextureVk::setCompressedSubImage(const gl::Context *context,
-                                           GLenum target,
-                                           size_t level,
+                                           const gl::ImageIndex &index,
                                            const gl::Box &area,
                                            GLenum format,
                                            const gl::PixelUnpackState &unpack,
@@ -299,29 +299,27 @@ gl::Error TextureVk::setCompressedSubImage(const gl::Context *context,
 }
 
 gl::Error TextureVk::copyImage(const gl::Context *context,
-                               GLenum target,
-                               size_t level,
+                               const gl::ImageIndex &index,
                                const gl::Rectangle &sourceArea,
                                GLenum internalFormat,
-                               const gl::Framebuffer *source)
+                               gl::Framebuffer *source)
 {
     UNIMPLEMENTED();
     return gl::InternalError();
 }
 
 gl::Error TextureVk::copySubImage(const gl::Context *context,
-                                  GLenum target,
-                                  size_t level,
+                                  const gl::ImageIndex &index,
                                   const gl::Offset &destOffset,
                                   const gl::Rectangle &sourceArea,
-                                  const gl::Framebuffer *source)
+                                  gl::Framebuffer *source)
 {
     UNIMPLEMENTED();
     return gl::InternalError();
 }
 
 gl::Error TextureVk::setStorage(const gl::Context *context,
-                                GLenum target,
+                                gl::TextureType type,
                                 size_t levels,
                                 GLenum internalFormat,
                                 const gl::Extents &size)
@@ -330,14 +328,16 @@ gl::Error TextureVk::setStorage(const gl::Context *context,
     return gl::InternalError();
 }
 
-gl::Error TextureVk::setEGLImageTarget(const gl::Context *context, GLenum target, egl::Image *image)
+gl::Error TextureVk::setEGLImageTarget(const gl::Context *context,
+                                       gl::TextureType type,
+                                       egl::Image *image)
 {
     UNIMPLEMENTED();
     return gl::InternalError();
 }
 
 gl::Error TextureVk::setImageExternal(const gl::Context *context,
-                                      GLenum target,
+                                      gl::TextureType type,
                                       egl::Stream *stream,
                                       const egl::Stream::GLTextureDescription &desc)
 {
@@ -374,10 +374,71 @@ gl::Error TextureVk::getAttachmentRenderTarget(const gl::Context *context,
                                                const gl::ImageIndex &imageIndex,
                                                FramebufferAttachmentRenderTarget **rtOut)
 {
-    ASSERT(imageIndex.type == GL_TEXTURE_2D);
+    // TODO(jmadill): Handle cube textures. http://anglebug.com/2318
+    ASSERT(imageIndex.type == gl::TextureType::_2D);
+
+    // Non-zero mip level attachments are an ES 3.0 feature.
     ASSERT(imageIndex.mipIndex == 0 && imageIndex.layerIndex == gl::ImageIndex::ENTIRE_LEVEL);
+
+    ContextVk *contextVk = vk::GetImpl(context);
+    RendererVk *renderer = contextVk->getRenderer();
+
+    ANGLE_TRY(ensureImageInitialized(renderer));
+
     *rtOut = &mRenderTarget;
     return gl::NoError();
+}
+
+vk::Error TextureVk::ensureImageInitialized(RendererVk *renderer)
+{
+    VkDevice device                  = renderer->getDevice();
+    vk::CommandBuffer *commandBuffer = nullptr;
+
+    updateQueueSerial(renderer->getCurrentQueueSerial());
+    if (!hasChildlessWritingNode())
+    {
+        beginWriteResource(renderer, &commandBuffer);
+    }
+    else
+    {
+        vk::CommandGraphNode *node = getCurrentWritingNode();
+        commandBuffer              = node->getOutsideRenderPassCommands();
+        if (!commandBuffer->valid())
+        {
+            ANGLE_TRY(node->beginOutsideRenderPassRecording(device, renderer->getCommandPool(),
+                                                            &commandBuffer));
+        }
+    }
+
+    if (!mImage.valid())
+    {
+        const gl::ImageDesc &baseLevelDesc = mState.getBaseLevelDesc();
+        const gl::Extents &extents         = baseLevelDesc.size;
+        const vk::Format &format =
+            renderer->getFormat(baseLevelDesc.format.info->sizedInternalFormat);
+
+        VkImageUsageFlags usage =
+            (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+             VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+        ANGLE_TRY(mImage.init2D(device, extents, format, 1, usage));
+
+        VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        ANGLE_TRY(mImage.initMemory(device, renderer->getMemoryProperties(), flags));
+
+        gl::SwizzleState mappedSwizzle;
+        MapSwizzleState(format.internalFormat, mState.getSwizzleState(), &mappedSwizzle);
+
+        ANGLE_TRY(
+            mImage.initImageView(device, VK_IMAGE_ASPECT_COLOR_BIT, mappedSwizzle, &mImageView));
+
+        // TODO(jmadill): Fold this into the RenderPass load/store ops. http://anglebug.com/2361
+
+        VkClearColorValue black = {{0}};
+        mImage.clearColor(black, commandBuffer);
+    }
+
+    ANGLE_TRY(mStagingStorage.flushUpdatesToImage(renderer, &mImage, commandBuffer));
+    return vk::NoError();
 }
 
 void TextureVk::syncState(const gl::Texture::DirtyBits &dirtyBits)
@@ -386,7 +447,7 @@ void TextureVk::syncState(const gl::Texture::DirtyBits &dirtyBits)
 }
 
 gl::Error TextureVk::setStorageMultisample(const gl::Context *context,
-                                           GLenum target,
+                                           gl::TextureType type,
                                            GLsizei samples,
                                            GLint internalformat,
                                            const gl::Extents &size,
@@ -403,7 +464,7 @@ gl::Error TextureVk::initializeContents(const gl::Context *context,
     return gl::NoError();
 }
 
-const vk::Image &TextureVk::getImage() const
+const vk::ImageHelper &TextureVk::getImage() const
 {
     ASSERT(mImage.valid());
     return mImage;
@@ -411,7 +472,7 @@ const vk::Image &TextureVk::getImage() const
 
 const vk::ImageView &TextureVk::getImageView() const
 {
-    ASSERT(mImageView.valid());
+    ASSERT(mImage.valid());
     return mImageView;
 }
 
@@ -419,6 +480,13 @@ const vk::Sampler &TextureVk::getSampler() const
 {
     ASSERT(mSampler.valid());
     return mSampler;
+}
+
+void TextureVk::releaseImage(const gl::Context *context, RendererVk *renderer)
+{
+    mImage.release(renderer->getCurrentQueueSerial(), renderer);
+    renderer->releaseResource(*this, &mImageView);
+    onStateChange(context, angle::SubjectMessage::DEPENDENT_DIRTY_BITS);
 }
 
 }  // namespace rx

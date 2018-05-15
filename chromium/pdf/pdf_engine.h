@@ -135,7 +135,7 @@ class PDFEngine {
     virtual void Invalidate(const pp::Rect& rect) = 0;
 
     // Informs the client to scroll the plugin area by the given offset.
-    virtual void Scroll(const pp::Point& point) = 0;
+    virtual void DidScroll(const pp::Point& point) = 0;
 
     // Scroll the horizontal/vertical scrollbars to a given position.
     // Values are in screen coordinates, where 0 is the top/left of the document
@@ -145,6 +145,9 @@ class PDFEngine {
     virtual void ScrollToX(int x_in_screen_coords) = 0;
     virtual void ScrollToY(int y_in_screen_coords,
                            bool compensate_for_toolbar) = 0;
+
+    // Scroll by a given delta relative to the current position.
+    virtual void ScrollBy(const pp::Point& point) = 0;
 
     // Scroll to zero-based |page|.
     virtual void ScrollToPage(int page) = 0;
@@ -232,8 +235,8 @@ class PDFEngine {
     virtual void DocumentPaintOccurred() = 0;
 
     // Notifies the client that the document has finished loading.
-    virtual void DocumentLoadComplete(
-        const DocumentFeatures& document_features) = 0;
+    virtual void DocumentLoadComplete(const DocumentFeatures& document_features,
+                                      uint32_t file_size) = 0;
 
     // Notifies the client that the document has failed to load.
     virtual void DocumentLoadFailed() = 0;
@@ -270,6 +273,10 @@ class PDFEngine {
 
     // Sets edit mode state.
     virtual void IsEditModeChanged(bool is_edit_mode) {}
+
+    // Gets the height of the top toolbar in screen coordinates. This is
+    // independent of whether it is hidden or not at the moment.
+    virtual float GetToolbarHeightInScreenCoords() = 0;
   };
 
   // Factory method to create an instance of the PDF Engine.
@@ -399,6 +406,10 @@ class PDFEngine {
   virtual void MoveRangeSelectionExtent(const pp::Point& extent) = 0;
   virtual void SetSelectionBounds(const pp::Point& base,
                                   const pp::Point& extent) = 0;
+  virtual void GetSelection(uint32_t* selection_start_page_index,
+                            uint32_t* selection_start_char_index,
+                            uint32_t* selection_end_page_index,
+                            uint32_t* selection_end_char_index) = 0;
 
   // Remove focus from form widgets, consolidating the user input.
   virtual void KillFormFocus() = 0;
@@ -415,7 +426,8 @@ class PDFEngineExports {
                       bool stretch_to_bounds,
                       bool keep_aspect_ratio,
                       bool center_in_bounds,
-                      bool autorotate);
+                      bool autorotate,
+                      bool use_color);
     RenderingSettings(const RenderingSettings& that);
 
     int dpi_x;
@@ -426,6 +438,7 @@ class PDFEngineExports {
     bool keep_aspect_ratio;
     bool center_in_bounds;
     bool autorotate;
+    bool use_color;
   };
 
   PDFEngineExports() {}

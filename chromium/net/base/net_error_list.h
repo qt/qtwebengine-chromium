@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 // This file intentionally does not have header guards, it's included
-// inside a macro to generate enum values.
+// inside a macro to generate enum values. The following line silences a
+// presubmit warning that would otherwise be triggered by this:
+// no-include-guard-because-multiply-included
 
 // This file contains the list of network errors.
 
@@ -409,7 +411,7 @@ NET_ERROR(NO_BUFFER_SPACE, -176)
 
 // There were no common signature algorithms between our client certificate
 // private key and the server's preferences.
-NET_ERROR(SSL_CLIENT_AUTH_NO_COMMON_ALGORITHMS, -1478)
+NET_ERROR(SSL_CLIENT_AUTH_NO_COMMON_ALGORITHMS, -177)
 
 // Certificate error codes
 //

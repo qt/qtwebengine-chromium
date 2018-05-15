@@ -11,7 +11,6 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
@@ -48,6 +47,7 @@
 #include "net/test/url_request/url_request_failed_job.h"
 #include "net/test/url_request/url_request_mock_http_job.h"
 #include "net/url_request/url_request.h"
+#include "services/network/public/cpp/features.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "url/gurl.h"
 
@@ -140,6 +140,10 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest, DynamicTitle2) {
 
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
                        SniffHTMLWithNoContentType) {
+  // Covered by URLLoaderTest.SniffMimeType.
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService))
+    return;
+
   CheckTitleTest(
       net::URLRequestMockHTTPJob::GetMockUrl("content-sniffer-test0.html"),
       "Content Sniffer Test 0");
@@ -147,12 +151,20 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
                        RespectNoSniffDirective) {
+  // Covered by URLLoaderTest.RespectNoSniff.
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService))
+    return;
+
   CheckTitleTest(net::URLRequestMockHTTPJob::GetMockUrl("nosniff-test.html"),
                  "mock.http/nosniff-test.html");
 }
 
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
                        DoNotSniffHTMLFromTextPlain) {
+  // Covered by URLLoaderTest.DoNotSniffHTMLFromTextPlain.
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService))
+    return;
+
   CheckTitleTest(
       net::URLRequestMockHTTPJob::GetMockUrl("content-sniffer-test1.html"),
       "mock.http/content-sniffer-test1.html");
@@ -160,6 +172,10 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
                        DoNotSniffHTMLFromImageGIF) {
+  // Covered by URLLoaderTest.DoNotSniffHTMLFromImageGIF.
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService))
+    return;
+
   CheckTitleTest(
       net::URLRequestMockHTTPJob::GetMockUrl("content-sniffer-test2.html"),
       "mock.http/content-sniffer-test2.html");
@@ -593,6 +609,10 @@ class PageTransitionResourceDispatcherHostDelegate
 // when encountering a meta refresh tag.
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
                        PageTransitionClientRedirect) {
+  // TODO(crbug.com/818445): Fix the flakiness on Network Service.
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService))
+    return;
+
   ASSERT_TRUE(embedded_test_server()->Start());
 
   PageTransitionResourceDispatcherHostDelegate delegate(

@@ -58,7 +58,7 @@ Options::~Options() = default;
 Options& Options::operator=(Options&& options) = default;
 
 bool Options::DevtoolsServerEnabled() {
-  return (!devtools_endpoint.IsEmpty() || devtools_socket_fd != 0);
+  return (devtools_pipe_enabled || !devtools_endpoint.IsEmpty());
 }
 
 Builder::Builder(int argc, const char** argv) : options_(argc, argv) {}
@@ -93,8 +93,8 @@ Builder& Builder::EnableDevToolsServer(const net::HostPortPair& endpoint) {
   return *this;
 }
 
-Builder& Builder::EnableDevToolsServer(const size_t socket_fd) {
-  options_.devtools_socket_fd = socket_fd;
+Builder& Builder::EnableDevToolsPipe() {
+  options_.devtools_pipe_enabled = true;
   return *this;
 }
 
@@ -188,13 +188,18 @@ Builder& Builder::SetInitialVirtualTime(base::Time initial_virtual_time) {
 }
 
 Builder& Builder::SetOverrideWebPreferencesCallback(
-    const base::Callback<void(WebPreferences*)>& callback) {
-  options_.override_web_preferences_callback = callback;
+    base::RepeatingCallback<void(WebPreferences*)> callback) {
+  options_.override_web_preferences_callback = std::move(callback);
   return *this;
 }
 
 Builder& Builder::SetCrashReporterEnabled(bool enabled) {
   options_.enable_crash_reporter = enabled;
+  return *this;
+}
+
+Builder& Builder::SetCaptureResourceMetadata(bool capture_resource_metadata) {
+  options_.capture_resource_metadata = capture_resource_metadata;
   return *this;
 }
 

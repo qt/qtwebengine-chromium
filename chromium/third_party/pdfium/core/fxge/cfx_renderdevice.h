@@ -8,7 +8,9 @@
 #define CORE_FXGE_CFX_RENDERDEVICE_H_
 
 #include <memory>
+#include <vector>
 
+#include "core/fpdfdoc/cpdf_defaultappearance.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_color.h"
 #include "core/fxge/fx_dib.h"
@@ -17,8 +19,8 @@ class CFX_DIBitmap;
 class CFX_Font;
 class CFX_GraphStateData;
 class CFX_ImageRenderer;
-class IFX_PauseIndicator;
-class IFX_RenderDeviceDriver;
+class PauseIndicatorIface;
+class RenderDeviceDriverIface;
 
 #define FXDC_DEVICE_CLASS 1
 #define FXDC_PIXEL_WIDTH 2
@@ -72,7 +74,6 @@ class FXTEXT_CHARPOS {
   FXTEXT_CHARPOS(const FXTEXT_CHARPOS&);
   ~FXTEXT_CHARPOS();
 
-  float m_AdjustMatrix[4];
   CFX_PointF m_Origin;
   uint32_t m_Unicode;
   uint32_t m_GlyphIndex;
@@ -83,6 +84,7 @@ class FXTEXT_CHARPOS {
   int32_t m_FallbackFontPosition;
   bool m_bGlyphAdjust;
   bool m_bFontStyle;
+  float m_AdjustMatrix[4];
 };
 
 class CFX_RenderDevice {
@@ -100,8 +102,8 @@ class CFX_RenderDevice {
   virtual ~CFX_RenderDevice();
 
   // Take ownership of |pDriver|.
-  void SetDeviceDriver(std::unique_ptr<IFX_RenderDeviceDriver> pDriver);
-  IFX_RenderDeviceDriver* GetDeviceDriver() const {
+  void SetDeviceDriver(std::unique_ptr<RenderDeviceDriverIface> pDriver);
+  RenderDeviceDriverIface* GetDeviceDriver() const {
     return m_pDeviceDriver.get();
   }
 
@@ -113,7 +115,6 @@ class CFX_RenderDevice {
   int GetDeviceClass() const { return m_DeviceClass; }
   int GetRenderCaps() const { return m_RenderCaps; }
   int GetDeviceCaps(int id) const;
-  CFX_Matrix GetCTM() const;
   RetainPtr<CFX_DIBitmap> GetBitmap() const;
   void SetBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap);
   bool CreateCompatibleBitmap(const RetainPtr<CFX_DIBitmap>& pDIB,
@@ -123,7 +124,9 @@ class CFX_RenderDevice {
   bool SetClip_PathFill(const CFX_PathData* pPathData,
                         const CFX_Matrix* pObject2Device,
                         int fill_mode);
-  bool SetClip_Rect(const CFX_RectF& pRect);
+#ifdef PDF_ENABLE_XFA
+  bool SetClip_Rect(const CFX_RectF& rtClip);
+#endif
   bool SetClip_Rect(const FX_RECT& pRect);
   bool SetClip_PathStroke(const CFX_PathData* pPathData,
                           const CFX_Matrix* pObject2Device,
@@ -144,8 +147,8 @@ class CFX_RenderDevice {
                          uint32_t stroke_color,
                          int fill_mode,
                          int blend_type);
-  bool FillRect(const FX_RECT* pRect, uint32_t color) {
-    return FillRectWithBlend(pRect, color, FXDIB_BLEND_NORMAL);
+  bool FillRect(const FX_RECT& rect, uint32_t color) {
+    return FillRectWithBlend(rect, color, FXDIB_BLEND_NORMAL);
   }
 
   RetainPtr<CFX_DIBitmap> GetBackDrop();
@@ -205,7 +208,7 @@ class CFX_RenderDevice {
                             uint32_t flags,
                             std::unique_ptr<CFX_ImageRenderer>* handle,
                             int blend_type);
-  bool ContinueDIBits(CFX_ImageRenderer* handle, IFX_PauseIndicator* pPause);
+  bool ContinueDIBits(CFX_ImageRenderer* handle, PauseIndicatorIface* pPause);
 
   bool DrawNormalText(int nChars,
                       const FXTEXT_CHARPOS* pCharPos,
@@ -233,7 +236,7 @@ class CFX_RenderDevice {
   void DrawFillRect(const CFX_Matrix* pUser2Device,
                     const CFX_FloatRect& rect,
                     const FX_COLORREF& color);
-  void DrawStrokeRect(const CFX_Matrix* pUser2Device,
+  void DrawStrokeRect(const CFX_Matrix& mtUser2Device,
                       const CFX_FloatRect& rect,
                       const FX_COLORREF& color,
                       float fWidth);
@@ -250,14 +253,13 @@ class CFX_RenderDevice {
                   const CFX_Color& crRightBottom,
                   BorderStyle nStyle,
                   int32_t nTransparency);
-  void DrawFillArea(const CFX_Matrix* pUser2Device,
-                    const CFX_PointF* pPts,
-                    int32_t nCount,
+  void DrawFillArea(const CFX_Matrix& mtUser2Device,
+                    const std::vector<CFX_PointF>& points,
                     const FX_COLORREF& color);
-  void DrawShadow(const CFX_Matrix* pUser2Device,
+  void DrawShadow(const CFX_Matrix& mtUser2Device,
                   bool bVertical,
                   bool bHorizontal,
-                  CFX_FloatRect rect,
+                  const CFX_FloatRect& rect,
                   int32_t nTransparency,
                   int32_t nStartGray,
                   int32_t nEndGray);
@@ -290,7 +292,7 @@ class CFX_RenderDevice {
                         uint32_t color,
                         int fill_mode,
                         int blend_type);
-  bool FillRectWithBlend(const FX_RECT* pRect, uint32_t color, int blend_type);
+  bool FillRectWithBlend(const FX_RECT& rect, uint32_t color, int blend_type);
 
   RetainPtr<CFX_DIBitmap> m_pBitmap;
   int m_Width;
@@ -299,7 +301,7 @@ class CFX_RenderDevice {
   int m_RenderCaps;
   int m_DeviceClass;
   FX_RECT m_ClipBox;
-  std::unique_ptr<IFX_RenderDeviceDriver> m_pDeviceDriver;
+  std::unique_ptr<RenderDeviceDriverIface> m_pDeviceDriver;
 };
 
 #endif  // CORE_FXGE_CFX_RENDERDEVICE_H_

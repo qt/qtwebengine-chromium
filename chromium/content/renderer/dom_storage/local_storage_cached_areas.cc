@@ -22,25 +22,26 @@ constexpr const char kLocalStorageNamespaceId[] = "";
 
 LocalStorageCachedAreas::LocalStorageCachedAreas(
     mojom::StoragePartitionService* storage_partition_service,
-    blink::scheduler::RendererScheduler* renderer_scheduler)
+    blink::scheduler::WebMainThreadScheduler* main_thread_scheduler)
     : storage_partition_service_(storage_partition_service),
       total_cache_limit_(base::SysInfo::IsLowEndDevice()
                              ? kTotalCacheLimitInBytesLowEnd
                              : kTotalCacheLimitInBytes),
-      renderer_scheduler_(renderer_scheduler) {}
+      main_thread_scheduler_(main_thread_scheduler) {}
 
 LocalStorageCachedAreas::~LocalStorageCachedAreas() {}
 
 scoped_refptr<LocalStorageCachedArea> LocalStorageCachedAreas::GetCachedArea(
     const url::Origin& origin) {
-  return GetCachedArea(kLocalStorageNamespaceId, origin, renderer_scheduler_);
+  return GetCachedArea(kLocalStorageNamespaceId, origin,
+                       main_thread_scheduler_);
 }
 
 scoped_refptr<LocalStorageCachedArea>
 LocalStorageCachedAreas::GetSessionStorageArea(const std::string& namespace_id,
                                                const url::Origin& origin) {
   DCHECK_NE(namespace_id, kLocalStorageNamespaceId);
-  return GetCachedArea(namespace_id, origin, renderer_scheduler_);
+  return GetCachedArea(namespace_id, origin, main_thread_scheduler_);
 }
 
 void LocalStorageCachedAreas::CloneNamespace(
@@ -80,14 +81,14 @@ void LocalStorageCachedAreas::ClearAreasIfNeeded() {
 scoped_refptr<LocalStorageCachedArea> LocalStorageCachedAreas::GetCachedArea(
     const std::string& namespace_id,
     const url::Origin& origin,
-    blink::scheduler::RendererScheduler* scheduler) {
+    blink::scheduler::WebMainThreadScheduler* scheduler) {
   // These values are persisted to logs. Entries should not be renumbered and
   // numeric values should never be reused.
   enum class CacheMetrics {
     kMiss = 0,    // Area not in cache.
     kHit = 1,     // Area with refcount = 0 loaded from cache.
     kUnused = 2,  // Cache was not used. Area had refcount > 0.
-    kMaxValue
+    kMaxValue = kUnused,
   };
 
   auto namespace_it = cached_namespaces_.find(namespace_id);
@@ -110,13 +111,10 @@ scoped_refptr<LocalStorageCachedArea> LocalStorageCachedAreas::GetCachedArea(
       result = cache_it->second;
     }
   }
-  if (namespace_id == kLocalStorageNamespaceId) {
-    UMA_HISTOGRAM_ENUMERATION("LocalStorage.RendererAreaCacheHit", metric,
-                              CacheMetrics::kMaxValue);
-  } else {
-    LOCAL_HISTOGRAM_ENUMERATION("SessionStorage.RendererAreaCacheHit", metric,
-                                CacheMetrics::kMaxValue);
-  }
+  if (namespace_id == kLocalStorageNamespaceId)
+    UMA_HISTOGRAM_ENUMERATION("LocalStorage.RendererAreaCacheHit", metric);
+  else
+    LOCAL_HISTOGRAM_ENUMERATION("SessionStorage.RendererAreaCacheHit", metric);
 
   if (!result) {
     ClearAreasIfNeeded();

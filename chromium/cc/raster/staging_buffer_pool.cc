@@ -7,13 +7,12 @@
 #include <memory>
 
 #include "base/memory/memory_coordinator_client_registry.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "cc/base/container_util.h"
-#include "cc/resources/resource_util.h"
 #include "components/viz/common/gpu/raster_context_provider.h"
+#include "components/viz/common/resources/resource_sizes.h"
 #include "gpu/command_buffer/client/raster_interface.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
@@ -103,7 +102,7 @@ void StagingBuffer::OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd,
   MemoryAllocatorDump* buffer_dump = pmd->CreateAllocatorDump(buffer_dump_name);
 
   uint64_t buffer_size_in_bytes =
-      ResourceUtil::UncheckedSizeInBytes<uint64_t>(size, format);
+      viz::ResourceSizes::UncheckedSizeInBytes<uint64_t>(size, format);
   buffer_dump->AddScalar(MemoryAllocatorDump::kNameSize,
                          MemoryAllocatorDump::kUnitsBytes,
                          buffer_size_in_bytes);
@@ -210,8 +209,8 @@ void StagingBufferPool::AddStagingBuffer(const StagingBuffer* staging_buffer,
 
   DCHECK(buffers_.find(staging_buffer) == buffers_.end());
   buffers_.insert(staging_buffer);
-  int buffer_usage_in_bytes =
-      ResourceUtil::UncheckedSizeInBytes<int>(staging_buffer->size, format);
+  int buffer_usage_in_bytes = viz::ResourceSizes::UncheckedSizeInBytes<int>(
+      staging_buffer->size, format);
   staging_buffer_usage_in_bytes_ += buffer_usage_in_bytes;
 }
 
@@ -221,7 +220,7 @@ void StagingBufferPool::RemoveStagingBuffer(
 
   DCHECK(buffers_.find(staging_buffer) != buffers_.end());
   buffers_.erase(staging_buffer);
-  int buffer_usage_in_bytes = ResourceUtil::UncheckedSizeInBytes<int>(
+  int buffer_usage_in_bytes = viz::ResourceSizes::UncheckedSizeInBytes<int>(
       staging_buffer->size, staging_buffer->format);
   DCHECK_GE(staging_buffer_usage_in_bytes_, buffer_usage_in_bytes);
   staging_buffer_usage_in_bytes_ -= buffer_usage_in_bytes;
@@ -231,7 +230,7 @@ void StagingBufferPool::MarkStagingBufferAsFree(
     const StagingBuffer* staging_buffer) {
   lock_.AssertAcquired();
 
-  int buffer_usage_in_bytes = ResourceUtil::UncheckedSizeInBytes<int>(
+  int buffer_usage_in_bytes = viz::ResourceSizes::UncheckedSizeInBytes<int>(
       staging_buffer->size, staging_buffer->format);
   free_staging_buffer_usage_in_bytes_ += buffer_usage_in_bytes;
 }
@@ -240,7 +239,7 @@ void StagingBufferPool::MarkStagingBufferAsBusy(
     const StagingBuffer* staging_buffer) {
   lock_.AssertAcquired();
 
-  int buffer_usage_in_bytes = ResourceUtil::UncheckedSizeInBytes<int>(
+  int buffer_usage_in_bytes = viz::ResourceSizes::UncheckedSizeInBytes<int>(
       staging_buffer->size, staging_buffer->format);
   DCHECK_GE(free_staging_buffer_usage_in_bytes_, buffer_usage_in_bytes);
   free_staging_buffer_usage_in_bytes_ -= buffer_usage_in_bytes;

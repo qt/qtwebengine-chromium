@@ -10,7 +10,6 @@
 
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_checker.h"
@@ -18,16 +17,14 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
-#include "content/child/thread_safe_sender.h"
-#include "content/common/service_worker/embedded_worker_messages.h"
 #include "content/common/service_worker/service_worker_event_dispatcher.mojom.h"
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "content/common/service_worker/service_worker_utils.h"
-#include "content/common/weak_wrapper_shared_url_loader_factory.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/push_event_payload.h"
 #include "content/public/common/referrer.h"
+#include "content/public/common/weak_wrapper_shared_url_loader_factory.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/document_state.h"
 #include "content/public/renderer/worker_thread.h"
@@ -57,33 +54,33 @@
 #include "net/http/http_response_headers.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "storage/common/blob_storage/blob_handle.h"
-#include "third_party/WebKit/public/common/message_port/message_port_channel.h"
-#include "third_party/WebKit/public/mojom/blob/blob.mojom.h"
-#include "third_party/WebKit/public/mojom/blob/blob_registry.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_client.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_error_type.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_event_status.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
-#include "third_party/WebKit/public/platform/InterfaceProvider.h"
-#include "third_party/WebKit/public/platform/Platform.h"
-#include "third_party/WebKit/public/platform/URLConversion.h"
-#include "third_party/WebKit/public/platform/WebBlobRegistry.h"
-#include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
-#include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebURLResponse.h"
-#include "third_party/WebKit/public/platform/modules/background_fetch/WebBackgroundFetchSettledFetch.h"
-#include "third_party/WebKit/public/platform/modules/notifications/WebNotificationData.h"
-#include "third_party/WebKit/public/platform/modules/payments/WebPaymentHandlerResponse.h"
-#include "third_party/WebKit/public/platform/modules/payments/WebPaymentRequestEventData.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerClientQueryOptions.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerError.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerNetworkProvider.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerRequest.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerResponse.h"
-#include "third_party/WebKit/public/web/modules/serviceworker/WebServiceWorkerContextClient.h"
-#include "third_party/WebKit/public/web/modules/serviceworker/WebServiceWorkerContextProxy.h"
+#include "third_party/blink/public/common/message_port/message_port_channel.h"
+#include "third_party/blink/public/mojom/blob/blob.mojom.h"
+#include "third_party/blink/public/mojom/blob/blob_registry.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_client.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_error_type.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/platform/interface_provider.h"
+#include "third_party/blink/public/platform/modules/background_fetch/web_background_fetch_settled_fetch.h"
+#include "third_party/blink/public/platform/modules/notifications/web_notification_data.h"
+#include "third_party/blink/public/platform/modules/payments/web_payment_handler_response.h"
+#include "third_party/blink/public/platform/modules/payments/web_payment_request_event_data.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_client_query_options.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_error.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_network_provider.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_request.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_response.h"
+#include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/public/platform/url_conversion.h"
+#include "third_party/blink/public/platform/web_blob_registry.h"
+#include "third_party/blink/public/platform/web_referrer_policy.h"
+#include "third_party/blink/public/platform/web_security_origin.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_url_response.h"
+#include "third_party/blink/public/web/modules/serviceworker/web_service_worker_context_client.h"
+#include "third_party/blink/public/web/modules/serviceworker/web_service_worker_context_proxy.h"
 
 using blink::WebURLRequest;
 using blink::MessagePortChannel;
@@ -117,7 +114,7 @@ class WebServiceWorkerNetworkProviderImpl
   }
 
   std::unique_ptr<blink::WebURLLoader> CreateURLLoader(
-      const blink::WebURLRequest& request,
+      const WebURLRequest& request,
       scoped_refptr<base::SingleThreadTaskRunner> task_runner) override {
     RenderThreadImpl* render_thread = RenderThreadImpl::current();
     if (render_thread && provider_->script_loader_factory() &&
@@ -610,7 +607,6 @@ class ServiceWorkerContextClient::NavigationPreloadRequest final
 
   void OnReceiveResponse(
       const network::ResourceResponseHead& response_head,
-      const base::Optional<net::SSLInfo>& ssl_info,
       network::mojom::DownloadedTempFilePtr downloaded_file) override {
     DCHECK(!response_);
     DCHECK(!downloaded_file);
@@ -764,14 +760,13 @@ ServiceWorkerContextClient::ServiceWorkerContextClient(
     mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
     mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
     std::unique_ptr<EmbeddedWorkerInstanceClientImpl> embedded_worker_client,
-    scoped_refptr<ThreadSafeSender> sender,
+    scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> io_thread_task_runner)
     : embedded_worker_id_(embedded_worker_id),
       service_worker_version_id_(service_worker_version_id),
       service_worker_scope_(service_worker_scope),
       script_url_(script_url),
-      sender_(sender),
-      main_thread_task_runner_(base::ThreadTaskRunnerHandle::Get()),
+      main_thread_task_runner_(std::move(main_thread_task_runner)),
       io_thread_task_runner_(io_thread_task_runner),
       proxy_(nullptr),
       pending_dispatcher_request_(std::move(dispatcher_request)),
@@ -785,7 +780,7 @@ ServiceWorkerContextClient::ServiceWorkerContextClient(
   // Create a content::ServiceWorkerNetworkProvider for this data source so
   // we can observe its requests.
   pending_network_provider_ = ServiceWorkerNetworkProvider::CreateForController(
-      std::move(provider_info), sender_);
+      std::move(provider_info));
   provider_context_ = pending_network_provider_->context();
 
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN1("ServiceWorker",
@@ -895,7 +890,7 @@ void ServiceWorkerContextClient::WorkerContextStarted(
   context_.reset(new WorkerContextData(this));
   // Create ServiceWorkerDispatcher first for this worker thread to be used
   // later by TakeRegistrationForServiceWorkerGlobalScope() etc.
-  ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance(sender_.get())
+  ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance()
       ->SetIOThreadTaskRunner(io_thread_task_runner_);
 
   DCHECK(pending_dispatcher_request_.is_pending());
@@ -927,7 +922,7 @@ void ServiceWorkerContextClient::WorkerContextStarted(
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("ServiceWorker", "EVALUATE_SCRIPT", this);
 }
 
-void ServiceWorkerContextClient::DidEvaluateWorkerScript(bool success) {
+void ServiceWorkerContextClient::DidEvaluateClassicScript(bool success) {
   DCHECK(worker_task_runner_->RunsTasksInCurrentSequence());
   (*instance_host_)->OnScriptEvaluated(success);
 
@@ -997,9 +992,9 @@ void ServiceWorkerContextClient::WorkerContextDestroyed() {
                      std::move(embedded_worker_client_)));
 }
 
-void ServiceWorkerContextClient::CountFeature(uint32_t feature) {
-  Send(new EmbeddedWorkerHostMsg_CountFeature(service_worker_version_id_,
-                                              feature));
+void ServiceWorkerContextClient::CountFeature(
+    blink::mojom::WebFeature feature) {
+  (*instance_host_)->CountFeature(feature);
 }
 
 void ServiceWorkerContextClient::ReportException(
@@ -1281,7 +1276,6 @@ void ServiceWorkerContextClient::DidHandlePaymentRequestEvent(
 std::unique_ptr<blink::WebServiceWorkerNetworkProvider>
 ServiceWorkerContextClient::CreateServiceWorkerNetworkProvider() {
   DCHECK(main_thread_task_runner_->RunsTasksInCurrentSequence());
-  // Blink is responsible for deleting the returned object.
   return std::make_unique<WebServiceWorkerNetworkProviderImpl>(
       std::move(pending_network_provider_));
 }
@@ -1295,7 +1289,6 @@ ServiceWorkerContextClient::CreateServiceWorkerFetchContext() {
           ->blink_platform_impl()
           ->CreateDefaultURLLoaderFactoryBundle();
   DCHECK(url_loader_factory_bundle);
-  // Blink is responsible for deleting the returned object.
   return std::make_unique<ServiceWorkerFetchContextImpl>(
       script_url_, url_loader_factory_bundle->Clone(),
       provider_context_->provider_id(),
@@ -1308,18 +1301,15 @@ ServiceWorkerContextClient::CreateServiceWorkerProvider() {
   DCHECK(main_thread_task_runner_->RunsTasksInCurrentSequence());
   DCHECK(provider_context_);
 
-  // Blink is responsible for deleting the returned object.
   return std::make_unique<WebServiceWorkerProviderImpl>(
-      sender_.get(), provider_context_.get());
+      provider_context_.get());
 }
 
 void ServiceWorkerContextClient::PostMessageToClient(
     const blink::WebString& uuid,
     blink::TransferableMessage message) {
-  Send(new ServiceWorkerHostMsg_PostMessageToClient(
-      GetRoutingID(), uuid.Utf8(),
-      new base::RefCountedData<blink::TransferableMessage>(
-          std::move(message))));
+  (*context_->service_worker_host)
+      ->PostMessageToClient(uuid.Utf8(), std::move(message));
 }
 
 void ServiceWorkerContextClient::Focus(
@@ -1442,10 +1432,6 @@ void ServiceWorkerContextClient::DispatchPaymentRequestEvent(
   blink::WebPaymentRequestEventData webEventData =
       mojo::ConvertTo<blink::WebPaymentRequestEventData>(std::move(eventData));
   proxy_->DispatchPaymentRequestEvent(event_id, webEventData);
-}
-
-void ServiceWorkerContextClient::Send(IPC::Message* message) {
-  sender_->Send(message);
 }
 
 void ServiceWorkerContextClient::SendWorkerStarted() {

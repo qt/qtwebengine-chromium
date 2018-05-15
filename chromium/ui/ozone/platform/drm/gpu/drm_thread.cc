@@ -9,7 +9,6 @@
 
 #include "base/command_line.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
@@ -204,7 +203,7 @@ void DrmThread::SchedulePageFlip(gfx::AcceleratedWidget widget,
   drm_device->plane_manager()->RequestPlanesReadyCallback(
       planes, base::BindOnce(&DrmThread::OnPlanesReadyForPageFlip,
                              weak_ptr_factory_.GetWeakPtr(), widget, planes,
-                             base::Passed(&callback)));
+                             std::move(callback)));
 }
 
 void DrmThread::OnPlanesReadyForPageFlip(

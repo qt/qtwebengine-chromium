@@ -8,7 +8,6 @@
 #include <utility>
 
 #include "base/lazy_instance.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/stl_util.h"
 #include "base/threading/thread_local.h"
@@ -19,10 +18,10 @@
 #include "content/public/common/content_constants.h"
 #include "content/renderer/service_worker/service_worker_provider_context.h"
 #include "content/renderer/service_worker/web_service_worker_impl.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_error_type.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerProviderClient.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_error_type.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_provider_client.h"
+#include "third_party/blink/public/platform/web_string.h"
 #include "url/url_constants.h"
 
 using blink::WebServiceWorkerError;
@@ -41,9 +40,7 @@ void* const kDeletedServiceWorkerDispatcherMarker =
 
 }  // namespace
 
-ServiceWorkerDispatcher::ServiceWorkerDispatcher(
-    scoped_refptr<ThreadSafeSender> thread_safe_sender)
-    : thread_safe_sender_(std::move(thread_safe_sender)) {
+ServiceWorkerDispatcher::ServiceWorkerDispatcher() {
   g_dispatcher_tls.Pointer()->Set(static_cast<void*>(this));
 }
 
@@ -70,8 +67,7 @@ void ServiceWorkerDispatcher::OnMessageReceived(const IPC::Message& msg) {
 }
 
 ServiceWorkerDispatcher*
-ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance(
-    scoped_refptr<ThreadSafeSender> thread_safe_sender) {
+ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance() {
   if (g_dispatcher_tls.Pointer()->Get() ==
       kDeletedServiceWorkerDispatcherMarker) {
     NOTREACHED() << "Re-instantiating TLS ServiceWorkerDispatcher.";
@@ -81,8 +77,7 @@ ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance(
     return static_cast<ServiceWorkerDispatcher*>(
         g_dispatcher_tls.Pointer()->Get());
 
-  ServiceWorkerDispatcher* dispatcher =
-      new ServiceWorkerDispatcher(std::move(thread_safe_sender));
+  ServiceWorkerDispatcher* dispatcher = new ServiceWorkerDispatcher();
   if (WorkerThread::GetCurrentId())
     WorkerThread::AddObserver(dispatcher);
   return dispatcher;
@@ -126,10 +121,9 @@ ServiceWorkerDispatcher::GetOrCreateServiceWorker(
     // worker thread.
     DCHECK(io_thread_task_runner_);
     return WebServiceWorkerImpl::CreateForServiceWorkerGlobalScope(
-        std::move(info), thread_safe_sender_.get(), io_thread_task_runner_);
+        std::move(info), io_thread_task_runner_);
   }
-  return WebServiceWorkerImpl::CreateForServiceWorkerClient(
-      std::move(info), thread_safe_sender_.get());
+  return WebServiceWorkerImpl::CreateForServiceWorkerClient(std::move(info));
 }
 
 void ServiceWorkerDispatcher::SetIOThreadTaskRunner(

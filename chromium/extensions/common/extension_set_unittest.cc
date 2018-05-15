@@ -9,7 +9,6 @@
 
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -33,6 +32,7 @@ scoped_refptr<Extension> CreateTestExtension(const std::string& name,
   base::DictionaryValue manifest;
   manifest.SetString("name", name);
   manifest.SetString("version", "1");
+  manifest.SetInteger("manifest_version", 2);
 
   if (!launch_url.empty())
     manifest.SetString("app.launch.web_url", launch_url);

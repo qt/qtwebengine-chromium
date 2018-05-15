@@ -30,17 +30,17 @@
 #include "media/blink/webencryptedmediaclient_impl.h"
 #include "media/blink/webmediaplayer_impl.h"
 #include "media/filters/context_3d.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "media/renderers/default_renderer_factory.h"
 #include "media/video/gpu_video_accelerator_factories.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "services/service_manager/public/cpp/connect.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
-#include "third_party/WebKit/public/platform/WebSurfaceLayerBridge.h"
-#include "third_party/WebKit/public/platform/WebVideoFrameSubmitter.h"
-#include "third_party/WebKit/public/web/WebKit.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/blink/public/platform/web_surface_layer_bridge.h"
+#include "third_party/blink/public/platform/web_video_frame_submitter.h"
+#include "third_party/blink/public/web/blink.h"
+#include "third_party/blink/public/web/web_local_frame.h"
 #include "url/origin.h"
 
 #if defined(OS_ANDROID)
@@ -71,16 +71,7 @@
 
 #if BUILDFLAG(ENABLE_MEDIA_REMOTING)
 #include "media/remoting/courier_renderer_factory.h"    // nogncheck
-#include "media/remoting/remoting_cdm_controller.h"     // nogncheck
-#include "media/remoting/remoting_cdm_factory.h"        // nogncheck
 #include "media/remoting/renderer_controller.h"         // nogncheck
-#include "media/remoting/shared_session.h"              // nogncheck
-#include "media/remoting/sink_availability_observer.h"  // nogncheck
-#endif
-
-#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
-#include "content/renderer/media/cdm/pepper_cdm_wrapper_impl.h"
-#include "content/renderer/media/cdm/render_cdm_factory.h"
 #endif
 
 namespace {
@@ -146,19 +137,6 @@ void MediaFactory::SetupMojo() {
 
   remote_interfaces_ = render_frame_->GetRemoteInterfaces();
   DCHECK(remote_interfaces_);
-
-#if BUILDFLAG(ENABLE_MEDIA_REMOTING)
-  // Create the SinkAvailabilityObserver to monitor the remoting sink
-  // availablity.
-  media::mojom::RemotingSourcePtr remoting_source;
-  auto remoting_source_request = mojo::MakeRequest(&remoting_source);
-  media::mojom::RemoterPtr remoter;
-  GetRemoterFactory()->Create(std::move(remoting_source),
-                              mojo::MakeRequest(&remoter));
-  remoting_sink_observer_ =
-      std::make_unique<media::remoting::SinkAvailabilityObserver>(
-          std::move(remoting_source_request), std::move(remoter));
-#endif  // BUILDFLAG(ENABLE_MEDIA_REMOTING)
 }
 
 #if defined(OS_ANDROID)
@@ -328,7 +306,9 @@ blink::WebMediaPlayer* MediaFactory::CreateMediaPlayer(
           use_surface_layer_for_video,
           base::BindRepeating(
               &RenderFrameImpl::OnPictureInPictureSurfaceIdUpdated,
-              base::Unretained(render_frame_))));
+              base::Unretained(render_frame_)),
+          base::BindRepeating(&RenderFrameImpl::OnExitPictureInPicture,
+                              base::Unretained(render_frame_))));
 
   std::unique_ptr<media::VideoFrameCompositor> vfc =
       std::make_unique<media::VideoFrameCompositor>(
@@ -372,11 +352,11 @@ MediaFactory::CreateRendererFactorySelector(
 #if defined(OS_ANDROID)
   DCHECK(remote_interfaces_);
 
-  // The only MojoRendererService that is registered at the RenderFrameHost
-  // level uses the MediaPlayerRenderer as its underlying media::Renderer.
   auto mojo_media_player_renderer_factory =
       std::make_unique<media::MojoRendererFactory>(
-          media::MojoRendererFactory::GetGpuFactoriesCB(), remote_interfaces_);
+          media::mojom::HostedRendererType::kMediaPlayer,
+          media::MojoRendererFactory::GetGpuFactoriesCB(),
+          GetMediaInterfaceFactory());
 
   // Always give |factory_selector| a MediaPlayerRendererClient factory. WMPI
   // might fallback to it if the final redirected URL is an HLS url.
@@ -406,6 +386,7 @@ MediaFactory::CreateRendererFactorySelector(
     factory_selector->AddFactory(
         media::RendererFactorySelector::FactoryType::MOJO,
         std::make_unique<media::MojoRendererFactory>(
+            media::mojom::HostedRendererType::kDefault,
             base::Bind(&RenderThreadImpl::GetGpuFactories,
                        base::Unretained(render_thread)),
             GetMediaInterfaceFactory()));
@@ -434,9 +415,8 @@ MediaFactory::CreateRendererFactorySelector(
   GetRemoterFactory()->Create(std::move(remoting_source),
                               mojo::MakeRequest(&remoter));
   using RemotingController = media::remoting::RendererController;
-  std::unique_ptr<RemotingController> remoting_controller(
-      new RemotingController(new media::remoting::SharedSession(
-          std::move(remoting_source_request), std::move(remoter))));
+  auto remoting_controller = std::make_unique<RemotingController>(
+      std::move(remoting_source_request), std::move(remoter));
   *out_media_observer = remoting_controller->GetWeakPtr();
 
   auto courier_factory =
@@ -538,31 +518,12 @@ media::mojom::RemoterFactory* MediaFactory::GetRemoterFactory() {
 #endif
 
 media::CdmFactory* MediaFactory::GetCdmFactory() {
-  blink::WebLocalFrame* web_frame = render_frame_->GetWebFrame();
-  DCHECK(web_frame);
-
   if (cdm_factory_)
     return cdm_factory_.get();
 
-#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
-  static_assert(
-      BUILDFLAG(ENABLE_MOJO_CDM),
-      "Mojo CDM should always be enabled when library CDM is enabled");
-  if (base::FeatureList::IsEnabled(media::kMojoCdm)) {
-    cdm_factory_.reset(new media::MojoCdmFactory(GetMediaInterfaceFactory()));
-  } else {
-    cdm_factory_.reset(new RenderCdmFactory(
-        base::Bind(&PepperCdmWrapperImpl::Create, web_frame)));
-  }
-#elif BUILDFLAG(ENABLE_MOJO_CDM)
+#if BUILDFLAG(ENABLE_MOJO_CDM)
   cdm_factory_.reset(new media::MojoCdmFactory(GetMediaInterfaceFactory()));
-#endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
-
-#if BUILDFLAG(ENABLE_MEDIA_REMOTING)
-  cdm_factory_.reset(new media::remoting::RemotingCdmFactory(
-      std::move(cdm_factory_), GetRemoterFactory(),
-      std::move(remoting_sink_observer_)));
-#endif  // BUILDFLAG(ENABLE_MEDIA_REMOTING)
+#endif  // BUILDFLAG(ENABLE_MOJO_CDM)
 
   return cdm_factory_.get();
 }

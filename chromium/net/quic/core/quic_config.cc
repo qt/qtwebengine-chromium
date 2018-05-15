@@ -17,7 +17,6 @@
 #include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_string_piece.h"
 
-
 namespace net {
 
 // Reads the value corresponding to |name_| from |msg| into |out|. If the
@@ -190,13 +189,13 @@ bool QuicFixedUint128::HasSendValue() const {
   return has_send_value_;
 }
 
-uint128 QuicFixedUint128::GetSendValue() const {
+QuicUint128 QuicFixedUint128::GetSendValue() const {
   QUIC_BUG_IF(!has_send_value_)
       << "No send value to get for tag:" << QuicTagToString(tag_);
   return send_value_;
 }
 
-void QuicFixedUint128::SetSendValue(uint128 value) {
+void QuicFixedUint128::SetSendValue(QuicUint128 value) {
   has_send_value_ = true;
   send_value_ = value;
 }
@@ -205,13 +204,13 @@ bool QuicFixedUint128::HasReceivedValue() const {
   return has_receive_value_;
 }
 
-uint128 QuicFixedUint128::GetReceivedValue() const {
+QuicUint128 QuicFixedUint128::GetReceivedValue() const {
   QUIC_BUG_IF(!has_receive_value_)
       << "No receive value to get for tag:" << QuicTagToString(tag_);
   return receive_value_;
 }
 
-void QuicFixedUint128::SetReceivedValue(uint128 value) {
+void QuicFixedUint128::SetReceivedValue(QuicUint128 value) {
   has_receive_value_ = true;
   receive_value_ = value;
 }
@@ -399,7 +398,6 @@ QuicConfig::QuicConfig()
       initial_round_trip_time_us_(kIRTT, PRESENCE_OPTIONAL),
       initial_stream_flow_control_window_bytes_(kSFCW, PRESENCE_OPTIONAL),
       initial_session_flow_control_window_bytes_(kCFCW, PRESENCE_OPTIONAL),
-      socket_receive_buffer_(kSRBF, PRESENCE_OPTIONAL),
       connection_migration_disabled_(kNCMR, PRESENCE_OPTIONAL),
       alternate_server_address_(kASAD, PRESENCE_OPTIONAL),
       support_max_header_list_size_(kSMHL, PRESENCE_OPTIONAL),
@@ -633,7 +631,8 @@ bool QuicConfig::SupportMaxHeaderListSize() const {
   return support_max_header_list_size_.HasReceivedValue();
 }
 
-void QuicConfig::SetStatelessResetTokenToSend(uint128 stateless_reset_token) {
+void QuicConfig::SetStatelessResetTokenToSend(
+    QuicUint128 stateless_reset_token) {
   stateless_reset_token_.SetSendValue(stateless_reset_token);
 }
 
@@ -641,7 +640,7 @@ bool QuicConfig::HasReceivedStatelessResetToken() const {
   return stateless_reset_token_.HasReceivedValue();
 }
 
-uint128 QuicConfig::ReceivedStatelessResetToken() const {
+QuicUint128 QuicConfig::ReceivedStatelessResetToken() const {
   return stateless_reset_token_.GetReceivedValue();
 }
 

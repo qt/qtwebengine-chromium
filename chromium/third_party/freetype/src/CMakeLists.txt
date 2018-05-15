@@ -26,11 +26,11 @@
 #
 # For a dynamic library, use
 #
-#   cmake <path-to-freetype2-src-dir> -D BUILD_SHARED_LIBS:BOOL=true
+#   cmake -D BUILD_SHARED_LIBS:BOOL=true <path-to-freetype2-src-dir>
 #
 # For a framework on OS X, use
 #
-#   cmake <path-to-freetype2-src-dir> -D BUILD_FRAMEWORK:BOOL=true -G Xcode
+#   cmake -D BUILD_FRAMEWORK:BOOL=true -G Xcode <path-to-freetype2-src-dir>
 #
 # instead.
 #
@@ -119,10 +119,6 @@ endif ()
 project(freetype)
 
 
-if (WIN32 AND NOT MINGW AND BUILD_SHARED_LIBS)
-  message(FATAL_ERROR "Building shared libraries on Windows needs MinGW")
-endif ()
-
 # Disallow in-source builds
 if ("${PROJECT_BINARY_DIR}" STREQUAL "${PROJECT_SOURCE_DIR}")
   message(FATAL_ERROR
@@ -164,6 +160,7 @@ set(SHARED_LIBRARY_VERSION ${VERSION_MAJOR}.${VERSION_MINOR})
 add_definitions(-DFT2_BUILD_LIBRARY)
 if (WIN32)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+  add_definitions(-D_CRT_NONSTDC_NO_WARNINGS)
 endif ()
 
 
@@ -281,13 +278,11 @@ set(BASE_SRCS
   src/base/ftbdf.c
   src/base/ftbitmap.c
   src/base/ftcid.c
-  src/base/ftfntfmt.c
   src/base/ftfstype.c
   src/base/ftgasp.c
   src/base/ftglyph.c
   src/base/ftgxval.c
   src/base/ftinit.c
-  src/base/ftlcdfil.c
   src/base/ftmm.c
   src/base/ftotval.c
   src/base/ftpatent.c

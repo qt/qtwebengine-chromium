@@ -15,7 +15,7 @@
 #include "content/renderer/media/stream/media_stream_device_observer.h"
 #include "content/renderer/pepper/renderer_ppapi_host_impl.h"
 #include "content/renderer/render_frame_impl.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "ppapi/shared_impl/ppb_device_ref_shared.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 
@@ -109,6 +109,7 @@ void PepperMediaDeviceManager::EnumerateDevices(
   CHECK(request_audio_input || request_video_input || request_audio_output);
   GetMediaDevicesDispatcher()->EnumerateDevices(
       request_audio_input, request_video_input, request_audio_output,
+      false /* request_video_input_capabilities */,
       base::BindOnce(&PepperMediaDeviceManager::DevicesEnumerated, AsWeakPtr(),
                      callback, ToMediaDeviceType(type)));
 #else
@@ -271,13 +272,15 @@ void PepperMediaDeviceManager::OnDeviceOpened(int request_id,
   OpenDeviceCallback callback = iter->second;
   open_callbacks_.erase(iter);
 
-  callback.Run(request_id, success, success ? label : std::string());
+  std::move(callback).Run(request_id, success, success ? label : std::string());
 }
 
 void PepperMediaDeviceManager::DevicesEnumerated(
     const DevicesCallback& client_callback,
     MediaDeviceType type,
-    const std::vector<MediaDeviceInfoArray>& enumeration) {
+    const std::vector<MediaDeviceInfoArray>& enumeration,
+    std::vector<blink::mojom::VideoInputDeviceCapabilitiesPtr>
+        video_input_capabilities) {
   client_callback.Run(FromMediaDeviceInfoArray(type, enumeration[type]));
 }
 

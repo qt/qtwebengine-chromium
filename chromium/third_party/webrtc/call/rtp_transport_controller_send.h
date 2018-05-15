@@ -18,7 +18,7 @@
 #include "call/rtp_bitrate_configurator.h"
 #include "call/rtp_transport_controller_send_interface.h"
 #include "common_types.h"  // NOLINT(build/include)
-#include "modules/congestion_controller/include/send_side_congestion_controller.h"
+#include "modules/congestion_controller/include/send_side_congestion_controller_interface.h"
 #include "modules/pacing/packet_router.h"
 #include "modules/utility/include/process_thread.h"
 #include "rtc_base/constructormagic.h"
@@ -31,12 +31,21 @@ class RtcEventLog;
 // TODO(nisse): When we get the underlying transports here, we should
 // have one object implementing RtpTransportControllerSendInterface
 // per transport, sharing the same congestion controller.
-class RtpTransportControllerSend : public RtpTransportControllerSendInterface {
+class RtpTransportControllerSend final
+    : public RtpTransportControllerSendInterface,
+      public NetworkChangedObserver {
  public:
   RtpTransportControllerSend(Clock* clock,
                              RtcEventLog* event_log,
                              const BitrateConstraints& bitrate_config);
   ~RtpTransportControllerSend() override;
+
+  // Implements NetworkChangedObserver interface.
+  void OnNetworkChanged(uint32_t bitrate_bps,
+                        uint8_t fraction_loss,
+                        int64_t rtt_ms,
+                        int64_t probing_interval_ms) override;
+
   // Implements RtpTransportControllerSendInterface
   PacketRouter* packet_router() override;
 
@@ -45,7 +54,8 @@ class RtpTransportControllerSend : public RtpTransportControllerSendInterface {
   const RtpKeepAliveConfig& keepalive_config() const override;
 
   void SetAllocatedSendBitrateLimits(int min_send_bitrate_bps,
-                                     int max_padding_bitrate_bps) override;
+                                     int max_padding_bitrate_bps,
+                                     int max_total_bitrate_bps) override;
 
   void SetKeepAliveConfig(const RtpKeepAliveConfig& config);
   void SetPacingFactor(float pacing_factor) override;
@@ -55,18 +65,15 @@ class RtpTransportControllerSend : public RtpTransportControllerSendInterface {
       PacketFeedbackObserver* observer) override;
   void DeRegisterPacketFeedbackObserver(
       PacketFeedbackObserver* observer) override;
-  void RegisterNetworkObserver(NetworkChangedObserver* observer) override;
-  void DeRegisterNetworkObserver(NetworkChangedObserver* observer) override;
+  void RegisterTargetTransferRateObserver(
+      TargetTransferRateObserver* observer) override;
   void OnNetworkRouteChanged(const std::string& transport_name,
                              const rtc::NetworkRoute& network_route) override;
   void OnNetworkAvailability(bool network_available) override;
-  void SetTransportOverhead(
-      size_t transport_overhead_bytes_per_packet) override;
   RtcpBandwidthObserver* GetBandwidthObserver() override;
-  bool AvailableBandwidth(uint32_t* bandwidth) const override;
   int64_t GetPacerQueuingDelayMs() const override;
   int64_t GetFirstPacketTimeMs() const override;
-  RateLimiter* GetRetransmissionRateLimiter() override;
+  void SetPerPacketFeedbackAvailable(bool available) override;
   void EnablePeriodicAlrProbing(bool enable) override;
   void OnSentPacket(const rtc::SentPacket& sent_packet) override;
 
@@ -75,14 +82,26 @@ class RtpTransportControllerSend : public RtpTransportControllerSendInterface {
       const BitrateConstraintsMask& preferences) override;
 
  private:
+  const Clock* const clock_;
   PacketRouter packet_router_;
   PacedSender pacer_;
-  SendSideCongestionController send_side_cc_;
   RtpKeepAliveConfig keepalive_;
   RtpBitrateConfigurator bitrate_configurator_;
   std::map<std::string, rtc::NetworkRoute> network_routes_;
   const std::unique_ptr<ProcessThread> process_thread_;
-
+  rtc::CriticalSection observer_crit_;
+  TargetTransferRateObserver* observer_ RTC_GUARDED_BY(observer_crit_);
+  // Caches send_side_cc_.get(), to avoid racing with destructor.
+  // Note that this is declared before send_side_cc_ to ensure that it is not
+  // invalidated until no more tasks can be running on the send_side_cc_ task
+  // queue.
+  // TODO(srte): Remove this when only the task queue based send side congestion
+  // controller is used and it is no longer accessed synchronously in the
+  // OnNetworkChanged callback.
+  SendSideCongestionControllerInterface* send_side_cc_ptr_;
+  // Declared last since it will issue callbacks from a task queue. Declaring it
+  // last ensures that it is destroyed first.
+  const std::unique_ptr<SendSideCongestionControllerInterface> send_side_cc_;
   RTC_DISALLOW_COPY_AND_ASSIGN(RtpTransportControllerSend);
 };
 

@@ -4,7 +4,6 @@
 
 #include "cc/paint/paint_op_buffer.h"
 
-#include "base/memory/ptr_util.h"
 #include "cc/paint/decoded_draw_image.h"
 #include "cc/paint/display_item_list.h"
 #include "cc/paint/image_provider.h"
@@ -267,6 +266,10 @@ std::string PaintOpTypeToString(PaintOpType type) {
       return "Translate";
   }
   return "UNKNOWN";
+}
+
+std::ostream& operator<<(std::ostream& os, PaintOpType type) {
+  return os << PaintOpTypeToString(type);
 }
 
 template <typename T>
@@ -1232,6 +1235,8 @@ void DrawRecordOp::Raster(const DrawRecordOp* op,
                           SkCanvas* canvas,
                           const PlaybackParams& params) {
   // Don't use drawPicture here, as it adds an implicit clip.
+  // TODO(enne): Temporary CHECK debugging for http://crbug.com/823835
+  CHECK(op->record);
   op->record->Playback(canvas, params);
 }
 
@@ -1889,7 +1894,8 @@ bool PaintOp::GetBounds(const PaintOp* op, SkRect* rect) {
 
 // static
 bool PaintOp::QuickRejectDraw(const PaintOp* op, const SkCanvas* canvas) {
-  DCHECK(op->IsDrawOp());
+  if (!op->IsDrawOp())
+    return false;
 
   SkRect rect;
   if (!PaintOp::GetBounds(op, &rect))
@@ -1933,7 +1939,7 @@ void PaintOp::DestroyThis() {
 }
 
 bool PaintOpWithFlags::HasDiscardableImagesFromFlags() const {
-  return IsDrawOp() && flags.HasDiscardableImages();
+  return flags.HasDiscardableImages();
 }
 
 void PaintOpWithFlags::RasterWithFlags(SkCanvas* canvas,
@@ -2048,6 +2054,10 @@ size_t DrawRecordOp::AdditionalBytesUsed() const {
   return record->bytes_used();
 }
 
+size_t DrawRecordOp::AdditionalOpCount() const {
+  return record->total_op_count();
+}
+
 bool DrawRecordOp::HasDiscardableImages() const {
   return record->HasDiscardableImages();
 }
@@ -2095,6 +2105,7 @@ void PaintOpBuffer::operator=(PaintOpBuffer&& other) {
   op_count_ = other.op_count_;
   num_slow_paths_ = other.num_slow_paths_;
   subrecord_bytes_used_ = other.subrecord_bytes_used_;
+  subrecord_op_count_ = other.subrecord_op_count_;
   has_non_aa_paint_ = other.has_non_aa_paint_;
   has_discardable_images_ = other.has_discardable_images_;
 
@@ -2115,6 +2126,7 @@ void PaintOpBuffer::Reset() {
   num_slow_paths_ = 0;
   has_non_aa_paint_ = false;
   subrecord_bytes_used_ = 0;
+  subrecord_op_count_ = 0;
   has_discardable_images_ = false;
 }
 
@@ -2371,6 +2383,8 @@ bool PaintOpBuffer::operator==(const PaintOpBuffer& other) const {
   if (num_slow_paths_ != other.num_slow_paths_)
     return false;
   if (subrecord_bytes_used_ != other.subrecord_bytes_used_)
+    return false;
+  if (subrecord_op_count_ != other.subrecord_op_count_)
     return false;
   if (has_non_aa_paint_ != other.has_non_aa_paint_)
     return false;

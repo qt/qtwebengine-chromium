@@ -29,8 +29,8 @@
 #include "content/public/common/input_event_ack_source.h"
 #include "content/public/common/input_event_ack_state.h"
 #include "ipc/ipc_message_macros.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
-#include "third_party/WebKit/public/platform/WebPointerProperties.h"
+#include "third_party/blink/public/platform/web_input_event.h"
+#include "third_party/blink/public/platform/web_pointer_properties.h"
 #include "ui/events/blink/did_overscroll_params.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
@@ -352,6 +352,9 @@ IPC_MESSAGE_ROUTED1(InputHostMsg_DidOverscroll,
 
 // Sent by the compositor when a fling animation is stopped.
 IPC_MESSAGE_ROUTED0(InputHostMsg_DidStopFlinging)
+
+// Sent by the compositor when a GSB has started scrolling the viewport.
+IPC_MESSAGE_ROUTED0(InputHostMsg_DidStartScrollingViewport)
 
 // Acknowledges receipt of a InputMsg_MoveCaret message.
 IPC_MESSAGE_ROUTED0(InputHostMsg_MoveCaret_ACK)

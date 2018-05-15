@@ -382,8 +382,8 @@ std::unique_ptr<AppCacheJob> AppCacheRequestHandler::MaybeLoadMainResource(
   }
 
   if (storage()->IsInitialized() &&
-      service_->storage()->usage_map()->find(request_->GetURL().GetOrigin()) ==
-          service_->storage()->usage_map()->end()) {
+      !base::ContainsKey(*service_->storage()->usage_map(),
+                         url::Origin::Create(request_->GetURL()))) {
     return nullptr;
   }
 
@@ -602,9 +602,9 @@ bool AppCacheRequestHandler::MaybeCreateLoaderForResponse(
     network::mojom::URLLoaderClientRequest* client_request,
     ThrottlingURLLoader* url_loader) {
   // The sync interface of this method is inherited from the
-  // URLLoaderRequestHandler class. The LoaderCallback created here is invoked
-  // synchronously in fallback cases, and only when there really is a loader
-  // to start.
+  // NavigationLoaderInterceptor class. The LoaderCallback created here is
+  // invoked synchronously in fallback cases, and only when there really is
+  // a loader to start.
   bool was_called = false;
   loader_callback_ = base::BindOnce(
       [](network::mojom::URLLoaderPtr* loader,
@@ -639,7 +639,7 @@ AppCacheRequestHandler::MaybeCreateSubresourceLoaderParams() {
 
   SubresourceLoaderParams params;
   params.loader_factory_info = factory_ptr.PassInterface();
-  return params;
+  return base::Optional<SubresourceLoaderParams>(std::move(params));
 }
 
 void AppCacheRequestHandler::MaybeCreateSubresourceLoader(

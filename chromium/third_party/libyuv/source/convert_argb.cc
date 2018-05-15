@@ -512,8 +512,8 @@ int I010ToAB30(const uint16_t* src_y,
                int dst_stride_ab30,
                int width,
                int height) {
-  return I010ToAR30Matrix(src_y, src_stride_y, src_v,
-                          src_stride_v, src_u, src_stride_u, dst_ab30, dst_stride_ab30,
+  return I010ToAR30Matrix(src_y, src_stride_y, src_v, src_stride_v, src_u,
+                          src_stride_u, dst_ab30, dst_stride_ab30,
                           &kYvuI601Constants, width, height);
 }
 
@@ -529,8 +529,8 @@ int H010ToAB30(const uint16_t* src_y,
                int dst_stride_ab30,
                int width,
                int height) {
-  return I010ToAR30Matrix(src_y, src_stride_y, src_v,
-                          src_stride_v, src_u, src_stride_u, dst_ab30, dst_stride_ab30,
+  return I010ToAR30Matrix(src_y, src_stride_y, src_v, src_stride_v, src_u,
+                          src_stride_u, dst_ab30, dst_stride_ab30,
                           &kYvuH709Constants, width, height);
 }
 
@@ -1534,6 +1534,38 @@ int AR30ToABGR(const uint8_t* src_ar30,
   return 0;
 }
 
+// Convert AR30 to AB30.
+LIBYUV_API
+int AR30ToAB30(const uint8_t* src_ar30,
+               int src_stride_ar30,
+               uint8_t* dst_ab30,
+               int dst_stride_ab30,
+               int width,
+               int height) {
+  int y;
+  if (!src_ar30 || !dst_ab30 || width <= 0 || height == 0) {
+    return -1;
+  }
+  // Negative height means invert the image.
+  if (height < 0) {
+    height = -height;
+    src_ar30 = src_ar30 + (height - 1) * src_stride_ar30;
+    src_stride_ar30 = -src_stride_ar30;
+  }
+  // Coalesce rows.
+  if (src_stride_ar30 == width * 4 && dst_stride_ab30 == width * 4) {
+    width *= height;
+    height = 1;
+    src_stride_ar30 = dst_stride_ab30 = 0;
+  }
+  for (y = 0; y < height; ++y) {
+    AR30ToAB30Row_C(src_ar30, dst_ab30, width);
+    src_ar30 += src_stride_ar30;
+    dst_ab30 += dst_stride_ab30;
+  }
+  return 0;
+}
+
 // Convert NV12 to ARGB with matrix
 static int NV12ToARGBMatrix(const uint8_t* src_y,
                             int src_stride_y,
@@ -1723,6 +1755,156 @@ int NV21ToABGR(const uint8_t* src_y,
                int height) {
   return NV12ToARGBMatrix(src_y, src_stride_y, src_vu, src_stride_vu, dst_abgr,
                           dst_stride_abgr, &kYvuI601Constants, width, height);
+}
+
+// TODO(fbarchard): Consider SSSE3 2 step conversion.
+// Convert NV12 to RGB24 with matrix
+static int NV12ToRGB24Matrix(const uint8_t* src_y,
+                             int src_stride_y,
+                             const uint8_t* src_uv,
+                             int src_stride_uv,
+                             uint8_t* dst_rgb24,
+                             int dst_stride_rgb24,
+                             const struct YuvConstants* yuvconstants,
+                             int width,
+                             int height) {
+  int y;
+  void (*NV12ToRGB24Row)(
+      const uint8_t* y_buf, const uint8_t* uv_buf, uint8_t* rgb_buf,
+      const struct YuvConstants* yuvconstants, int width) = NV12ToRGB24Row_C;
+  if (!src_y || !src_uv || !dst_rgb24 || width <= 0 || height == 0) {
+    return -1;
+  }
+  // Negative height means invert the image.
+  if (height < 0) {
+    height = -height;
+    dst_rgb24 = dst_rgb24 + (height - 1) * dst_stride_rgb24;
+    dst_stride_rgb24 = -dst_stride_rgb24;
+  }
+#if defined(HAS_NV12TORGB24ROW_NEON)
+  if (TestCpuFlag(kCpuHasNEON)) {
+    NV12ToRGB24Row = NV12ToRGB24Row_Any_NEON;
+    if (IS_ALIGNED(width, 8)) {
+      NV12ToRGB24Row = NV12ToRGB24Row_NEON;
+    }
+  }
+#endif
+#if defined(HAS_NV12TORGB24ROW_SSSE3)
+  if (TestCpuFlag(kCpuHasSSSE3)) {
+    NV12ToRGB24Row = NV12ToRGB24Row_Any_SSSE3;
+    if (IS_ALIGNED(width, 16)) {
+      NV12ToRGB24Row = NV12ToRGB24Row_SSSE3;
+    }
+  }
+#endif
+#if defined(HAS_NV12TORGB24ROW_AVX2)
+  if (TestCpuFlag(kCpuHasAVX2)) {
+    NV12ToRGB24Row = NV12ToRGB24Row_Any_AVX2;
+    if (IS_ALIGNED(width, 32)) {
+      NV12ToRGB24Row = NV12ToRGB24Row_AVX2;
+    }
+  }
+#endif
+
+  for (y = 0; y < height; ++y) {
+    NV12ToRGB24Row(src_y, src_uv, dst_rgb24, yuvconstants, width);
+    dst_rgb24 += dst_stride_rgb24;
+    src_y += src_stride_y;
+    if (y & 1) {
+      src_uv += src_stride_uv;
+    }
+  }
+  return 0;
+}
+
+// Convert NV21 to RGB24 with matrix
+static int NV21ToRGB24Matrix(const uint8_t* src_y,
+                             int src_stride_y,
+                             const uint8_t* src_vu,
+                             int src_stride_vu,
+                             uint8_t* dst_rgb24,
+                             int dst_stride_rgb24,
+                             const struct YuvConstants* yuvconstants,
+                             int width,
+                             int height) {
+  int y;
+  void (*NV21ToRGB24Row)(
+      const uint8_t* y_buf, const uint8_t* uv_buf, uint8_t* rgb_buf,
+      const struct YuvConstants* yuvconstants, int width) = NV21ToRGB24Row_C;
+  if (!src_y || !src_vu || !dst_rgb24 || width <= 0 || height == 0) {
+    return -1;
+  }
+  // Negative height means invert the image.
+  if (height < 0) {
+    height = -height;
+    dst_rgb24 = dst_rgb24 + (height - 1) * dst_stride_rgb24;
+    dst_stride_rgb24 = -dst_stride_rgb24;
+  }
+#if defined(HAS_NV21TORGB24ROW_NEON)
+  if (TestCpuFlag(kCpuHasNEON)) {
+    NV21ToRGB24Row = NV21ToRGB24Row_Any_NEON;
+    if (IS_ALIGNED(width, 8)) {
+      NV21ToRGB24Row = NV21ToRGB24Row_NEON;
+    }
+  }
+#endif
+#if defined(HAS_NV21TORGB24ROW_SSSE3)
+  if (TestCpuFlag(kCpuHasSSSE3)) {
+    NV21ToRGB24Row = NV21ToRGB24Row_Any_SSSE3;
+    if (IS_ALIGNED(width, 16)) {
+      NV21ToRGB24Row = NV21ToRGB24Row_SSSE3;
+    }
+  }
+#endif
+#if defined(HAS_NV21TORGB24ROW_AVX2)
+  if (TestCpuFlag(kCpuHasAVX2)) {
+    NV21ToRGB24Row = NV21ToRGB24Row_Any_AVX2;
+    if (IS_ALIGNED(width, 32)) {
+      NV21ToRGB24Row = NV21ToRGB24Row_AVX2;
+    }
+  }
+#endif
+
+  for (y = 0; y < height; ++y) {
+    NV21ToRGB24Row(src_y, src_vu, dst_rgb24, yuvconstants, width);
+    dst_rgb24 += dst_stride_rgb24;
+    src_y += src_stride_y;
+    if (y & 1) {
+      src_vu += src_stride_vu;
+    }
+  }
+  return 0;
+}
+
+// TODO(fbarchard): NV12ToRAW can be implemented by mirrored matrix.
+// Convert NV12 to RGB24.
+LIBYUV_API
+int NV12ToRGB24(const uint8_t* src_y,
+                int src_stride_y,
+                const uint8_t* src_uv,
+                int src_stride_uv,
+                uint8_t* dst_rgb24,
+                int dst_stride_rgb24,
+                int width,
+                int height) {
+  return NV12ToRGB24Matrix(src_y, src_stride_y, src_uv, src_stride_uv,
+                           dst_rgb24, dst_stride_rgb24, &kYuvI601Constants,
+                           width, height);
+}
+
+// Convert NV21 to RGB24.
+LIBYUV_API
+int NV21ToRGB24(const uint8_t* src_y,
+                int src_stride_y,
+                const uint8_t* src_vu,
+                int src_stride_vu,
+                uint8_t* dst_rgb24,
+                int dst_stride_rgb24,
+                int width,
+                int height) {
+  return NV21ToRGB24Matrix(src_y, src_stride_y, src_vu, src_stride_vu,
+                           dst_rgb24, dst_stride_rgb24, &kYuvI601Constants,
+                           width, height);
 }
 
 // Convert M420 to ARGB.

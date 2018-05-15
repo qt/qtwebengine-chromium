@@ -48,11 +48,8 @@ static scoped_refptr<DecoderBuffer> CreateFakeEncryptedBuffer() {
 class DecryptingVideoDecoderTest : public testing::Test {
  public:
   DecryptingVideoDecoderTest()
-      : decoder_(new DecryptingVideoDecoder(
-            message_loop_.task_runner(),
-            &media_log_,
-            base::Bind(&DecryptingVideoDecoderTest::OnWaitingForDecryptionKey,
-                       base::Unretained(this)))),
+      : decoder_(new DecryptingVideoDecoder(message_loop_.task_runner(),
+                                            &media_log_)),
         cdm_context_(new StrictMock<MockCdmContext>()),
         decryptor_(new StrictMock<MockDecryptor>()),
         num_decrypt_and_decode_calls_(0),
@@ -78,10 +75,12 @@ class DecryptingVideoDecoderTest : public testing::Test {
   // can succeed or fail.
   void InitializeAndExpectResult(const VideoDecoderConfig& config,
                                  bool success) {
-    decoder_->Initialize(config, false, cdm_context_.get(),
-                         NewExpectedBoolCB(success),
-                         base::Bind(&DecryptingVideoDecoderTest::FrameReady,
-                                    base::Unretained(this)));
+    decoder_->Initialize(
+        config, false, cdm_context_.get(), NewExpectedBoolCB(success),
+        base::Bind(&DecryptingVideoDecoderTest::FrameReady,
+                   base::Unretained(this)),
+        base::Bind(&DecryptingVideoDecoderTest::OnWaitingForDecryptionKey,
+                   base::Unretained(this)));
     base::RunLoop().RunUntilIdle();
   }
 
@@ -108,7 +107,7 @@ class DecryptingVideoDecoderTest : public testing::Test {
   }
 
   // Decode |buffer| and expect DecodeDone to get called with |status|.
-  void DecodeAndExpect(const scoped_refptr<DecoderBuffer>& buffer,
+  void DecodeAndExpect(scoped_refptr<DecoderBuffer> buffer,
                        DecodeStatus status) {
     EXPECT_CALL(*this, DecodeDone(status));
     decoder_->Decode(buffer,
@@ -119,7 +118,7 @@ class DecryptingVideoDecoderTest : public testing::Test {
 
   // Helper function to simulate the decrypting and decoding process in the
   // |decryptor_| with a decoding delay of kDecodingDelay buffers.
-  void DecryptAndDecodeVideo(const scoped_refptr<DecoderBuffer>& encrypted,
+  void DecryptAndDecodeVideo(scoped_refptr<DecoderBuffer> encrypted,
                              const Decryptor::VideoDecodeCB& video_decode_cb) {
     num_decrypt_and_decode_calls_++;
     if (!encrypted->end_of_stream())

@@ -8,10 +8,9 @@
 #include "base/timer/timer.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/public/common/input_event_ack_state.h"
-#include "third_party/WebKit/public/platform/WebMouseWheelEvent.h"
+#include "third_party/blink/public/platform/web_mouse_wheel_event.h"
 
 namespace content {
-class RenderWidgetHostImpl;
 class RenderWidgetHostViewBase;
 
 // The duration after which a synthetic wheel with zero deltas and
@@ -52,8 +51,7 @@ enum class FirstScrollUpdateAckState {
 
 class MouseWheelPhaseHandler {
  public:
-  MouseWheelPhaseHandler(RenderWidgetHostImpl* const host,
-                         RenderWidgetHostViewBase* const host_view);
+  MouseWheelPhaseHandler(RenderWidgetHostViewBase* const host_view);
   ~MouseWheelPhaseHandler() {}
 
   void AddPhaseIfNeededAndScheduleEndEvent(
@@ -81,11 +79,12 @@ class MouseWheelPhaseHandler {
       bool should_route_event);
   void ScheduleMouseWheelEndDispatching(bool should_route_event,
                                         const base::TimeDelta timeout);
-  bool IsWithinSlopRegion(blink::WebMouseWheelEvent wheel_event) const;
+  bool IsWithinSlopRegion(const blink::WebMouseWheelEvent& wheel_event) const;
+  bool HasDifferentModifiers(
+      const blink::WebMouseWheelEvent& wheel_event) const;
   bool ShouldBreakLatchingDueToDirectionChange(
       const blink::WebMouseWheelEvent& wheel_event) const;
 
-  RenderWidgetHostImpl* const host_;
   RenderWidgetHostViewBase* const host_view_;
   base::OneShotTimer mouse_wheel_end_dispatch_timer_;
   base::TimeDelta mouse_wheel_end_dispatch_timeout_;

@@ -10,7 +10,6 @@
 #include "net/base/net_export.h"
 #include "net/base/proxy_server.h"
 #include "net/proxy_resolution/proxy_bypass_rules.h"
-#include "net/proxy_resolution/proxy_config_source.h"
 #include "net/proxy_resolution/proxy_list.h"
 #include "url/gurl.h"
 
@@ -202,14 +201,6 @@ class NET_EXPORT ProxyConfig {
     return auto_detect_;
   }
 
-  void set_source(ProxyConfigSource source) {
-    source_ = source;
-  }
-
-  ProxyConfigSource source() const {
-    return source_;
-  }
-
   // Helpers to construct some common proxy configurations.
 
   static ProxyConfig CreateDirect() {
@@ -237,15 +228,12 @@ class NET_EXPORT ProxyConfig {
   // If non-empty, indicates the URL of the proxy auto-config file to use.
   GURL pac_url_;
 
-  // If true, blocks all traffic in case fetching the pac script from |pac_url_|
+  // If true, blocks all traffic in case fetching the PAC script from |pac_url_|
   // fails. Only valid if |pac_url_| is non-empty.
   bool pac_mandatory_;
 
   // Manual proxy settings.
   ProxyRules proxy_rules_;
-
-  // Source of proxy settings.
-  ProxyConfigSource source_;
 };
 
 }  // namespace net

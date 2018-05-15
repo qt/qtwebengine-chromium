@@ -12,10 +12,12 @@
 #include <list>
 #include <utility>
 
+#include "base/feature_list.h"
 #include "base/macros.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/win/scoped_co_mem.h"
 #include "base/win/scoped_variant.h"
+#include "media/base/media_switches.h"
 #include "media/base/timestamp_constants.h"
 #include "media/capture/video/blob_utils.h"
 #include "media/capture/video/win/metrics.h"
@@ -321,6 +323,7 @@ VideoPixelFormat VideoCaptureDeviceWin::TranslateMediaSubtypeToPixelFormat(
       {kMediaSubTypeI420, PIXEL_FORMAT_I420},
       {MEDIASUBTYPE_IYUV, PIXEL_FORMAT_I420},
       {MEDIASUBTYPE_RGB24, PIXEL_FORMAT_RGB24},
+      {MEDIASUBTYPE_RGB32, PIXEL_FORMAT_RGB32},
       {MEDIASUBTYPE_YUY2, PIXEL_FORMAT_YUY2},
       {MEDIASUBTYPE_MJPG, PIXEL_FORMAT_MJPEG},
       {MEDIASUBTYPE_UYVY, PIXEL_FORMAT_UYVY},
@@ -386,7 +389,9 @@ VideoCaptureDeviceWin::VideoCaptureDeviceWin(
     : device_descriptor_(device_descriptor),
       state_(kIdle),
       white_balance_mode_manual_(false),
-      exposure_mode_manual_(false) {
+      exposure_mode_manual_(false),
+      enable_get_photo_state_(
+          base::FeatureList::IsEnabled(media::kDirectShowGetPhotoState)) {
   // TODO(mcasas): Check that CoInitializeEx() has been called with the
   // appropriate Apartment model, i.e., Single Threaded.
 }
@@ -624,6 +629,9 @@ void VideoCaptureDeviceWin::TakePhoto(TakePhotoCallback callback) {
 void VideoCaptureDeviceWin::GetPhotoState(GetPhotoStateCallback callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
+  if (!enable_get_photo_state_)
+    return;
+
   if (!camera_control_ || !video_control_) {
     if (!InitializeVideoAndCameraControls())
       return;
@@ -808,14 +816,14 @@ bool VideoCaptureDeviceWin::InitializeVideoAndCameraControls() {
   ComPtr<IKsTopologyInfo> info;
   HRESULT hr = capture_filter_.CopyTo(info.GetAddressOf());
   if (FAILED(hr)) {
-    SetErrorState(FROM_HERE, "Failed to obtain the topology info.", hr);
+    DLOG_IF_FAILED_WITH_HRESULT("Failed to obtain the topology info.", hr);
     return false;
   }
 
   DWORD num_nodes = 0;
   hr = info->get_NumNodes(&num_nodes);
   if (FAILED(hr)) {
-    SetErrorState(FROM_HERE, "Failed to obtain the number of nodes.", hr);
+    DLOG_IF_FAILED_WITH_HRESULT("Failed to obtain the number of nodes.", hr);
     return false;
   }
 
@@ -828,7 +836,7 @@ bool VideoCaptureDeviceWin::InitializeVideoAndCameraControls() {
       hr = info->CreateNodeInstance(i, IID_PPV_ARGS(&camera_control_));
       if (SUCCEEDED(hr))
         break;
-      SetErrorState(FROM_HERE, "Failed to retrieve the ICameraControl.", hr);
+      DLOG_IF_FAILED_WITH_HRESULT("Failed to retrieve the ICameraControl.", hr);
       return false;
     }
   }
@@ -838,7 +846,7 @@ bool VideoCaptureDeviceWin::InitializeVideoAndCameraControls() {
       hr = info->CreateNodeInstance(i, IID_PPV_ARGS(&video_control_));
       if (SUCCEEDED(hr))
         break;
-      SetErrorState(FROM_HERE, "Failed to retrieve the IVideoProcAmp.", hr);
+      DLOG_IF_FAILED_WITH_HRESULT("Failed to retrieve the IVideoProcAmp.", hr);
       return false;
     }
   }
@@ -858,7 +866,8 @@ void VideoCaptureDeviceWin::FrameReceived(const uint8_t* buffer,
   if (timestamp == kNoTimestamp)
     timestamp = base::TimeTicks::Now() - first_ref_time_;
 
-  client_->OnIncomingCapturedData(buffer, length, format, GetCameraRotation(),
+  client_->OnIncomingCapturedData(buffer, length, format,
+                                  GetCameraRotation(device_descriptor_.facing),
                                   base::TimeTicks::Now(), timestamp);
 
   while (!take_photo_callbacks_.empty()) {

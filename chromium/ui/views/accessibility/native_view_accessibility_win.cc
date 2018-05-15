@@ -10,7 +10,6 @@
 #include <set>
 #include <vector>
 
-#include "base/memory/ptr_util.h"
 #include "base/memory/singleton.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/windows_version.h"
@@ -25,7 +24,6 @@
 #include "ui/base/win/atl_module.h"
 #include "ui/display/win/screen_win.h"
 #include "ui/views/controls/button/button.h"
-#include "ui/views/focus/focus_manager.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/win/hwnd_util.h"
 #include "ui/wm/core/window_util.h"

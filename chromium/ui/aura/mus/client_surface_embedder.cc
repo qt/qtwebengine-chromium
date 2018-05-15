@@ -4,7 +4,6 @@
 
 #include "ui/aura/mus/client_surface_embedder.h"
 
-#include "base/memory/ptr_util.h"
 #include "ui/aura/window.h"
 #include "ui/gfx/geometry/dip_util.h"
 
@@ -37,7 +36,8 @@ void ClientSurfaceEmbedder::SetPrimarySurfaceId(
     const viz::SurfaceId& surface_id) {
   surface_layer_->SetShowPrimarySurface(
       surface_id, window_->bounds().size(), SK_ColorWHITE,
-      cc::DeadlinePolicy::UseDefaultDeadline());
+      cc::DeadlinePolicy::UseDefaultDeadline(),
+      false /* stretch_content_to_fill_bounds */);
 }
 
 void ClientSurfaceEmbedder::SetFallbackSurfaceInfo(

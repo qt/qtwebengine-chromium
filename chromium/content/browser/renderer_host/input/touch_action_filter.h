@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_RENDERER_HOST_INPUT_TOUCH_ACTION_FILTER_H_
 
 #include "base/macros.h"
+#include "base/optional.h"
 #include "cc/input/touch_action.h"
 #include "content/common/content_export.h"
 
@@ -14,6 +15,8 @@ class WebGestureEvent;
 }
 
 namespace content {
+
+class MockRenderWidgetHost;
 
 // The TouchActionFilter is responsible for filtering scroll and pinch gesture
 // events according to the CSS touch-action values the renderer has sent for
@@ -53,6 +56,8 @@ class CONTENT_EXPORT TouchActionFilter {
   void SetForceEnableZoom(bool enabled) { force_enable_zoom_ = enabled; }
 
  private:
+  friend class MockRenderWidgetHost;
+
   bool ShouldSuppressManipulation(const blink::WebGestureEvent&);
   bool FilterManipulationEventAndResetState();
 
@@ -76,7 +81,7 @@ class CONTENT_EXPORT TouchActionFilter {
   cc::TouchAction allowed_touch_action_;
 
   // Whitelisted touch action received from the compositor.
-  cc::TouchAction white_listed_touch_action_;
+  base::Optional<cc::TouchAction> white_listed_touch_action_;
 
   DISALLOW_COPY_AND_ASSIGN(TouchActionFilter);
 };

@@ -9,7 +9,6 @@
 #include <cstdint>
 
 #include "base/macros.h"
-#include "net/base/int128.h"
 #include "net/quic/core/quic_types.h"
 #include "net/quic/platform/api/quic_endian.h"
 #include "net/quic/platform/api/quic_export.h"
@@ -131,9 +130,15 @@ class QUIC_EXPORT_PRIVATE QuicDataReader {
   // Returns true if it works, false if not. The only error is that
   // there is not enough in the buffer to read the number.
   // If there is an error, |*result| is not altered.
-  // Numbers are encoded per the rules in draft-ietf-quic-transport-08.txt
+  // Numbers are encoded per the rules in draft-ietf-quic-transport-10.txt
   // and that the integers in the range 0 ... (2^62)-1.
   bool ReadVarInt62(uint64_t* result);
+
+  // Convenience method that reads a StreamId.
+  // Atempts to read a Stream ID into |result| using ReadVarInt62 and
+  // returns false if there is a read error or if the value is
+  // greater than (2^32)-1.
+  bool ReadVarIntStreamId(QuicStreamId* result);
 
  private:
   // Returns true if the underlying buffer has enough room to read the given

@@ -4,14 +4,17 @@
 
 #include "content/browser/web_package/signed_exchange_cert_fetcher.h"
 
+#include "base/callback.h"
 #include "base/optional.h"
 #include "base/strings/string_piece.h"
 #include "base/test/scoped_task_environment.h"
-#include "content/common/weak_wrapper_shared_url_loader_factory.h"
+#include "content/browser/loader/resource_dispatcher_host_impl.h"
+#include "content/browser/web_package/signed_exchange_utils.h"
 #include "content/public/common/resource_type.h"
 #include "content/public/common/url_loader_throttle.h"
-#include "mojo/common/data_pipe_utils.h"
+#include "content/public/common/weak_wrapper_shared_url_loader_factory.h"
 #include "mojo/public/cpp/bindings/binding.h"
+#include "mojo/public/cpp/system/data_pipe_utils.h"
 #include "net/base/load_flags.h"
 #include "net/cert/x509_util.h"
 #include "net/test/cert_test_util.h"
@@ -23,13 +26,6 @@
 namespace content {
 
 namespace {
-
-base::Optional<std::vector<base::StringPiece>> GetCertChain(
-    const uint8_t* input,
-    size_t input_size) {
-  return SignedExchangeCertFetcher::GetCertChainFromMessage(
-      base::StringPiece(reinterpret_cast<const char*>(input), input_size));
-}
 
 class DeferringURLLoaderThrottle final : public URLLoaderThrottle {
  public:
@@ -133,11 +129,12 @@ class URLLoaderFactoryForMockLoader final
   DISALLOW_COPY_AND_ASSIGN(URLLoaderFactoryForMockLoader);
 };
 
-void ForwardCertificateCallback(bool* called,
-                                scoped_refptr<net::X509Certificate>* out_cert,
-                                scoped_refptr<net::X509Certificate> cert) {
+void ForwardCertificateCallback(
+    bool* called,
+    std::unique_ptr<SignedExchangeCertificateChain>* out_cert,
+    std::unique_ptr<SignedExchangeCertificateChain> cert_chain) {
   *called = true;
-  *out_cert = std::move(cert);
+  *out_cert = std::move(cert_chain);
 }
 
 class SignedExchangeCertFetcherTest : public testing::Test {
@@ -145,7 +142,10 @@ class SignedExchangeCertFetcherTest : public testing::Test {
   SignedExchangeCertFetcherTest()
       : url_(GURL("https://www.example.com/cert")),
         request_initiator_(
-            url::Origin::Create(GURL("https://htxg.example.com/test.htxg"))) {}
+            url::Origin::Create(GURL("https://htxg.example.com/test.htxg"))),
+        resource_dispatcher_host_(CreateDownloadHandlerIntercept(),
+                                  base::ThreadTaskRunnerHandle::Get(),
+                                  true /* enable_resource_scheduler */) {}
   ~SignedExchangeCertFetcherTest() override {}
 
  protected:
@@ -191,8 +191,7 @@ class SignedExchangeCertFetcherTest : public testing::Test {
         CreateCertMessage(CreateCertMessageFromCert(*certificate));
 
     mojo::DataPipe data_pipe(message.size());
-    CHECK(mojo::common::BlockingCopyFromString(message,
-                                               data_pipe.producer_handle));
+    CHECK(mojo::BlockingCopyFromString(message, data_pipe.producer_handle));
     return std::move(data_pipe.consumer_handle);
   }
 
@@ -212,7 +211,7 @@ class SignedExchangeCertFetcherTest : public testing::Test {
         base::MakeRefCounted<WeakWrapperSharedURLLoaderFactory>(
             &mock_loader_factory_),
         std::move(throttles_), url_, request_initiator_, force_fetch,
-        std::move(callback));
+        std::move(callback), signed_exchange_utils::LogCallback());
   }
 
   void CallOnReceiveResponse() {
@@ -221,8 +220,7 @@ class SignedExchangeCertFetcherTest : public testing::Test {
         base::MakeRefCounted<net::HttpResponseHeaders>("HTTP/1.1 200 OK");
 
     mock_loader_factory_.client_ptr()->OnReceiveResponse(
-        resource_response, base::Optional<net::SSLInfo>(),
-        nullptr /* downloaded_file */);
+        resource_response, nullptr /* downloaded_file */);
   }
 
   DeferringURLLoaderThrottle* InitializeDeferringURLLoaderThrottle() {
@@ -238,259 +236,18 @@ class SignedExchangeCertFetcherTest : public testing::Test {
   const GURL url_;
   const url::Origin request_initiator_;
   bool callback_called_ = false;
-  scoped_refptr<net::X509Certificate> cert_result_;
+  std::unique_ptr<SignedExchangeCertificateChain> cert_result_;
   URLLoaderFactoryForMockLoader mock_loader_factory_;
   std::vector<std::unique_ptr<URLLoaderThrottle>> throttles_;
 
   base::test::ScopedTaskEnvironment scoped_task_environment_;
+  ResourceDispatcherHostImpl resource_dispatcher_host_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SignedExchangeCertFetcherTest);
 };
 
 }  // namespace
-
-TEST(SignedExchangeCertFetcherParseTest, OneCert) {
-  const uint8_t input[] = {
-      // clang-format off
-      0x00, // request context size
-      0x00, 0x00, 0x07, // certificate list size
-
-      0x00, 0x00, 0x02, // cert data size
-      0x11, 0x22, // cert data
-      0x00, 0x00, // extensions size
-      // clang-format on
-  };
-  base::Optional<std::vector<base::StringPiece>> certs =
-      GetCertChain(input, arraysize(input));
-  ASSERT_TRUE(certs);
-  ASSERT_EQ(1u, certs->size());
-  const uint8_t kExpected[] = {
-      // clang-format off
-      0x11, 0x22, // cert data
-      // clang-format on
-  };
-  EXPECT_THAT((*certs)[0],
-              testing::ElementsAreArray(kExpected, arraysize(kExpected)));
-}
-
-TEST(SignedExchangeCertFetcherParseTest, OneCertWithExtension) {
-  const uint8_t input[] = {
-      // clang-format off
-      0x00, // request context size
-      0x00, 0x00, 0x0A, // certificate list size
-
-      0x00, 0x00, 0x02, // cert data size
-      0x11, 0x22, // cert data
-      0x00, 0x03, // extensions size
-      0xE1, 0xE2, 0xE3, // extensions data
-      // clang-format on
-  };
-  base::Optional<std::vector<base::StringPiece>> certs =
-      GetCertChain(input, arraysize(input));
-  ASSERT_TRUE(certs);
-  ASSERT_EQ(1u, certs->size());
-  const uint8_t kExpected[] = {
-      // clang-format off
-      0x11, 0x22, // cert data
-      // clang-format on
-  };
-  EXPECT_THAT((*certs)[0],
-              testing::ElementsAreArray(kExpected, arraysize(kExpected)));
-}
-
-TEST(SignedExchangeCertFetcherParseTest, TwoCerts) {
-  const uint8_t input[] = {
-      // clang-format off
-      0x00, // request context size
-      0x00, 0x01, 0x13, // certificate list size
-
-      0x00, 0x01, 0x04, // cert data size
-
-      // cert data
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-
-      0x00, 0x00, // extensions size
-
-      0x00, 0x00, 0x05, // cert data size
-      0x33, 0x44, 0x55, 0x66, 0x77, // cert data
-      0x00, 0x00, // extensions size
-
-      // clang-format on
-  };
-
-  const uint8_t kExpected1[] = {
-      // clang-format off
-      // cert data
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-      // clang-format on
-  };
-  const uint8_t kExpected2[] = {
-      // clang-format off
-      0x33, 0x44, 0x55, 0x66, 0x77, // cert data
-      // clang-format on
-  };
-
-  base::Optional<std::vector<base::StringPiece>> certs =
-      GetCertChain(input, sizeof(input));
-  ASSERT_TRUE(certs);
-  ASSERT_EQ(2u, certs->size());
-  EXPECT_THAT((*certs)[0],
-              testing::ElementsAreArray(kExpected1, arraysize(kExpected1)));
-  EXPECT_THAT((*certs)[1],
-              testing::ElementsAreArray(kExpected2, arraysize(kExpected2)));
-}
-
-TEST(SignedExchangeCertFetcherParseTest, Empty) {
-  EXPECT_FALSE(GetCertChain(nullptr, 0));
-}
-
-TEST(SignedExchangeCertFetcherParseTest, InvalidRequestContextSize) {
-  const uint8_t input[] = {
-      // clang-format off
-      0x01, // request context size: must be zero
-      0x20, // request context
-      // clang-format on
-  };
-  EXPECT_FALSE(GetCertChain(input, arraysize(input)));
-}
-
-TEST(SignedExchangeCertFetcherParseTest, CanNotReadCertListSize1) {
-  const uint8_t input[] = {
-      // clang-format off
-      0x00, // request context size
-      0x01, // certificate list size: must be 3 bytes
-      // clang-format on
-  };
-  EXPECT_FALSE(GetCertChain(input, arraysize(input)));
-}
-
-TEST(SignedExchangeCertFetcherParseTest, CanNotReadCertListSize2) {
-  const uint8_t input[] = {
-      // clang-format off
-      0x00, // request context size
-      0x00, 0x01, // certificate list size: must be 3 bytes
-      // clang-format on
-  };
-  EXPECT_FALSE(GetCertChain(input, arraysize(input)));
-}
-
-TEST(SignedExchangeCertFetcherParseTest, CertListSizeError) {
-  const uint8_t input[] = {
-      // clang-format off
-      0x00, // request context size
-      0x00, 0x01, 0x01, // certificate list size: 257 (This must be 7)
-
-      0x00, 0x00, 0x02, // cert data size
-      0x11, 0x22, // cert data
-      0x00, 0x00, // extensions size
-      // clang-format on
-  };
-  EXPECT_FALSE(GetCertChain(input, arraysize(input)));
-}
-
-TEST(SignedExchangeCertFetcherParseTest, CanNotReadCertDataSize) {
-  const uint8_t input[] = {
-      // clang-format off
-      0x00, // request context size
-      0x00, 0x00, 0x02, // certificate list size
-
-      0x00, 0x01, // cert data size: must be 3 bytes
-      // clang-format on
-  };
-  EXPECT_FALSE(GetCertChain(input, arraysize(input)));
-}
-
-TEST(SignedExchangeCertFetcherParseTest, CertDataSizeError) {
-  const uint8_t input[] = {
-      // clang-format off
-      0x00, // request context size
-      0x00, 0x00, 0x04, // certificate list size
-
-      0x00, 0x00, 0x02, // cert data size
-      0x11, // cert data: Need 2 bytes
-      // clang-format on
-  };
-  EXPECT_FALSE(GetCertChain(input, arraysize(input)));
-}
-
-TEST(SignedExchangeCertFetcherParseTest, CanNotReadExtensionsSize) {
-  const uint8_t input[] = {
-      // clang-format off
-      0x00, // request context size
-      0x00, 0x00, 0x06, // certificate list size
-
-      0x00, 0x00, 0x02, // cert data size
-      0x11, 0x22, // cert data
-      0x00, // extensions size : must be 2 bytes
-      // clang-format on
-  };
-  EXPECT_FALSE(GetCertChain(input, arraysize(input)));
-}
-
-TEST(SignedExchangeCertFetcherParseTest, ExtensionsSizeError) {
-  const uint8_t input[] = {
-      // clang-format off
-      0x00, // request context size
-      0x00, 0x00, 0x07, // certificate list size
-
-      0x00, 0x00, 0x02, // cert data size
-      0x11, 0x22, // cert data
-      0x00, 0x01, // extensions size
-      // clang-format on
-  };
-  EXPECT_FALSE(GetCertChain(input, arraysize(input)));
-}
 
 TEST_F(SignedExchangeCertFetcherTest, Simple) {
   std::unique_ptr<SignedExchangeCertFetcher> fetcher =
@@ -516,7 +273,7 @@ TEST_F(SignedExchangeCertFetcherTest, Simple) {
   EXPECT_TRUE(callback_called_);
   ASSERT_TRUE(cert_result_);
   EXPECT_EQ(GetTestDataCertFingerprint256(),
-            cert_result_->CalculateChainFingerprint256());
+            cert_result_->cert()->CalculateChainFingerprint256());
 }
 
 TEST_F(SignedExchangeCertFetcherTest, MultipleChunked) {
@@ -527,13 +284,13 @@ TEST_F(SignedExchangeCertFetcherTest, MultipleChunked) {
   const std::string message =
       CreateCertMessage(CreateCertMessageFromCert(*certificate));
   mojo::DataPipe data_pipe(message.size() / 2 + 1);
-  ASSERT_TRUE(mojo::common::BlockingCopyFromString(
+  ASSERT_TRUE(mojo::BlockingCopyFromString(
       message.substr(0, message.size() / 2), data_pipe.producer_handle));
   mock_loader_factory_.client_ptr()->OnStartLoadingResponseBody(
       std::move(data_pipe.consumer_handle));
   RunUntilIdle();
-  ASSERT_TRUE(mojo::common::BlockingCopyFromString(
-      message.substr(message.size() / 2), data_pipe.producer_handle));
+  ASSERT_TRUE(mojo::BlockingCopyFromString(message.substr(message.size() / 2),
+                                           data_pipe.producer_handle));
   data_pipe.producer_handle.reset();
   mock_loader_factory_.client_ptr()->OnComplete(
       network::URLLoaderCompletionStatus(net::OK));
@@ -542,7 +299,7 @@ TEST_F(SignedExchangeCertFetcherTest, MultipleChunked) {
   EXPECT_TRUE(callback_called_);
   ASSERT_TRUE(cert_result_);
   EXPECT_EQ(certificate->CalculateChainFingerprint256(),
-            cert_result_->CalculateChainFingerprint256());
+            cert_result_->cert()->CalculateChainFingerprint256());
 }
 
 TEST_F(SignedExchangeCertFetcherTest, ForceFetchAndFail) {
@@ -578,8 +335,7 @@ TEST_F(SignedExchangeCertFetcherTest, MaxCertSize_Exceeds) {
       CreateFetcherAndStart(false /* force_fetch */);
   CallOnReceiveResponse();
   mojo::DataPipe data_pipe(message.size());
-  CHECK(
-      mojo::common::BlockingCopyFromString(message, data_pipe.producer_handle));
+  CHECK(mojo::BlockingCopyFromString(message, data_pipe.producer_handle));
   data_pipe.producer_handle.reset();
   mock_loader_factory_.client_ptr()->OnStartLoadingResponseBody(
       std::move(data_pipe.consumer_handle));
@@ -602,8 +358,7 @@ TEST_F(SignedExchangeCertFetcherTest, MaxCertSize_SameSize) {
       CreateFetcherAndStart(false /* force_fetch */);
   CallOnReceiveResponse();
   mojo::DataPipe data_pipe(message.size());
-  CHECK(
-      mojo::common::BlockingCopyFromString(message, data_pipe.producer_handle));
+  CHECK(mojo::BlockingCopyFromString(message, data_pipe.producer_handle));
   data_pipe.producer_handle.reset();
   mock_loader_factory_.client_ptr()->OnStartLoadingResponseBody(
       std::move(data_pipe.consumer_handle));
@@ -626,13 +381,13 @@ TEST_F(SignedExchangeCertFetcherTest, MaxCertSize_MultipleChunked) {
       CreateFetcherAndStart(false /* force_fetch */);
   CallOnReceiveResponse();
   mojo::DataPipe data_pipe(message.size() / 2 + 1);
-  ASSERT_TRUE(mojo::common::BlockingCopyFromString(
+  ASSERT_TRUE(mojo::BlockingCopyFromString(
       message.substr(0, message.size() / 2), data_pipe.producer_handle));
   mock_loader_factory_.client_ptr()->OnStartLoadingResponseBody(
       std::move(data_pipe.consumer_handle));
   RunUntilIdle();
-  ASSERT_TRUE(mojo::common::BlockingCopyFromString(
-      message.substr(message.size() / 2), data_pipe.producer_handle));
+  ASSERT_TRUE(mojo::BlockingCopyFromString(message.substr(message.size() / 2),
+                                           data_pipe.producer_handle));
   data_pipe.producer_handle.reset();
   mock_loader_factory_.client_ptr()->OnComplete(
       network::URLLoaderCompletionStatus(net::OK));
@@ -656,11 +411,9 @@ TEST_F(SignedExchangeCertFetcherTest, MaxCertSize_ContentLengthCheck) {
       base::MakeRefCounted<net::HttpResponseHeaders>("HTTP/1.1 200 OK");
   resource_response.content_length = message.size();
   mock_loader_factory_.client_ptr()->OnReceiveResponse(
-      resource_response, base::Optional<net::SSLInfo>(),
-      nullptr /* downloaded_file */);
+      resource_response, nullptr /* downloaded_file */);
   mojo::DataPipe data_pipe(message.size());
-  CHECK(
-      mojo::common::BlockingCopyFromString(message, data_pipe.producer_handle));
+  CHECK(mojo::BlockingCopyFromString(message, data_pipe.producer_handle));
   data_pipe.producer_handle.reset();
   mock_loader_factory_.client_ptr()->OnStartLoadingResponseBody(
       std::move(data_pipe.consumer_handle));
@@ -692,8 +445,7 @@ TEST_F(SignedExchangeCertFetcherTest, Abort_404) {
   resource_response.headers =
       base::MakeRefCounted<net::HttpResponseHeaders>("HTTP/1.1 404 Not Found");
   mock_loader_factory_.client_ptr()->OnReceiveResponse(
-      resource_response, base::Optional<net::SSLInfo>(),
-      nullptr /* downloaded_file */);
+      resource_response, nullptr /* downloaded_file */);
   RunUntilIdle();
 
   EXPECT_TRUE(callback_called_);
@@ -706,8 +458,7 @@ TEST_F(SignedExchangeCertFetcherTest, Invalid_CertData) {
   CallOnReceiveResponse();
   const std::string message = CreateCertMessage("Invalid Cert Data");
   mojo::DataPipe data_pipe(message.size());
-  CHECK(
-      mojo::common::BlockingCopyFromString(message, data_pipe.producer_handle));
+  CHECK(mojo::BlockingCopyFromString(message, data_pipe.producer_handle));
   data_pipe.producer_handle.reset();
   mock_loader_factory_.client_ptr()->OnStartLoadingResponseBody(
       std::move(data_pipe.consumer_handle));
@@ -727,8 +478,7 @@ TEST_F(SignedExchangeCertFetcherTest, Invalid_CertMessage) {
   const std::string message = "Invalid cert message";
 
   mojo::DataPipe data_pipe(message.size());
-  CHECK(
-      mojo::common::BlockingCopyFromString(message, data_pipe.producer_handle));
+  CHECK(mojo::BlockingCopyFromString(message, data_pipe.producer_handle));
   data_pipe.producer_handle.reset();
   mock_loader_factory_.client_ptr()->OnStartLoadingResponseBody(
       std::move(data_pipe.consumer_handle));
@@ -775,7 +525,7 @@ TEST_F(SignedExchangeCertFetcherTest, Throttle_Simple) {
   EXPECT_TRUE(callback_called_);
   ASSERT_TRUE(cert_result_);
   EXPECT_EQ(GetTestDataCertFingerprint256(),
-            cert_result_->CalculateChainFingerprint256());
+            cert_result_->cert()->CalculateChainFingerprint256());
 }
 
 TEST_F(SignedExchangeCertFetcherTest, Throttle_AbortsOnRequest) {
@@ -881,15 +631,15 @@ TEST_F(SignedExchangeCertFetcherTest, DeleteFetcher_WhileReceivingBody) {
   const std::string message =
       CreateCertMessage(CreateCertMessageFromCert(*certificate));
   mojo::DataPipe data_pipe(message.size() / 2 + 1);
-  ASSERT_TRUE(mojo::common::BlockingCopyFromString(
+  ASSERT_TRUE(mojo::BlockingCopyFromString(
       message.substr(0, message.size() / 2), data_pipe.producer_handle));
   mock_loader_factory_.client_ptr()->OnStartLoadingResponseBody(
       std::move(data_pipe.consumer_handle));
   RunUntilIdle();
   fetcher.reset();
   RunUntilIdle();
-  ASSERT_TRUE(mojo::common::BlockingCopyFromString(
-      message.substr(message.size() / 2), data_pipe.producer_handle));
+  ASSERT_TRUE(mojo::BlockingCopyFromString(message.substr(message.size() / 2),
+                                           data_pipe.producer_handle));
   RunUntilIdle();
 
   EXPECT_FALSE(callback_called_);
@@ -904,8 +654,7 @@ TEST_F(SignedExchangeCertFetcherTest, DeleteFetcher_AfterReceivingBody) {
   const std::string message =
       CreateCertMessage(CreateCertMessageFromCert(*certificate));
   mojo::DataPipe data_pipe(message.size());
-  CHECK(
-      mojo::common::BlockingCopyFromString(message, data_pipe.producer_handle));
+  CHECK(mojo::BlockingCopyFromString(message, data_pipe.producer_handle));
   mock_loader_factory_.client_ptr()->OnStartLoadingResponseBody(
       std::move(data_pipe.consumer_handle));
   RunUntilIdle();
@@ -950,7 +699,7 @@ TEST_F(SignedExchangeCertFetcherTest, CloseClientPipe_WhileReceivingBody) {
   const std::string message =
       CreateCertMessage(CreateCertMessageFromCert(*certificate));
   mojo::DataPipe data_pipe(message.size() / 2 + 1);
-  ASSERT_TRUE(mojo::common::BlockingCopyFromString(
+  ASSERT_TRUE(mojo::BlockingCopyFromString(
       message.substr(0, message.size() / 2), data_pipe.producer_handle));
   mock_loader_factory_.client_ptr()->OnStartLoadingResponseBody(
       std::move(data_pipe.consumer_handle));
@@ -971,8 +720,7 @@ TEST_F(SignedExchangeCertFetcherTest, CloseClientPipe_AfterReceivingBody) {
   const std::string message =
       CreateCertMessage(CreateCertMessageFromCert(*certificate));
   mojo::DataPipe data_pipe(message.size());
-  CHECK(
-      mojo::common::BlockingCopyFromString(message, data_pipe.producer_handle));
+  CHECK(mojo::BlockingCopyFromString(message, data_pipe.producer_handle));
   mock_loader_factory_.client_ptr()->OnStartLoadingResponseBody(
       std::move(data_pipe.consumer_handle));
   RunUntilIdle();
@@ -984,7 +732,7 @@ TEST_F(SignedExchangeCertFetcherTest, CloseClientPipe_AfterReceivingBody) {
   EXPECT_TRUE(callback_called_);
   ASSERT_TRUE(cert_result_);
   EXPECT_EQ(certificate->CalculateChainFingerprint256(),
-            cert_result_->CalculateChainFingerprint256());
+            cert_result_->cert()->CalculateChainFingerprint256());
 }
 
 }  // namespace content

@@ -4,7 +4,6 @@
 <translation id="1135328998467923690">Pakej adalah tidak sah: '<ph name="ERROR_CODE" />'.</translation>
 <translation id="1140871961407805696">Menghadap persekitaran</translation>
 <translation id="1196338895211115272">Gagal untuk mengeksport kunci persendirian.</translation>
-<translation id="1256619696651732561">Penghurai Manifes Sambungan</translation>
 <translation id="1420684932347524586">Yikes! Gagal untuk menjanakan kunci persendirian RSA rawak.</translation>
 <translation id="1445572445564823378">Sambungan ini melambatkan <ph name="PRODUCT_NAME" />. Anda perlu melumpuhkannya untuk memulihkan prestasi <ph name="PRODUCT_NAME" />.</translation>
 <translation id="1468038450257740950">WebGL tidak disokong.</translation>
@@ -15,18 +14,20 @@
 <translation id="2576842806987913196">Fail CRX dengan nama ini telah wujud.</translation>
 <translation id="2753617847762399167">Laluan tidak sah (mutlak atau berkaitan dengan '..'): '<ph name="IMAGE_PATH" />'</translation>
 <translation id="27822970480436970">Sambungan ini gagal mengubah suai permintaan rangkaian kerana pengubahsuaian itu bercanggah dengan sambungan lain.</translation>
+<translation id="2785530881066938471">Tidak dapat memuatkan fail '<ph name="RELATIVE_PATH" />' untuk skrip kandungan. Ia tidak terkod UTF-8.</translation>
 <translation id="2903070246402204397"><ph name="EXTENSION_NAME" /> (ID sambungan "<ph name="EXTENSION_ID" />") disekat oleh pentadbir. <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">Tidak dapat memasang pakej: '<ph name="ERROR_CODE" />'</translation>
-<translation id="3097628171361913691">Pemasang Fail Zip</translation>
 <translation id="3115238746683532089">Produk <ph name="PRODUCT_ID" /> daripada vendor <ph name="VENDOR_ID" /> tidak diketahui (nombor siri <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="3144135466825225871">Gagal untuk menggantikan fail crx. Periksa untuk melihat jika fail sedang digunakan.</translation>
 <translation id="3163201441334626963">Produk <ph name="PRODUCT_ID" /> daripada vendor <ph name="VENDOR_ID" /> tidak diketahui</translation>
+<translation id="3302709122321372472">Tidak dapat memuatkan css '<ph name="RELATIVE_PATH" />' untuk skrip kandungan.</translation>
 <translation id="3369521687965833290">Tidak dapat menyahpek sambungan.  Untuk menyahpek sambungan dengan selamat, perlu ada laluan ke direktori profil anda yang bermula dengan huruf pemacu dan tidak  mengandungi simpang, titik peletakan atau symlink.  Laluan tersebut tidak wujud untuk profil anda.</translation>
 <translation id="3393440416772303020"><ph name="PRODUCT_NAME" /> (nombor siri <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="3466070586188012397"><ph name="PRODUCT_NAME" /> daripada vendor <ph name="VENDOR_ID" /> (nombor siri <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="3561217442734750519">Nilai input untuk kunci persendirian mestilah laluan yang sah.</translation>
 <translation id="388442998277590542">Tidak dapat memuatkan halaman pilihan '<ph name="OPTIONS_PAGE" />'.</translation>
 <translation id="3984413272403535372">Ralat semasa menandatangani sambungan.</translation>
+<translation id="39964277676607559">Tidak dapat memuatkan javascript '<ph name="RELATIVE_PATH" />' untuk skrip kandungan.</translation>
 <translation id="4115165561519362854">Pentadbir mesin ini memerlukan <ph name="EXTENSION_NAME" /> untuk mempunyai versi minimum <ph name="EXTENSION_VERSION" />. Ia tidak dapat didayakan sehingga ia telah dikemas kini kepada versi itu (atau lebih tinggi).</translation>
 <translation id="4233778200880751280">Tidak dapat memuatkan halaman perihal '<ph name="ABOUT_PAGE" />'.</translation>
 <translation id="471800408830181311">Gagal untuk output kunci persendirian.</translation>
@@ -64,7 +65,6 @@
 <translation id="8517576857589387417">Fail manifes hilang atau tidak dapat dibaca</translation>
 <translation id="8636666366616799973">Pakej adalah tidak sah. Butiran: '<ph name="ERROR_MESSAGE" />'.</translation>
 <translation id="8670869118777164560">Sambungan ini gagal mengubah hala permintaan rangkaian ke <ph name="ATTEMPTED_REDIRECT_DESTINATION" /> kerana sambungan lain (<ph name="EXTENSION_NAME" />) mengubah halanya ke <ph name="ACTUAL_REDIRECT_DESTINATION" />.</translation>
-<translation id="8712265948125780616">Penyahpadat Sambungan</translation>
 <translation id="8761756413268424715">"<ph name="APP_NAME" />" meminta akses kepada salah satu peranti anda:</translation>
 <translation id="8825366169884721447">Sambungan ini gagal mengubah suai pengatas permintaan "<ph name="HEADER_NAME" />" untuk permintaan rangkaian kerana ubah suai tersebut bercanggah dengan sambungan lain (<ph name="EXTENSION_NAME" />).</translation>
 <translation id="8885905466771744233">Kunci persendirian untuk sambungan yang dinyatakan telah wujud. Gunakan semula kunci tersebut atau padamkannya dahulu.</translation>

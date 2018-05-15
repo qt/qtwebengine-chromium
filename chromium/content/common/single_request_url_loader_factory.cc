@@ -8,7 +8,6 @@
 #include <utility>
 
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/sequenced_task_runner.h"
 #include "base/threading/sequenced_task_runner_handle.h"
@@ -57,14 +56,14 @@ class SingleRequestURLLoaderFactory::HandlerState
 };
 
 class SingleRequestURLLoaderFactory::FactoryInfo
-    : public SharedURLLoaderFactoryInfo {
+    : public network::SharedURLLoaderFactoryInfo {
  public:
   explicit FactoryInfo(scoped_refptr<HandlerState> state)
       : state_(std::move(state)) {}
   ~FactoryInfo() override = default;
 
   // SharedURLLoaderFactoryInfo:
-  scoped_refptr<SharedURLLoaderFactory> CreateFactory() override {
+  scoped_refptr<network::SharedURLLoaderFactory> CreateFactory() override {
     return new SingleRequestURLLoaderFactory(std::move(state_));
   }
 
@@ -89,7 +88,7 @@ void SingleRequestURLLoaderFactory::CreateLoaderAndStart(
   state_->HandleRequest(std::move(loader), std::move(client));
 }
 
-std::unique_ptr<SharedURLLoaderFactoryInfo>
+std::unique_ptr<network::SharedURLLoaderFactoryInfo>
 SingleRequestURLLoaderFactory::Clone() {
   return std::make_unique<FactoryInfo>(state_);
 }

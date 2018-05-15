@@ -240,7 +240,6 @@ class BASE_EXPORT MemoryDumpManager {
   virtual ~MemoryDumpManager();
 
   static void SetInstanceForTesting(MemoryDumpManager* instance);
-  static uint32_t GetDumpsSumKb(const std::string&, const ProcessMemoryDump*);
 
   // Lazily initializes dump_thread_ and returns its TaskRunner.
   scoped_refptr<base::SequencedTaskRunner> GetOrCreateBgTaskRunnerLocked();
@@ -251,10 +250,6 @@ class BASE_EXPORT MemoryDumpManager {
   // at the end.
   void ContinueAsyncProcessDump(
       ProcessMemoryDumpAsyncState* owned_pmd_async_state);
-
-  // Returns true if the given dump type and mode allows the given MDP to dump.
-  bool IsDumpProviderAllowedToDump(const MemoryDumpRequestArgs& req_args,
-                                   const MemoryDumpProviderInfo& mdpinfo) const;
 
   // Invokes OnMemoryDump() of the given MDP. Should be called on the MDP task
   // runner.

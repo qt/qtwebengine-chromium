@@ -6,6 +6,7 @@
 
 #include <math.h>
 
+#include <algorithm>
 #include <set>
 #include <tuple>
 #include <utility>
@@ -19,7 +20,6 @@
 #include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
@@ -29,6 +29,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task_scheduler/post_task.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/time/default_tick_clock.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
@@ -57,8 +58,6 @@
 #include "content/browser/renderer_host/input/synthetic_gesture_target.h"
 #include "content/browser/renderer_host/input/timeout_monitor.h"
 #include "content/browser/renderer_host/input/touch_emulator.h"
-#include "content/browser/renderer_host/render_frame_metadata_provider_impl.h"
-#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_delegate_view.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -76,6 +75,7 @@
 #include "content/common/text_input_state.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/keyboard_event_processing_result.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_service.h"
@@ -97,13 +97,16 @@
 #include "skia/ext/image_operations.h"
 #include "skia/ext/platform_canvas.h"
 #include "storage/browser/fileapi/isolated_context.h"
-#include "third_party/WebKit/public/web/WebImeTextSpan.h"
+#include "third_party/blink/public/web/web_ime_text_span.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/display/display_switches.h"
 #include "ui/display/screen.h"
 #include "ui/events/blink/web_input_event_traits.h"
 #include "ui/events/event.h"
+#include "ui/events/keycodes/dom/dom_code.h"
+#include "ui/events/keycodes/dom/keycode_converter.h"
+#include "ui/events/keycodes/keyboard_code_conversion.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/size_conversions.h"
@@ -189,8 +192,7 @@ inline blink::WebGestureEvent CreateScrollBeginForWrapping(
 
   blink::WebGestureEvent wrap_gesture_scroll_begin(
       blink::WebInputEvent::kGestureScrollBegin, gesture_event.GetModifiers(),
-      gesture_event.TimeStampSeconds());
-  wrap_gesture_scroll_begin.source_device = gesture_event.source_device;
+      gesture_event.TimeStampSeconds(), gesture_event.SourceDevice());
   wrap_gesture_scroll_begin.data.scroll_begin.delta_x_hint = 0;
   wrap_gesture_scroll_begin.data.scroll_begin.delta_y_hint = 0;
   wrap_gesture_scroll_begin.resending_plugin_id =
@@ -207,8 +209,7 @@ inline blink::WebGestureEvent CreateScrollEndForWrapping(
 
   blink::WebGestureEvent wrap_gesture_scroll_end(
       blink::WebInputEvent::kGestureScrollEnd, gesture_event.GetModifiers(),
-      gesture_event.TimeStampSeconds());
-  wrap_gesture_scroll_end.source_device = gesture_event.source_device;
+      gesture_event.TimeStampSeconds(), gesture_event.SourceDevice());
   wrap_gesture_scroll_end.resending_plugin_id =
       gesture_event.resending_plugin_id;
   wrap_gesture_scroll_end.data.scroll_end.delta_units =
@@ -338,6 +339,7 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       owner_delegate_(nullptr),
       process_(process),
       routing_id_(routing_id),
+      clock_(base::DefaultTickClock::GetInstance()),
       is_loading_(false),
       is_hidden_(hidden),
       repaint_ack_pending_(false),
@@ -362,15 +364,15 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       next_browser_snapshot_id_(1),
       owned_by_render_frame_host_(false),
       is_focused_(false),
-      hung_renderer_delay_(
-          base::TimeDelta::FromMilliseconds(kHungRendererDelayMs)),
+      hung_renderer_delay_(TimeDelta::FromMilliseconds(kHungRendererDelayMs)),
       new_content_rendering_delay_(
-          base::TimeDelta::FromMilliseconds(kNewContentRenderingDelayMs)),
+          TimeDelta::FromMilliseconds(kNewContentRenderingDelayMs)),
       current_content_source_id_(0),
       monitoring_composition_info_(false),
       compositor_frame_sink_binding_(this),
       frame_token_message_queue_(
           std::make_unique<FrameTokenMessageQueue>(this)),
+      render_frame_metadata_provider_(frame_token_message_queue_.get()),
       frame_sink_id_(base::checked_cast<uint32_t>(process_->GetID()),
                      base::checked_cast<uint32_t>(routing_id_)),
       weak_factory_(this) {
@@ -386,11 +388,6 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
   process_->AddRoute(routing_id_, this);
   process_->AddWidget(this);
   process_->GetSharedBitmapAllocationNotifier()->AddObserver(this);
-
-  // If we're initially visible, tell the process host that we're alive.
-  // Otherwise we'll notify the process host when we are first shown.
-  if (!hidden)
-    process_->WidgetRestored();
 
   latency_tracker_.Initialize(routing_id_, GetProcess()->GetID());
 
@@ -482,10 +479,8 @@ void RenderWidgetHostImpl::SetView(RenderWidgetHostViewBase* view) {
   if (view) {
     view_ = view->GetWeakPtr();
     if (enable_viz_) {
-      if (!create_frame_sink_callback_.is_null()) {
-        view_->CreateCompositorFrameSink(
-            std::move(create_frame_sink_callback_));
-      }
+      if (!create_frame_sink_callback_.is_null())
+        std::move(create_frame_sink_callback_).Run(view_->GetFrameSinkId());
     } else {
       if (renderer_compositor_frame_sink_.is_bound()) {
         view->DidCreateNewRendererCompositorFrameSink(
@@ -551,6 +546,19 @@ void RenderWidgetHostImpl::SendScreenRects() {
   waiting_for_screen_rects_ack_ = true;
 }
 
+void RenderWidgetHostImpl::SetFrameDepth(unsigned int depth) {
+  if (frame_depth_ == depth)
+    return;
+
+  frame_depth_ = depth;
+  UpdatePriority();
+}
+
+void RenderWidgetHostImpl::UpdatePriority() {
+  if (!destroyed_)
+    process_->UpdateClientPriority(this);
+}
+
 void RenderWidgetHostImpl::Init() {
   DCHECK(process_->HasConnection());
 
@@ -575,6 +583,7 @@ void RenderWidgetHostImpl::InitForFrame() {
 }
 
 void RenderWidgetHostImpl::ShutdownAndDestroyWidget(bool also_delete) {
+  CancelKeyboardLock();
   RejectMouseLockOrUnlockIfNecessary();
 
   if (process_->HasConnection()) {
@@ -677,7 +686,7 @@ void RenderWidgetHostImpl::WasHidden() {
   Send(new ViewMsg_WasHidden(routing_id_));
 
   // Tell the RenderProcessHost we were hidden.
-  process_->WidgetHidden();
+  process_->UpdateClientPriority(this);
 
   bool is_visible = false;
   NotificationService::current()->Notify(
@@ -695,11 +704,7 @@ void RenderWidgetHostImpl::WasShown(const ui::LatencyInfo& latency_info) {
 
   // If we navigated in background, clear the displayed graphics of the
   // previous page before going visible.
-  if (new_content_rendering_timeout_ &&
-      new_content_rendering_timeout_->IsRunning()) {
-    new_content_rendering_timeout_->Stop();
-    ClearDisplayedGraphics();
-  }
+  ForceFirstFrameAfterNavigationTimeout();
 
   SendScreenRects();
   RestartHangMonitorTimeoutIfNecessary();
@@ -709,7 +714,7 @@ void RenderWidgetHostImpl::WasShown(const ui::LatencyInfo& latency_info) {
   needs_repainting_on_restore_ = false;
   Send(new ViewMsg_WasShown(routing_id_, needs_repainting, latency_info));
 
-  process_->WidgetRestored();
+  process_->UpdateClientPriority(this);
 
   bool is_visible = true;
   NotificationService::current()->Notify(
@@ -739,9 +744,8 @@ void RenderWidgetHostImpl::WasShown(const ui::LatencyInfo& latency_info) {
 void RenderWidgetHostImpl::SetImportance(ChildProcessImportance importance) {
   if (importance_ == importance)
     return;
-  ChildProcessImportance old = importance_;
   importance_ = importance;
-  process_->UpdateWidgetImportance(old, importance_);
+  process_->UpdateClientPriority(this);
 }
 #endif
 
@@ -759,6 +763,12 @@ bool RenderWidgetHostImpl::GetResizeParams(ResizeParams* resize_params) {
     resize_params->display_mode = blink::kWebDisplayModeBrowser;
   }
 
+  resize_params->auto_resize_enabled = auto_resize_enabled_;
+  resize_params->min_size_for_auto_resize = min_size_for_auto_resize_;
+  resize_params->max_size_for_auto_resize = max_size_for_auto_resize_;
+  resize_params->auto_resize_sequence_number =
+      last_auto_resize_response_number_;
+
   if (view_) {
     resize_params->new_size = view_->GetRequestedRendererSize();
     resize_params->compositor_viewport_pixel_size =
@@ -775,13 +785,7 @@ bool RenderWidgetHostImpl::GetResizeParams(ResizeParams* resize_params) {
     resize_params->visible_viewport_size = view_->GetVisibleViewportSize();
     // TODO(ccameron): GetLocalSurfaceId is not synchronized with the device
     // scale factor of the surface. Fix this.
-    // We can allocate a LocalSurfaceId on navigation prior to giving the widget
-    // a size. We should only propagate a LocalSurfaceId here if the
-    // compositor's viewport has a non-empty size.
-    viz::LocalSurfaceId local_surface_id =
-        resize_params->compositor_viewport_pixel_size.IsEmpty()
-            ? viz::LocalSurfaceId()
-            : view_->GetLocalSurfaceId();
+    viz::LocalSurfaceId local_surface_id = view_->GetLocalSurfaceId();
     if (local_surface_id.is_valid())
       resize_params->local_surface_id = local_surface_id;
   }
@@ -800,9 +804,19 @@ bool RenderWidgetHostImpl::GetResizeParams(ResizeParams* resize_params) {
 
   const bool size_changed =
       !old_resize_params_ ||
-      old_resize_params_->new_size != resize_params->new_size ||
-      (old_resize_params_->compositor_viewport_pixel_size.IsEmpty() &&
-       !resize_params->compositor_viewport_pixel_size.IsEmpty());
+      old_resize_params_->auto_resize_enabled !=
+          resize_params->auto_resize_enabled ||
+      (old_resize_params_->auto_resize_enabled &&
+       (old_resize_params_->min_size_for_auto_resize !=
+            resize_params->min_size_for_auto_resize ||
+        old_resize_params_->max_size_for_auto_resize !=
+            resize_params->max_size_for_auto_resize ||
+        old_resize_params_->auto_resize_sequence_number !=
+            resize_params->auto_resize_sequence_number)) ||
+      (!old_resize_params_->auto_resize_enabled &&
+       (old_resize_params_->new_size != resize_params->new_size ||
+        (old_resize_params_->compositor_viewport_pixel_size.IsEmpty() &&
+         !resize_params->compositor_viewport_pixel_size.IsEmpty())));
 
   bool dirty =
       size_changed ||
@@ -829,7 +843,8 @@ bool RenderWidgetHostImpl::GetResizeParams(ResizeParams* resize_params) {
   // We don't expect to receive an ACK when the requested size or the physical
   // backing size is empty, or when the main viewport size didn't change.
   resize_params->needs_resize_ack =
-      g_check_for_pending_resize_ack && !resize_params->new_size.IsEmpty() &&
+      !auto_resize_enabled_ && g_check_for_pending_resize_ack &&
+      !resize_params->new_size.IsEmpty() &&
       !resize_params->compositor_viewport_pixel_size.IsEmpty() &&
       (size_changed || next_resize_needs_resize_ack_) &&
       (!enable_surface_synchronization_ ||
@@ -854,8 +869,8 @@ void RenderWidgetHostImpl::WasResized(bool scroll_focused_node_into_view) {
   // Skip if the |delegate_| has already been detached because
   // it's web contents is being deleted.
   if (resize_ack_pending_ || !process_->HasConnection() || !view_ ||
-      !view_->HasSize() || !renderer_initialized_ || auto_resize_enabled_ ||
-      !delegate_) {
+      !view_->HasSize() || !renderer_initialized_ || !delegate_ ||
+      last_auto_resize_request_number_ != last_auto_resize_response_number_) {
     return;
   }
 
@@ -922,8 +937,13 @@ void RenderWidgetHostImpl::SetPageFocus(bool focused) {
     if (IsMouseLocked())
       view_->UnlockMouse();
 
+    if (IsKeyboardLocked())
+      UnlockKeyboard();
+
     if (touch_emulator_)
       touch_emulator_->CancelTouch();
+  } else if (keyboard_lock_allowed_) {
+    LockKeyboard();
   }
 
   GetWidgetInputHandler()->SetFocus(focused);
@@ -958,6 +978,7 @@ void RenderWidgetHostImpl::SendMouseLockLost() {
 }
 
 void RenderWidgetHostImpl::ViewDestroyed() {
+  CancelKeyboardLock();
   RejectMouseLockOrUnlockIfNecessary();
 
   // TODO(evanm): tracking this may no longer be necessary;
@@ -1012,7 +1033,7 @@ void RenderWidgetHostImpl::PauseForPendingResizeOrRepaints() {
 
   // Pump a nested run loop until we time out or get a frame of the right
   // size.
-  TimeTicks start_time = TimeTicks::Now();
+  TimeTicks start_time = clock_->NowTicks();
   TimeDelta time_left = TimeDelta::FromMilliseconds(kPaintMsgTimeoutMS);
   TimeTicks timeout_time = start_time + time_left;
   while (1) {
@@ -1021,7 +1042,7 @@ void RenderWidgetHostImpl::PauseForPendingResizeOrRepaints() {
       if (!view_->ShouldContinueToPauseForFrame())
         break;
     }
-    time_left = timeout_time - TimeTicks::Now();
+    time_left = timeout_time - clock_->NowTicks();
     if (time_left <= TimeDelta::FromSeconds(0)) {
       TRACE_EVENT0("renderer_host", "WaitForSurface::Timeout");
       break;
@@ -1037,7 +1058,7 @@ bool RenderWidgetHostImpl::ScheduleComposite() {
   }
 
   // Send out a request to the renderer to paint the view if required.
-  repaint_start_time_ = TimeTicks::Now();
+  repaint_start_time_ = clock_->NowTicks();
   repaint_ack_pending_ = true;
   TRACE_EVENT_ASYNC_BEGIN0(
       "renderer_host", "RenderWidgetHostImpl::repaint_ack_pending_", this);
@@ -1053,10 +1074,11 @@ void RenderWidgetHostImpl::ProcessIgnoreInputEventsChanged(
     RestartHangMonitorTimeoutIfNecessary();
 }
 
-void RenderWidgetHostImpl::StartHangMonitorTimeout(base::TimeDelta delay) {
+void RenderWidgetHostImpl::StartHangMonitorTimeout(TimeDelta delay) {
   if (!hang_monitor_timeout_)
     return;
   hang_monitor_timeout_->Start(delay);
+  hang_monitor_start_time_ = clock_->NowTicks();
 }
 
 void RenderWidgetHostImpl::RestartHangMonitorTimeoutIfNecessary() {
@@ -1071,23 +1093,31 @@ bool RenderWidgetHostImpl::IsCurrentlyUnresponsive() const {
 void RenderWidgetHostImpl::StopHangMonitorTimeout() {
   if (hang_monitor_timeout_)
     hang_monitor_timeout_->Stop();
+
+  if (!hang_monitor_start_time_.is_null()) {
+    base::TimeDelta elapsed = clock_->NowTicks() - hang_monitor_start_time_;
+    const base::TimeDelta kMinimumHangTimeToReport =
+        base::TimeDelta::FromSeconds(5);
+    if (elapsed >= kMinimumHangTimeToReport)
+      UMA_HISTOGRAM_LONG_TIMES("Renderer.Hung.Duration", elapsed);
+
+    hang_monitor_start_time_ = TimeTicks();
+  }
   RendererIsResponsive();
 }
 
 void RenderWidgetHostImpl::DidNavigate(uint32_t next_source_id) {
   current_content_source_id_ = next_source_id;
+  did_receive_first_frame_after_navigation_ = false;
 
   if (enable_surface_synchronization_) {
-    if (view_)
-      view_->DidNavigate();
     // Resize messages before navigation are not acked, so reset
     // |resize_ack_pending_| and make sure the next resize will be acked if the
     // last resize before navigation was supposed to be acked.
     next_resize_needs_resize_ack_ = resize_ack_pending_;
     resize_ack_pending_ = false;
-    // If |view_| decides we need a new LocalSurfaceId, we should notify
-    // RenderWidget.
-    WasResized();
+    if (view_)
+      view_->DidNavigate();
   } else {
     // It is possible for a compositor frame to arrive before the browser is
     // notified about the page being committed, in which case no timer is
@@ -1191,16 +1221,28 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
 
   bool scroll_update_needs_wrapping = false;
   if (gesture_event.GetType() == blink::WebInputEvent::kGestureScrollBegin) {
-    DCHECK(!is_in_gesture_scroll_[gesture_event.source_device]);
-    is_in_gesture_scroll_[gesture_event.source_device] = true;
+    // When a user starts scrolling while a fling is active, the GSB will arrive
+    // when is_in_gesture_scroll_[gesture_event.SourceDevice()] is still true.
+    // This is because the fling controller defers handling the GFC event
+    // arrived before the GSB and doesn't send a GSE to end the fling; Instead,
+    // it waits for a second GFS to arrive and boost the current active fling if
+    // possible. While GFC handling is deferred the controller suppresses the
+    // GSB and GSU events instead of sending them to the renderer and continues
+    // to progress the fling. So, the renderer doesn't receive two GSB events
+    // without any GSE in between.
+    DCHECK(!is_in_gesture_scroll_[gesture_event.SourceDevice()] ||
+           FlingCancellationIsDeferred());
+    is_in_gesture_scroll_[gesture_event.SourceDevice()] = true;
   } else if (gesture_event.GetType() ==
              blink::WebInputEvent::kGestureScrollEnd) {
-    DCHECK(is_in_gesture_scroll_[gesture_event.source_device]);
-    is_in_gesture_scroll_[gesture_event.source_device] = false;
+    DCHECK(is_in_gesture_scroll_[gesture_event.SourceDevice()]);
+    is_in_gesture_scroll_[gesture_event.SourceDevice()] = false;
     is_in_touchpad_gesture_fling_ = false;
+    if (view_)
+      view_->set_is_currently_scrolling_viewport(false);
   } else if (gesture_event.GetType() ==
              blink::WebInputEvent::kGestureFlingStart) {
-    if (gesture_event.source_device ==
+    if (gesture_event.SourceDevice() ==
         blink::WebGestureDevice::kWebGestureDeviceTouchpad) {
       // TODO(sahel): Remove the VR specific case when motion events are used
       // for Android VR event processing and VR touchpad scrolling is handled by
@@ -1209,18 +1251,21 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
       if (GetView()->IsInVR()) {
         // Regardless of the state of the wheel scroll latching
         // WebContentsEventForwarder doesn't inject any GSE events before GFS.
-        DCHECK(is_in_gesture_scroll_[gesture_event.source_device]);
+        DCHECK(is_in_gesture_scroll_[gesture_event.SourceDevice()]);
 
         // Reset the is_in_gesture_scroll since while scrolling in Android VR
         // the first wheel event sent by the FlingController will cause a GSB
         // generation in MouseWheelEventQueue. This is because GSU events before
         // the GFS are directly injected to RWHI rather than being generated
         // from wheel events in MouseWheelEventQueue.
-        is_in_gesture_scroll_[gesture_event.source_device] = false;
+        is_in_gesture_scroll_[gesture_event.SourceDevice()] = false;
       } else if (GetView()->wheel_scroll_latching_enabled()) {
         // When wheel scroll latching is enabled, no GSE is sent before GFS, so
         // is_in_gesture_scroll must be true.
-        DCHECK(is_in_gesture_scroll_[gesture_event.source_device]);
+        // TODO(sahel): This often gets tripped on Debug builds in ChromeOS
+        // indicating some kind of gesture event ordering race.
+        // https://crbug.com/821237.
+        // DCHECK(is_in_gesture_scroll_[gesture_event.SourceDevice()]);
 
         // The FlingController handles GFS with touchpad source and sends wheel
         // events to progress the fling, the wheel events will get processed by
@@ -1235,14 +1280,18 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
 
         // When wheel scroll latching is disabled a GSE is sent before a GFS.
         // The GSE has already finished the scroll sequence.
-        DCHECK(!is_in_gesture_scroll_[gesture_event.source_device]);
+        DCHECK(!is_in_gesture_scroll_[gesture_event.SourceDevice()]);
       }
 
       is_in_touchpad_gesture_fling_ = true;
-    } else {  // gesture_event.source_device !=
-              // blink::WebGestureDevice::kWebGestureDeviceTouchpad
-      DCHECK(is_in_gesture_scroll_[gesture_event.source_device]);
-      is_in_gesture_scroll_[gesture_event.source_device] = false;
+    } else {
+      DCHECK(is_in_gesture_scroll_[gesture_event.SourceDevice()]);
+
+      // The FlingController handles GFS with touchscreen source and sends GSU
+      // events with inertial state to the renderer to progress the fling.
+      // is_in_gesture_scroll must stay true till the fling progress is
+      // finished. Then the FlingController will generate and send a GSE which
+      // shows the end of a scroll sequence and resets is_in_gesture_scroll_.
     }
   }
 
@@ -1252,7 +1301,7 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
   scroll_update_needs_wrapping =
       gesture_event.GetType() == blink::WebInputEvent::kGestureScrollUpdate &&
       gesture_event.resending_plugin_id != -1 &&
-      !is_in_gesture_scroll_[gesture_event.source_device];
+      !is_in_gesture_scroll_[gesture_event.SourceDevice()];
 
   // TODO(crbug.com/544782): Fix WebViewGuestScrollTest.TestGuestWheelScrolls-
   // Bubble to test the resending logic of gesture events.
@@ -1593,6 +1642,25 @@ void RenderWidgetHostImpl::SetCursor(const CursorInfo& cursor_info) {
   SetCursor(cursor);
 }
 
+RenderProcessHost::Priority RenderWidgetHostImpl::GetPriority() {
+  RenderProcessHost::Priority priority = {
+    is_hidden_,
+    frame_depth_,
+#if defined(OS_ANDROID)
+    importance_,
+#endif
+  };
+  if (owner_delegate_ &&
+      !owner_delegate_->ShouldContributePriorityToProcess()) {
+    priority.is_hidden = true;
+    priority.frame_depth = RenderProcessHostImpl::kMaxFrameDepthForPriority;
+#if defined(OS_ANDROID)
+    priority.importance = ChildProcessImportance::NORMAL;
+#endif
+  }
+  return priority;
+}
+
 mojom::WidgetInputHandler* RenderWidgetHostImpl::GetWidgetInputHandler() {
   if (associated_widget_input_handler_)
     return associated_widget_input_handler_.get();
@@ -1710,7 +1778,7 @@ void RenderWidgetHostImpl::OnStartDragging(
 }
 
 void RenderWidgetHostImpl::OnUpdateDragCursor(WebDragOperation current_op) {
-  if (delegate_ && delegate_->OnUpdateDragCursor())
+  if (delegate_->OnUpdateDragCursor())
     return;
 
   RenderViewHostDelegateView* view = delegate_->GetDelegateView();
@@ -1756,8 +1824,9 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
   // the |is_hidden_| change, so that the renderer will have correct visibility
   // set when respawned.
   if (!is_hidden_) {
-    process_->WidgetHidden();
     is_hidden_ = true;
+    if (!destroyed_)
+      process_->UpdateClientPriority(this);
   }
 
   // Reset this to ensure the hung renderer mechanism is working properly.
@@ -1836,6 +1905,19 @@ void RenderWidgetHostImpl::RejectMouseLockOrUnlockIfNecessary() {
     Send(new ViewMsg_LockMouse_ACK(routing_id_, false));
   } else if (IsMouseLocked()) {
     view_->UnlockMouse();
+  }
+}
+
+bool RenderWidgetHostImpl::IsKeyboardLocked() const {
+  return view_ ? view_->IsKeyboardLocked() : false;
+}
+
+void RenderWidgetHostImpl::GetContentRenderingTimeoutFrom(
+    RenderWidgetHostImpl* other) {
+  if (other->new_content_rendering_timeout_ &&
+      other->new_content_rendering_timeout_->IsRunning()) {
+    new_content_rendering_timeout_->Start(
+        other->new_content_rendering_timeout_->GetCurrentDelay());
   }
 }
 
@@ -1935,7 +2017,7 @@ void RenderWidgetHostImpl::OnGpuSwapBuffersCompletedInternal(
         FROM_HERE,
         base::Bind(&RenderWidgetHostImpl::WindowSnapshotReachedScreen,
                    weak_factory_.GetWeakPtr(), sequence_number),
-        base::TimeDelta::FromSecondsD(1. / 6));
+        TimeDelta::FromSecondsD(1. / 6));
 #else
     WindowSnapshotReachedScreen(sequence_number);
 #endif
@@ -2050,7 +2132,7 @@ void RenderWidgetHostImpl::DidDeleteSharedBitmap(
 void RenderWidgetHostImpl::OnResizeOrRepaintACK(
     const ViewHostMsg_ResizeOrRepaint_ACK_Params& params) {
   TRACE_EVENT0("renderer_host", "RenderWidgetHostImpl::OnResizeOrRepaintACK");
-  TimeTicks paint_start = TimeTicks::Now();
+  TimeTicks paint_start = clock_->NowTicks();
 
   // Update our knowledge of the RenderWidget's size.
   current_size_ = params.view_size;
@@ -2072,7 +2154,7 @@ void RenderWidgetHostImpl::OnResizeOrRepaintACK(
     TRACE_EVENT_ASYNC_END0(
         "renderer_host", "RenderWidgetHostImpl::repaint_ack_pending_", this);
     repaint_ack_pending_ = false;
-    TimeDelta delta = TimeTicks::Now() - repaint_start_time_;
+    TimeDelta delta = clock_->NowTicks() - repaint_start_time_;
     UMA_HISTOGRAM_TIMES("MPArch.RWH_RepaintDelta", delta);
   }
 
@@ -2095,7 +2177,7 @@ void RenderWidgetHostImpl::OnResizeOrRepaintACK(
   // Log the time delta for processing a paint message. On platforms that don't
   // support asynchronous painting, this is equivalent to
   // MPArch.RWH_TotalPaintTime.
-  TimeDelta delta = TimeTicks::Now() - paint_start;
+  TimeDelta delta = clock_->NowTicks() - paint_start;
   UMA_HISTOGRAM_TIMES("MPArch.RWH_OnMsgResizeOrRepaintACK", delta);
 }
 
@@ -2130,12 +2212,16 @@ void RenderWidgetHostImpl::OnAutoscrollStart(const gfx::PointF& position) {
   WebGestureEvent scroll_begin = SyntheticWebGestureEventBuilder::Build(
       WebInputEvent::kGestureScrollBegin,
       blink::kWebGestureDeviceSyntheticAutoscroll);
+  scroll_begin.SetPositionInWidget(position);
 
-  scroll_begin.x = position.x();
-  scroll_begin.y = position.y();
-  scroll_begin.source_device = blink::kWebGestureDeviceSyntheticAutoscroll;
+  ForwardGestureEventWithLatencyInfo(
+      scroll_begin, ui::LatencyInfo(ui::SourceEventType::OTHER));
 
-  input_router_->SendGestureEvent(GestureEventWithLatencyInfo(scroll_begin));
+  // Send a GFS event with zero velocity to make sure that the scroll sequence
+  // will end with the GFC generated in |OnAutoscrollEnd()|; Otherwise if the
+  // user cancels the autoscroll without moving the mouse, the GFC will get
+  // filtered since no GFS is sent in the sequence. https://crbug.com/829794
+  OnAutoscrollFling(gfx::Vector2dF());
 }
 
 void RenderWidgetHostImpl::OnAutoscrollFling(const gfx::Vector2dF& velocity) {
@@ -2144,9 +2230,9 @@ void RenderWidgetHostImpl::OnAutoscrollFling(const gfx::Vector2dF& velocity) {
       blink::kWebGestureDeviceSyntheticAutoscroll);
   event.data.fling_start.velocity_x = velocity.x();
   event.data.fling_start.velocity_y = velocity.y();
-  event.source_device = blink::kWebGestureDeviceSyntheticAutoscroll;
 
-  input_router_->SendGestureEvent(GestureEventWithLatencyInfo(event));
+  ForwardGestureEventWithLatencyInfo(
+      event, ui::LatencyInfo(ui::SourceEventType::OTHER));
 }
 
 void RenderWidgetHostImpl::OnAutoscrollEnd() {
@@ -2154,12 +2240,9 @@ void RenderWidgetHostImpl::OnAutoscrollEnd() {
       WebInputEvent::kGestureFlingCancel,
       blink::kWebGestureDeviceSyntheticAutoscroll);
   cancel_event.data.fling_cancel.prevent_boosting = true;
-  input_router_->SendGestureEvent(GestureEventWithLatencyInfo(cancel_event));
 
-  WebGestureEvent end_event = SyntheticWebGestureEventBuilder::Build(
-      WebInputEvent::kGestureScrollEnd,
-      blink::kWebGestureDeviceSyntheticAutoscroll);
-  input_router_->SendGestureEvent(GestureEventWithLatencyInfo(end_event));
+  ForwardGestureEventWithLatencyInfo(
+      cancel_event, ui::LatencyInfo(ui::SourceEventType::OTHER));
 }
 
 TouchEmulator* RenderWidgetHostImpl::GetTouchEmulator() {
@@ -2239,6 +2322,38 @@ void RenderWidgetHostImpl::OnUnlockMouse() {
     is_last_unlocked_by_target_ = true;
 }
 
+void RenderWidgetHostImpl::RequestKeyboardLock(
+    base::Optional<base::flat_set<int>> keys_to_lock) {
+  if (!delegate_) {
+    CancelKeyboardLock();
+    return;
+  }
+
+  DCHECK(!keys_to_lock.has_value() || !keys_to_lock.value().empty());
+  keyboard_keys_to_lock_ = std::move(keys_to_lock);
+  keyboard_lock_requested_ = true;
+
+  const int esc_native_key_code =
+      ui::KeycodeConverter::DomCodeToNativeKeycode(ui::DomCode::ESCAPE);
+  const bool esc_requested =
+      !keyboard_keys_to_lock_.has_value() ||
+      base::ContainsKey(keyboard_keys_to_lock_.value(), esc_native_key_code);
+
+  if (!delegate_->RequestKeyboardLock(this, esc_requested))
+    CancelKeyboardLock();
+}
+
+void RenderWidgetHostImpl::CancelKeyboardLock() {
+  if (delegate_)
+    delegate_->CancelKeyboardLock(this);
+
+  UnlockKeyboard();
+
+  keyboard_lock_allowed_ = false;
+  keyboard_lock_requested_ = false;
+  keyboard_keys_to_lock_.reset();
+}
+
 void RenderWidgetHostImpl::OnShowDisambiguationPopup(
     const gfx::Rect& rect_pixels,
     const gfx::Size& size,
@@ -2310,12 +2425,7 @@ InputEventAckState RenderWidgetHostImpl::FilterInputEvent(
         event.GetType() == WebInputEvent::kTouchStart) {
       delegate_->FocusOwningWebContents(this);
     }
-    if (event.GetType() == WebInputEvent::kMouseDown ||
-        event.GetType() == WebInputEvent::kGestureScrollBegin ||
-        event.GetType() == WebInputEvent::kTouchStart ||
-        event.GetType() == WebInputEvent::kRawKeyDown) {
-      delegate_->OnUserInteraction(this, event.GetType());
-    }
+    delegate_->DidReceiveInputEvent(this, event.GetType());
   }
 
   return view_ ? view_->FilterInputEvent(event)
@@ -2358,7 +2468,12 @@ void RenderWidgetHostImpl::DidStopFlinging() {
     view_->DidStopFlinging();
 }
 
+void RenderWidgetHostImpl::DidStartScrollingViewport() {
+  if (view_)
+    view_->set_is_currently_scrolling_viewport(true);
+}
 void RenderWidgetHostImpl::SetNeedsBeginFrameForFlingProgress() {
+  browser_fling_needs_begin_frame_ = true;
   SetNeedsBeginFrame(true);
 }
 
@@ -2492,6 +2607,16 @@ bool RenderWidgetHostImpl::GotResponseToLockMouseRequest(bool allowed) {
   return true;
 }
 
+void RenderWidgetHostImpl::GotResponseToKeyboardLockRequest(bool allowed) {
+  DCHECK(keyboard_lock_requested_);
+  keyboard_lock_allowed_ = allowed;
+
+  if (keyboard_lock_allowed_)
+    LockKeyboard();
+  else
+    UnlockKeyboard();
+}
+
 void RenderWidgetHostImpl::DelayedAutoResized() {
   gfx::Size new_size = new_auto_size_;
   // Clear the new_auto_size_ since the empty value is used as a flag to
@@ -2501,9 +2626,15 @@ void RenderWidgetHostImpl::DelayedAutoResized() {
   if (!auto_resize_enabled_)
     return;
 
-  if (delegate_) {
-    delegate_->ResizeDueToAutoResize(this, new_size,
+  if (view_) {
+    viz::ScopedSurfaceIdAllocator scoped_allocator =
+        view_->ResizeDueToAutoResize(new_size,
                                      last_auto_resize_request_number_);
+
+    if (delegate_) {
+      delegate_->ResizeDueToAutoResize(this, new_size,
+                                       last_auto_resize_request_number_);
+    }
   }
 }
 
@@ -2514,20 +2645,8 @@ void RenderWidgetHostImpl::DetachDelegate() {
 
 void RenderWidgetHostImpl::DidAllocateLocalSurfaceIdForAutoResize(
     uint64_t sequence_number) {
-  if (!view_ || !sequence_number ||
-      last_auto_resize_request_number_ != sequence_number) {
-    return;
-  }
-
-  viz::LocalSurfaceId local_surface_id(view_->GetLocalSurfaceId());
-  if (local_surface_id.is_valid()) {
-    ScreenInfo screen_info;
-    view_->GetScreenInfo(&screen_info);
-    Send(new ViewMsg_SetLocalSurfaceIdForAutoResize(
-        routing_id_, sequence_number, min_size_for_auto_resize_,
-        max_size_for_auto_resize_, screen_info, current_content_source_id_,
-        local_surface_id));
-  }
+  last_auto_resize_response_number_ = sequence_number;
+  WasResized();
 }
 
 void RenderWidgetHostImpl::DidReceiveRendererFrame() {
@@ -2676,10 +2795,9 @@ void RenderWidgetHostImpl::RequestCompositorFrameSink(
     mojom::RenderFrameMetadataObserverClientRequest
         render_frame_metadata_observer_client_request,
     mojom::RenderFrameMetadataObserverPtr render_frame_metadata_observer) {
-  render_frame_metadata_provider_ =
-      std::make_unique<RenderFrameMetadataProviderImpl>(
-          std::move(render_frame_metadata_observer_client_request),
-          std::move(render_frame_metadata_observer));
+  render_frame_metadata_provider_.Bind(
+      std::move(render_frame_metadata_observer_client_request),
+      std::move(render_frame_metadata_observer));
   if (enable_viz_) {
       // Connects the viz process end of CompositorFrameSink message pipes. The
       // renderer compositor may request a new CompositorFrameSink on context
@@ -2697,7 +2815,7 @@ void RenderWidgetHostImpl::RequestCompositorFrameSink(
           std::move(compositor_frame_sink_client));
 
       if (view_)
-        view_->CreateCompositorFrameSink(std::move(callback));
+        std::move(callback).Run(view_->GetFrameSinkId());
       else
         create_frame_sink_callback_ = std::move(callback);
 
@@ -2723,9 +2841,9 @@ void RenderWidgetHostImpl::SetNeedsBeginFrame(bool needs_begin_frames) {
   if (needs_begin_frames_ == needs_begin_frames)
     return;
 
-  needs_begin_frames_ = needs_begin_frames;
+  needs_begin_frames_ = needs_begin_frames || browser_fling_needs_begin_frame_;
   if (view_)
-    view_->SetNeedsBeginFrames(needs_begin_frames);
+    view_->SetNeedsBeginFrames(needs_begin_frames_);
 }
 
 void RenderWidgetHostImpl::SetWantsAnimateOnlyBeginFrames() {
@@ -2738,7 +2856,6 @@ void RenderWidgetHostImpl::SubmitCompositorFrame(
     viz::CompositorFrame frame,
     viz::mojom::HitTestRegionListPtr hit_test_region_list,
     uint64_t submit_time) {
-  // TODO(gklassen): Route hit-test data to appropriate HitTestAggregator.
   TRACE_EVENT_FLOW_END0(TRACE_DISABLED_BY_DEFAULT("cc.debug.ipc"),
                         "SubmitCompositorFrame", local_surface_id.hash());
 
@@ -2756,8 +2873,8 @@ void RenderWidgetHostImpl::SubmitCompositorFrame(
   TRACE_EVENT_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("cc.debug.ipc"),
                                      &tracing_enabled);
   if (tracing_enabled) {
-    base::TimeDelta elapsed = base::TimeTicks::Now().since_origin() -
-                              base::TimeDelta::FromMicroseconds(submit_time);
+    TimeDelta elapsed = clock_->NowTicks().since_origin() -
+                        TimeDelta::FromMicroseconds(submit_time);
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("cc.debug.ipc"),
                          "SubmitCompositorFrame::TimeElapsed",
                          TRACE_EVENT_SCOPE_THREAD,
@@ -2873,10 +2990,12 @@ void RenderWidgetHostImpl::SubmitCompositorFrame(
 
     // After navigation, if a frame belonging to the new page is received, stop
     // the timer that triggers clearing the graphics of the last page.
-    if (new_content_rendering_timeout_ &&
-        last_received_content_source_id_ >= current_content_source_id_ &&
-        new_content_rendering_timeout_->IsRunning()) {
-      new_content_rendering_timeout_->Stop();
+    if (last_received_content_source_id_ >= current_content_source_id_) {
+      did_receive_first_frame_after_navigation_ = true;
+      if (new_content_rendering_timeout_ &&
+          new_content_rendering_timeout_->IsRunning()) {
+        new_content_rendering_timeout_->Stop();
+      }
     }
   }
 
@@ -2922,7 +3041,7 @@ void RenderWidgetHostImpl::OnSharedBitmapAllocatedByChild(
     SubmitCompositorFrame(
         saved_frame_.local_surface_id, std::move(saved_frame_.frame),
         std::move(saved_frame_.hit_test_region_list),
-        tracing_enabled ? base::TimeTicks::Now().since_origin().InMicroseconds()
+        tracing_enabled ? clock_->NowTicks().since_origin().InMicroseconds()
                         : 0);
     saved_frame_.local_surface_id = viz::LocalSurfaceId();
     compositor_frame_sink_binding_.ResumeIncomingMethodCallProcessing();
@@ -2954,12 +3073,16 @@ void RenderWidgetHostImpl::SetupInputRouter() {
             static_cast<LegacyInputRouterImpl*>(input_router_.get()));
   }
 
+  // input_router_ recreated, need to update the force_enable_zoom_ state.
+  input_router_->SetForceEnableZoom(force_enable_zoom_);
+
   if (IsUseZoomForDSFEnabled()) {
     input_router_->SetDeviceScaleFactor(GetScaleFactorForView(view_.get()));
   }
 }
 
 void RenderWidgetHostImpl::SetForceEnableZoom(bool enabled) {
+  force_enable_zoom_ = enabled;
   input_router_->SetForceEnableZoom(enabled);
 }
 
@@ -2992,13 +3115,15 @@ void RenderWidgetHostImpl::SetWidget(mojom::WidgetPtr widget) {
   }
 }
 
-void RenderWidgetHostImpl::ProgressFling(base::TimeTicks current_time) {
+void RenderWidgetHostImpl::ProgressFling(TimeTicks current_time) {
+  browser_fling_needs_begin_frame_ = false;
   if (input_router_)
     input_router_->ProgressFling(current_time);
 }
 
 void RenderWidgetHostImpl::DidReceiveFirstFrameAfterNavigation() {
   DCHECK(enable_surface_synchronization_);
+  did_receive_first_frame_after_navigation_ = true;
   if (!new_content_rendering_timeout_ ||
       !new_content_rendering_timeout_->IsRunning()) {
     return;
@@ -3006,9 +3131,24 @@ void RenderWidgetHostImpl::DidReceiveFirstFrameAfterNavigation() {
   new_content_rendering_timeout_->Stop();
 }
 
+void RenderWidgetHostImpl::ForceFirstFrameAfterNavigationTimeout() {
+  if (did_receive_first_frame_after_navigation_)
+    return;
+  if (new_content_rendering_timeout_)
+    new_content_rendering_timeout_->Stop();
+  ClearDisplayedGraphics();
+}
+
 void RenderWidgetHostImpl::StopFling() {
   if (input_router_)
     input_router_->StopFling();
+}
+
+bool RenderWidgetHostImpl::FlingCancellationIsDeferred() const {
+  if (input_router_)
+    return input_router_->FlingCancellationIsDeferred();
+
+  return false;
 }
 
 void RenderWidgetHostImpl::SetScreenOrientationForTesting(
@@ -3047,6 +3187,22 @@ bool RenderWidgetHostImpl::SurfacePropertiesMismatch(
   // For non-Android or when surface synchronization is not enabled, just use a
   // basic comparison.
   return first != second;
+}
+
+bool RenderWidgetHostImpl::LockKeyboard() {
+  if (!keyboard_lock_allowed_ || !is_focused_ || !view_)
+    return false;
+
+  // KeyboardLock can be activated and deactivated several times per request,
+  // for example when a fullscreen tab loses and gains focus multiple times,
+  // so we need to retain a copy of the keys requested.
+  base::Optional<base::flat_set<int>> copy_of_keys = keyboard_keys_to_lock_;
+  return view_->LockKeyboard(std::move(copy_of_keys));
+}
+
+void RenderWidgetHostImpl::UnlockKeyboard() {
+  if (IsKeyboardLocked())
+    view_->UnlockKeyboard();
 }
 
 }  // namespace content

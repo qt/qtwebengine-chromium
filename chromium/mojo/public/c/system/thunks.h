@@ -20,6 +20,7 @@
 #pragma pack(push, 8)
 struct MojoSystemThunks {
   size_t size;  // Should be set to sizeof(MojoSystemThunks).
+  MojoResult (*Initialize)(const struct MojoInitializeOptions* options);
   MojoTimeTicks (*GetTimeTicksNow)();
   MojoResult (*Close)(MojoHandle handle);
   MojoResult (*QueryHandleSignalsState)(
@@ -72,53 +73,58 @@ struct MojoSystemThunks {
                           void** buffer,
                           MojoMapBufferFlags flags);
   MojoResult (*UnmapBuffer)(void* buffer);
-  MojoResult (*CreateWatcher)(MojoWatcherCallback callback,
-                              MojoHandle* watcher_handle);
-  MojoResult (*Watch)(MojoHandle watcher_handle,
-                      MojoHandle handle,
-                      MojoHandleSignals signals,
-                      MojoWatchCondition condition,
-                      uintptr_t context);
-  MojoResult (*CancelWatch)(MojoHandle watcher_handle, uintptr_t context);
-  MojoResult (*ArmWatcher)(MojoHandle watcher_handle,
-                           uint32_t* num_ready_contexts,
-                           uintptr_t* ready_contexts,
-                           MojoResult* ready_results,
-                           MojoHandleSignalsState* ready_signals_states);
+  MojoResult (*GetBufferInfo)(MojoHandle buffer_handle,
+                              const struct MojoSharedBufferOptions* options,
+                              struct MojoSharedBufferInfo* info);
+  MojoResult (*CreateTrap)(MojoTrapEventHandler handler,
+                           const struct MojoCreateTrapOptions* options,
+                           MojoHandle* trap_handle);
+  MojoResult (*AddTrigger)(MojoHandle trap_handle,
+                           MojoHandle handle,
+                           MojoHandleSignals signals,
+                           MojoTriggerCondition condition,
+                           uintptr_t context,
+                           const struct MojoAddTriggerOptions* options);
+  MojoResult (*RemoveTrigger)(MojoHandle trap_handle,
+                              uintptr_t context,
+                              const struct MojoRemoveTriggerOptions* options);
+  MojoResult (*ArmTrap)(MojoHandle trap_handle,
+                        const struct MojoArmTrapOptions* options,
+                        uint32_t* num_ready_triggers,
+                        uintptr_t* ready_triggers,
+                        MojoResult* ready_results,
+                        MojoHandleSignalsState* ready_signals_states);
   MojoResult (*FuseMessagePipes)(MojoHandle handle0, MojoHandle handle1);
-  MojoResult (*CreateMessage)(MojoMessageHandle* message);
+  MojoResult (*CreateMessage)(const struct MojoCreateMessageOptions* options,
+                              MojoMessageHandle* message);
   MojoResult (*DestroyMessage)(MojoMessageHandle message);
-  MojoResult (*SerializeMessage)(MojoMessageHandle message);
-  MojoResult (*AttachSerializedMessageBuffer)(MojoMessageHandle message,
-                                              uint32_t payload_size,
-                                              const MojoHandle* handles,
-                                              uint32_t num_handles,
-                                              void** buffer,
-                                              uint32_t* buffer_size);
-  MojoResult (*ExtendSerializedMessagePayload)(MojoMessageHandle message,
-                                               uint32_t new_payload_size,
-                                               const MojoHandle* handles,
-                                               uint32_t num_handles,
-                                               void** buffer,
-                                               uint32_t* buffer_size);
-  MojoResult (*CommitSerializedMessageContents)(MojoMessageHandle message,
-                                                uint32_t final_payload_size,
-                                                void** buffer,
-                                                uint32_t* buffer_size);
-  MojoResult (*GetSerializedMessageContents)(
+  MojoResult (*SerializeMessage)(
       MojoMessageHandle message,
+      const struct MojoSerializeMessageOptions* options);
+  MojoResult (*AppendMessageData)(
+      MojoMessageHandle message,
+      uint32_t additional_payload_size,
+      const MojoHandle* handles,
+      uint32_t num_handles,
+      const struct MojoAppendMessageDataOptions* options,
       void** buffer,
-      uint32_t* num_bytes,
-      MojoHandle* handles,
-      uint32_t* num_handles,
-      MojoGetSerializedMessageContentsFlags flags);
-  MojoResult (*AttachMessageContext)(MojoMessageHandle message,
-                                     uintptr_t context,
-                                     MojoMessageContextSerializer serializer,
-                                     MojoMessageContextDestructor destructor);
-  MojoResult (*GetMessageContext)(MojoMessageHandle message,
-                                  uintptr_t* context,
-                                  MojoGetMessageContextFlags flags);
+      uint32_t* buffer_size);
+  MojoResult (*GetMessageData)(MojoMessageHandle message,
+                               const struct MojoGetMessageDataOptions* options,
+                               void** buffer,
+                               uint32_t* num_bytes,
+                               MojoHandle* handles,
+                               uint32_t* num_handles);
+  MojoResult (*SetMessageContext)(
+      MojoMessageHandle message,
+      uintptr_t context,
+      MojoMessageContextSerializer serializer,
+      MojoMessageContextDestructor destructor,
+      const struct MojoSetMessageContextOptions* options);
+  MojoResult (*GetMessageContext)(
+      MojoMessageHandle message,
+      const struct MojoGetMessageContextOptions* options,
+      uintptr_t* context);
   MojoResult (*WrapPlatformHandle)(
       const struct MojoPlatformHandle* platform_handle,
       MojoHandle* mojo_handle);
@@ -144,19 +150,9 @@ struct MojoSystemThunks {
 };
 #pragma pack(pop)
 
-// Use this type for the function found by dynamically discovering it in
-// a DSO linked with mojo_system. For example:
-// MojoSetSystemThunksFn mojo_set_system_thunks_fn =
-//     reinterpret_cast<MojoSetSystemThunksFn>(app_library.GetFunctionPointer(
-//         "MojoSetSystemThunks"));
-// The expected size of |system_thunks| is returned.
-// The contents of |system_thunks| are copied.
-typedef size_t (*MojoSetSystemThunksFn)(
-    const struct MojoSystemThunks* system_thunks);
-
 // A function for setting up the embedder's own system thunks. This should only
 // be called by Mojo embedder code.
-MOJO_SYSTEM_EXPORT size_t
-MojoEmbedderSetSystemThunks(const struct MojoSystemThunks* system_thunks);
+MOJO_SYSTEM_EXPORT void MojoEmbedderSetSystemThunks(
+    const struct MojoSystemThunks* system_thunks);
 
 #endif  // MOJO_PUBLIC_C_SYSTEM_THUNKS_H_

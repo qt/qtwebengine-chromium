@@ -17,6 +17,7 @@
 #include "common/Optional.h"
 #include "common/debug.h"
 #include "libANGLE/Error.h"
+#include "libANGLE/Observer.h"
 #include "libANGLE/renderer/renderer_utils.h"
 
 #define ANGLE_GL_OBJECTS_X(PROC) \
@@ -37,9 +38,11 @@ class Display;
 namespace gl
 {
 struct Box;
+class DrawCallParams;
 struct Extents;
 struct RasterizerState;
 struct Rectangle;
+struct SwizzleState;
 struct VertexAttribute;
 class VertexBinding;
 
@@ -50,18 +53,11 @@ ANGLE_GL_OBJECTS_X(ANGLE_PRE_DECLARE_OBJECT);
 
 namespace rx
 {
+class CommandGraphResource;
 class DisplayVk;
 class RenderTargetVk;
 class RendererVk;
-class ResourceVk;
 class RenderPassCache;
-class StreamingBuffer;
-
-enum class DrawType
-{
-    Arrays,
-    Elements,
-};
 
 ANGLE_GL_OBJECTS_X(ANGLE_PRE_DECLARE_VK_OBJECT);
 
@@ -73,6 +69,7 @@ bool GetAvailableValidationLayers(const std::vector<VkLayerProperties> &layerPro
                                   uint32_t *enabledLayerCount);
 
 extern const char *g_VkLoaderLayersPathEnv;
+extern const char *g_VkICDPathEnv;
 
 enum class TextureDimension
 {
@@ -252,7 +249,7 @@ class WrappedObject : angle::NonCopyable
 
     const HandleT *ptr() const { return &mHandle; }
 
-    void dumpResources(Serial serial, std::vector<vk::GarbageObject> *garbageQueue)
+    void dumpResources(Serial serial, std::vector<GarbageObject> *garbageQueue)
     {
         if (valid())
         {
@@ -312,7 +309,7 @@ class CommandBuffer : public WrappedObject<CommandBuffer, VkCommandBuffer>
     CommandBuffer();
 
     VkCommandBuffer releaseHandle();
-    void destroy(VkDevice device, const vk::CommandPool &commandPool);
+    void destroy(VkDevice device, const CommandPool &commandPool);
     Error init(VkDevice device, const VkCommandBufferAllocateInfo &createInfo);
     using WrappedObject::operator=;
 
@@ -331,28 +328,42 @@ class CommandBuffer : public WrappedObject<CommandBuffer, VkCommandBuffer>
                              VkDependencyFlags dependencyFlags,
                              const VkBufferMemoryBarrier &bufferBarrier);
 
-    void clearSingleColorImage(const vk::Image &image, const VkClearColorValue &color);
-    void clearSingleDepthStencilImage(const vk::Image &image,
-                                      VkImageAspectFlags aspectFlags,
-                                      const VkClearDepthStencilValue &depthStencil);
-
-    void clearDepthStencilImage(const vk::Image &image,
+    void clearColorImage(const Image &image,
+                         VkImageLayout imageLayout,
+                         const VkClearColorValue &color,
+                         uint32_t rangeCount,
+                         const VkImageSubresourceRange *ranges);
+    void clearDepthStencilImage(const Image &image,
+                                VkImageLayout imageLayout,
                                 const VkClearDepthStencilValue &depthStencil,
                                 uint32_t rangeCount,
                                 const VkImageSubresourceRange *ranges);
 
-    void copyBuffer(const vk::Buffer &srcBuffer,
-                    const vk::Buffer &destBuffer,
+    void clearAttachments(uint32_t attachmentCount,
+                          const VkClearAttachment *attachments,
+                          uint32_t rectCount,
+                          const VkClearRect *rects);
+
+    void copyBuffer(const Buffer &srcBuffer,
+                    const Buffer &destBuffer,
                     uint32_t regionCount,
                     const VkBufferCopy *regions);
 
-    void copySingleImage(const vk::Image &srcImage,
-                         const vk::Image &destImage,
-                         const gl::Box &copyRegion,
-                         VkImageAspectFlags aspectMask);
+    void copyBuffer(const VkBuffer &srcBuffer,
+                    const VkBuffer &destBuffer,
+                    uint32_t regionCount,
+                    const VkBufferCopy *regions);
 
-    void copyImage(const vk::Image &srcImage,
-                   const vk::Image &dstImage,
+    void copyBufferToImage(VkBuffer srcBuffer,
+                           const Image &dstImage,
+                           VkImageLayout dstImageLayout,
+                           uint32_t regionCount,
+                           const VkBufferImageCopy *regions);
+
+    void copyImage(const Image &srcImage,
+                   VkImageLayout srcImageLayout,
+                   const Image &dstImage,
+                   VkImageLayout dstImageLayout,
                    uint32_t regionCount,
                    const VkImageCopy *regions);
 
@@ -370,22 +381,21 @@ class CommandBuffer : public WrappedObject<CommandBuffer, VkCommandBuffer>
                      int32_t vertexOffset,
                      uint32_t firstInstance);
 
-    void bindPipeline(VkPipelineBindPoint pipelineBindPoint, const vk::Pipeline &pipeline);
+    void bindPipeline(VkPipelineBindPoint pipelineBindPoint, const Pipeline &pipeline);
     void bindVertexBuffers(uint32_t firstBinding,
                            uint32_t bindingCount,
                            const VkBuffer *buffers,
                            const VkDeviceSize *offsets);
-    void bindIndexBuffer(const vk::Buffer &buffer, VkDeviceSize offset, VkIndexType indexType);
     void bindIndexBuffer(const VkBuffer &buffer, VkDeviceSize offset, VkIndexType indexType);
     void bindDescriptorSets(VkPipelineBindPoint bindPoint,
-                            const vk::PipelineLayout &layout,
+                            const PipelineLayout &layout,
                             uint32_t firstSet,
                             uint32_t descriptorSetCount,
                             const VkDescriptorSet *descriptorSets,
                             uint32_t dynamicOffsetCount,
                             const uint32_t *dynamicOffsets);
 
-    void executeCommands(uint32_t commandBufferCount, const vk::CommandBuffer *commandBuffers);
+    void executeCommands(uint32_t commandBufferCount, const CommandBuffer *commandBuffers);
 };
 
 class Image final : public WrappedObject<Image, VkImage>
@@ -404,24 +414,14 @@ class Image final : public WrappedObject<Image, VkImage>
 
     Error init(VkDevice device, const VkImageCreateInfo &createInfo);
 
-    void changeLayoutTop(VkImageAspectFlags aspectMask,
-                         VkImageLayout newLayout,
-                         CommandBuffer *commandBuffer);
-
-    void changeLayoutWithStages(VkImageAspectFlags aspectMask,
-                                VkImageLayout newLayout,
-                                VkPipelineStageFlags srcStageMask,
-                                VkPipelineStageFlags dstStageMask,
-                                CommandBuffer *commandBuffer);
-
     void getMemoryRequirements(VkDevice device, VkMemoryRequirements *requirementsOut) const;
-    Error bindMemory(VkDevice device, const vk::DeviceMemory &deviceMemory);
+    Error bindMemory(VkDevice device, const DeviceMemory &deviceMemory);
 
-    VkImageLayout getCurrentLayout() const { return mCurrentLayout; }
-    void updateLayout(VkImageLayout layout) { mCurrentLayout = layout; }
-
-  private:
-    VkImageLayout mCurrentLayout;
+    void getSubresourceLayout(VkDevice device,
+                              VkImageAspectFlagBits aspectMask,
+                              uint32_t mipLevel,
+                              uint32_t arrayLayer,
+                              VkSubresourceLayout *outSubresourceLayout) const;
 };
 
 class ImageView final : public WrappedObject<ImageView, VkImageView>
@@ -465,8 +465,8 @@ class DeviceMemory final : public WrappedObject<DeviceMemory, VkDeviceMemory>
               VkDeviceSize offset,
               VkDeviceSize size,
               VkMemoryMapFlags flags,
-              uint8_t **mapPointer);
-    void unmap(VkDevice device);
+              uint8_t **mapPointer) const;
+    void unmap(VkDevice device) const;
 };
 
 class RenderPass final : public WrappedObject<RenderPass, VkRenderPass>
@@ -543,6 +543,9 @@ class DescriptorPool final : public WrappedObject<DescriptorPool, VkDescriptorPo
     Error allocateDescriptorSets(VkDevice device,
                                  const VkDescriptorSetAllocateInfo &allocInfo,
                                  VkDescriptorSet *descriptorSetsOut);
+    Error freeDescriptorSets(VkDevice device,
+                             uint32_t descriptorSetCount,
+                             const VkDescriptorSet *descriptorSets);
 };
 
 class Sampler final : public WrappedObject<Sampler, VkSampler>
@@ -564,34 +567,6 @@ class Fence final : public WrappedObject<Fence, VkFence>
     VkResult getStatus(VkDevice device) const;
 };
 
-// Helper class for managing a CPU/GPU transfer Image.
-class StagingImage final : angle::NonCopyable
-{
-  public:
-    StagingImage();
-    StagingImage(StagingImage &&other);
-    void destroy(VkDevice device);
-
-    vk::Error init(ContextVk *contextVk,
-                   TextureDimension dimension,
-                   const Format &format,
-                   const gl::Extents &extent,
-                   StagingUsage usage);
-
-    Image &getImage() { return mImage; }
-    const Image &getImage() const { return mImage; }
-    DeviceMemory &getDeviceMemory() { return mDeviceMemory; }
-    const DeviceMemory &getDeviceMemory() const { return mDeviceMemory; }
-    VkDeviceSize getSize() const { return mSize; }
-
-    void dumpResources(Serial serial, std::vector<vk::GarbageObject> *garbageQueue);
-
-  private:
-    Image mImage;
-    DeviceMemory mDeviceMemory;
-    size_t mSize;
-};
-
 // Similar to StagingImage, for Buffers.
 class StagingBuffer final : angle::NonCopyable
 {
@@ -599,7 +574,7 @@ class StagingBuffer final : angle::NonCopyable
     StagingBuffer();
     void destroy(VkDevice device);
 
-    vk::Error init(ContextVk *contextVk, VkDeviceSize size, StagingUsage usage);
+    Error init(ContextVk *contextVk, VkDeviceSize size, StagingUsage usage);
 
     Buffer &getBuffer() { return mBuffer; }
     const Buffer &getBuffer() const { return mBuffer; }
@@ -607,7 +582,7 @@ class StagingBuffer final : angle::NonCopyable
     const DeviceMemory &getDeviceMemory() const { return mDeviceMemory; }
     size_t getSize() const { return mSize; }
 
-    void dumpResources(Serial serial, std::vector<vk::GarbageObject> *garbageQueue);
+    void dumpResources(Serial serial, std::vector<GarbageObject> *garbageQueue);
 
   private:
     Buffer mBuffer;
@@ -660,91 +635,30 @@ Error AllocateBufferMemory(RendererVk *renderer,
 
 struct BufferAndMemory final : private angle::NonCopyable
 {
-    vk::Buffer buffer;
-    vk::DeviceMemory memory;
+    Buffer buffer;
+    DeviceMemory memory;
 };
 
-Error AllocateImageMemory(RendererVk *renderer,
+Error AllocateImageMemory(VkDevice device,
+                          const MemoryProperties &memoryProperties,
                           VkMemoryPropertyFlags memoryPropertyFlags,
                           Image *image,
                           DeviceMemory *deviceMemoryOut,
                           size_t *requiredSizeOut);
-
-// This class responsibility is to bind an indexed buffer needed to support line loops in Vulkan.
-// In the setup phase of drawing, the bindLineLoopIndexBuffer method should be called with the
-// first/last vertex and the current commandBuffer. If the user wants to draw a loop between [v1,
-// v2, v3], we will create an indexed buffer with these indexes: [0, 1, 2, 3, 0] to emulate the
-// loop.
-class LineLoopHandler final : angle::NonCopyable
-{
-  public:
-    LineLoopHandler();
-    ~LineLoopHandler();
-
-    void destroy(VkDevice device);
-
-    gl::Error draw(ContextVk *contextVk, int firstVertex, int count, CommandBuffer *commandBuffer);
-
-  private:
-    gl::Error bindLineLoopIndexBuffer(ContextVk *contextVk,
-                                      int firstVertex,
-                                      int count,
-                                      vk::CommandBuffer **commandBuffer);
-    std::unique_ptr<StreamingBuffer> mStreamingLineLoopIndicesData;
-    VkBuffer mLineLoopIndexBuffer;
-    VkDeviceSize mLineLoopIndexBufferOffset;
-    Optional<int> mLineLoopBufferFirstIndex;
-    Optional<int> mLineLoopBufferLastIndex;
-};
-
 }  // namespace vk
 
 namespace gl_vk
 {
+VkRect2D GetRect(const gl::Rectangle &source);
 VkPrimitiveTopology GetPrimitiveTopology(GLenum mode);
 VkCullModeFlags GetCullMode(const gl::RasterizerState &rasterState);
 VkFrontFace GetFrontFace(GLenum frontFace);
+VkSampleCountFlagBits GetSamples(GLint sampleCount);
+VkComponentSwizzle GetSwizzle(const GLenum swizzle);
+VkIndexType GetIndexType(GLenum elementType);
+void GetOffset(const gl::Offset &glOffset, VkOffset3D *vkOffset);
+void GetExtent(const gl::Extents &glExtent, VkExtent3D *vkExtent);
 }  // namespace gl_vk
-
-// This is a helper class for back-end objects used in Vk command buffers. It records a serial
-// at command recording times indicating an order in the queue. We use Fences to detect when
-// commands finish, and then release any unreferenced and deleted resources based on the stored
-// queue serial in a special 'garbage' queue. Resources also track current read and write
-// dependencies. Only one command buffer node can be writing to the Resource at a time, but many
-// can be reading from it. Together the dependencies will form a command graph at submission time.
-class ResourceVk
-{
-  public:
-    ResourceVk();
-    virtual ~ResourceVk();
-
-    void updateQueueSerial(Serial queueSerial);
-    Serial getQueueSerial() const;
-
-    // Returns true if any tracked read or write nodes match 'currentSerial'.
-    bool hasCurrentWritingNode(Serial currentSerial) const;
-
-    // Returns the active write node, and asserts 'currentSerial' matches the stored serial.
-    vk::CommandGraphNode *getCurrentWritingNode(Serial currentSerial);
-
-    // Allocates a new write node and calls onWriteResource internally.
-    vk::CommandGraphNode *getNewWritingNode(RendererVk *renderer);
-
-    // Allocates a write node via getNewWriteNode and returns a started command buffer.
-    // The started command buffer will render outside of a RenderPass.
-    vk::Error beginWriteResource(RendererVk *renderer, vk::CommandBuffer **commandBufferOut);
-
-    // Sets up dependency relations. 'writingNode' will modify 'this' ResourceVk.
-    void onWriteResource(vk::CommandGraphNode *writingNode, Serial serial);
-
-    // Sets up dependency relations. 'readingNode' will read from 'this' ResourceVk.
-    void onReadResource(vk::CommandGraphNode *readingNode, Serial serial);
-
-  private:
-    Serial mStoredQueueSerial;
-    std::vector<vk::CommandGraphNode *> mCurrentReadingNodes;
-    vk::CommandGraphNode *mCurrentWritingNode;
-};
 
 }  // namespace rx
 

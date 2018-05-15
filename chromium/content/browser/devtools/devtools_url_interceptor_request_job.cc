@@ -5,7 +5,6 @@
 #include "content/browser/devtools/devtools_url_interceptor_request_job.h"
 
 #include "base/base64.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/devtools/protocol/network_handler.h"
@@ -448,6 +447,8 @@ int DevToolsURLInterceptorRequestJob::MockResponseDetails::ReadRawData(
 
 namespace {
 
+using DevToolsStatus = ResourceRequestInfoImpl::DevToolsStatus;
+
 void SendPendingBodyRequestsOnUiThread(
     std::vector<std::unique_ptr<
         protocol::Network::Backend::GetResponseBodyForInterceptionCallback>>
@@ -520,6 +521,14 @@ std::unique_ptr<net::UploadDataStream> GetUploadData(net::URLRequest* request) {
 
   return std::make_unique<net::ElementsUploadDataStream>(
       std::move(proxy_readers), 0);
+}
+
+void SetDevToolsStatus(net::URLRequest* request,
+                       DevToolsStatus devtools_status) {
+  ResourceRequestInfoImpl* resource_request_info =
+      ResourceRequestInfoImpl::ForRequest(request);
+  DCHECK(resource_request_info);
+  resource_request_info->set_devtools_status(devtools_status);
 }
 
 }  // namespace
@@ -660,10 +669,14 @@ DevToolsURLInterceptorRequestJob::GetHttpResponseHeaders() const {
 
 bool DevToolsURLInterceptorRequestJob::GetMimeType(
     std::string* mime_type) const {
+  if (sub_request_) {
+    sub_request_->request()->GetMimeType(mime_type);
+    return true;
+  }
   const net::HttpResponseHeaders* response_headers = GetHttpResponseHeaders();
-  if (!response_headers)
-    return false;
-  return response_headers->GetMimeType(mime_type);
+  if (response_headers)
+    return response_headers->GetMimeType(mime_type);
+  return false;
 }
 
 bool DevToolsURLInterceptorRequestJob::GetCharset(std::string* charset) {
@@ -711,7 +724,7 @@ void DevToolsURLInterceptorRequestJob::OnSubRequestAuthRequired(
 
   if (stage_to_intercept_ == InterceptionStage::DONT_INTERCEPT) {
     // This should trigger default auth behavior.
-    // See comment in ProcessAuthRespose.
+    // See comment in ProcessAuthResponse.
     NotifyHeadersComplete();
     return;
   }
@@ -756,6 +769,8 @@ void DevToolsURLInterceptorRequestJob::OnSubRequestRedirectReceived(
     bool* defer_redirect) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(sub_request_);
+  SetDevToolsStatus(sub_request_->request(),
+                    DevToolsStatus::kCanceledAsRedirect);
 
   // If we're not intercepting results or are a response then cancel this
   // redirect and tell the parent request it was redirected through |redirect_|.
@@ -799,8 +814,10 @@ void DevToolsURLInterceptorRequestJob::OnInterceptedRequestResponseStarted(
     const net::Error& net_error) {
   DCHECK_NE(waiting_for_user_response_,
             WaitingForUserResponse::WAITING_FOR_RESPONSE_ACK);
-  if (stage_to_intercept_ == InterceptionStage::DONT_INTERCEPT)
+  if (stage_to_intercept_ == InterceptionStage::DONT_INTERCEPT) {
+    static_cast<InterceptedRequest*>(sub_request_.get())->FetchResponseBody();
     return;
+  }
   waiting_for_user_response_ = WaitingForUserResponse::WAITING_FOR_RESPONSE_ACK;
 
   std::unique_ptr<InterceptedRequestInfo> request_info = BuildRequestInfo();
@@ -873,7 +890,7 @@ void DevToolsURLInterceptorRequestJob::StopIntercepting() {
     case WaitingForUserResponse::WAITING_FOR_RESPONSE_ACK:
     // Fallthough.
     case WaitingForUserResponse::WAITING_FOR_REQUEST_ACK:
-      ProcessInterceptionRespose(
+      ProcessInterceptionResponse(
           std::make_unique<DevToolsNetworkInterceptor::Modifications>(
               base::nullopt, base::nullopt, protocol::Maybe<std::string>(),
               protocol::Maybe<std::string>(), protocol::Maybe<std::string>(),
@@ -887,7 +904,7 @@ void DevToolsURLInterceptorRequestJob::StopIntercepting() {
               .SetResponse(protocol::Network::AuthChallengeResponse::
                                ResponseEnum::Default)
               .Build();
-      ProcessAuthRespose(
+      ProcessAuthResponse(
           std::make_unique<DevToolsNetworkInterceptor::Modifications>(
               base::nullopt, base::nullopt, protocol::Maybe<std::string>(),
               protocol::Maybe<std::string>(), protocol::Maybe<std::string>(),
@@ -928,7 +945,7 @@ void DevToolsURLInterceptorRequestJob::ContinueInterceptedRequest(
                                "authChallengeResponse not expected.")));
         break;
       }
-      ProcessInterceptionRespose(std::move(modifications));
+      ProcessInterceptionResponse(std::move(modifications));
       BrowserThread::PostTask(
           BrowserThread::UI, FROM_HERE,
           base::BindOnce(&ContinueInterceptedRequestCallback::sendSuccess,
@@ -945,7 +962,7 @@ void DevToolsURLInterceptorRequestJob::ContinueInterceptedRequest(
                                "authChallengeResponse required.")));
         break;
       }
-      if (ProcessAuthRespose(std::move(modifications))) {
+      if (ProcessAuthResponse(std::move(modifications))) {
         BrowserThread::PostTask(
             BrowserThread::UI, FROM_HERE,
             base::BindOnce(&ContinueInterceptedRequestCallback::sendSuccess,
@@ -1025,18 +1042,14 @@ DevToolsURLInterceptorRequestJob::BuildRequestInfo() {
   return result;
 }
 
-void DevToolsURLInterceptorRequestJob::ProcessInterceptionRespose(
+void DevToolsURLInterceptorRequestJob::ProcessInterceptionResponse(
     std::unique_ptr<DevToolsNetworkInterceptor::Modifications> modifications) {
   bool is_response_ack = waiting_for_user_response_ ==
                          WaitingForUserResponse::WAITING_FOR_RESPONSE_ACK;
   waiting_for_user_response_ = WaitingForUserResponse::NOT_WAITING;
 
-  if (modifications->mark_as_canceled) {
-    ResourceRequestInfoImpl* resource_request_info =
-        ResourceRequestInfoImpl::ForRequest(request());
-    DCHECK(resource_request_info);
-    resource_request_info->set_canceled_by_devtools(true);
-  }
+  if (modifications->mark_as_canceled)
+    SetDevToolsStatus(request(), DevToolsStatus::kCanceled);
 
   if (modifications->error_reason) {
     if (sub_request_) {
@@ -1060,6 +1073,10 @@ void DevToolsURLInterceptorRequestJob::ProcessInterceptionRespose(
     if (sub_request_) {
       sub_request_->Cancel();
       sub_request_.reset();
+    }
+    if (response_headers_callback_) {
+      response_headers_callback_.Run(
+          mock_response_details_->response_headers());
     }
     NotifyHeadersComplete();
     return;
@@ -1118,11 +1135,17 @@ void DevToolsURLInterceptorRequestJob::ProcessInterceptionRespose(
     // The reason we start a sub request is because we are in full control of it
     // and can choose to ignore it if, for example, the fetch encounters a
     // redirect that the user chooses to replace with a mock response.
-    sub_request_.reset(new SubRequest(request_details_, this, interceptor_));
+    DCHECK(stage_to_intercept_ != InterceptionStage::RESPONSE);
+    if (stage_to_intercept_ == InterceptionStage::BOTH) {
+      sub_request_.reset(
+          new InterceptedRequest(request_details_, this, interceptor_));
+    } else {
+      sub_request_.reset(new SubRequest(request_details_, this, interceptor_));
+    }
   }
 }
 
-bool DevToolsURLInterceptorRequestJob::ProcessAuthRespose(
+bool DevToolsURLInterceptorRequestJob::ProcessAuthResponse(
     std::unique_ptr<DevToolsNetworkInterceptor::Modifications> modifications) {
   waiting_for_user_response_ = WaitingForUserResponse::NOT_WAITING;
 
@@ -1150,8 +1173,8 @@ bool DevToolsURLInterceptorRequestJob::ProcessAuthRespose(
       protocol::Network::AuthChallengeResponse::ResponseEnum::
           ProvideCredentials) {
     SetAuth(net::AuthCredentials(
-        base::UTF8ToUTF16(auth_challenge_response->GetUsername("").c_str()),
-        base::UTF8ToUTF16(auth_challenge_response->GetPassword("").c_str())));
+        base::UTF8ToUTF16(auth_challenge_response->GetUsername("")),
+        base::UTF8ToUTF16(auth_challenge_response->GetPassword(""))));
     return true;
   }
 
@@ -1160,12 +1183,12 @@ bool DevToolsURLInterceptorRequestJob::ProcessAuthRespose(
 
 void DevToolsURLInterceptorRequestJob::SetRequestHeadersCallback(
     net::RequestHeadersCallback callback) {
-  request_headers_callback_ = callback;
+  request_headers_callback_ = std::move(callback);
 }
 
 void DevToolsURLInterceptorRequestJob::SetResponseHeadersCallback(
     net::ResponseHeadersCallback callback) {
-  response_headers_callback_ = callback;
+  response_headers_callback_ = std::move(callback);
 }
 
 DevToolsURLInterceptorRequestJob::RequestDetails::RequestDetails(

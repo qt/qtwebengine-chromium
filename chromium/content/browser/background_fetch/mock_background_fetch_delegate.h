@@ -63,10 +63,13 @@ class MockBackgroundFetchDelegate : public BackgroundFetchDelegate {
   ~MockBackgroundFetchDelegate() override;
 
   // BackgroundFetchDelegate implementation:
+  void GetIconDisplaySize(
+      BackgroundFetchDelegate::GetIconDisplaySizeCallback callback) override;
   void CreateDownloadJob(
       const std::string& job_unique_id,
       const std::string& title,
       const url::Origin& origin,
+      const SkBitmap& icon,
       int completed_parts,
       int total_parts,
       const std::vector<std::string>& current_guids) override;

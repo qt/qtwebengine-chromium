@@ -22,6 +22,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/screen_info.h"
+#include "content/public/common/use_zoom_for_dsf_policy.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/child_frame_compositing_helper.h"
 #include "content/renderer/frame_owner_properties.h"
@@ -32,18 +33,19 @@
 #include "content/renderer/render_widget.h"
 #include "content/renderer/resource_timing_info_conversions.h"
 #include "ipc/ipc_message_macros.h"
-#include "printing/features/features.h"
-#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
-#include "third_party/WebKit/public/common/frame/frame_policy.h"
-#include "third_party/WebKit/public/platform/URLConversion.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/public/platform/WebResourceTimingInfo.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebTriggeringEventInfo.h"
-#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
-#include "third_party/WebKit/public/web/WebView.h"
+#include "printing/buildflags/buildflags.h"
+#include "third_party/blink/public/common/feature_policy/feature_policy.h"
+#include "third_party/blink/public/common/frame/frame_policy.h"
+#include "third_party/blink/public/platform/url_conversion.h"
+#include "third_party/blink/public/platform/web_rect.h"
+#include "third_party/blink/public/platform/web_resource_timing_info.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_triggering_event_info.h"
+#include "third_party/blink/public/web/web_user_gesture_indicator.h"
+#include "third_party/blink/public/web/web_view.h"
 #include "ui/base/ui_base_features.h"
+#include "ui/gfx/geometry/size_conversions.h"
 
 #if defined(USE_AURA)
 #include "content/renderer/mus/mus_embedded_frame.h"
@@ -367,8 +369,9 @@ void RenderFrameProxy::SetChildFrameSurface(
     return;
 
   if (!enable_surface_synchronization_) {
-    compositing_helper_->SetPrimarySurfaceId(surface_info.id(),
-                                             local_frame_size());
+    compositing_helper_->SetPrimarySurfaceId(
+        surface_info.id(), local_frame_size(),
+        cc::DeadlinePolicy::UseDefaultDeadline());
   }
   compositing_helper_->SetFallbackSurfaceId(surface_info.id(),
                                             local_frame_size());
@@ -415,6 +418,8 @@ bool RenderFrameProxy::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(FrameMsg_DidUpdateOrigin, OnDidUpdateOrigin)
     IPC_MESSAGE_HANDLER(InputMsg_SetFocus, OnSetPageFocus)
     IPC_MESSAGE_HANDLER(FrameMsg_ResizeDueToAutoResize, OnResizeDueToAutoResize)
+    IPC_MESSAGE_HANDLER(FrameMsg_EnableAutoResize, OnEnableAutoResize)
+    IPC_MESSAGE_HANDLER(FrameMsg_DisableAutoResize, OnDisableAutoResize)
     IPC_MESSAGE_HANDLER(FrameMsg_SetFocusedFrame, OnSetFocusedFrame)
     IPC_MESSAGE_HANDLER(FrameMsg_WillEnterFullscreen, OnWillEnterFullscreen)
     IPC_MESSAGE_HANDLER(FrameMsg_SetHasReceivedUserGesture,
@@ -560,7 +565,20 @@ void RenderFrameProxy::OnScrollRectToVisible(
 }
 
 void RenderFrameProxy::OnResizeDueToAutoResize(uint64_t sequence_number) {
-  pending_resize_params_.sequence_number = sequence_number;
+  pending_resize_params_.auto_resize_sequence_number = sequence_number;
+  WasResized();
+}
+
+void RenderFrameProxy::OnEnableAutoResize(const gfx::Size& min_size,
+                                          const gfx::Size& max_size) {
+  pending_resize_params_.auto_resize_enabled = true;
+  pending_resize_params_.min_size_for_auto_resize = min_size;
+  pending_resize_params_.max_size_for_auto_resize = max_size;
+  WasResized();
+}
+
+void RenderFrameProxy::OnDisableAutoResize() {
+  pending_resize_params_.auto_resize_enabled = false;
   WasResized();
 }
 
@@ -577,20 +595,30 @@ void RenderFrameProxy::WasResized() {
 
   bool synchronized_params_changed =
       !sent_resize_params_ ||
+      sent_resize_params_->auto_resize_enabled !=
+          pending_resize_params_.auto_resize_enabled ||
+      sent_resize_params_->min_size_for_auto_resize !=
+          pending_resize_params_.min_size_for_auto_resize ||
+      sent_resize_params_->max_size_for_auto_resize !=
+          pending_resize_params_.max_size_for_auto_resize ||
       sent_resize_params_->local_frame_size !=
           pending_resize_params_.local_frame_size ||
       sent_resize_params_->screen_space_rect.size() !=
           pending_resize_params_.screen_space_rect.size() ||
       sent_resize_params_->screen_info != pending_resize_params_.screen_info ||
-      sent_resize_params_->sequence_number !=
-          pending_resize_params_.sequence_number;
+      sent_resize_params_->auto_resize_sequence_number !=
+          pending_resize_params_.auto_resize_sequence_number;
 
   if (synchronized_params_changed)
     local_surface_id_ = parent_local_surface_id_allocator_.GenerateId();
 
   viz::SurfaceId surface_id(frame_sink_id_, local_surface_id_);
   if (enable_surface_synchronization_) {
-    compositing_helper_->SetPrimarySurfaceId(surface_id, local_frame_size());
+    // TODO(vmpstr): When capture_sequence_number is available, the deadline
+    // should be infinite if the sequence number has changed.
+    compositing_helper_->SetPrimarySurfaceId(
+        surface_id, local_frame_size(),
+        cc::DeadlinePolicy::UseDefaultDeadline());
   }
 
   bool rect_changed =
@@ -605,13 +633,20 @@ void RenderFrameProxy::WasResized() {
   }
 #endif
 
-  if (resize_params_changed) {
-    // Let the browser know about the updated view rect.
-    Send(new FrameHostMsg_UpdateResizeParams(
-        routing_id_, screen_space_rect(), local_frame_size(), screen_info(),
-        auto_size_sequence_number(), surface_id));
-    sent_resize_params_ = pending_resize_params_;
-  }
+  if (!resize_params_changed)
+    return;
+
+  // Let the browser know about the updated view rect.
+  Send(new FrameHostMsg_UpdateResizeParams(routing_id_, surface_id,
+                                           pending_resize_params_));
+  sent_resize_params_ = pending_resize_params_;
+
+  // The visible rect that the OOPIF needs to raster depends partially on
+  // parameters that might have changed. If they affect the raster area, resend
+  // the intersection rects.
+  gfx::Rect new_compositor_visible_rect = web_frame_->GetCompositingRect();
+  if (new_compositor_visible_rect != last_compositor_visible_rect_)
+    UpdateRemoteViewportIntersection(last_intersection_rect_);
 }
 
 void RenderFrameProxy::OnSetHasReceivedUserGestureBeforeNavigation(bool value) {
@@ -731,9 +766,12 @@ void RenderFrameProxy::FrameRectsChanged(
 }
 
 void RenderFrameProxy::UpdateRemoteViewportIntersection(
-    const blink::WebRect& viewportIntersection) {
+    const blink::WebRect& viewport_intersection) {
+  last_intersection_rect_ = viewport_intersection;
+  last_compositor_visible_rect_ = web_frame_->GetCompositingRect();
   Send(new FrameHostMsg_UpdateViewportIntersection(
-      routing_id_, gfx::Rect(viewportIntersection)));
+      routing_id_, gfx::Rect(viewport_intersection),
+      last_compositor_visible_rect_));
 }
 
 void RenderFrameProxy::VisibilityChanged(bool visible) {

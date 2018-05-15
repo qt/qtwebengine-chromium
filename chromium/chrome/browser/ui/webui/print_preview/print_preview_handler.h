@@ -19,7 +19,7 @@
 #include "components/signin/core/browser/gaia_cookie_manager_service.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "printing/backend/print_backend.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 
 class PdfPrinterHandler;
 class PrinterHandler;
@@ -27,7 +27,7 @@ class PrintPreviewUI;
 
 namespace base {
 class DictionaryValue;
-class RefCountedBytes;
+class RefCountedMemory;
 }
 
 namespace content {
@@ -246,7 +246,7 @@ class PrintPreviewHandler
 
   // Send the PDF data to the cloud to print.
   void SendCloudPrintJob(const std::string& callback_id,
-                         const base::RefCountedBytes* data);
+                         const base::RefCountedMemory* data);
 
   // Closes the preview dialog.
   void ClosePreviewDialog();

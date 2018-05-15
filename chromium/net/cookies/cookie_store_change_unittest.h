@@ -7,6 +7,7 @@
 
 #include "base/bind.h"
 #include "net/cookies/canonical_cookie.h"
+#include "net/cookies/cookie_change_dispatcher_test_helpers.h"
 #include "net/cookies/cookie_store.h"
 #include "net/cookies/cookie_store_unittest.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -14,24 +15,107 @@
 
 namespace net {
 
-template <class CookieStoreTestTraits>
-class CookieStoreChangeTest : public CookieStoreTest<CookieStoreTestTraits> {};
-TYPED_TEST_CASE_P(CookieStoreChangeTest);
-
 namespace {
 
 using CookieChange = std::pair<CanonicalCookie, CookieChangeCause>;
 
-void OnCookieChange(std::vector<CookieChange>* changes,
-                    const CanonicalCookie& cookie,
-                    CookieChangeCause cause) {
-  CookieChange notification(cookie, cause);
-  changes->push_back(notification);
+// Used to sort CookieChanges when testing stores without exact change ordering.
+//
+// The ordering relation must match the order in which the tests below issue
+// cookie calls. Changes to this method should be tested by running the tests
+// below with CookieMonsterTestTraits::has_exact_change_ordering set to both
+// true and false.
+bool CookieChangeLessThan(const CookieChange& lhs, const CookieChange& rhs) {
+  if (lhs.first.Name() != rhs.first.Name())
+    return lhs.first.Name() < rhs.first.Name();
+
+  if (lhs.first.Value() != rhs.first.Value())
+    return lhs.first.Value() < rhs.first.Value();
+
+  if (lhs.first.Domain() != rhs.first.Domain())
+    return lhs.first.Domain() < rhs.first.Domain();
+
+  return lhs.second < rhs.second;
 }
 
 }  // namespace
 
-TYPED_TEST_P(CookieStoreChangeTest, Global_NoCookie) {
+// Google Test supports at most 50 tests per typed case, so the tests here are
+// broken up into multiple cases.
+template <class CookieStoreTestTraits>
+class CookieStoreChangeTestBase
+    : public CookieStoreTest<CookieStoreTestTraits> {
+ protected:
+  using CookieStoreTest<CookieStoreTestTraits>::FindAndDeleteCookie;
+
+  // Drains all pending tasks on the run loop(s) involved in the test.
+  void DeliverChangeNotifications() {
+    CookieStoreTestTraits::DeliverChangeNotifications();
+  }
+
+  bool FindAndDeleteCookie(CookieStore* cs,
+                           const std::string& domain,
+                           const std::string& name,
+                           const std::string& path) {
+    for (auto& cookie : this->GetAllCookies(cs)) {
+      if (cookie.Domain() == domain && cookie.Name() == name &&
+          cookie.Path() == path) {
+        return this->DeleteCanonicalCookie(cs, cookie);
+      }
+    }
+
+    return false;
+  }
+
+  // Could be static, but it's actually easier to have it be a member function.
+  ::testing::AssertionResult MatchesCause(CookieChangeCause expected_cause,
+                                          CookieChangeCause actual_cause) {
+    if (!CookieChangeCauseIsDeletion(expected_cause) ||
+        CookieStoreTestTraits::has_exact_change_cause) {
+      if (expected_cause == actual_cause)
+        return ::testing::AssertionSuccess();
+      return ::testing::AssertionFailure()
+             << "expected " << expected_cause << " got " << actual_cause;
+    }
+    if (CookieChangeCauseIsDeletion(actual_cause))
+      return ::testing::AssertionSuccess();
+    return ::testing::AssertionFailure()
+           << "expected a deletion cause, got " << actual_cause;
+  }
+
+  static void OnCookieChange(std::vector<CookieChange>* changes,
+                             const CanonicalCookie& cookie,
+                             CookieChangeCause cause) {
+    CookieChange notification(cookie, cause);
+
+    if (CookieStoreTestTraits::has_exact_change_ordering) {
+      changes->push_back(notification);
+    } else {
+      // Assumes the vector is sorted before the insertion. If true, the vector
+      // will remain sorted.
+      changes->insert(std::upper_bound(changes->begin(), changes->end(),
+                                       notification, CookieChangeLessThan),
+                      notification);
+    }
+  }
+};
+
+template <class CookieStoreTestTraits>
+class CookieStoreChangeGlobalTest
+    : public CookieStoreChangeTestBase<CookieStoreTestTraits> {};
+TYPED_TEST_CASE_P(CookieStoreChangeGlobalTest);
+
+template <class CookieStoreTestTraits>
+class CookieStoreChangeUrlTest
+    : public CookieStoreChangeTestBase<CookieStoreTestTraits> {};
+TYPED_TEST_CASE_P(CookieStoreChangeUrlTest);
+
+template <class CookieStoreTestTraits>
+class CookieStoreChangeNamedTest
+    : public CookieStoreChangeTestBase<CookieStoreTestTraits> {};
+TYPED_TEST_CASE_P(CookieStoreChangeNamedTest);
+
+TYPED_TEST_P(CookieStoreChangeGlobalTest, NoCookie) {
   if (!TypeParam::supports_global_cookie_tracking)
     return;
 
@@ -39,27 +123,29 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_NoCookie) {
   std::vector<CookieChange> cookie_changes;
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
-          &OnCookieChange, base::Unretained(&cookie_changes)));
-  this->RunUntilIdle();
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
   EXPECT_EQ(0u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Global_InitialCookie) {
+TYPED_TEST_P(CookieStoreChangeGlobalTest, InitialCookie) {
   if (!TypeParam::supports_global_cookie_tracking)
     return;
 
   CookieStore* cs = this->GetCookieStore();
   std::vector<CookieChange> cookie_changes;
-  this->SetCookie(cs, this->http_www_foo_.url(), "abc=def");
-  this->RunUntilIdle();
+  this->SetCookie(cs, this->http_www_foo_.url(), "A=B");
+  this->DeliverChangeNotifications();
   std::unique_ptr<CookieChangeSubscription> subscription(
       cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
-          &OnCookieChange, base::Unretained(&cookie_changes))));
-  this->RunUntilIdle();
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes))));
+  this->DeliverChangeNotifications();
   EXPECT_EQ(0u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Global_Insert) {
+TYPED_TEST_P(CookieStoreChangeGlobalTest, InsertOne) {
   if (!TypeParam::supports_global_cookie_tracking)
     return;
 
@@ -67,75 +153,77 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_Insert) {
   std::vector<CookieChange> cookie_changes;
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
-          &OnCookieChange, base::Unretained(&cookie_changes)));
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes.size());
+
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
-  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "C=D"));
-  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "E=F"));
-  EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "G=H"));
-  EXPECT_EQ("A=B; C=D; E=F", this->GetCookies(cs, this->http_www_foo_.url()));
-  EXPECT_EQ("G=H", this->GetCookies(cs, this->http_bar_com_.url()));
-  this->RunUntilIdle();
-  ASSERT_EQ(4u, cookie_changes.size());
-  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[0].second);
+  this->DeliverChangeNotifications();
+
+  ASSERT_EQ(1u, cookie_changes.size());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[0].second));
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
   EXPECT_EQ("A", cookie_changes[0].first.Name());
   EXPECT_EQ("B", cookie_changes[0].first.Value());
-  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
-  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[1].second);
-  EXPECT_EQ("C", cookie_changes[1].first.Name());
-  EXPECT_EQ("D", cookie_changes[1].first.Value());
-  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[2].first.Domain());
-  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[2].second);
-  EXPECT_EQ("E", cookie_changes[2].first.Name());
-  EXPECT_EQ("F", cookie_changes[2].first.Value());
-  EXPECT_EQ(this->http_bar_com_.url().host(), cookie_changes[3].first.Domain());
-  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[3].second);
-  EXPECT_EQ("G", cookie_changes[3].first.Name());
-  EXPECT_EQ("H", cookie_changes[3].first.Value());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Global_Delete) {
+TYPED_TEST_P(CookieStoreChangeGlobalTest, InsertMany) {
   if (!TypeParam::supports_global_cookie_tracking)
     return;
 
   CookieStore* cs = this->GetCookieStore();
   std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes)));
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "C=D"));
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "E=F"));
   EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "G=H"));
+  this->DeliverChangeNotifications();
 
-  std::unique_ptr<CookieChangeSubscription> subscription =
-      cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
-          &OnCookieChange, base::Unretained(&cookie_changes)));
-  this->RunUntilIdle();
-  ASSERT_EQ(0u, cookie_changes.size());
-
-  EXPECT_TRUE(
-      this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(), "C"));
-  EXPECT_EQ("A=B; E=F", this->GetCookies(cs, this->http_www_foo_.url()));
+  // Check that the cookie changes are dispatched before calling GetCookies.
+  // This is not an ASSERT because the following expectations produce useful
+  // debugging information if they fail.
+  EXPECT_EQ(4u, cookie_changes.size());
+  EXPECT_EQ("A=B; C=D; E=F", this->GetCookies(cs, this->http_www_foo_.url()));
   EXPECT_EQ("G=H", this->GetCookies(cs, this->http_bar_com_.url()));
-  this->RunUntilIdle();
-  ASSERT_EQ(1u, cookie_changes.size());
-  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
-  EXPECT_EQ(CookieChangeCause::EXPLICIT, cookie_changes[0].second);
-  EXPECT_EQ("C", cookie_changes[0].first.Name());
-  EXPECT_EQ("D", cookie_changes[0].first.Value());
-  cookie_changes.clear();
 
-  EXPECT_TRUE(
-      this->FindAndDeleteCookie(cs, this->http_bar_com_.url().host(), "G"));
-  EXPECT_EQ("A=B; E=F", this->GetCookies(cs, this->http_www_foo_.url()));
-  EXPECT_EQ("", this->GetCookies(cs, this->http_bar_com_.url()));
-  this->RunUntilIdle();
-  ASSERT_EQ(1u, cookie_changes.size());
-  EXPECT_EQ(this->http_bar_com_.url().host(), cookie_changes[0].first.Domain());
-  EXPECT_EQ(CookieChangeCause::EXPLICIT, cookie_changes[0].second);
-  EXPECT_EQ("G", cookie_changes[0].first.Name());
-  EXPECT_EQ("H", cookie_changes[0].first.Value());
+  ASSERT_LE(1u, cookie_changes.size());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[0].second));
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
+  EXPECT_EQ("A", cookie_changes[0].first.Name());
+  EXPECT_EQ("B", cookie_changes[0].first.Value());
+
+  ASSERT_LE(2u, cookie_changes.size());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[1].second));
+  EXPECT_EQ("C", cookie_changes[1].first.Name());
+  EXPECT_EQ("D", cookie_changes[1].first.Value());
+
+  ASSERT_LE(3u, cookie_changes.size());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[2].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[2].second));
+  EXPECT_EQ("E", cookie_changes[2].first.Name());
+  EXPECT_EQ("F", cookie_changes[2].first.Value());
+
+  ASSERT_LE(4u, cookie_changes.size());
+  EXPECT_EQ(this->http_bar_com_.url().host(), cookie_changes[3].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[3].second));
+  EXPECT_EQ("G", cookie_changes[3].first.Name());
+  EXPECT_EQ("H", cookie_changes[3].first.Value());
+
+  EXPECT_EQ(4u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Global_Overwrite) {
+TYPED_TEST_P(CookieStoreChangeGlobalTest, DeleteOne) {
   if (!TypeParam::supports_global_cookie_tracking)
     return;
 
@@ -143,31 +231,112 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_Overwrite) {
   std::vector<CookieChange> cookie_changes;
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
-          &OnCookieChange, base::Unretained(&cookie_changes)));
-  this->RunUntilIdle();
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes)));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(1u, cookie_changes.size());
+  cookie_changes.clear();
+
+  EXPECT_TRUE(
+      this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(), "A"));
+  this->DeliverChangeNotifications();
+
+  ASSERT_EQ(1u, cookie_changes.size());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::EXPLICIT,
+                                 cookie_changes[0].second));
+  EXPECT_EQ("A", cookie_changes[0].first.Name());
+  EXPECT_EQ("B", cookie_changes[0].first.Value());
+}
+
+TYPED_TEST_P(CookieStoreChangeGlobalTest, DeleteTwo) {
+  if (!TypeParam::supports_global_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes)));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "C=D"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "E=F"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "G=H"));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(4u, cookie_changes.size());
+  cookie_changes.clear();
+
+  EXPECT_TRUE(
+      this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(), "C"));
+  EXPECT_TRUE(
+      this->FindAndDeleteCookie(cs, this->http_bar_com_.url().host(), "G"));
+  this->DeliverChangeNotifications();
+
+  // Check that the cookie changes are dispatched before calling GetCookies.
+  // This is not an ASSERT because the following expectations produce useful
+  // debugging information if they fail.
+  EXPECT_EQ(2u, cookie_changes.size());
+  EXPECT_EQ("A=B; E=F", this->GetCookies(cs, this->http_www_foo_.url()));
+  EXPECT_EQ("", this->GetCookies(cs, this->http_bar_com_.url()));
+
+  ASSERT_LE(1u, cookie_changes.size());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::EXPLICIT,
+                                 cookie_changes[0].second));
+  EXPECT_EQ("C", cookie_changes[0].first.Name());
+  EXPECT_EQ("D", cookie_changes[0].first.Value());
+
+  ASSERT_EQ(2u, cookie_changes.size());
+  EXPECT_EQ(this->http_bar_com_.url().host(), cookie_changes[1].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::EXPLICIT,
+                                 cookie_changes[1].second));
+  EXPECT_EQ("G", cookie_changes[1].first.Name());
+  EXPECT_EQ("H", cookie_changes[1].first.Value());
+}
+
+TYPED_TEST_P(CookieStoreChangeGlobalTest, Overwrite) {
+  if (!TypeParam::supports_global_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes.size());
 
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(1u, cookie_changes.size());
   cookie_changes.clear();
 
   // Replacing an existing cookie is actually a two-phase delete + set
   // operation, so we get an extra notification.
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=C"));
-  this->RunUntilIdle();
-  ASSERT_EQ(2u, cookie_changes.size());
+  this->DeliverChangeNotifications();
+
+  ASSERT_LE(1u, cookie_changes.size());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
-  EXPECT_EQ(CookieChangeCause::OVERWRITE, cookie_changes[0].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::OVERWRITE,
+                                 cookie_changes[0].second));
   EXPECT_EQ("A", cookie_changes[0].first.Name());
   EXPECT_EQ("B", cookie_changes[0].first.Value());
+
+  ASSERT_LE(2u, cookie_changes.size());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
-  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[1].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[1].second));
   EXPECT_EQ("A", cookie_changes[1].first.Name());
   EXPECT_EQ("C", cookie_changes[1].first.Value());
+
+  EXPECT_EQ(2u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Global_OverwriteWithHttpOnly) {
+TYPED_TEST_P(CookieStoreChangeGlobalTest, OverwriteWithHttpOnly) {
   if (!TypeParam::supports_global_cookie_tracking)
     return;
 
@@ -176,18 +345,21 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_OverwriteWithHttpOnly) {
   std::vector<CookieChange> cookie_changes;
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
-          &OnCookieChange, base::Unretained(&cookie_changes)));
-  this->RunUntilIdle();
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes.size());
 
   EXPECT_TRUE(
       this->SetCookie(cs, this->http_www_foo_.url(), "A=B; path=/path1"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(1u, cookie_changes.size());
-  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[0].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[0].second));
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
   EXPECT_EQ("A", cookie_changes[0].first.Name());
   EXPECT_EQ("B", cookie_changes[0].first.Value());
+  EXPECT_FALSE(cookie_changes[0].first.IsHttpOnly());
   cookie_changes.clear();
 
   // Insert a cookie "A" for path "/path1", that is httponly. This should
@@ -197,19 +369,28 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_OverwriteWithHttpOnly) {
   EXPECT_TRUE(this->SetCookieWithOptions(cs, this->http_www_foo_.url(),
                                          "A=C; path=/path1; httponly",
                                          allow_httponly));
-  this->RunUntilIdle();
-  ASSERT_EQ(2u, cookie_changes.size());
+  this->DeliverChangeNotifications();
+
+  ASSERT_LE(1u, cookie_changes.size());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
-  EXPECT_EQ(CookieChangeCause::OVERWRITE, cookie_changes[0].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::OVERWRITE,
+                                 cookie_changes[0].second));
   EXPECT_EQ("A", cookie_changes[0].first.Name());
   EXPECT_EQ("B", cookie_changes[0].first.Value());
+  EXPECT_FALSE(cookie_changes[0].first.IsHttpOnly());
+
+  ASSERT_LE(2u, cookie_changes.size());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
-  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[1].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[1].second));
   EXPECT_EQ("A", cookie_changes[1].first.Name());
   EXPECT_EQ("C", cookie_changes[1].first.Value());
+  EXPECT_TRUE(cookie_changes[1].first.IsHttpOnly());
+
+  EXPECT_EQ(2u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Global_Deregister) {
+TYPED_TEST_P(CookieStoreChangeGlobalTest, Deregister) {
   if (!TypeParam::supports_global_cookie_tracking)
     return;
 
@@ -218,13 +399,14 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_Deregister) {
   std::vector<CookieChange> cookie_changes;
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
-          &OnCookieChange, base::Unretained(&cookie_changes)));
-  this->RunUntilIdle();
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes.size());
 
   // Insert a cookie and make sure it is seen.
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(1u, cookie_changes.size());
   EXPECT_EQ("A", cookie_changes[0].first.Name());
   EXPECT_EQ("B", cookie_changes[0].first.Value());
@@ -235,12 +417,12 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_Deregister) {
 
   // Insert a second cookie and make sure that it's not visible.
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "C=D"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
 
   EXPECT_EQ(0u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Global_DeregisterMultiple) {
+TYPED_TEST_P(CookieStoreChangeGlobalTest, DeregisterMultiple) {
   if (!TypeParam::supports_global_cookie_tracking ||
       !TypeParam::supports_multiple_tracking_callbacks)
     return;
@@ -251,19 +433,21 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_DeregisterMultiple) {
   std::vector<CookieChange> cookie_changes_1;
   std::unique_ptr<CookieChangeSubscription> subscription1 =
       cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
-          &OnCookieChange, base::Unretained(&cookie_changes_1)));
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes_1)));
 
   std::vector<CookieChange> cookie_changes_2;
   std::unique_ptr<CookieChangeSubscription> subscription2 =
       cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
-          &OnCookieChange, base::Unretained(&cookie_changes_2)));
-  this->RunUntilIdle();
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes_1.size());
   ASSERT_EQ(0u, cookie_changes_2.size());
 
   // Insert a cookie and make sure it's seen.
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ("A", cookie_changes_1[0].first.Name());
   EXPECT_EQ("B", cookie_changes_1[0].first.Value());
@@ -280,7 +464,7 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_DeregisterMultiple) {
   // Insert a second cookie and make sure that it's only visible in one
   // change array.
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "C=D"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ("C", cookie_changes_1[0].first.Name());
   EXPECT_EQ("D", cookie_changes_1[0].first.Value());
@@ -289,10 +473,39 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_DeregisterMultiple) {
   ASSERT_EQ(0u, cookie_changes_2.size());
 }
 
-// Confirm that deregistering a subscription blocks the notification
-// if the deregistration happened after the change but before the
-// notification was received.
-TYPED_TEST_P(CookieStoreChangeTest, Global_DeregisterRace) {
+// Confirm that a listener does not receive notifications for changes that
+// happened right before the subscription was established.
+TYPED_TEST_P(CookieStoreChangeGlobalTest, DispatchRace) {
+  if (!TypeParam::supports_global_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+
+  // This cookie insertion should not be seen.
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  // DeliverChangeNotifications() must NOT be called before the subscription is
+  // established.
+
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes)));
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "C=D"));
+  this->DeliverChangeNotifications();
+
+  EXPECT_LE(1u, cookie_changes.size());
+  EXPECT_EQ("C", cookie_changes[0].first.Name());
+  EXPECT_EQ("D", cookie_changes[0].first.Value());
+
+  ASSERT_EQ(1u, cookie_changes.size());
+}
+
+// Confirm that deregistering a subscription blocks the notification if the
+// deregistration happened after the change but before the notification was
+// received.
+TYPED_TEST_P(CookieStoreChangeGlobalTest, DeregisterRace) {
   if (!TypeParam::supports_global_cookie_tracking)
     return;
 
@@ -301,13 +514,14 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_DeregisterRace) {
   std::vector<CookieChange> cookie_changes;
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
-          &OnCookieChange, base::Unretained(&cookie_changes)));
-  this->RunUntilIdle();
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes.size());
 
   // Insert a cookie and make sure it's seen.
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(1u, cookie_changes.size());
   EXPECT_EQ("A", cookie_changes[0].first.Name());
   EXPECT_EQ("B", cookie_changes[0].first.Value());
@@ -328,11 +542,11 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_DeregisterRace) {
   // valid. Destroy the subscription so as to lose the race and make sure the
   // task posted arrives after the subscription was destroyed.
   subscription.reset();
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Global_DeregisterRaceMultiple) {
+TYPED_TEST_P(CookieStoreChangeGlobalTest, DeregisterRaceMultiple) {
   if (!TypeParam::supports_global_cookie_tracking ||
       !TypeParam::supports_multiple_tracking_callbacks)
     return;
@@ -343,17 +557,19 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_DeregisterRaceMultiple) {
   std::vector<CookieChange> cookie_changes_1, cookie_changes_2;
   std::unique_ptr<CookieChangeSubscription> subscription1 =
       cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
-          &OnCookieChange, base::Unretained(&cookie_changes_1)));
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes_1)));
   std::unique_ptr<CookieChangeSubscription> subscription2 =
       cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
-          &OnCookieChange, base::Unretained(&cookie_changes_2)));
-  this->RunUntilIdle();
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes_1.size());
   ASSERT_EQ(0u, cookie_changes_2.size());
 
   // Insert a cookie and make sure it's seen.
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
 
   ASSERT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ("A", cookie_changes_1[0].first.Name());
@@ -372,17 +588,15 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_DeregisterRaceMultiple) {
   // Note that by the API contract it's perfectly valid to have received the
   // notification immediately, i.e. synchronously with the cookie change. In
   // that case, there's nothing to test.
-  if (1u == cookie_changes_2.size()) {
-    LOG(ERROR) << "Nothing to test.";
+  if (1u == cookie_changes_2.size())
     return;
-  }
 
   // A task was posted by the SetCookie() above, but has not yet arrived. If it
   // arrived before the subscription is destroyed, callback execution would be
   // valid. Destroy one of the subscriptions so as to lose the race and make
   // sure the task posted arrives after the subscription was destroyed.
   subscription2.reset();
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ("C", cookie_changes_1[0].first.Name());
   EXPECT_EQ("D", cookie_changes_1[0].first.Value());
@@ -391,7 +605,7 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_DeregisterRaceMultiple) {
   ASSERT_EQ(0u, cookie_changes_2.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Global_MultipleSubscriptions) {
+TYPED_TEST_P(CookieStoreChangeGlobalTest, MultipleSubscriptions) {
   if (!TypeParam::supports_global_cookie_tracking ||
       !TypeParam::supports_multiple_tracking_callbacks)
     return;
@@ -401,25 +615,988 @@ TYPED_TEST_P(CookieStoreChangeTest, Global_MultipleSubscriptions) {
   std::vector<CookieChange> cookie_changes_1, cookie_changes_2;
   std::unique_ptr<CookieChangeSubscription> subscription1 =
       cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
-          &OnCookieChange, base::Unretained(&cookie_changes_1)));
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes_1)));
   std::unique_ptr<CookieChangeSubscription> subscription2 =
       cs->GetChangeDispatcher().AddCallbackForAllChanges(base::BindRepeating(
-          &OnCookieChange, base::Unretained(&cookie_changes_2)));
-  this->RunUntilIdle();
+          &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+          base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
 
-  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "abc=def"));
-  this->RunUntilIdle();
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  this->DeliverChangeNotifications();
 
   ASSERT_EQ(1U, cookie_changes_1.size());
-  EXPECT_EQ("abc", cookie_changes_1[0].first.Name());
-  EXPECT_EQ("def", cookie_changes_1[0].first.Value());
+  EXPECT_EQ("A", cookie_changes_1[0].first.Name());
+  EXPECT_EQ("B", cookie_changes_1[0].first.Value());
 
   ASSERT_EQ(1U, cookie_changes_2.size());
-  EXPECT_EQ("abc", cookie_changes_2[0].first.Name());
-  EXPECT_EQ("def", cookie_changes_2[0].first.Value());
+  EXPECT_EQ("A", cookie_changes_2[0].first.Name());
+  EXPECT_EQ("B", cookie_changes_2[0].first.Value());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_NoCookie) {
+TYPED_TEST_P(CookieStoreChangeUrlTest, NoCookie) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(0u, cookie_changes.size());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, InitialCookie) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+  std::vector<CookieChange> cookie_changes;
+  this->SetCookie(cs, this->http_www_foo_.url(), "A=B");
+  this->DeliverChangeNotifications();
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(0u, cookie_changes.size());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, InsertOne) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes.size());
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(1u, cookie_changes.size());
+
+  EXPECT_EQ("A", cookie_changes[0].first.Name());
+  EXPECT_EQ("B", cookie_changes[0].first.Value());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[0].second));
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, InsertMany) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "C=D"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "E=F"));
+  this->DeliverChangeNotifications();
+
+  ASSERT_LE(1u, cookie_changes.size());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[0].second));
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
+  EXPECT_EQ("A", cookie_changes[0].first.Name());
+  EXPECT_EQ("B", cookie_changes[0].first.Value());
+
+  ASSERT_LE(2u, cookie_changes.size());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[1].second));
+  EXPECT_EQ("C", cookie_changes[1].first.Name());
+  EXPECT_EQ("D", cookie_changes[1].first.Value());
+
+  ASSERT_LE(3u, cookie_changes.size());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[2].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[2].second));
+  EXPECT_EQ("E", cookie_changes[2].first.Name());
+  EXPECT_EQ("F", cookie_changes[2].first.Value());
+
+  EXPECT_EQ(3u, cookie_changes.size());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, InsertFiltering) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->www_foo_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes.size());
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B; path=/"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "C=D; path=/"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "E=F; path=/bar"));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "G=H; path=/foo/bar"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "I=J; path=/foo"));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "K=L; domain=foo.com"));
+  this->DeliverChangeNotifications();
+
+  ASSERT_LE(1u, cookie_changes.size());
+  EXPECT_EQ("A", cookie_changes[0].first.Name());
+  EXPECT_EQ("B", cookie_changes[0].first.Value());
+  EXPECT_EQ("/", cookie_changes[0].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[0].second));
+
+  ASSERT_LE(2u, cookie_changes.size());
+  EXPECT_EQ("I", cookie_changes[1].first.Name());
+  EXPECT_EQ("J", cookie_changes[1].first.Value());
+  EXPECT_EQ("/foo", cookie_changes[1].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[1].second));
+
+  ASSERT_LE(3u, cookie_changes.size());
+  EXPECT_EQ("K", cookie_changes[2].first.Name());
+  EXPECT_EQ("L", cookie_changes[2].first.Value());
+  EXPECT_EQ("/", cookie_changes[2].first.Path());
+  EXPECT_EQ(".foo.com", cookie_changes[2].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[2].second));
+
+  EXPECT_EQ(3u, cookie_changes.size());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, DeleteOne) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(1u, cookie_changes.size());
+  cookie_changes.clear();
+
+  EXPECT_TRUE(
+      this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(), "A"));
+  this->DeliverChangeNotifications();
+
+  ASSERT_EQ(1u, cookie_changes.size());
+  EXPECT_EQ("A", cookie_changes[0].first.Name());
+  EXPECT_EQ("B", cookie_changes[0].first.Value());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
+  ASSERT_TRUE(this->MatchesCause(CookieChangeCause::EXPLICIT,
+                                 cookie_changes[0].second));
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, DeleteTwo) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "C=D"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "E=F"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "G=H"));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(4u, cookie_changes.size());
+  cookie_changes.clear();
+
+  EXPECT_TRUE(
+      this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(), "C"));
+  EXPECT_TRUE(
+      this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(), "G"));
+  this->DeliverChangeNotifications();
+
+  // Check that the cookie changes are dispatched before calling GetCookies.
+  // This is not an ASSERT because the following expectations produce useful
+  // debugging information if they fail.
+  EXPECT_EQ(2u, cookie_changes.size());
+  EXPECT_EQ("A=B; E=F", this->GetCookies(cs, this->http_www_foo_.url()));
+
+  ASSERT_LE(1u, cookie_changes.size());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::EXPLICIT,
+                                 cookie_changes[0].second));
+  EXPECT_EQ("C", cookie_changes[0].first.Name());
+  EXPECT_EQ("D", cookie_changes[0].first.Value());
+
+  ASSERT_EQ(2u, cookie_changes.size());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::EXPLICIT,
+                                 cookie_changes[1].second));
+  EXPECT_EQ("G", cookie_changes[1].first.Name());
+  EXPECT_EQ("H", cookie_changes[1].first.Value());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, DeleteFiltering) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->www_foo_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B; path=/"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "C=D; path=/"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "E=F; path=/bar"));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "G=H; path=/foo/bar"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "I=J; path=/foo"));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "K=L; domain=foo.com"));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(3u, cookie_changes.size());
+  cookie_changes.clear();
+
+  EXPECT_TRUE(
+      this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(), "A"));
+  EXPECT_TRUE(
+      this->FindAndDeleteCookie(cs, this->http_bar_com_.url().host(), "C"));
+  EXPECT_TRUE(
+      this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(), "E"));
+  EXPECT_TRUE(
+      this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(), "G"));
+  EXPECT_TRUE(
+      this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(), "I"));
+  EXPECT_TRUE(this->FindAndDeleteCookie(cs, ".foo.com", "K"));
+  this->DeliverChangeNotifications();
+
+  ASSERT_LE(1u, cookie_changes.size());
+  EXPECT_EQ("A", cookie_changes[0].first.Name());
+  EXPECT_EQ("B", cookie_changes[0].first.Value());
+  EXPECT_EQ("/", cookie_changes[0].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::EXPLICIT,
+                                 cookie_changes[0].second));
+
+  ASSERT_LE(2u, cookie_changes.size());
+  EXPECT_EQ("I", cookie_changes[1].first.Name());
+  EXPECT_EQ("J", cookie_changes[1].first.Value());
+  EXPECT_EQ("/foo", cookie_changes[1].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::EXPLICIT,
+                                 cookie_changes[1].second));
+
+  ASSERT_LE(3u, cookie_changes.size());
+  EXPECT_EQ("K", cookie_changes[2].first.Name());
+  EXPECT_EQ("L", cookie_changes[2].first.Value());
+  EXPECT_EQ("/", cookie_changes[2].first.Path());
+  EXPECT_EQ(".foo.com", cookie_changes[2].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::EXPLICIT,
+                                 cookie_changes[2].second));
+
+  EXPECT_EQ(3u, cookie_changes.size());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, Overwrite) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes.size());
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(1u, cookie_changes.size());
+  cookie_changes.clear();
+
+  // Replacing an existing cookie is actually a two-phase delete + set
+  // operation, so we get an extra notification.
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=C"));
+  this->DeliverChangeNotifications();
+
+  ASSERT_LE(1u, cookie_changes.size());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::OVERWRITE,
+                                 cookie_changes[0].second));
+  EXPECT_EQ("A", cookie_changes[0].first.Name());
+  EXPECT_EQ("B", cookie_changes[0].first.Value());
+
+  ASSERT_LE(2u, cookie_changes.size());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[1].second));
+  EXPECT_EQ("A", cookie_changes[1].first.Name());
+  EXPECT_EQ("C", cookie_changes[1].first.Value());
+
+  EXPECT_EQ(2u, cookie_changes.size());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, OverwriteFiltering) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->www_foo_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes.size());
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B; path=/"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "C=D; path=/"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "E=F; path=/bar"));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "G=H; path=/foo/bar"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "I=J; path=/foo"));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "K=L; domain=foo.com"));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(3u, cookie_changes.size());
+  cookie_changes.clear();
+
+  // Replacing an existing cookie is actually a two-phase delete + set
+  // operation, so we get two notifications per overwrite.
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=b; path=/"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "C=d; path=/"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "E=f; path=/bar"));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "G=h; path=/foo/bar"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "I=j; path=/foo"));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "K=l; domain=foo.com"));
+  this->DeliverChangeNotifications();
+
+  ASSERT_LE(1u, cookie_changes.size());
+  EXPECT_EQ("A", cookie_changes[0].first.Name());
+  EXPECT_EQ("B", cookie_changes[0].first.Value());
+  EXPECT_EQ("/", cookie_changes[0].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::OVERWRITE,
+                                 cookie_changes[0].second));
+
+  ASSERT_LE(2u, cookie_changes.size());
+  EXPECT_EQ("A", cookie_changes[1].first.Name());
+  EXPECT_EQ("b", cookie_changes[1].first.Value());
+  EXPECT_EQ("/", cookie_changes[1].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
+  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[1].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[1].second));
+
+  ASSERT_LE(3u, cookie_changes.size());
+  EXPECT_EQ("I", cookie_changes[2].first.Name());
+  EXPECT_EQ("J", cookie_changes[2].first.Value());
+  EXPECT_EQ("/foo", cookie_changes[2].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[2].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::OVERWRITE,
+                                 cookie_changes[2].second));
+
+  ASSERT_LE(4u, cookie_changes.size());
+  EXPECT_EQ("I", cookie_changes[3].first.Name());
+  EXPECT_EQ("j", cookie_changes[3].first.Value());
+  EXPECT_EQ("/foo", cookie_changes[3].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[3].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[3].second));
+
+  ASSERT_LE(5u, cookie_changes.size());
+  EXPECT_EQ("K", cookie_changes[4].first.Name());
+  EXPECT_EQ("L", cookie_changes[4].first.Value());
+  EXPECT_EQ("/", cookie_changes[4].first.Path());
+  EXPECT_EQ(".foo.com", cookie_changes[4].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::OVERWRITE,
+                                 cookie_changes[4].second));
+
+  ASSERT_LE(6u, cookie_changes.size());
+  EXPECT_EQ("K", cookie_changes[5].first.Name());
+  EXPECT_EQ("l", cookie_changes[5].first.Value());
+  EXPECT_EQ("/", cookie_changes[5].first.Path());
+  EXPECT_EQ(".foo.com", cookie_changes[5].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[5].second));
+
+  EXPECT_EQ(6u, cookie_changes.size());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, OverwriteWithHttpOnly) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  // Insert a cookie "A" for path "/foo".
+  CookieStore* cs = this->GetCookieStore();
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->www_foo_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes.size());
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B; path=/foo"));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(1u, cookie_changes.size());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[0].second));
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
+  EXPECT_EQ("A", cookie_changes[0].first.Name());
+  EXPECT_EQ("B", cookie_changes[0].first.Value());
+  EXPECT_FALSE(cookie_changes[0].first.IsHttpOnly());
+  cookie_changes.clear();
+
+  // Insert a cookie "A" for path "/foo", that is httponly. This should
+  // overwrite the non-http-only version.
+  CookieOptions allow_httponly;
+  allow_httponly.set_include_httponly();
+  EXPECT_TRUE(this->SetCookieWithOptions(cs, this->http_www_foo_.url(),
+                                         "A=C; path=/foo; httponly",
+                                         allow_httponly));
+  this->DeliverChangeNotifications();
+
+  ASSERT_LE(1u, cookie_changes.size());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::OVERWRITE,
+                                 cookie_changes[0].second));
+  EXPECT_EQ("A", cookie_changes[0].first.Name());
+  EXPECT_EQ("B", cookie_changes[0].first.Value());
+  EXPECT_FALSE(cookie_changes[0].first.IsHttpOnly());
+
+  ASSERT_LE(2u, cookie_changes.size());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[1].second));
+  EXPECT_EQ("A", cookie_changes[1].first.Name());
+  EXPECT_EQ("C", cookie_changes[1].first.Value());
+  EXPECT_TRUE(cookie_changes[1].first.IsHttpOnly());
+
+  EXPECT_EQ(2u, cookie_changes.size());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, Deregister) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes.size());
+
+  // Insert a cookie and make sure it is seen.
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(1u, cookie_changes.size());
+  EXPECT_EQ("A", cookie_changes[0].first.Name());
+  EXPECT_EQ("B", cookie_changes[0].first.Value());
+  cookie_changes.clear();
+
+  // De-register the subscription.
+  subscription.reset();
+
+  // Insert a second cookie and make sure it's not visible.
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "C=D"));
+  this->DeliverChangeNotifications();
+
+  EXPECT_EQ(0u, cookie_changes.size());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, DeregisterMultiple) {
+  if (!TypeParam::supports_url_cookie_tracking ||
+      !TypeParam::supports_multiple_tracking_callbacks)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+
+  // Register two subscriptions.
+  std::vector<CookieChange> cookie_changes_1, cookie_changes_2;
+  std::unique_ptr<CookieChangeSubscription> subscription1 =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_1)));
+  std::unique_ptr<CookieChangeSubscription> subscription2 =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes_1.size());
+  ASSERT_EQ(0u, cookie_changes_2.size());
+
+  // Insert a cookie and make sure it's seen.
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(1u, cookie_changes_1.size());
+  EXPECT_EQ("A", cookie_changes_1[0].first.Name());
+  EXPECT_EQ("B", cookie_changes_1[0].first.Value());
+  cookie_changes_1.clear();
+
+  ASSERT_EQ(1u, cookie_changes_2.size());
+  EXPECT_EQ("A", cookie_changes_2[0].first.Name());
+  EXPECT_EQ("B", cookie_changes_2[0].first.Value());
+  cookie_changes_2.clear();
+
+  // De-register the second registration.
+  subscription2.reset();
+
+  // Insert a second cookie and make sure that it's only visible in one
+  // change array.
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "C=D"));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(1u, cookie_changes_1.size());
+  EXPECT_EQ("C", cookie_changes_1[0].first.Name());
+  EXPECT_EQ("D", cookie_changes_1[0].first.Value());
+
+  EXPECT_EQ(0u, cookie_changes_2.size());
+}
+
+// Confirm that a listener does not receive notifications for changes that
+// happened right before the subscription was established.
+TYPED_TEST_P(CookieStoreChangeUrlTest, DispatchRace) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+
+  // This cookie insertion should not be seen.
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  // DeliverChangeNotifications() must NOT be called before the subscription is
+  // established.
+
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "C=D"));
+  this->DeliverChangeNotifications();
+
+  EXPECT_LE(1u, cookie_changes.size());
+  EXPECT_EQ("C", cookie_changes[0].first.Name());
+  EXPECT_EQ("D", cookie_changes[0].first.Value());
+
+  ASSERT_EQ(1u, cookie_changes.size());
+}
+
+// Confirm that deregistering a subscription blocks the notification if the
+// deregistration happened after the change but before the notification was
+// received.
+TYPED_TEST_P(CookieStoreChangeUrlTest, DeregisterRace) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes.size());
+
+  // Insert a cookie and make sure it's seen.
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(1u, cookie_changes.size());
+  EXPECT_EQ("A", cookie_changes[0].first.Name());
+  EXPECT_EQ("B", cookie_changes[0].first.Value());
+  cookie_changes.clear();
+
+  // Insert a cookie, confirm it is not seen, deregister the subscription, run
+  // until idle, and confirm the cookie is still not seen.
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "C=D"));
+
+  // Note that by the API contract it's perfectly valid to have received the
+  // notification immediately, i.e. synchronously with the cookie change. In
+  // that case, there's nothing to test.
+  if (1u == cookie_changes.size())
+    return;
+
+  // A task was posted by the SetCookie() above, but has not yet arrived. If it
+  // arrived before the subscription is destroyed, callback execution would be
+  // valid. Destroy the subscription so as to lose the race and make sure the
+  // task posted arrives after the subscription was destroyed.
+  subscription.reset();
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes.size());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, DeregisterRaceMultiple) {
+  if (!TypeParam::supports_url_cookie_tracking ||
+      !TypeParam::supports_multiple_tracking_callbacks)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+
+  // Register two subscriptions.
+  std::vector<CookieChange> cookie_changes_1, cookie_changes_2;
+  std::unique_ptr<CookieChangeSubscription> subscription1 =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_1)));
+  std::unique_ptr<CookieChangeSubscription> subscription2 =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes_1.size());
+  ASSERT_EQ(0u, cookie_changes_2.size());
+
+  // Insert a cookie and make sure it's seen.
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  this->DeliverChangeNotifications();
+
+  ASSERT_EQ(1u, cookie_changes_1.size());
+  EXPECT_EQ("A", cookie_changes_1[0].first.Name());
+  EXPECT_EQ("B", cookie_changes_1[0].first.Value());
+  cookie_changes_1.clear();
+
+  ASSERT_EQ(1u, cookie_changes_2.size());
+  EXPECT_EQ("A", cookie_changes_2[0].first.Name());
+  EXPECT_EQ("B", cookie_changes_2[0].first.Value());
+  cookie_changes_2.clear();
+
+  // Insert a cookie, confirm it is not seen, deregister a subscription, run
+  // until idle, and confirm the cookie is still not seen.
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "C=D"));
+
+  // Note that by the API contract it's perfectly valid to have received the
+  // notification immediately, i.e. synchronously with the cookie change. In
+  // that case, there's nothing to test.
+  if (1u == cookie_changes_2.size())
+    return;
+
+  // A task was posted by the SetCookie() above, but has not yet arrived. If it
+  // arrived before the subscription is destroyed, callback execution would be
+  // valid. Destroy one of the subscriptions so as to lose the race and make
+  // sure the task posted arrives after the subscription was destroyed.
+  subscription2.reset();
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(1u, cookie_changes_1.size());
+  EXPECT_EQ("C", cookie_changes_1[0].first.Name());
+  EXPECT_EQ("D", cookie_changes_1[0].first.Value());
+
+  // No late notification was received.
+  ASSERT_EQ(0u, cookie_changes_2.size());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, DifferentSubscriptionsDisjoint) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+
+  std::vector<CookieChange> cookie_changes_1, cookie_changes_2;
+  std::unique_ptr<CookieChangeSubscription> subscription1 =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_1)));
+  std::unique_ptr<CookieChangeSubscription> subscription2 =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_bar_com_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes_1.size());
+  ASSERT_EQ(0u, cookie_changes_2.size());
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(1u, cookie_changes_1.size());
+  EXPECT_EQ(0u, cookie_changes_2.size());
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "C=D"));
+  this->DeliverChangeNotifications();
+
+  ASSERT_EQ(1u, cookie_changes_1.size());
+  EXPECT_EQ("A", cookie_changes_1[0].first.Name());
+  EXPECT_EQ("B", cookie_changes_1[0].first.Value());
+  EXPECT_EQ(this->http_www_foo_.url().host(),
+            cookie_changes_1[0].first.Domain());
+
+  ASSERT_EQ(1u, cookie_changes_2.size());
+  EXPECT_EQ("C", cookie_changes_2[0].first.Name());
+  EXPECT_EQ("D", cookie_changes_2[0].first.Value());
+  EXPECT_EQ(this->http_bar_com_.url().host(),
+            cookie_changes_2[0].first.Domain());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, DifferentSubscriptionsDomains) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+
+  std::vector<CookieChange> cookie_changes_1, cookie_changes_2;
+  std::unique_ptr<CookieChangeSubscription> subscription1 =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_1)));
+  std::unique_ptr<CookieChangeSubscription> subscription2 =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_bar_com_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes_1.size());
+  ASSERT_EQ(0u, cookie_changes_2.size());
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(1u, cookie_changes_1.size());
+  EXPECT_EQ(0u, cookie_changes_2.size());
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "C=D"));
+  this->DeliverChangeNotifications();
+
+  ASSERT_EQ(1u, cookie_changes_1.size());
+  EXPECT_EQ("A", cookie_changes_1[0].first.Name());
+  EXPECT_EQ("B", cookie_changes_1[0].first.Value());
+  EXPECT_EQ(this->http_www_foo_.url().host(),
+            cookie_changes_1[0].first.Domain());
+
+  ASSERT_EQ(1u, cookie_changes_2.size());
+  EXPECT_EQ("C", cookie_changes_2[0].first.Name());
+  EXPECT_EQ("D", cookie_changes_2[0].first.Value());
+  EXPECT_EQ(this->http_bar_com_.url().host(),
+            cookie_changes_2[0].first.Domain());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, DifferentSubscriptionsPaths) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+
+  std::vector<CookieChange> cookie_changes_1, cookie_changes_2;
+  std::unique_ptr<CookieChangeSubscription> subscription1 =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_1)));
+  std::unique_ptr<CookieChangeSubscription> subscription2 =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->www_foo_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes_1.size());
+  ASSERT_EQ(0u, cookie_changes_2.size());
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(1u, cookie_changes_1.size());
+  EXPECT_EQ(1u, cookie_changes_2.size());
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "C=D; path=/foo"));
+  this->DeliverChangeNotifications();
+
+  ASSERT_EQ(1u, cookie_changes_1.size());
+  EXPECT_EQ("A", cookie_changes_1[0].first.Name());
+  EXPECT_EQ("B", cookie_changes_1[0].first.Value());
+  EXPECT_EQ("/", cookie_changes_1[0].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(),
+            cookie_changes_1[0].first.Domain());
+
+  ASSERT_LE(1u, cookie_changes_2.size());
+  EXPECT_EQ("A", cookie_changes_2[0].first.Name());
+  EXPECT_EQ("B", cookie_changes_2[0].first.Value());
+  EXPECT_EQ("/", cookie_changes_2[0].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(),
+            cookie_changes_2[0].first.Domain());
+
+  ASSERT_LE(2u, cookie_changes_2.size());
+  EXPECT_EQ("C", cookie_changes_2[1].first.Name());
+  EXPECT_EQ("D", cookie_changes_2[1].first.Value());
+  EXPECT_EQ("/foo", cookie_changes_2[1].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(),
+            cookie_changes_2[1].first.Domain());
+
+  EXPECT_EQ(2u, cookie_changes_2.size());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, DifferentSubscriptionsFiltering) {
+  if (!TypeParam::supports_url_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+
+  std::vector<CookieChange> cookie_changes_1, cookie_changes_2;
+  std::vector<CookieChange> cookie_changes_3;
+  std::unique_ptr<CookieChangeSubscription> subscription1 =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_1)));
+  std::unique_ptr<CookieChangeSubscription> subscription2 =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_bar_com_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_2)));
+  std::unique_ptr<CookieChangeSubscription> subscription3 =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->www_foo_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_3)));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes_1.size());
+  ASSERT_EQ(0u, cookie_changes_2.size());
+  EXPECT_EQ(0u, cookie_changes_3.size());
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(1u, cookie_changes_1.size());
+  EXPECT_EQ(0u, cookie_changes_2.size());
+  EXPECT_EQ(1u, cookie_changes_3.size());
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "C=D"));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(1u, cookie_changes_1.size());
+  EXPECT_EQ(1u, cookie_changes_2.size());
+  EXPECT_EQ(1u, cookie_changes_3.size());
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "E=F; path=/foo"));
+  this->DeliverChangeNotifications();
+
+  ASSERT_LE(1u, cookie_changes_1.size());
+  EXPECT_EQ("A", cookie_changes_1[0].first.Name());
+  EXPECT_EQ("B", cookie_changes_1[0].first.Value());
+  EXPECT_EQ(this->http_www_foo_.url().host(),
+            cookie_changes_1[0].first.Domain());
+  EXPECT_EQ(1u, cookie_changes_1.size());
+
+  ASSERT_LE(1u, cookie_changes_2.size());
+  EXPECT_EQ("C", cookie_changes_2[0].first.Name());
+  EXPECT_EQ("D", cookie_changes_2[0].first.Value());
+  EXPECT_EQ(this->http_bar_com_.url().host(),
+            cookie_changes_2[0].first.Domain());
+  EXPECT_EQ(1u, cookie_changes_2.size());
+
+  ASSERT_LE(1u, cookie_changes_3.size());
+  EXPECT_EQ("A", cookie_changes_3[0].first.Name());
+  EXPECT_EQ("B", cookie_changes_3[0].first.Value());
+  EXPECT_EQ("/", cookie_changes_3[0].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(),
+            cookie_changes_3[0].first.Domain());
+
+  ASSERT_LE(2u, cookie_changes_3.size());
+  EXPECT_EQ("E", cookie_changes_3[1].first.Name());
+  EXPECT_EQ("F", cookie_changes_3[1].first.Value());
+  EXPECT_EQ("/foo", cookie_changes_3[1].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(),
+            cookie_changes_3[1].first.Domain());
+
+  EXPECT_EQ(2u, cookie_changes_3.size());
+}
+
+TYPED_TEST_P(CookieStoreChangeUrlTest, MultipleSubscriptions) {
+  if (!TypeParam::supports_url_cookie_tracking ||
+      !TypeParam::supports_multiple_tracking_callbacks)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+
+  std::vector<CookieChange> cookie_changes_1, cookie_changes_2;
+  std::unique_ptr<CookieChangeSubscription> subscription1 =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_1)));
+  std::unique_ptr<CookieChangeSubscription> subscription2 =
+      cs->GetChangeDispatcher().AddCallbackForUrl(
+          this->http_www_foo_.url(),
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "A=B"));
+  this->DeliverChangeNotifications();
+
+  ASSERT_EQ(1U, cookie_changes_1.size());
+  EXPECT_EQ("A", cookie_changes_1[0].first.Name());
+  EXPECT_EQ("B", cookie_changes_1[0].first.Value());
+
+  ASSERT_EQ(1U, cookie_changes_2.size());
+  EXPECT_EQ("A", cookie_changes_2[0].first.Name());
+  EXPECT_EQ("B", cookie_changes_2[0].first.Value());
+}
+
+TYPED_TEST_P(CookieStoreChangeNamedTest, NoCookie) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
@@ -428,30 +1605,32 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_NoCookie) {
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_www_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
   EXPECT_EQ(0u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_InitialCookie) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, InitialCookie) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
   CookieStore* cs = this->GetCookieStore();
   std::vector<CookieChange> cookie_changes;
   this->SetCookie(cs, this->http_www_foo_.url(), "abc=def");
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_www_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
   EXPECT_EQ(0u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_Insert) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, InsertOne) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
@@ -460,22 +1639,24 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_Insert) {
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_www_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes.size());
 
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "abc=def"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(1u, cookie_changes.size());
 
   EXPECT_EQ("abc", cookie_changes[0].first.Name());
   EXPECT_EQ("def", cookie_changes[0].first.Value());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
-  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[0].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[0].second));
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_InsertFiltering) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, InsertTwo) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
@@ -484,9 +1665,49 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_InsertFiltering) {
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->www_foo_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
+  ASSERT_EQ(0u, cookie_changes.size());
+
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "abc=def"));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "abc=hij; path=/foo"));
+  this->DeliverChangeNotifications();
+
+  ASSERT_LE(1u, cookie_changes.size());
+  EXPECT_EQ("abc", cookie_changes[0].first.Name());
+  EXPECT_EQ("def", cookie_changes[0].first.Value());
+  EXPECT_EQ("/", cookie_changes[0].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[0].second));
+
+  ASSERT_LE(2u, cookie_changes.size());
+  EXPECT_EQ("abc", cookie_changes[1].first.Name());
+  EXPECT_EQ("hij", cookie_changes[1].first.Value());
+  EXPECT_EQ("/foo", cookie_changes[1].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[1].second));
+
+  EXPECT_EQ(2u, cookie_changes.size());
+}
+
+TYPED_TEST_P(CookieStoreChangeNamedTest, InsertFiltering) {
+  if (!TypeParam::supports_named_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForCookie(
+          this->www_foo_foo_.url(), "abc",
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes.size());
 
   EXPECT_TRUE(
@@ -495,26 +1716,43 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_InsertFiltering) {
       this->SetCookie(cs, this->http_bar_com_.url(), "abc=ghi; path=/"));
   EXPECT_TRUE(
       this->SetCookie(cs, this->http_www_foo_.url(), "abc=jkl; path=/bar"));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "abc=mno; path=/foo/bar"));
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "xyz=zyx"));
   EXPECT_TRUE(
-      this->SetCookie(cs, this->http_www_foo_.url(), "abc=mno; path=/foo"));
-  this->RunUntilIdle();
-  ASSERT_EQ(2u, cookie_changes.size());
+      this->SetCookie(cs, this->http_www_foo_.url(), "abc=pqr; path=/foo"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(),
+                              "abc=stu; domain=foo.com"));
+  this->DeliverChangeNotifications();
 
+  ASSERT_LE(1u, cookie_changes.size());
   EXPECT_EQ("abc", cookie_changes[0].first.Name());
   EXPECT_EQ("def", cookie_changes[0].first.Value());
   EXPECT_EQ("/", cookie_changes[0].first.Path());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
-  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[0].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[0].second));
 
+  ASSERT_LE(2u, cookie_changes.size());
   EXPECT_EQ("abc", cookie_changes[1].first.Name());
-  EXPECT_EQ("mno", cookie_changes[1].first.Value());
+  EXPECT_EQ("pqr", cookie_changes[1].first.Value());
   EXPECT_EQ("/foo", cookie_changes[1].first.Path());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
-  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[1].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[1].second));
+
+  ASSERT_LE(3u, cookie_changes.size());
+  EXPECT_EQ("abc", cookie_changes[2].first.Name());
+  EXPECT_EQ("stu", cookie_changes[2].first.Value());
+  EXPECT_EQ("/", cookie_changes[2].first.Path());
+  EXPECT_EQ(".foo.com", cookie_changes[2].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[2].second));
+
+  EXPECT_EQ(3u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_Delete) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, DeleteOne) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
@@ -523,25 +1761,27 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_Delete) {
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_www_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes)));
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "abc=def"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   EXPECT_EQ(1u, cookie_changes.size());
   cookie_changes.clear();
 
   EXPECT_TRUE(
       this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(), "abc"));
-  this->RunUntilIdle();
-  ASSERT_EQ(1u, cookie_changes.size());
+  this->DeliverChangeNotifications();
 
+  ASSERT_EQ(1u, cookie_changes.size());
   EXPECT_EQ("abc", cookie_changes[0].first.Name());
   EXPECT_EQ("def", cookie_changes[0].first.Value());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
-  EXPECT_EQ(CookieChangeCause::EXPLICIT, cookie_changes[0].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::EXPLICIT,
+                                 cookie_changes[0].second));
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_DeleteFiltering) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, DeleteTwo) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
@@ -549,32 +1789,109 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DeleteFiltering) {
   std::vector<CookieChange> cookie_changes;
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForCookie(
-          this->http_www_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes)));
-  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "xyz=zyx"));
-  EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "abc=def"));
-  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "abc=hij"));
-  this->RunUntilIdle();
-  EXPECT_EQ(1u, cookie_changes.size());
+          this->www_foo_foo_.url(), "abc",
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "abc=def"));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "abc=hij; path=/foo"));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(2u, cookie_changes.size());
+  cookie_changes.clear();
+
+  EXPECT_TRUE(this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(),
+                                        "abc", "/"));
+  EXPECT_TRUE(this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(),
+                                        "abc", "/foo"));
+  this->DeliverChangeNotifications();
+
+  ASSERT_LE(1u, cookie_changes.size());
+  EXPECT_EQ("abc", cookie_changes[0].first.Name());
+  EXPECT_EQ("def", cookie_changes[0].first.Value());
+  EXPECT_EQ("/", cookie_changes[0].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::EXPLICIT,
+                                 cookie_changes[0].second));
+
+  ASSERT_EQ(2u, cookie_changes.size());
+  EXPECT_EQ("abc", cookie_changes[1].first.Name());
+  EXPECT_EQ("hij", cookie_changes[1].first.Value());
+  EXPECT_EQ("/foo", cookie_changes[1].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::EXPLICIT,
+                                 cookie_changes[1].second));
+}
+
+TYPED_TEST_P(CookieStoreChangeNamedTest, DeleteFiltering) {
+  if (!TypeParam::supports_named_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForCookie(
+          this->www_foo_foo_.url(), "abc",
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "xyz=zyx; path=/"));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_bar_com_.url(), "abc=def; path=/"));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "abc=hij; path=/foo/bar"));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "abc=mno; path=/foo"));
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "abc=pqr; path=/"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(),
+                              "abc=stu; domain=foo.com"));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(3u, cookie_changes.size());
   cookie_changes.clear();
 
   EXPECT_TRUE(
       this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(), "xyz"));
   EXPECT_TRUE(
       this->FindAndDeleteCookie(cs, this->http_bar_com_.url().host(), "abc"));
-  EXPECT_TRUE(
-      this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(), "abc"));
-  this->RunUntilIdle();
-  ASSERT_EQ(1u, cookie_changes.size());
+  EXPECT_TRUE(this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(),
+                                        "abc", "/foo/bar"));
+  EXPECT_TRUE(this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(),
+                                        "abc", "/foo"));
+  EXPECT_TRUE(this->FindAndDeleteCookie(cs, this->http_www_foo_.url().host(),
+                                        "abc", "/"));
+  EXPECT_TRUE(this->FindAndDeleteCookie(cs, ".foo.com", "abc", "/"));
+  this->DeliverChangeNotifications();
 
+  ASSERT_LE(1u, cookie_changes.size());
   EXPECT_EQ("abc", cookie_changes[0].first.Name());
-  EXPECT_EQ("hij", cookie_changes[0].first.Value());
+  EXPECT_EQ("mno", cookie_changes[0].first.Value());
+  EXPECT_EQ("/foo", cookie_changes[0].first.Path());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
-  EXPECT_EQ(CookieChangeCause::EXPLICIT, cookie_changes[0].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::EXPLICIT,
+                                 cookie_changes[0].second));
+
+  ASSERT_LE(2u, cookie_changes.size());
+  EXPECT_EQ("abc", cookie_changes[1].first.Name());
+  EXPECT_EQ("pqr", cookie_changes[1].first.Value());
+  EXPECT_EQ("/", cookie_changes[1].first.Path());
+  EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::EXPLICIT,
+                                 cookie_changes[1].second));
+
+  ASSERT_LE(3u, cookie_changes.size());
+  EXPECT_EQ("abc", cookie_changes[2].first.Name());
+  EXPECT_EQ("stu", cookie_changes[2].first.Value());
+  EXPECT_EQ("/", cookie_changes[2].first.Path());
+  EXPECT_EQ(".foo.com", cookie_changes[2].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::EXPLICIT,
+                                 cookie_changes[2].second));
+
+  EXPECT_EQ(3u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_Overwrite) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, Overwrite) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
@@ -583,34 +1900,40 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_Overwrite) {
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_www_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes.size());
 
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "abc=def"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   EXPECT_EQ(1u, cookie_changes.size());
   cookie_changes.clear();
 
   // Replacing an existing cookie is actually a two-phase delete + set
   // operation, so we get an extra notification.
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "abc=ghi"));
-  this->RunUntilIdle();
-  ASSERT_EQ(2u, cookie_changes.size());
+  this->DeliverChangeNotifications();
 
+  EXPECT_LE(1u, cookie_changes.size());
   EXPECT_EQ("abc", cookie_changes[0].first.Name());
   EXPECT_EQ("def", cookie_changes[0].first.Value());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
-  EXPECT_EQ(CookieChangeCause::OVERWRITE, cookie_changes[0].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::OVERWRITE,
+                                 cookie_changes[0].second));
 
+  EXPECT_LE(2u, cookie_changes.size());
   EXPECT_EQ("abc", cookie_changes[1].first.Name());
   EXPECT_EQ("ghi", cookie_changes[1].first.Value());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
-  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[1].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[1].second));
+
+  EXPECT_EQ(2u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_OverwriteFiltering) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, OverwriteFiltering) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
@@ -619,108 +1942,152 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_OverwriteFiltering) {
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->www_foo_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes.size());
 
   EXPECT_TRUE(
-      this->SetCookie(cs, this->http_www_foo_.url(), "abc=def; path=/"));
+      this->SetCookie(cs, this->http_www_foo_.url(), "xyz=zyx1; path=/"));
   EXPECT_TRUE(
-      this->SetCookie(cs, this->http_bar_com_.url(), "abc=ghi; path=/"));
+      this->SetCookie(cs, this->http_bar_com_.url(), "abc=def1; path=/"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(),
+                              "abc=hij1; path=/foo/bar"));
   EXPECT_TRUE(
-      this->SetCookie(cs, this->http_www_foo_.url(), "abc=jkl; path=/bar"));
-  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "xyz=zyx"));
+      this->SetCookie(cs, this->http_www_foo_.url(), "abc=mno1; path=/foo"));
   EXPECT_TRUE(
-      this->SetCookie(cs, this->http_www_foo_.url(), "abc=mno; path=/foo"));
-  this->RunUntilIdle();
-  EXPECT_EQ(2u, cookie_changes.size());
+      this->SetCookie(cs, this->http_www_foo_.url(), "abc=pqr1; path=/"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(),
+                              "abc=stu1; domain=foo.com"));
+  this->DeliverChangeNotifications();
+  EXPECT_EQ(3u, cookie_changes.size());
   cookie_changes.clear();
 
   // Replacing an existing cookie is actually a two-phase delete + set
   // operation, so we get two notifications per overwrite.
   EXPECT_TRUE(
-      this->SetCookie(cs, this->http_www_foo_.url(), "abc=pqr; path=/"));
+      this->SetCookie(cs, this->http_www_foo_.url(), "xyz=zyx2; path=/"));
   EXPECT_TRUE(
-      this->SetCookie(cs, this->http_bar_com_.url(), "abc=stu; path=/"));
+      this->SetCookie(cs, this->http_bar_com_.url(), "abc=def2; path=/"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(),
+                              "abc=hij2; path=/foo/bar"));
   EXPECT_TRUE(
-      this->SetCookie(cs, this->http_www_foo_.url(), "abc=vwx; path=/bar"));
-  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "xyz=zyx"));
+      this->SetCookie(cs, this->http_www_foo_.url(), "abc=mno2; path=/foo"));
   EXPECT_TRUE(
-      this->SetCookie(cs, this->http_www_foo_.url(), "abc=yz0; path=/foo"));
-  this->RunUntilIdle();
-  ASSERT_EQ(4u, cookie_changes.size());
+      this->SetCookie(cs, this->http_www_foo_.url(), "abc=pqr2; path=/"));
+  EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(),
+                              "abc=stu2; domain=foo.com"));
+  this->DeliverChangeNotifications();
 
+  ASSERT_LE(1u, cookie_changes.size());
   EXPECT_EQ("abc", cookie_changes[0].first.Name());
-  EXPECT_EQ("def", cookie_changes[0].first.Value());
-  EXPECT_EQ("/", cookie_changes[0].first.Path());
+  EXPECT_EQ("mno1", cookie_changes[0].first.Value());
+  EXPECT_EQ("/foo", cookie_changes[0].first.Path());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
-  EXPECT_EQ(CookieChangeCause::OVERWRITE, cookie_changes[0].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::OVERWRITE,
+                                 cookie_changes[0].second));
 
+  ASSERT_LE(2u, cookie_changes.size());
   EXPECT_EQ("abc", cookie_changes[1].first.Name());
-  EXPECT_EQ("pqr", cookie_changes[1].first.Value());
-  EXPECT_EQ("/", cookie_changes[1].first.Path());
+  EXPECT_EQ("mno2", cookie_changes[1].first.Value());
+  EXPECT_EQ("/foo", cookie_changes[1].first.Path());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
-  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[1].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[1].second));
 
+  ASSERT_LE(3u, cookie_changes.size());
   EXPECT_EQ("abc", cookie_changes[2].first.Name());
-  EXPECT_EQ("mno", cookie_changes[2].first.Value());
-  EXPECT_EQ("/foo", cookie_changes[2].first.Path());
+  EXPECT_EQ("pqr1", cookie_changes[2].first.Value());
+  EXPECT_EQ("/", cookie_changes[2].first.Path());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[2].first.Domain());
-  EXPECT_EQ(CookieChangeCause::OVERWRITE, cookie_changes[2].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::OVERWRITE,
+                                 cookie_changes[2].second));
 
+  ASSERT_LE(4u, cookie_changes.size());
   EXPECT_EQ("abc", cookie_changes[3].first.Name());
-  EXPECT_EQ("yz0", cookie_changes[3].first.Value());
-  EXPECT_EQ("/foo", cookie_changes[3].first.Path());
+  EXPECT_EQ("pqr2", cookie_changes[3].first.Value());
+  EXPECT_EQ("/", cookie_changes[3].first.Path());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[3].first.Domain());
-  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[3].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[3].second));
+
+  ASSERT_LE(5u, cookie_changes.size());
+  EXPECT_EQ("abc", cookie_changes[4].first.Name());
+  EXPECT_EQ("stu1", cookie_changes[4].first.Value());
+  EXPECT_EQ("/", cookie_changes[4].first.Path());
+  EXPECT_EQ(".foo.com", cookie_changes[4].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::OVERWRITE,
+                                 cookie_changes[4].second));
+
+  ASSERT_LE(6u, cookie_changes.size());
+  EXPECT_EQ("abc", cookie_changes[5].first.Name());
+  EXPECT_EQ("stu2", cookie_changes[5].first.Value());
+  EXPECT_EQ("/", cookie_changes[5].first.Path());
+  EXPECT_EQ(".foo.com", cookie_changes[5].first.Domain());
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[5].second));
+
+  EXPECT_EQ(6u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_OverwriteWithHttpOnly) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, OverwriteWithHttpOnly) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
-  // Insert a cookie "abc" for path "/foo"
+  // Insert a cookie "abc" for path "/foo".
   CookieStore* cs = this->GetCookieStore();
   std::vector<CookieChange> cookie_changes;
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->www_foo_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes.size());
 
   EXPECT_TRUE(
       this->SetCookie(cs, this->http_www_foo_.url(), "abc=def; path=/foo"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(1u, cookie_changes.size());
-  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[0].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[0].second));
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
   EXPECT_EQ("abc", cookie_changes[0].first.Name());
   EXPECT_EQ("def", cookie_changes[0].first.Value());
+  EXPECT_FALSE(cookie_changes[0].first.IsHttpOnly());
   cookie_changes.clear();
 
-  // Insert a cookie "a" for path "/path1", that is httponly. This should
+  // Insert a cookie "a" for path "/foo", that is httponly. This should
   // overwrite the non-http-only version.
   CookieOptions allow_httponly;
   allow_httponly.set_include_httponly();
   EXPECT_TRUE(this->SetCookieWithOptions(cs, this->http_www_foo_.url(),
                                          "abc=hij; path=/foo; httponly",
                                          allow_httponly));
-  this->RunUntilIdle();
-  ASSERT_EQ(2u, cookie_changes.size());
+  this->DeliverChangeNotifications();
+
+  ASSERT_LE(1u, cookie_changes.size());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[0].first.Domain());
-  EXPECT_EQ(CookieChangeCause::OVERWRITE, cookie_changes[0].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::OVERWRITE,
+                                 cookie_changes[0].second));
   EXPECT_EQ("abc", cookie_changes[0].first.Name());
   EXPECT_EQ("def", cookie_changes[0].first.Value());
+  EXPECT_FALSE(cookie_changes[0].first.IsHttpOnly());
+
+  ASSERT_LE(2u, cookie_changes.size());
   EXPECT_EQ(this->http_www_foo_.url().host(), cookie_changes[1].first.Domain());
-  EXPECT_EQ(CookieChangeCause::INSERTED, cookie_changes[1].second);
+  EXPECT_TRUE(this->MatchesCause(CookieChangeCause::INSERTED,
+                                 cookie_changes[1].second));
   EXPECT_EQ("abc", cookie_changes[1].first.Name());
   EXPECT_EQ("hij", cookie_changes[1].first.Value());
+  EXPECT_TRUE(cookie_changes[1].first.IsHttpOnly());
+
+  EXPECT_EQ(2u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_Deregister) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, Deregister) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
@@ -730,15 +2097,16 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_Deregister) {
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->www_foo_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes.size());
 
   // Insert a cookie and make sure it is seen.
   EXPECT_TRUE(
       this->SetCookie(cs, this->http_www_foo_.url(), "abc=def; path=/foo"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(1u, cookie_changes.size());
   EXPECT_EQ("abc", cookie_changes[0].first.Name());
   EXPECT_EQ("def", cookie_changes[0].first.Value());
@@ -751,12 +2119,12 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_Deregister) {
   // Insert a second cookie and make sure it's not visible.
   EXPECT_TRUE(
       this->SetCookie(cs, this->http_www_foo_.url(), "abc=hij; path=/"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
 
   EXPECT_EQ(0u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_DeregisterMultiple) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, DeregisterMultiple) {
   if (!TypeParam::supports_named_cookie_tracking ||
       !TypeParam::supports_multiple_tracking_callbacks)
     return;
@@ -768,21 +2136,23 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DeregisterMultiple) {
   std::unique_ptr<CookieChangeSubscription> subscription1 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->www_foo_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_1)));
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_1)));
   std::unique_ptr<CookieChangeSubscription> subscription2 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->www_foo_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_2)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes_1.size());
   ASSERT_EQ(0u, cookie_changes_2.size());
 
   // Insert a cookie and make sure it's seen.
   EXPECT_TRUE(
       this->SetCookie(cs, this->http_www_foo_.url(), "abc=def; path=/foo"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ("abc", cookie_changes_1[0].first.Name());
   EXPECT_EQ("def", cookie_changes_1[0].first.Value());
@@ -802,7 +2172,7 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DeregisterMultiple) {
   // change array.
   EXPECT_TRUE(
       this->SetCookie(cs, this->http_www_foo_.url(), "abc=hij; path=/"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ("abc", cookie_changes_1[0].first.Name());
   EXPECT_EQ("hij", cookie_changes_1[0].first.Value());
@@ -811,10 +2181,44 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DeregisterMultiple) {
   EXPECT_EQ(0u, cookie_changes_2.size());
 }
 
-// Confirm that deregistering a subscription blocks the notification
-// if the deregistration happened after the change but before the
-// notification was received.
-TYPED_TEST_P(CookieStoreChangeTest, Named_DeregisterRace) {
+// Confirm that a listener does not receive notifications for changes that
+// happened right before the subscription was established.
+TYPED_TEST_P(CookieStoreChangeNamedTest, DispatchRace) {
+  if (!TypeParam::supports_named_cookie_tracking)
+    return;
+
+  CookieStore* cs = this->GetCookieStore();
+
+  // This cookie insertion should not be seen.
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "abc=def; path=/foo"));
+  // DeliverChangeNotifications() must NOT be called before the subscription is
+  // established.
+
+  std::vector<CookieChange> cookie_changes;
+  std::unique_ptr<CookieChangeSubscription> subscription =
+      cs->GetChangeDispatcher().AddCallbackForCookie(
+          this->www_foo_foo_.url(), "abc",
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+
+  EXPECT_TRUE(
+      this->SetCookie(cs, this->http_www_foo_.url(), "abc=hij; path=/"));
+  this->DeliverChangeNotifications();
+
+  EXPECT_LE(1u, cookie_changes.size());
+  EXPECT_EQ("abc", cookie_changes[0].first.Name());
+  EXPECT_EQ("hij", cookie_changes[0].first.Value());
+  EXPECT_EQ("/", cookie_changes[0].first.Path());
+
+  ASSERT_EQ(1u, cookie_changes.size());
+}
+
+// Confirm that deregistering a subscription blocks the notification if the
+// deregistration happened after the change but before the notification was
+// received.
+TYPED_TEST_P(CookieStoreChangeNamedTest, DeregisterRace) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
@@ -824,15 +2228,16 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DeregisterRace) {
   std::unique_ptr<CookieChangeSubscription> subscription =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->www_foo_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes.size());
 
   // Insert a cookie and make sure it's seen.
   EXPECT_TRUE(
       this->SetCookie(cs, this->http_www_foo_.url(), "abc=def; path=/foo"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(1u, cookie_changes.size());
   EXPECT_EQ("abc", cookie_changes[0].first.Name());
   EXPECT_EQ("def", cookie_changes[0].first.Value());
@@ -855,11 +2260,11 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DeregisterRace) {
   // valid. Destroy the subscription so as to lose the race and make sure the
   // task posted arrives after the subscription was destroyed.
   subscription.reset();
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_DeregisterRaceMultiple) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, DeregisterRaceMultiple) {
   if (!TypeParam::supports_named_cookie_tracking ||
       !TypeParam::supports_multiple_tracking_callbacks)
     return;
@@ -870,21 +2275,23 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DeregisterRaceMultiple) {
   std::unique_ptr<CookieChangeSubscription> subscription1 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->www_foo_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_1)));
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_1)));
   std::unique_ptr<CookieChangeSubscription> subscription2 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->www_foo_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_2)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes_1.size());
   ASSERT_EQ(0u, cookie_changes_2.size());
 
   // Insert a cookie and make sure it's seen.
   EXPECT_TRUE(
       this->SetCookie(cs, this->http_www_foo_.url(), "abc=def; path=/foo"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
 
   ASSERT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ("abc", cookie_changes_1[0].first.Name());
@@ -906,17 +2313,15 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DeregisterRaceMultiple) {
   // Note that by the API contract it's perfectly valid to have received the
   // notification immediately, i.e. synchronously with the cookie change. In
   // that case, there's nothing to test.
-  if (1u == cookie_changes_2.size()) {
-    LOG(ERROR) << "Nothing to test.";
+  if (1u == cookie_changes_2.size())
     return;
-  }
 
   // A task was posted by the SetCookie() above, but has not yet arrived. If it
   // arrived before the subscription is destroyed, callback execution would be
   // valid. Destroy one of the subscriptions so as to lose the race and make
   // sure the task posted arrives after the subscription was destroyed.
   subscription2.reset();
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   ASSERT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ("abc", cookie_changes_1[0].first.Name());
   EXPECT_EQ("hij", cookie_changes_1[0].first.Value());
@@ -926,7 +2331,7 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DeregisterRaceMultiple) {
   ASSERT_EQ(0u, cookie_changes_2.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsDisjoint) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, DifferentSubscriptionsDisjoint) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
@@ -936,24 +2341,26 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsDisjoint) {
   std::unique_ptr<CookieChangeSubscription> subscription1 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_www_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_1)));
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_1)));
   std::unique_ptr<CookieChangeSubscription> subscription2 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_bar_com_.url(), "ghi",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_2)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes_1.size());
   ASSERT_EQ(0u, cookie_changes_2.size());
 
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "abc=def"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   EXPECT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ(0u, cookie_changes_2.size());
 
   EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "ghi=jkl"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
 
   ASSERT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ("abc", cookie_changes_1[0].first.Name());
@@ -968,7 +2375,7 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsDisjoint) {
             cookie_changes_2[0].first.Domain());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsDomains) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, DifferentSubscriptionsDomains) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
@@ -978,24 +2385,26 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsDomains) {
   std::unique_ptr<CookieChangeSubscription> subscription1 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_www_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_1)));
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_1)));
   std::unique_ptr<CookieChangeSubscription> subscription2 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_bar_com_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_2)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes_1.size());
   ASSERT_EQ(0u, cookie_changes_2.size());
 
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "abc=def"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   EXPECT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ(0u, cookie_changes_2.size());
 
   EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "abc=ghi"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
 
   ASSERT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ("abc", cookie_changes_1[0].first.Name());
@@ -1010,7 +2419,7 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsDomains) {
             cookie_changes_2[0].first.Domain());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsNames) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, DifferentSubscriptionsNames) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
@@ -1020,24 +2429,26 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsNames) {
   std::unique_ptr<CookieChangeSubscription> subscription1 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_www_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_1)));
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_1)));
   std::unique_ptr<CookieChangeSubscription> subscription2 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_www_foo_.url(), "ghi",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_2)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes_1.size());
   ASSERT_EQ(0u, cookie_changes_2.size());
 
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "abc=def"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   EXPECT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ(0u, cookie_changes_2.size());
 
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "ghi=jkl"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
 
   ASSERT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ("abc", cookie_changes_1[0].first.Name());
@@ -1052,7 +2463,7 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsNames) {
             cookie_changes_2[0].first.Domain());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsPaths) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, DifferentSubscriptionsPaths) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
@@ -1062,25 +2473,27 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsPaths) {
   std::unique_ptr<CookieChangeSubscription> subscription1 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_www_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_1)));
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_1)));
   std::unique_ptr<CookieChangeSubscription> subscription2 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->www_foo_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_2)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes_1.size());
   ASSERT_EQ(0u, cookie_changes_2.size());
 
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "abc=def"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   EXPECT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ(1u, cookie_changes_2.size());
 
   EXPECT_TRUE(
       this->SetCookie(cs, this->http_www_foo_.url(), "abc=ghi; path=/foo"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
 
   ASSERT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ("abc", cookie_changes_1[0].first.Name());
@@ -1096,15 +2509,17 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsPaths) {
   EXPECT_EQ(this->http_www_foo_.url().host(),
             cookie_changes_2[0].first.Domain());
 
-  ASSERT_EQ(2u, cookie_changes_2.size());
+  ASSERT_LE(2u, cookie_changes_2.size());
   EXPECT_EQ("abc", cookie_changes_2[1].first.Name());
   EXPECT_EQ("ghi", cookie_changes_2[1].first.Value());
   EXPECT_EQ("/foo", cookie_changes_2[1].first.Path());
   EXPECT_EQ(this->http_www_foo_.url().host(),
             cookie_changes_2[1].first.Domain());
+
+  EXPECT_EQ(2u, cookie_changes_2.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsFiltering) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, DifferentSubscriptionsFiltering) {
   if (!TypeParam::supports_named_cookie_tracking)
     return;
 
@@ -1115,31 +2530,35 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsFiltering) {
   std::unique_ptr<CookieChangeSubscription> subscription1 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_www_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_1)));
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_1)));
   std::unique_ptr<CookieChangeSubscription> subscription2 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_www_foo_.url(), "hij",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_2)));
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_2)));
   std::unique_ptr<CookieChangeSubscription> subscription3 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_bar_com_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_3)));
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_3)));
   std::unique_ptr<CookieChangeSubscription> subscription4 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->www_foo_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_4)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_4)));
+  this->DeliverChangeNotifications();
   ASSERT_EQ(0u, cookie_changes_1.size());
   ASSERT_EQ(0u, cookie_changes_2.size());
   EXPECT_EQ(0u, cookie_changes_3.size());
   EXPECT_EQ(0u, cookie_changes_4.size());
 
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "abc=def"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   EXPECT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ(0u, cookie_changes_2.size());
   EXPECT_EQ(0u, cookie_changes_3.size());
@@ -1147,7 +2566,7 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsFiltering) {
 
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "xyz=zyx"));
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "hij=mno"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   EXPECT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ(1u, cookie_changes_2.size());
   EXPECT_EQ(0u, cookie_changes_3.size());
@@ -1156,7 +2575,7 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsFiltering) {
   EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "hij=pqr"));
   EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "xyz=zyx"));
   EXPECT_TRUE(this->SetCookie(cs, this->http_bar_com_.url(), "abc=stu"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
   EXPECT_EQ(1u, cookie_changes_1.size());
   EXPECT_EQ(1u, cookie_changes_2.size());
   EXPECT_EQ(1u, cookie_changes_3.size());
@@ -1164,25 +2583,28 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsFiltering) {
 
   EXPECT_TRUE(
       this->SetCookie(cs, this->http_www_foo_.url(), "abc=vwx; path=/foo"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
 
-  ASSERT_EQ(1u, cookie_changes_1.size());
+  ASSERT_LE(1u, cookie_changes_1.size());
   EXPECT_EQ("abc", cookie_changes_1[0].first.Name());
   EXPECT_EQ("def", cookie_changes_1[0].first.Value());
   EXPECT_EQ(this->http_www_foo_.url().host(),
             cookie_changes_1[0].first.Domain());
+  EXPECT_EQ(1u, cookie_changes_1.size());
 
-  ASSERT_EQ(1u, cookie_changes_2.size());
+  ASSERT_LE(1u, cookie_changes_2.size());
   EXPECT_EQ("hij", cookie_changes_2[0].first.Name());
   EXPECT_EQ("mno", cookie_changes_2[0].first.Value());
   EXPECT_EQ(this->http_www_foo_.url().host(),
             cookie_changes_2[0].first.Domain());
+  EXPECT_EQ(1u, cookie_changes_2.size());
 
-  ASSERT_EQ(1u, cookie_changes_3.size());
+  ASSERT_LE(1u, cookie_changes_3.size());
   EXPECT_EQ("abc", cookie_changes_3[0].first.Name());
   EXPECT_EQ("stu", cookie_changes_3[0].first.Value());
   EXPECT_EQ(this->http_bar_com_.url().host(),
             cookie_changes_3[0].first.Domain());
+  EXPECT_EQ(1u, cookie_changes_3.size());
 
   ASSERT_LE(1u, cookie_changes_4.size());
   EXPECT_EQ("abc", cookie_changes_4[0].first.Name());
@@ -1191,15 +2613,17 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_DifferentSubscriptionsFiltering) {
   EXPECT_EQ(this->http_www_foo_.url().host(),
             cookie_changes_4[0].first.Domain());
 
-  ASSERT_EQ(2u, cookie_changes_4.size());
+  ASSERT_LE(2u, cookie_changes_4.size());
   EXPECT_EQ("abc", cookie_changes_4[1].first.Name());
   EXPECT_EQ("vwx", cookie_changes_4[1].first.Value());
   EXPECT_EQ("/foo", cookie_changes_4[1].first.Path());
   EXPECT_EQ(this->http_www_foo_.url().host(),
             cookie_changes_4[1].first.Domain());
+
+  EXPECT_EQ(2u, cookie_changes_4.size());
 }
 
-TYPED_TEST_P(CookieStoreChangeTest, Named_MultipleSubscriptions) {
+TYPED_TEST_P(CookieStoreChangeNamedTest, MultipleSubscriptions) {
   if (!TypeParam::supports_named_cookie_tracking ||
       !TypeParam::supports_multiple_tracking_callbacks)
     return;
@@ -1210,18 +2634,20 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_MultipleSubscriptions) {
   std::unique_ptr<CookieChangeSubscription> subscription1 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_www_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_1)));
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_1)));
   std::unique_ptr<CookieChangeSubscription> subscription2 =
       cs->GetChangeDispatcher().AddCallbackForCookie(
           this->http_www_foo_.url(), "abc",
-          base::BindRepeating(&OnCookieChange,
-                              base::Unretained(&cookie_changes_2)));
-  this->RunUntilIdle();
+          base::BindRepeating(
+              &CookieStoreChangeTestBase<TypeParam>::OnCookieChange,
+              base::Unretained(&cookie_changes_2)));
+  this->DeliverChangeNotifications();
 
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "xyz=zyx"));
   EXPECT_TRUE(this->SetCookie(cs, this->http_www_foo_.url(), "abc=def"));
-  this->RunUntilIdle();
+  this->DeliverChangeNotifications();
 
   ASSERT_EQ(1U, cookie_changes_1.size());
   EXPECT_EQ("abc", cookie_changes_1[0].first.Name());
@@ -1234,37 +2660,68 @@ TYPED_TEST_P(CookieStoreChangeTest, Named_MultipleSubscriptions) {
   cookie_changes_2.clear();
 }
 
-REGISTER_TYPED_TEST_CASE_P(CookieStoreChangeTest,
-                           Global_NoCookie,
-                           Global_InitialCookie,
-                           Global_Insert,
-                           Global_Delete,
-                           Global_Overwrite,
-                           Global_OverwriteWithHttpOnly,
-                           Global_Deregister,
-                           Global_DeregisterMultiple,
-                           Global_DeregisterRace,
-                           Global_DeregisterRaceMultiple,
-                           Global_MultipleSubscriptions,
-                           Named_NoCookie,
-                           Named_InitialCookie,
-                           Named_Insert,
-                           Named_InsertFiltering,
-                           Named_Delete,
-                           Named_DeleteFiltering,
-                           Named_Overwrite,
-                           Named_OverwriteFiltering,
-                           Named_OverwriteWithHttpOnly,
-                           Named_Deregister,
-                           Named_DeregisterMultiple,
-                           Named_DeregisterRace,
-                           Named_DeregisterRaceMultiple,
-                           Named_DifferentSubscriptionsDisjoint,
-                           Named_DifferentSubscriptionsDomains,
-                           Named_DifferentSubscriptionsNames,
-                           Named_DifferentSubscriptionsPaths,
-                           Named_DifferentSubscriptionsFiltering,
-                           Named_MultipleSubscriptions);
+REGISTER_TYPED_TEST_CASE_P(CookieStoreChangeGlobalTest,
+                           NoCookie,
+                           InitialCookie,
+                           InsertOne,
+                           InsertMany,
+                           DeleteOne,
+                           DeleteTwo,
+                           Overwrite,
+                           OverwriteWithHttpOnly,
+                           Deregister,
+                           DeregisterMultiple,
+                           DispatchRace,
+                           DeregisterRace,
+                           DeregisterRaceMultiple,
+                           MultipleSubscriptions);
+
+REGISTER_TYPED_TEST_CASE_P(CookieStoreChangeUrlTest,
+                           NoCookie,
+                           InitialCookie,
+                           InsertOne,
+                           InsertMany,
+                           InsertFiltering,
+                           DeleteOne,
+                           DeleteTwo,
+                           DeleteFiltering,
+                           Overwrite,
+                           OverwriteFiltering,
+                           OverwriteWithHttpOnly,
+                           Deregister,
+                           DeregisterMultiple,
+                           DispatchRace,
+                           DeregisterRace,
+                           DeregisterRaceMultiple,
+                           DifferentSubscriptionsDisjoint,
+                           DifferentSubscriptionsDomains,
+                           DifferentSubscriptionsPaths,
+                           DifferentSubscriptionsFiltering,
+                           MultipleSubscriptions);
+
+REGISTER_TYPED_TEST_CASE_P(CookieStoreChangeNamedTest,
+                           NoCookie,
+                           InitialCookie,
+                           InsertOne,
+                           InsertTwo,
+                           InsertFiltering,
+                           DeleteOne,
+                           DeleteTwo,
+                           DeleteFiltering,
+                           Overwrite,
+                           OverwriteFiltering,
+                           OverwriteWithHttpOnly,
+                           Deregister,
+                           DeregisterMultiple,
+                           DispatchRace,
+                           DeregisterRace,
+                           DeregisterRaceMultiple,
+                           DifferentSubscriptionsDisjoint,
+                           DifferentSubscriptionsDomains,
+                           DifferentSubscriptionsNames,
+                           DifferentSubscriptionsPaths,
+                           DifferentSubscriptionsFiltering,
+                           MultipleSubscriptions);
 
 }  // namespace net
 

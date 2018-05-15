@@ -37,6 +37,7 @@
 #include "chromeos/printing/ppd_line_reader.h"
 #include "chromeos/printing/ppd_provider.h"
 #include "chromeos/printing/printer_configuration.h"
+#include "chromeos/printing/printer_translator.h"
 #include "chromeos/printing/printing_constants.h"
 #include "chromeos/printing/uri_components.h"
 #include "content/public/browser/browser_context.h"
@@ -100,84 +101,6 @@ void QueryAutoconf(const std::string& printer_uri,
   UriComponents uri = optional.value();
   QueryIppPrinter(uri.host(), uri.port(), uri.path(), uri.encrypted(),
                   callback);
-}
-
-// Create an empty CupsPrinterInfo dictionary value. It should be consistent
-// with the fields in js side. See cups_printers_browser_proxy.js for the
-// definition of CupsPrinterInfo.
-std::unique_ptr<base::DictionaryValue> CreateEmptyPrinterInfo() {
-  std::unique_ptr<base::DictionaryValue> printer_info =
-      std::make_unique<base::DictionaryValue>();
-  printer_info->SetString("ppdManufacturer", "");
-  printer_info->SetString("ppdModel", "");
-  printer_info->SetString("printerAddress", "");
-  printer_info->SetBoolean("printerAutoconf", false);
-  printer_info->SetString("printerDescription", "");
-  printer_info->SetString("printerId", "");
-  printer_info->SetString("printerManufacturer", "");
-  printer_info->SetString("printerModel", "");
-  printer_info->SetString("printerMakeAndModel", "");
-  printer_info->SetString("printerName", "");
-  printer_info->SetString("printerPPDPath", "");
-  printer_info->SetString("printerProtocol", "ipp");
-  printer_info->SetString("printerQueue", "");
-  printer_info->SetString("printerStatus", "");
-  return printer_info;
-}
-
-// Formats a host and port string.  The |port| portion is omitted if
-// it is unspecified or invalid.
-std::string PrinterAddress(const std::string& host, int port) {
-  if (port != url::PORT_UNSPECIFIED && port != url::PORT_INVALID) {
-    return base::StringPrintf("%s:%d", host.c_str(), port);
-  }
-
-  return host;
-}
-
-// Returns a JSON representation of |printer| as a CupsPrinterInfo. If the
-// printer uri cannot be parsed, the relevant fields are populated with default
-// values.
-std::unique_ptr<base::DictionaryValue> GetPrinterInfo(const Printer& printer) {
-  std::unique_ptr<base::DictionaryValue> printer_info =
-      CreateEmptyPrinterInfo();
-  printer_info->SetString("printerId", printer.id());
-  printer_info->SetString("printerName", printer.display_name());
-  printer_info->SetString("printerDescription", printer.description());
-  printer_info->SetString("printerManufacturer", printer.manufacturer());
-  printer_info->SetString("printerModel", printer.model());
-  printer_info->SetString("printerMakeAndModel", printer.make_and_model());
-
-  auto optional = printer.GetUriComponents();
-  if (!optional.has_value()) {
-    // Uri is invalid so we set default values.
-    LOG(WARNING) << "Could not parse uri.  Defaulting values";
-    printer_info->SetString("printerAddress", "");
-    printer_info->SetString("printerQueue", "");
-    printer_info->SetString("printerProtocol",
-                            "ipp");  // IPP is our default protocol.
-    return printer_info;
-  }
-
-  UriComponents uri = optional.value();
-
-  if (base::ToLowerASCII(uri.scheme()) == "usb") {
-    // USB has URI path (and, maybe, query) components that aren't really
-    // associated with a queue -- the mapping between printing semantics and URI
-    // semantics breaks down a bit here.  From the user's point of view, the
-    // entire host/path/query block is the printer address for USB.
-    printer_info->SetString("printerAddress",
-                            printer.uri().substr(strlen("usb://")));
-  } else {
-    printer_info->SetString("printerAddress",
-                            PrinterAddress(uri.host(), uri.port()));
-    if (!uri.path().empty()) {
-      printer_info->SetString("printerQueue", uri.path().substr(1));
-    }
-  }
-  printer_info->SetString("printerProtocol", base::ToLowerASCII(uri.scheme()));
-
-  return printer_info;
 }
 
 // Extracts a sanitized value of printerQueue from |printer_dict|.  Returns an
@@ -265,52 +188,58 @@ CupsPrintersHandler::~CupsPrintersHandler() {}
 void CupsPrintersHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "getCupsPrintersList",
-      base::Bind(&CupsPrintersHandler::HandleGetCupsPrintersList,
-                 base::Unretained(this)));
+      base::BindRepeating(&CupsPrintersHandler::HandleGetCupsPrintersList,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "updateCupsPrinter",
-      base::Bind(&CupsPrintersHandler::HandleUpdateCupsPrinter,
-                 base::Unretained(this)));
+      base::BindRepeating(&CupsPrintersHandler::HandleUpdateCupsPrinter,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "removeCupsPrinter",
-      base::Bind(&CupsPrintersHandler::HandleRemoveCupsPrinter,
-                 base::Unretained(this)));
+      base::BindRepeating(&CupsPrintersHandler::HandleRemoveCupsPrinter,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
-      "addCupsPrinter", base::Bind(&CupsPrintersHandler::HandleAddCupsPrinter,
-                                   base::Unretained(this)));
+      "addCupsPrinter",
+      base::BindRepeating(&CupsPrintersHandler::HandleAddCupsPrinter,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
-      "getPrinterInfo", base::Bind(&CupsPrintersHandler::HandleGetPrinterInfo,
-                                   base::Unretained(this)));
+      "getPrinterInfo",
+      base::BindRepeating(&CupsPrintersHandler::HandleGetPrinterInfo,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "getCupsPrinterManufacturersList",
-      base::Bind(&CupsPrintersHandler::HandleGetCupsPrinterManufacturers,
-                 base::Unretained(this)));
+      base::BindRepeating(
+          &CupsPrintersHandler::HandleGetCupsPrinterManufacturers,
+          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "getCupsPrinterModelsList",
-      base::Bind(&CupsPrintersHandler::HandleGetCupsPrinterModels,
-                 base::Unretained(this)));
+      base::BindRepeating(&CupsPrintersHandler::HandleGetCupsPrinterModels,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
-      "selectPPDFile", base::Bind(&CupsPrintersHandler::HandleSelectPPDFile,
-                                  base::Unretained(this)));
+      "selectPPDFile",
+      base::BindRepeating(&CupsPrintersHandler::HandleSelectPPDFile,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "startDiscoveringPrinters",
-      base::Bind(&CupsPrintersHandler::HandleStartDiscovery,
-                 base::Unretained(this)));
+      base::BindRepeating(&CupsPrintersHandler::HandleStartDiscovery,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "stopDiscoveringPrinters",
-      base::Bind(&CupsPrintersHandler::HandleStopDiscovery,
-                 base::Unretained(this)));
+      base::BindRepeating(&CupsPrintersHandler::HandleStopDiscovery,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "getPrinterPpdManufacturerAndModel",
-      base::Bind(&CupsPrintersHandler::HandleGetPrinterPpdManufacturerAndModel,
-                 base::Unretained(this)));
+      base::BindRepeating(
+          &CupsPrintersHandler::HandleGetPrinterPpdManufacturerAndModel,
+          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "addDiscoveredPrinter",
-      base::Bind(&CupsPrintersHandler::HandleAddDiscoveredPrinter,
-                 base::Unretained(this)));
+      base::BindRepeating(&CupsPrintersHandler::HandleAddDiscoveredPrinter,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
-      "cancelPrinterSetUp", base::Bind(&CupsPrintersHandler::HandleSetUpCancel,
-                                       base::Unretained(this)));
+      "cancelPrinterSetUp",
+      base::BindRepeating(&CupsPrintersHandler::HandleSetUpCancel,
+                          base::Unretained(this)));
 }
 
 void CupsPrintersHandler::OnJavascriptAllowed() {
@@ -336,7 +265,7 @@ void CupsPrintersHandler::HandleGetCupsPrintersList(
   for (const Printer& printer : printers) {
     // Some of these printers could be invalid but we want to allow the user
     // to edit them. crbug.com/778383
-    printers_list->Append(GetPrinterInfo(printer));
+    printers_list->Append(GetCupsPrinterInfo(printer));
   }
 
   auto response = std::make_unique<base::DictionaryValue>();
@@ -464,7 +393,7 @@ void CupsPrintersHandler::OnAutoconfQueriedDiscovered(
   // much information as we can about the printer, and ask the user to supply
   // the rest.
   FireWebUIListener("on-manually-add-discovered-printer",
-                    *GetPrinterInfo(*printer));
+                    *GetCupsPrinterInfo(*printer));
 }
 
 void CupsPrintersHandler::OnAutoconfQueried(const std::string& callback_id,
@@ -810,10 +739,10 @@ void CupsPrintersHandler::OnPrintersChanged(
   std::unique_ptr<base::ListValue> printers_list =
       std::make_unique<base::ListValue>();
   for (const Printer& printer : automatic_printers_) {
-    printers_list->Append(GetPrinterInfo(printer));
+    printers_list->Append(GetCupsPrinterInfo(printer));
   }
   for (const Printer& printer : discovered_printers_) {
-    printers_list->Append(GetPrinterInfo(printer));
+    printers_list->Append(GetCupsPrinterInfo(printer));
   }
 
   FireWebUIListener("on-printer-discovered", *printers_list);
@@ -866,7 +795,7 @@ void CupsPrintersHandler::HandleAddDiscoveredPrinter(
   } else {
     // If it's not an IPP printer, the user must choose a PPD.
     FireWebUIListener("on-manually-add-discovered-printer",
-                      *GetPrinterInfo(*printer));
+                      *GetCupsPrinterInfo(*printer));
   }
 }
 

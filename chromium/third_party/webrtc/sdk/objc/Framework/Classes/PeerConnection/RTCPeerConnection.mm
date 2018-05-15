@@ -215,6 +215,25 @@ void PeerConnectionDelegateAdapter::OnIceCandidatesRemoved(
                     didRemoveIceCandidates:ice_candidates];
 }
 
+void PeerConnectionDelegateAdapter::OnAddTrack(
+    rtc::scoped_refptr<RtpReceiverInterface> receiver,
+    const std::vector<rtc::scoped_refptr<MediaStreamInterface>>& streams) {
+  RTCPeerConnection *peer_connection = peer_connection_;
+  if ([peer_connection.delegate
+          respondsToSelector:@selector(peerConnection:didAddReceiver:streams:)]) {
+    NSMutableArray *mediaStreams = [NSMutableArray arrayWithCapacity:streams.size()];
+    for (const auto& nativeStream : streams) {
+      RTCMediaStream *mediaStream = [[RTCMediaStream alloc] initWithNativeMediaStream:nativeStream];
+      [mediaStreams addObject:mediaStream];
+    }
+    RTCRtpReceiver *rtpReceiver = [[RTCRtpReceiver alloc] initWithNativeRtpReceiver:receiver];
+
+    [peer_connection.delegate peerConnection:peer_connection
+                              didAddReceiver:rtpReceiver
+                                     streams:mediaStreams];
+  }
+}
+
 }  // namespace webrtc
 
 
@@ -348,14 +367,13 @@ void PeerConnectionDelegateAdapter::OnIceCandidatesRemoved(
   [_localStreams removeObject:stream];
 }
 
-- (RTCRtpSender *)addTrack:(RTCMediaStreamTrack *)track
-              streamLabels:(NSArray<NSString *> *)streamLabels {
-  std::vector<std::string> nativeStreamLabels;
-  for (NSString *label in streamLabels) {
-    nativeStreamLabels.push_back([label UTF8String]);
+- (RTCRtpSender *)addTrack:(RTCMediaStreamTrack *)track streamIds:(NSArray<NSString *> *)streamIds {
+  std::vector<std::string> nativeStreamIds;
+  for (NSString *streamId in streamIds) {
+    nativeStreamIds.push_back([streamId UTF8String]);
   }
   webrtc::RTCErrorOr<rtc::scoped_refptr<webrtc::RtpSenderInterface>> nativeSenderOrError =
-      _peerConnection->AddTrack(track.nativeTrack, nativeStreamLabels);
+      _peerConnection->AddTrack(track.nativeTrack, nativeStreamIds);
   if (!nativeSenderOrError.ok()) {
     RTCLogError(@"Failed to add track %@: %s", track, nativeSenderOrError.error().message());
     return nil;

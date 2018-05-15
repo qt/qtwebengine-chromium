@@ -26,7 +26,6 @@ class SkBitmap;
 
 namespace content {
 class DevToolsAgentHost;
-class DevToolsAgentHostClient;
 class WebContents;
 }
 
@@ -107,6 +106,8 @@ class HEADLESS_EXPORT HeadlessWebContentsImpl
 
   void Close() override;
 
+  void DelegateRequestsClose();
+
   std::string GetDevToolsAgentHostId();
 
   HeadlessBrowserImpl* browser() const;
@@ -139,18 +140,15 @@ class HEADLESS_EXPORT HeadlessWebContentsImpl
     return needs_external_begin_frames_;
   }
 
-  void SetBeginFrameEventsEnabled(content::DevToolsAgentHostClient* client,
-                                  bool enabled);
-
   using FrameFinishedCallback =
-      base::Callback<void(bool /* has_damage */,
-                          std::unique_ptr<SkBitmap>)>;
+      base::OnceCallback<void(bool /* has_damage */,
+                              std::unique_ptr<SkBitmap>)>;
   void BeginFrame(const base::TimeTicks& frame_timeticks,
                   const base::TimeTicks& deadline,
                   const base::TimeDelta& interval,
                   bool animate_only,
                   bool capture_screenshot,
-                  const FrameFinishedCallback& frame_finished_callback);
+                  FrameFinishedCallback frame_finished_callback);
   bool HasPendingFrame() const { return !pending_frames_.empty(); }
 
  private:
@@ -167,7 +165,6 @@ class HEADLESS_EXPORT HeadlessWebContentsImpl
       const MojoService::ServiceFactoryCallback& service_factory,
       mojo::ScopedMessagePipeHandle handle);
 
-  void SendNeedsBeginFramesEvent(content::DevToolsAgentHostClient* client);
   void PendingFrameReadbackComplete(PendingFrame* pending_frame,
                                     const SkBitmap& bitmap);
 
@@ -175,8 +172,6 @@ class HEADLESS_EXPORT HeadlessWebContentsImpl
   uint64_t begin_frame_sequence_number_ =
       viz::BeginFrameArgs::kStartingFrameNumber;
   bool begin_frame_control_enabled_ = false;
-  std::list<content::DevToolsAgentHostClient*>
-      begin_frame_events_enabled_clients_;
   bool needs_external_begin_frames_ = false;
   std::list<std::unique_ptr<PendingFrame>> pending_frames_;
 
@@ -191,6 +186,7 @@ class HEADLESS_EXPORT HeadlessWebContentsImpl
   std::list<MojoService> mojo_services_;
   bool inject_mojo_services_into_isolated_world_;
   bool devtools_target_ready_notification_sent_ = false;
+  bool render_process_exited_ = false;
 
   HeadlessBrowserContextImpl* browser_context_;      // Not owned.
   // TODO(alexclarke): With OOPIF there may be more than one renderer, we need
@@ -198,6 +194,8 @@ class HEADLESS_EXPORT HeadlessWebContentsImpl
   content::RenderProcessHost* render_process_host_;  // Not owned.
 
   base::ObserverList<HeadlessWebContents::Observer> observers_;
+
+  base::Closure quit_closure_;
 
   service_manager::BinderRegistry registry_;
 

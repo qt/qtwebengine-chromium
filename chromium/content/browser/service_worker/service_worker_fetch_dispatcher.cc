@@ -11,7 +11,6 @@
 #include "base/bind.h"
 #include "base/containers/queue.h"
 #include "base/feature_list.h"
-#include "base/memory/ptr_util.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "content/browser/devtools/service_worker_devtools_agent_host.h"
@@ -173,9 +172,8 @@ class DelegatingURLLoaderClient final : public network::mojom::URLLoaderClient {
   }
   void OnReceiveResponse(
       const network::ResourceResponseHead& head,
-      const base::Optional<net::SSLInfo>& ssl_info,
       network::mojom::DownloadedTempFilePtr downloaded_file) override {
-    client_->OnReceiveResponse(head, ssl_info, std::move(downloaded_file));
+    client_->OnReceiveResponse(head, std::move(downloaded_file));
     DCHECK(on_response_);
     std::move(on_response_).Run();
     AddDevToolsCallback(
@@ -225,7 +223,7 @@ class DelegatingURLLoaderClient final : public network::mojom::URLLoaderClient {
   }
   void AddDevToolsCallback(
       base::Callback<void(const WorkerId&, const std::string&)> callback) {
-    devtools_callbacks.push(callback);
+    devtools_callbacks.push(std::move(callback));
     MaybeRunDevToolsCallbacks();
   }
 

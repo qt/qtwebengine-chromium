@@ -40,14 +40,9 @@ enum class ReadStatus { Normal, Backslash, Octal, FinishOctal, CarriageReturn };
 // static
 int CPDF_SyntaxParser::s_CurrentRecursionDepth = 0;
 
-CPDF_SyntaxParser::CPDF_SyntaxParser()
-    : CPDF_SyntaxParser(WeakPtr<ByteStringPool>()) {}
+CPDF_SyntaxParser::CPDF_SyntaxParser() = default;
 
-CPDF_SyntaxParser::CPDF_SyntaxParser(const WeakPtr<ByteStringPool>& pPool)
-    : m_pFileAccess(nullptr), m_pPool(pPool) {}
-
-CPDF_SyntaxParser::~CPDF_SyntaxParser() {
-}
+CPDF_SyntaxParser::~CPDF_SyntaxParser() = default;
 
 bool CPDF_SyntaxParser::GetCharAt(FX_FILESIZE pos, uint8_t& ch) {
   AutoRestorer<FX_FILESIZE> save_pos(&m_Pos);
@@ -424,23 +419,22 @@ std::unique_ptr<CPDF_Object> CPDF_SyntaxParser::GetObjectBodyInternal(
     std::unique_ptr<CPDF_Dictionary> pDict =
         pdfium::MakeUnique<CPDF_Dictionary>(m_pPool);
     while (1) {
-      ByteString key = GetNextWord(nullptr);
-      if (key.IsEmpty())
+      ByteString word = GetNextWord(nullptr);
+      if (word.IsEmpty())
         return nullptr;
 
-      FX_FILESIZE SavedPos = m_Pos - key.GetLength();
-      if (key == ">>")
+      FX_FILESIZE SavedPos = m_Pos - word.GetLength();
+      if (word == ">>")
         break;
 
-      if (key == "endobj") {
+      if (word == "endobj") {
         m_Pos = SavedPos;
         break;
       }
-      if (key[0] != '/')
+      if (word[0] != '/')
         continue;
 
-      key = PDF_NameDecode(key);
-
+      ByteString key = PDF_NameDecode(word.AsStringView());
       if (key.IsEmpty() && parse_type == ParseType::kLoose)
         continue;
 

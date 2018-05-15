@@ -4,8 +4,10 @@
 
 #include "content/renderer/media/webrtc/rtc_peer_connection_handler.h"
 
+#include <ctype.h>
 #include <string.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <utility>
@@ -16,9 +18,11 @@
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
+#include "base/unguessable_token.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/media/stream/media_stream_constraints_util.h"
@@ -28,6 +32,7 @@
 #include "content/renderer/media/webrtc/rtc_certificate.h"
 #include "content/renderer/media/webrtc/rtc_data_channel_handler.h"
 #include "content/renderer/media/webrtc/rtc_dtmf_sender_handler.h"
+#include "content/renderer/media/webrtc/rtc_error.h"
 #include "content/renderer/media/webrtc/rtc_event_log_output_sink.h"
 #include "content/renderer/media/webrtc/rtc_event_log_output_sink_proxy.h"
 #include "content/renderer/media/webrtc/rtc_stats.h"
@@ -37,19 +42,19 @@
 #include "content/renderer/media/webrtc/webrtc_uma_histograms.h"
 #include "content/renderer/render_thread_impl.h"
 #include "media/base/media_switches.h"
-#include "third_party/WebKit/public/platform/WebMediaConstraints.h"
-#include "third_party/WebKit/public/platform/WebRTCAnswerOptions.h"
-#include "third_party/WebKit/public/platform/WebRTCConfiguration.h"
-#include "third_party/WebKit/public/platform/WebRTCDataChannelInit.h"
-#include "third_party/WebKit/public/platform/WebRTCError.h"
-#include "third_party/WebKit/public/platform/WebRTCICECandidate.h"
-#include "third_party/WebKit/public/platform/WebRTCLegacyStats.h"
-#include "third_party/WebKit/public/platform/WebRTCOfferOptions.h"
-#include "third_party/WebKit/public/platform/WebRTCRtpSender.h"
-#include "third_party/WebKit/public/platform/WebRTCSessionDescription.h"
-#include "third_party/WebKit/public/platform/WebRTCSessionDescriptionRequest.h"
-#include "third_party/WebKit/public/platform/WebRTCVoidRequest.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/blink/public/platform/web_media_constraints.h"
+#include "third_party/blink/public/platform/web_rtc_answer_options.h"
+#include "third_party/blink/public/platform/web_rtc_configuration.h"
+#include "third_party/blink/public/platform/web_rtc_data_channel_init.h"
+#include "third_party/blink/public/platform/web_rtc_error.h"
+#include "third_party/blink/public/platform/web_rtc_ice_candidate.h"
+#include "third_party/blink/public/platform/web_rtc_legacy_stats.h"
+#include "third_party/blink/public/platform/web_rtc_offer_options.h"
+#include "third_party/blink/public/platform/web_rtc_rtp_sender.h"
+#include "third_party/blink/public/platform/web_rtc_session_description.h"
+#include "third_party/blink/public/platform/web_rtc_session_description_request.h"
+#include "third_party/blink/public/platform/web_rtc_void_request.h"
+#include "third_party/blink/public/platform/web_url.h"
 #include "third_party/webrtc/api/rtceventlogoutput.h"
 #include "third_party/webrtc/pc/mediasession.h"
 
@@ -165,46 +170,6 @@ CreateWebKitSessionDescription(
   return CreateWebKitSessionDescription(sdp, native_desc->type());
 }
 
-void ConvertToWebKitRTCError(const webrtc::RTCError& webrtc_error,
-                             blink::WebRTCError* blink_error) {
-  switch (webrtc_error.type()) {
-    case webrtc::RTCErrorType::NONE:
-      blink_error->SetType(blink::WebRTCErrorType::kNone);
-      break;
-    case webrtc::RTCErrorType::UNSUPPORTED_PARAMETER:
-      blink_error->SetType(blink::WebRTCErrorType::kUnsupportedParameter);
-      break;
-    case webrtc::RTCErrorType::INVALID_PARAMETER:
-      blink_error->SetType(blink::WebRTCErrorType::kInvalidParameter);
-      break;
-    case webrtc::RTCErrorType::INVALID_RANGE:
-      blink_error->SetType(blink::WebRTCErrorType::kInvalidRange);
-      break;
-    case webrtc::RTCErrorType::SYNTAX_ERROR:
-      blink_error->SetType(blink::WebRTCErrorType::kSyntaxError);
-      break;
-    case webrtc::RTCErrorType::INVALID_STATE:
-      blink_error->SetType(blink::WebRTCErrorType::kInvalidState);
-      break;
-    case webrtc::RTCErrorType::INVALID_MODIFICATION:
-      blink_error->SetType(blink::WebRTCErrorType::kInvalidModification);
-      break;
-    case webrtc::RTCErrorType::NETWORK_ERROR:
-      blink_error->SetType(blink::WebRTCErrorType::kNetworkError);
-      break;
-    case webrtc::RTCErrorType::INTERNAL_ERROR:
-      blink_error->SetType(blink::WebRTCErrorType::kInternalError);
-      break;
-    default:
-      // If adding a new error type, need 3 CLs: One to add the enum to webrtc,
-      // one to update this mapping code, and one to start using the enum in
-      // webrtc.
-      NOTREACHED() << "webrtc::RTCErrorType " << webrtc_error.type()
-                   << " not covered by switch statement.";
-      break;
-  }
-}
-
 void RunClosureWithTrace(const base::Closure& closure,
                          const char* trace_event_name) {
   TRACE_EVENT0("webrtc", trace_event_name);
@@ -295,8 +260,6 @@ void GetNativeRtcConfiguration(
 
   switch (blink_config.sdp_semantics) {
     case blink::WebRTCSdpSemantics::kDefault:
-      webrtc_config->sdp_semantics = webrtc::SdpSemantics::kDefault;
-      break;
     case blink::WebRTCSdpSemantics::kPlanB:
       webrtc_config->sdp_semantics = webrtc::SdpSemantics::kPlanB;
       break;
@@ -398,11 +361,11 @@ class SessionDescriptionRequestTracker {
     }
   }
 
-  void TrackOnFailure(const std::string& error) {
+  void TrackOnFailure(const webrtc::RTCError& error) {
     DCHECK(thread_checker_.CalledOnValidThread());
     if (handler_ && tracker_) {
-      tracker_->TrackSessionDescriptionCallback(
-          handler_.get(), action_, "OnFailure", error);
+      tracker_->TrackSessionDescriptionCallback(handler_.get(), action_,
+                                                "OnFailure", error.message());
     }
   }
 
@@ -442,16 +405,17 @@ class CreateSessionDescriptionRequest
     webkit_request_.Reset();
     delete desc;
   }
-  void OnFailure(const std::string& error) override {
+  void OnFailure(webrtc::RTCError error) override {
     if (!main_thread_->BelongsToCurrentThread()) {
       main_thread_->PostTask(
           FROM_HERE, base::BindOnce(&CreateSessionDescriptionRequest::OnFailure,
-                                    this, error));
+                                    this, std::move(error)));
       return;
     }
 
     tracker_.TrackOnFailure(error);
-    webkit_request_.RequestFailed(blink::WebString::FromUTF8(error));
+    // TODO(hta): Convert CreateSessionDescriptionRequest.OnFailure
+    webkit_request_.RequestFailed(ConvertToWebKitRTCError(error).message());
     webkit_request_.Reset();
   }
 
@@ -497,15 +461,15 @@ class SetLocalDescriptionRequest
     webkit_request_.RequestSucceeded();
     webkit_request_.Reset();
   }
-  void OnFailure(const std::string& error) override {
+  void OnFailure(webrtc::RTCError error) override {
     if (!main_thread_->BelongsToCurrentThread()) {
       main_thread_->PostTask(
-          FROM_HERE,
-          base::BindOnce(&SetLocalDescriptionRequest::OnFailure, this, error));
+          FROM_HERE, base::BindOnce(&SetLocalDescriptionRequest::OnFailure,
+                                    this, std::move(error)));
       return;
     }
     tracker_.TrackOnFailure(error);
-    webkit_request_.RequestFailed(blink::WebString::FromUTF8(error));
+    webkit_request_.RequestFailed(ConvertToWebKitRTCError(error));
     webkit_request_.Reset();
   }
 
@@ -732,52 +696,6 @@ void GetStatsOnSignalingThread(
   }
 }
 
-// A stats collector callback.
-// It is invoked on the WebRTC signaling thread and will post a task to invoke
-// |callback| on the thread given in the |main_thread| argument.
-// The argument to the callback will be a |blink::WebRTCStatsReport|.
-class GetRTCStatsCallback : public webrtc::RTCStatsCollectorCallback {
- public:
-  static rtc::scoped_refptr<GetRTCStatsCallback> Create(
-      const scoped_refptr<base::SingleThreadTaskRunner>& main_thread,
-      std::unique_ptr<blink::WebRTCStatsReportCallback> callback) {
-    return rtc::scoped_refptr<GetRTCStatsCallback>(
-        new rtc::RefCountedObject<GetRTCStatsCallback>(
-            main_thread, callback.release()));
-  }
-
-  void OnStatsDelivered(
-      const rtc::scoped_refptr<const webrtc::RTCStatsReport>& report) override {
-    main_thread_->PostTask(
-        FROM_HERE,
-        base::BindOnce(&GetRTCStatsCallback::OnStatsDeliveredOnMainThread, this,
-                       report));
-  }
-
- protected:
-  GetRTCStatsCallback(
-      const scoped_refptr<base::SingleThreadTaskRunner>& main_thread,
-      blink::WebRTCStatsReportCallback* callback)
-      : main_thread_(main_thread),
-        callback_(callback) {
-  }
-  ~GetRTCStatsCallback() override { DCHECK(!callback_); }
-
-  void OnStatsDeliveredOnMainThread(
-      const rtc::scoped_refptr<const webrtc::RTCStatsReport>& report) {
-    DCHECK(main_thread_->BelongsToCurrentThread());
-    DCHECK(report);
-    DCHECK(callback_);
-    callback_->OnStatsDelivered(std::unique_ptr<blink::WebRTCStatsReport>(
-        new RTCStatsReport(base::WrapRefCounted(report.get()))));
-    // Make sure the callback is destroyed in the main thread as well.
-    callback_.reset();
-  }
-
-  const scoped_refptr<base::SingleThreadTaskRunner> main_thread_;
-  std::unique_ptr<blink::WebRTCStatsReportCallback> callback_;
-};
-
 void GetRTCStatsOnSignalingThread(
     const scoped_refptr<base::SingleThreadTaskRunner>& main_thread,
     scoped_refptr<webrtc::PeerConnectionInterface> native_peer_connection,
@@ -785,7 +703,7 @@ void GetRTCStatsOnSignalingThread(
   TRACE_EVENT0("webrtc", "GetRTCStatsOnSignalingThread");
 
   native_peer_connection->GetStats(
-      GetRTCStatsCallback::Create(main_thread, std::move(callback)));
+      RTCStatsCollectorCallbackImpl::Create(main_thread, std::move(callback)));
 }
 
 class PeerConnectionUMAObserver : public webrtc::UMAObserver {
@@ -828,17 +746,23 @@ class PeerConnectionUMAObserver : public webrtc::UMAObserver {
             static_cast<webrtc::KeyExchangeProtocolType>(counter),
             webrtc::kEnumCounterKeyProtocolMax);
         break;
-      case webrtc::kEnumCounterSdpSemanticRequested:
-        UMA_HISTOGRAM_ENUMERATION(
-            "WebRTC.PeerConnection.SdpSemanticRequested",
-            static_cast<webrtc::SdpSemanticRequested>(counter),
-            webrtc::kSdpSemanticRequestMax);
-        break;
       case webrtc::kEnumCounterSdpSemanticNegotiated:
         UMA_HISTOGRAM_ENUMERATION(
             "WebRTC.PeerConnection.SdpSemanticNegotiated",
             static_cast<webrtc::SdpSemanticNegotiated>(counter),
             webrtc::kSdpSemanticNegotiatedMax);
+        break;
+      case webrtc::kEnumCounterKeyProtocolMediaType:
+        UMA_HISTOGRAM_ENUMERATION(
+            "WebRTC.PeerConnection.KeyProtocolByMedia",
+            static_cast<webrtc::KeyExchangeProtocolMedia>(counter),
+            webrtc::kEnumCounterKeyProtocolMediaTypeMax);
+        break;
+      case webrtc::kEnumCounterSdpFormatReceived:
+        UMA_HISTOGRAM_ENUMERATION(
+            "WebRTC.PeerConnection.SdpFormatReceived",
+            static_cast<webrtc::SdpFormatReceived>(counter),
+            webrtc::kSdpFormatReceivedMax);
         break;
       default:
         // The default clause is expected to be reached when new enum types are
@@ -873,6 +797,14 @@ class PeerConnectionUMAObserver : public webrtc::UMAObserver {
         break;
       case webrtc::kEnumCounterDataSslCipher:
         base::UmaHistogramSparse("WebRTC.PeerConnection.SslCipherSuite.Data",
+                                 counter);
+        break;
+      case webrtc::kEnumCounterSrtpUnprotectError:
+        base::UmaHistogramSparse("WebRTC.PeerConnection.SrtpUnprotectError",
+                                 counter);
+        break;
+      case webrtc::kEnumCounterSrtcpUnprotectError:
+        base::UmaHistogramSparse("WebRTC.PeerConnection.SrtcpUnprotectError",
                                  counter);
         break;
       default:
@@ -990,6 +922,27 @@ size_t GetRemoteStreamUsageCount(
   return usage_count;
 }
 
+enum SdpSemanticRequested {
+  kSdpSemanticRequestedDefault,
+  kSdpSemanticRequestedPlanB,
+  kSdpSemanticRequestedUnifiedPlan,
+  kSdpSemanticRequestedMax
+};
+
+SdpSemanticRequested GetSdpSemanticRequested(
+    blink::WebRTCSdpSemantics sdp_semantics) {
+  switch (sdp_semantics) {
+    case blink::WebRTCSdpSemantics::kDefault:
+      return kSdpSemanticRequestedDefault;
+    case blink::WebRTCSdpSemantics::kPlanB:
+      return kSdpSemanticRequestedPlanB;
+    case blink::WebRTCSdpSemantics::kUnifiedPlan:
+      return kSdpSemanticRequestedUnifiedPlan;
+  }
+  NOTREACHED();
+  return kSdpSemanticRequestedDefault;
+}
+
 }  // namespace
 
 // Implementation of LocalRTCStatsRequest.
@@ -1052,9 +1005,7 @@ class RTCPeerConnectionHandler::WebRtcSetRemoteDescriptionObserverImpl
             PeerConnectionTracker::ACTION_SET_REMOTE_DESCRIPTION, "OnFailure",
             error.message());
       }
-      // TODO(hbos): Use |error.type()| to reject the promise with the
-      // appropriate DOMException.
-      web_request_.RequestFailed(blink::WebString::FromUTF8(error.message()));
+      web_request_.RequestFailed(ConvertToWebKitRTCError(error));
       web_request_.Reset();
       return;
     }
@@ -1336,7 +1287,8 @@ RTCPeerConnectionHandler::RTCPeerConnectionHandler(
     blink::WebRTCPeerConnectionHandlerClient* client,
     PeerConnectionDependencyFactory* dependency_factory,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner)
-    : initialize_called_(false),
+    : id_(base::ToUpperASCII(base::UnguessableToken::Create().ToString())),
+      initialize_called_(false),
       client_(client),
       is_closed_(false),
       dependency_factory_(dependency_factory),
@@ -1349,6 +1301,7 @@ RTCPeerConnectionHandler::RTCPeerConnectionHandler(
       task_runner_(std::move(task_runner)),
       weak_factory_(this) {
   CHECK(client_);
+
   GetPeerConnectionHandlers()->insert(this);
 }
 
@@ -1414,6 +1367,12 @@ bool RTCPeerConnectionHandler::Initialize(
 
   uma_observer_ = new rtc::RefCountedObject<PeerConnectionUMAObserver>();
   native_peer_connection_->RegisterUMAObserver(uma_observer_.get());
+
+  UMA_HISTOGRAM_ENUMERATION(
+      "WebRTC.PeerConnection.SdpSemanticRequested",
+      GetSdpSemanticRequested(server_configuration.sdp_semantics),
+      kSdpSemanticRequestedMax);
+
   return true;
 }
 
@@ -1556,7 +1515,9 @@ void RTCPeerConnectionHandler::SetLocalDescription(
     reason_str.append(" ");
     reason_str.append(error.description);
     LOG(ERROR) << reason_str;
-    request.RequestFailed(blink::WebString::FromUTF8(reason_str));
+    request.RequestFailed(
+        blink::WebRTCError(blink::WebRTCErrorType::kOperationError,
+                           blink::WebString::FromUTF8(reason_str)));
     if (peer_connection_tracker_) {
       peer_connection_tracker_->TrackSessionDescriptionCallback(
           this, PeerConnectionTracker::ACTION_SET_LOCAL_DESCRIPTION,
@@ -1614,7 +1575,9 @@ void RTCPeerConnectionHandler::SetRemoteDescription(
     reason_str.append(" ");
     reason_str.append(error.description);
     LOG(ERROR) << reason_str;
-    request.RequestFailed(blink::WebString::FromUTF8(reason_str));
+    request.RequestFailed(
+        blink::WebRTCError(blink::WebRTCErrorType::kOperationError,
+                           blink::WebString::FromUTF8(reason_str)));
     if (peer_connection_tracker_) {
       peer_connection_tracker_->TrackSessionDescriptionCallback(
           this, PeerConnectionTracker::ACTION_SET_REMOTE_DESCRIPTION,
@@ -1672,8 +1635,9 @@ blink::WebRTCSessionDescription RTCPeerConnectionHandler::LocalDescription() {
       base::Bind(&webrtc::PeerConnectionInterface::local_description,
                  native_peer_connection_);
   RunSynchronousClosureOnSignalingThread(
-      base::Bind(&GetSdpAndTypeFromSessionDescription, description_cb,
-          base::Unretained(&sdp), base::Unretained(&type)),
+      base::Bind(&GetSdpAndTypeFromSessionDescription,
+                 std::move(description_cb), base::Unretained(&sdp),
+                 base::Unretained(&type)),
       "localDescription");
 
   return CreateWebKitSessionDescription(sdp, type);
@@ -1691,8 +1655,9 @@ blink::WebRTCSessionDescription RTCPeerConnectionHandler::RemoteDescription() {
       base::Bind(&webrtc::PeerConnectionInterface::remote_description,
                  native_peer_connection_);
   RunSynchronousClosureOnSignalingThread(
-      base::Bind(&GetSdpAndTypeFromSessionDescription, description_cb,
-          base::Unretained(&sdp), base::Unretained(&type)),
+      base::Bind(&GetSdpAndTypeFromSessionDescription,
+                 std::move(description_cb), base::Unretained(&sdp),
+                 base::Unretained(&type)),
       "remoteDescription");
 
   return CreateWebKitSessionDescription(sdp, type);
@@ -1708,14 +1673,12 @@ blink::WebRTCErrorType RTCPeerConnectionHandler::SetConfiguration(
     peer_connection_tracker_->TrackSetConfiguration(this, configuration_);
 
   webrtc::RTCError webrtc_error;
-  blink::WebRTCError blink_error;
   bool ret =
       native_peer_connection_->SetConfiguration(configuration_, &webrtc_error);
   // The boolean return value is made redundant by the error output param; just
   // DCHECK that they're consistent.
   DCHECK_EQ(ret, webrtc_error.type() == webrtc::RTCErrorType::NONE);
-  ConvertToWebKitRTCError(webrtc_error, &blink_error);
-  return blink_error.GetType();
+  return ConvertToWebKitRTCError(webrtc_error).GetType();
 }
 
 bool RTCPeerConnectionHandler::AddICECandidate(
@@ -1770,8 +1733,9 @@ void RTCPeerConnectionHandler::OnaddICECandidateResult(
   if (!result) {
     // We don't have the actual error code from the libjingle, so for now
     // using a generic error string.
-    return webkit_request.RequestFailed(
-        blink::WebString::FromUTF8("Error processing ICE candidate"));
+    return webkit_request.RequestFailed(blink::WebRTCError(
+        blink::WebRTCErrorType::kOperationError,
+        blink::WebString::FromUTF8("Error processing ICE candidate")));
   }
 
   return webkit_request.RequestSucceeded();
@@ -1857,8 +1821,8 @@ std::unique_ptr<blink::WebRTCRtpSender> RTCPeerConnectionHandler::AddTrack(
     return nullptr;
   DCHECK(FindSender(RTCRtpSender::getId(webrtc_sender)) == rtp_senders_.end());
   rtp_senders_.push_back(std::make_unique<RTCRtpSender>(
-      task_runner_, signaling_thread(), stream_adapter_map_,
-      std::move(webrtc_sender), std::move(track_adapter),
+      native_peer_connection_, task_runner_, signaling_thread(),
+      stream_adapter_map_, std::move(webrtc_sender), std::move(track_adapter),
       std::move(stream_adapters)));
   for (const auto& stream_ref : rtp_senders_.back()->stream_refs()) {
     if (GetLocalStreamUsageCount(rtp_senders_,
@@ -1998,6 +1962,10 @@ void RTCPeerConnectionHandler::Stop() {
   is_closed_ = true;
 }
 
+blink::WebString RTCPeerConnectionHandler::Id() const {
+  return blink::WebString::FromASCII(id_);
+}
+
 void RTCPeerConnectionHandler::OnSignalingChange(
     webrtc::PeerConnectionInterface::SignalingState new_state) {
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -2119,6 +2087,7 @@ void RTCPeerConnectionHandler::OnAddRemoteTrack(
           .insert(std::make_pair(
               receiver_id,
               std::make_unique<RTCRtpReceiver>(
+                  native_peer_connection_, task_runner_, signaling_thread(),
                   webrtc_receiver.get(), std::move(remote_track_adapter_ref),
                   std::move(remote_stream_adapter_refs))))
           .first->second;

@@ -14,7 +14,7 @@
 #include "base/macros.h"
 #include "components/payments/content/web_app_manifest.h"
 #include "content/public/browser/payment_app_provider.h"
-#include "third_party/WebKit/public/platform/modules/payments/payment_request.mojom.h"
+#include "third_party/blink/public/platform/modules/payments/payment_request.mojom.h"
 
 class GURL;
 
@@ -63,6 +63,7 @@ class ServiceWorkerPaymentAppFactory {
       content::WebContents* web_contents,
       scoped_refptr<PaymentManifestWebDataService> cache,
       const std::vector<mojom::PaymentMethodDataPtr>& requested_method_data,
+      bool may_crawl_for_installable_payment_apps,
       GetAllPaymentAppsCallback callback,
       base::OnceClosure finished_writing_cache_callback_for_testing);
 

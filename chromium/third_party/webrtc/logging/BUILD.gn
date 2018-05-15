@@ -44,6 +44,7 @@ rtc_source_set("rtc_event_log_api") {
   deps = [
     "../api:libjingle_logging_api",
     "../rtc_base:rtc_base_approved",
+    "../rtc_base:rtc_task_queue",
   ]
 }
 
@@ -219,7 +220,8 @@ rtc_static_library("rtc_event_log_impl_base") {
     ":rtc_event_log_impl_output",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
-    "../rtc_base:rtc_task_queue_api",
+    "../rtc_base:rtc_task_queue",
+    "../rtc_base:safe_minmax",
     "../rtc_base:sequenced_task_checker",
   ]
 
@@ -315,6 +317,7 @@ if (rtc_enable_protobuf) {
         "../rtc_base:checks",
         "../rtc_base:rtc_base_approved",
         "../rtc_base:rtc_base_tests_utils",
+        "../test:fileutils",
         "../test:test_support",
         "//testing/gtest",
       ]
@@ -420,6 +423,7 @@ if (rtc_include_tests) {
   rtc_source_set("mocks") {
     testonly = true
     sources = [
+      "rtc_event_log/mock/mock_rtc_event_log.cc",
       "rtc_event_log/mock/mock_rtc_event_log.h",
     ]
     deps = [

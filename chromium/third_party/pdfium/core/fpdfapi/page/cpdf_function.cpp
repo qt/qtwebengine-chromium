@@ -6,6 +6,8 @@
 
 #include "core/fpdfapi/page/cpdf_function.h"
 
+#include <vector>
+
 #include "core/fpdfapi/page/cpdf_expintfunc.h"
 #include "core/fpdfapi/page/cpdf_psfunc.h"
 #include "core/fpdfapi/page/cpdf_sampledfunc.h"
@@ -17,9 +19,21 @@
 
 // static
 std::unique_ptr<CPDF_Function> CPDF_Function::Load(CPDF_Object* pFuncObj) {
+  std::set<CPDF_Object*> visited;
+  return Load(pFuncObj, &visited);
+}
+
+// static
+std::unique_ptr<CPDF_Function> CPDF_Function::Load(
+    CPDF_Object* pFuncObj,
+    std::set<CPDF_Object*>* pVisited) {
   std::unique_ptr<CPDF_Function> pFunc;
   if (!pFuncObj)
     return pFunc;
+
+  if (pdfium::ContainsKey(*pVisited, pFuncObj))
+    return nullptr;
+  pdfium::ScopedSetInsertion<CPDF_Object*> insertion(pVisited, pFuncObj);
 
   int iType = -1;
   if (CPDF_Stream* pStream = pFuncObj->AsStream())
@@ -37,7 +51,7 @@ std::unique_ptr<CPDF_Function> CPDF_Function::Load(CPDF_Object* pFuncObj) {
   else if (type == Type::kType4PostScript)
     pFunc = pdfium::MakeUnique<CPDF_PSFunc>();
 
-  if (!pFunc || !pFunc->Init(pFuncObj))
+  if (!pFunc || !pFunc->Init(pFuncObj, pVisited))
     return nullptr;
 
   return pFunc;
@@ -64,7 +78,7 @@ CPDF_Function::~CPDF_Function() {
   FX_Free(m_pRanges);
 }
 
-bool CPDF_Function::Init(CPDF_Object* pObj) {
+bool CPDF_Function::Init(CPDF_Object* pObj, std::set<CPDF_Object*>* pVisited) {
   CPDF_Stream* pStream = pObj->AsStream();
   CPDF_Dictionary* pDict = pStream ? pStream->GetDict() : pObj->AsDictionary();
 
@@ -89,7 +103,7 @@ bool CPDF_Function::Init(CPDF_Object* pObj) {
       m_pRanges[i] = pRanges->GetFloatAt(i);
   }
   uint32_t old_outputs = m_nOutputs;
-  if (!v_Init(pObj))
+  if (!v_Init(pObj, pVisited))
     return false;
   if (m_pRanges && m_nOutputs > old_outputs) {
     m_pRanges = FX_Realloc(float, m_pRanges, m_nOutputs * 2);
@@ -101,7 +115,7 @@ bool CPDF_Function::Init(CPDF_Object* pObj) {
   return true;
 }
 
-bool CPDF_Function::Call(float* inputs,
+bool CPDF_Function::Call(const float* inputs,
                          uint32_t ninputs,
                          float* results,
                          int* nresults) const {
@@ -109,11 +123,12 @@ bool CPDF_Function::Call(float* inputs,
     return false;
 
   *nresults = m_nOutputs;
+  std::vector<float> clamped_inputs(m_nInputs);
   for (uint32_t i = 0; i < m_nInputs; i++) {
-    inputs[i] =
+    clamped_inputs[i] =
         pdfium::clamp(inputs[i], m_pDomains[i * 2], m_pDomains[i * 2 + 1]);
   }
-  v_Call(inputs, results);
+  v_Call(clamped_inputs.data(), results);
   if (!m_pRanges)
     return true;
 

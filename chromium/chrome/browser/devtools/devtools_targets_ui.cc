@@ -8,7 +8,6 @@
 #include <utility>
 
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
@@ -85,7 +84,7 @@ class CancelableTimer {
 class LocalTargetsUIHandler : public DevToolsTargetsUIHandler,
                               public content::DevToolsAgentHostObserver {
  public:
-  explicit LocalTargetsUIHandler(const Callback& callback);
+  LocalTargetsUIHandler(const Callback& callback, Profile* profile);
   ~LocalTargetsUIHandler() override;
 
   // DevToolsTargetsUIHandler overrides.
@@ -99,15 +98,16 @@ private:
 
  void ScheduleUpdate();
  void UpdateTargets();
- void SendTargets(const DevToolsAgentHost::List& targets);
 
+ Profile* profile_;
  std::unique_ptr<CancelableTimer> timer_;
  base::WeakPtrFactory<LocalTargetsUIHandler> weak_factory_;
 };
 
-LocalTargetsUIHandler::LocalTargetsUIHandler(
-    const Callback& callback)
+LocalTargetsUIHandler::LocalTargetsUIHandler(const Callback& callback,
+                                             Profile* profile)
     : DevToolsTargetsUIHandler(kTargetSourceLocal, callback),
+      profile_(profile),
       weak_factory_(this) {
   DevToolsAgentHost::AddObserver(this);
   UpdateTargets();
@@ -143,16 +143,15 @@ void LocalTargetsUIHandler::ScheduleUpdate() {
 }
 
 void LocalTargetsUIHandler::UpdateTargets() {
-  SendTargets(DevToolsAgentHost::GetOrCreateAll());
-}
+  content::DevToolsAgentHost::List targets =
+      DevToolsAgentHost::GetOrCreateAll();
 
-void LocalTargetsUIHandler::SendTargets(
-    const content::DevToolsAgentHost::List& targets) {
   std::vector<HostDescriptionNode> hosts;
   hosts.reserve(targets.size());
-
   targets_.clear();
   for (const scoped_refptr<DevToolsAgentHost>& host : targets) {
+    if (Profile::FromBrowserContext(host->GetBrowserContext()) != profile_)
+      continue;
     targets_[host->GetId()] = host;
     hosts.push_back({host->GetId(), host->GetParentId(),
                      std::move(*Serialize(host.get()))});
@@ -305,9 +304,10 @@ DevToolsTargetsUIHandler::~DevToolsTargetsUIHandler() {
 // static
 std::unique_ptr<DevToolsTargetsUIHandler>
 DevToolsTargetsUIHandler::CreateForLocal(
-    const DevToolsTargetsUIHandler::Callback& callback) {
+    const DevToolsTargetsUIHandler::Callback& callback,
+    Profile* profile) {
   return std::unique_ptr<DevToolsTargetsUIHandler>(
-      new LocalTargetsUIHandler(callback));
+      new LocalTargetsUIHandler(callback, profile));
 }
 
 // static

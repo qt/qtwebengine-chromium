@@ -15,11 +15,11 @@
 #include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/debug/alias.h"
 #include "base/deferred_sequenced_task_runner.h"
 #include "base/feature_list.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/memory/memory_coordinator_proxy.h"
 #include "base/memory/memory_pressure_monitor.h"
 #include "base/message_loop/message_loop.h"
@@ -37,10 +37,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/system_monitor/system_monitor.h"
 #include "base/task_scheduler/initialization_util.h"
-#include "base/task_scheduler/post_task.h"
-#include "base/task_scheduler/single_thread_task_runner_thread_mode.h"
-#include "base/task_scheduler/task_scheduler.h"
-#include "base/task_scheduler/task_traits.h"
+#include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -54,11 +51,11 @@
 #include "components/tracing/common/tracing_switches.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/switches.h"
-#include "components/viz/host/forwarding_compositing_mode_reporter_impl.h"
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "components/viz/service/display_embedder/compositing_mode_reporter_impl.h"
 #include "components/viz/service/display_embedder/server_shared_bitmap_manager.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
+#include "content/browser/browser_process_sub_thread.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/compositor/gpu_process_transport_factory.h"
@@ -77,6 +74,7 @@
 #include "content/browser/leveldb_wrapper_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/loader_delegate_impl.h"
+#include "content/browser/media/capture/audio_mirroring_manager.h"
 #include "content/browser/media/media_internals.h"
 #include "content/browser/memory/memory_coordinator_impl.h"
 #include "content/browser/memory/swap_metrics_delegate_uma.h"
@@ -84,21 +82,22 @@
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/service_manager/service_manager_context.h"
-#include "content/browser/site_isolation_policy.h"
 #include "content/browser/speech/speech_recognition_manager_impl.h"
 #include "content/browser/startup_task_runner.h"
 #include "content/browser/tracing/background_tracing_manager_impl.h"
 #include "content/browser/tracing/tracing_controller_impl.h"
-#include "content/browser/utility_process_host_impl.h"
+#include "content/browser/utility_process_host.h"
 #include "content/browser/webui/content_web_ui_controller_factory.h"
 #include "content/browser/webui/url_data_manager.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/service_manager/service_manager_connection_impl.h"
 #include "content/common/task_scheduler.h"
 #include "content/public/browser/browser_main_parts.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/site_isolation_policy.h"
 #include "content/public/browser/swap_metrics_driver.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
@@ -106,23 +105,23 @@
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/service_names.mojom.h"
-#include "content/public/common/zygote_features.h"
+#include "content/public/common/zygote_buildflags.h"
 #include "device/gamepad/gamepad_service.h"
-#include "gpu/vulkan/features.h"
+#include "gpu/vulkan/buildflags.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/audio_system.h"
 #include "media/audio/audio_thread_impl.h"
 #include "media/base/media.h"
 #include "media/base/user_input_monitor.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "media/midi/midi_service.h"
-#include "media/mojo/features.h"
+#include "media/mojo/buildflags.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/embedder/scoped_ipc_support.h"
 #include "net/base/network_change_notifier.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/ssl/ssl_config_service.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "services/audio/public/cpp/audio_system_factory.h"
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/client_process_impl.h"
 #include "services/resource_coordinator/public/mojom/memory_instrumentation/memory_instrumentation.mojom.h"
@@ -143,12 +142,6 @@
 #if defined(USE_AURA)
 #include "content/public/browser/context_factory.h"
 #include "ui/aura/env.h"
-#endif
-
-#if BUILDFLAG(USE_ZYGOTE_HANDLE)
-#include "content/public/common/common_sandbox_support_linux.h"
-#include "content/public/common/zygote_handle.h"
-#include "media/base/media_switches.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -214,13 +207,7 @@
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "content/browser/sandbox_host_linux.h"
-#include "content/browser/zygote_host/zygote_host_impl_linux.h"
-
-#if !defined(OS_ANDROID)
-#include "content/browser/zygote_host/zygote_communication_linux.h"
-#endif  // !defined(OS_ANDROID)
-#endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
-
+#endif
 
 #if BUILDFLAG(ENABLE_PLUGINS)
 #include "content/browser/plugin_service_impl.h"
@@ -231,7 +218,6 @@
 #endif
 
 #if BUILDFLAG(ENABLE_WEBRTC)
-#include "content/browser/webrtc/webrtc_event_log_manager.h"
 #include "content/browser/webrtc/webrtc_internals.h"
 #endif
 
@@ -261,64 +247,6 @@
 
 namespace content {
 namespace {
-
-#if BUILDFLAG(USE_ZYGOTE_HANDLE)
-pid_t LaunchZygoteHelper(base::CommandLine* cmd_line,
-                         base::ScopedFD* control_fd) {
-  // Append any switches from the browser process that need to be forwarded on
-  // to the zygote/renderers.
-  static const char* const kForwardSwitches[] = {
-      switches::kAndroidFontsPath, switches::kClearKeyCdmPathForTesting,
-      switches::kEnableHeapProfiling,
-      switches::kEnableLogging,  // Support, e.g., --enable-logging=stderr.
-      // Need to tell the zygote that it is headless so that we don't try to use
-      // the wrong type of main delegate.
-      switches::kHeadless,
-      // Zygote process needs to know what resources to have loaded when it
-      // becomes a renderer process.
-      switches::kForceDeviceScaleFactor, switches::kLoggingLevel,
-      switches::kPpapiInProcess, switches::kRegisterPepperPlugins, switches::kV,
-      switches::kVModule,
-  };
-  cmd_line->CopySwitchesFrom(*base::CommandLine::ForCurrentProcess(),
-                             kForwardSwitches, arraysize(kForwardSwitches));
-
-  GetContentClient()->browser()->AppendExtraCommandLineSwitches(cmd_line, -1);
-
-  // Start up the sandbox host process and get the file descriptor for the
-  // sandboxed processes to talk to it.
-  base::FileHandleMappingVector additional_remapped_fds;
-  additional_remapped_fds.emplace_back(
-      SandboxHostLinux::GetInstance()->GetChildSocket(), GetSandboxFD());
-
-  return ZygoteHostImpl::GetInstance()->LaunchZygote(
-      cmd_line, control_fd, std::move(additional_remapped_fds));
-}
-
-void SetupSandbox(const base::CommandLine& parsed_command_line) {
-  TRACE_EVENT0("startup", "SetupSandbox");
-  // SandboxHostLinux needs to be initialized even if the sandbox and
-  // zygote are both disabled. It initializes the sandboxed process socket.
-  SandboxHostLinux::GetInstance()->Init();
-
-  if (parsed_command_line.HasSwitch(switches::kNoZygote) &&
-      !parsed_command_line.HasSwitch(switches::kNoSandbox)) {
-    LOG(ERROR) << "--no-sandbox should be used together with --no--zygote";
-    exit(EXIT_FAILURE);
-  }
-
-  // Tickle the zygote host so it forks now.
-  ZygoteHostImpl::GetInstance()->Init(parsed_command_line);
-  ZygoteHandle generic_zygote =
-      CreateGenericZygote(base::BindOnce(LaunchZygoteHelper));
-
-  // TODO(kerrnel): Investigate doing this without the ZygoteHostImpl as a
-  // proxy. It is currently done this way due to concerns about race
-  // conditions.
-  ZygoteHostImpl::GetInstance()->SetRendererSandboxStatus(
-      generic_zygote->GetSandboxStatus());
-}
-#endif  // BUILDFLAG(USE_ZYGOTE_HANDLE)
 
 #if defined(USE_GLIB)
 static void GLibLogHandler(const gchar* log_domain,
@@ -375,25 +303,11 @@ void OnStoppedStartupTracing(const base::FilePath& trace_file) {
 MSVC_DISABLE_OPTIMIZE()
 MSVC_PUSH_DISABLE_WARNING(4748)
 
-#if defined(OS_ANDROID)
-NOINLINE void ResetThread_PROCESS_LAUNCHER(
-    std::unique_ptr<BrowserProcessSubThread> thread) {
-  volatile int inhibit_comdat = __LINE__;
-  ALLOW_UNUSED_LOCAL(inhibit_comdat);
-  thread.reset();
-}
-#else   // defined(OS_ANDROID)
-NOINLINE void ResetThread_PROCESS_LAUNCHER() {
-  volatile int inhibit_comdat = __LINE__;
-  ALLOW_UNUSED_LOCAL(inhibit_comdat);
-  BrowserThreadImpl::StopRedirectionOfThreadID(BrowserThread::PROCESS_LAUNCHER);
-}
-#endif  // defined(OS_ANDROID)
-
-NOINLINE void ResetThread_IO(std::unique_ptr<BrowserProcessSubThread> thread) {
-  volatile int inhibit_comdat = __LINE__;
-  ALLOW_UNUSED_LOCAL(inhibit_comdat);
-  thread.reset();
+NOINLINE void ResetThread_IO(
+    std::unique_ptr<BrowserProcessSubThread> io_thread) {
+  const int line_number = __LINE__;
+  io_thread.reset();
+  base::debug::Alias(&line_number);
 }
 
 MSVC_POP_WARNING()
@@ -629,9 +543,11 @@ int BrowserMainLoop::EarlyInitialization() {
   TRACE_EVENT0("startup", "BrowserMainLoop::EarlyInitialization");
 
 #if BUILDFLAG(USE_ZYGOTE_HANDLE)
-  // No thread should be created before this call, as SetupSandbox()
-  // will end-up using fork().
-  SetupSandbox(parsed_command_line_);
+  // The initialization of the sandbox host ends up with forking the Zygote
+  // process and requires no thread been forked. The initialization has happened
+  // by now since a thread to start the ServiceManager has been created
+  // before the browser main loop starts.
+  DCHECK(SandboxHostLinux::GetInstance()->IsInitialized());
 #endif
 
 #if defined(USE_X11)
@@ -940,23 +856,23 @@ void BrowserMainLoop::CreateStartupTasks() {
 #endif
   StartupTask pre_create_threads =
       base::Bind(&BrowserMainLoop::PreCreateThreads, base::Unretained(this));
-  startup_task_runner_->AddTask(pre_create_threads);
+  startup_task_runner_->AddTask(std::move(pre_create_threads));
 
   StartupTask create_threads =
       base::Bind(&BrowserMainLoop::CreateThreads, base::Unretained(this));
-  startup_task_runner_->AddTask(create_threads);
+  startup_task_runner_->AddTask(std::move(create_threads));
 
   StartupTask post_create_threads =
       base::Bind(&BrowserMainLoop::PostCreateThreads, base::Unretained(this));
-  startup_task_runner_->AddTask(post_create_threads);
+  startup_task_runner_->AddTask(std::move(post_create_threads));
 
   StartupTask browser_thread_started = base::Bind(
       &BrowserMainLoop::BrowserThreadsStarted, base::Unretained(this));
-  startup_task_runner_->AddTask(browser_thread_started);
+  startup_task_runner_->AddTask(std::move(browser_thread_started));
 
   StartupTask pre_main_message_loop_run = base::Bind(
       &BrowserMainLoop::PreMainMessageLoopRun, base::Unretained(this));
-  startup_task_runner_->AddTask(pre_main_message_loop_run);
+  startup_task_runner_->AddTask(std::move(pre_main_message_loop_run));
 
 #if defined(OS_ANDROID)
   if (parameters_.ui_task) {
@@ -1022,44 +938,14 @@ int BrowserMainLoop::CreateThreads() {
         *task_scheduler_init_params.get());
   }
 
-  TRACE_EVENT_BEGIN1("startup", "BrowserMainLoop::CreateThreads:start",
-                     "Thread", "BrowserThread::PROCESS_LAUNCHER");
-
-#if defined(OS_ANDROID)
-  // Android specializes Launcher thread so it is accessible in java.
-  // Note Android never does clean shutdown, so shutdown use-after-free
-  // concerns are not a problem in practice.
-  base::MessageLoop* message_loop = android::LauncherThread::GetMessageLoop();
-  DCHECK(message_loop);
-  // This BrowserThread will use this message loop instead of creating a new
-  // thread. Note that means this/ thread will not be joined on shutdown, and
-  // may cause use-after-free if anything tries to access objects deleted by
-  // AtExitManager, such as non-leaky LazyInstance.
-  process_launcher_thread_.reset(new BrowserProcessSubThread(
-      BrowserThread::PROCESS_LAUNCHER, message_loop));
-#else   // defined(OS_ANDROID)
-  // This thread ID will be backed by a SingleThreadTaskRunner using
-  // |task_traits|.
-  // TODO(gab): WithBaseSyncPrimitives() is likely not required here.
-  base::TaskTraits task_traits = {base::MayBlock(),
-                                  base::WithBaseSyncPrimitives(),
-                                  base::TaskPriority::USER_BLOCKING,
-                                  base::TaskShutdownBehavior::BLOCK_SHUTDOWN};
-  scoped_refptr<base::SingleThreadTaskRunner> redirection_task_runner =
-      base::CreateSingleThreadTaskRunnerWithTraits(
-          task_traits, base::SingleThreadTaskRunnerThreadMode::DEDICATED);
-  DCHECK(redirection_task_runner);
-  BrowserThreadImpl::RedirectThreadIDToTaskRunner(
-      BrowserThread::PROCESS_LAUNCHER, std::move(redirection_task_runner));
-#endif  // defined(OS_ANDROID)
-
-  // |io_thread_| is created by |PostMainMessageLoopStart()|, but its
-  // full initialization is deferred until this point because it requires
-  // several dependencies we don't want to depend on so early in startup.
+  // The thread used for BrowserThread::IO is created in
+  // |PostMainMessageLoopStart()|, but it's only tagged as BrowserThread::IO
+  // here in order to prevent any code from statically posting to it before
+  // CreateThreads() (as such maintaining the invariant that PreCreateThreads()
+  // et al. "happen-before" BrowserThread::IO is "brought up").
   DCHECK(io_thread_);
-  io_thread_->InitIOThreadDelegate();
+  io_thread_->RegisterAsBrowserThread();
 
-  TRACE_EVENT_END0("startup", "BrowserMainLoop::CreateThreads:start");
   created_threads_ = true;
   return result_code_;
 }
@@ -1179,7 +1065,6 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
   host_frame_sink_manager_.reset();
   frame_sink_manager_impl_.reset();
   compositing_mode_reporter_impl_.reset();
-  forwarding_compositing_mode_reporter_impl_.reset();
 #endif
 
 // The device monitors are using |system_monitor_| as dependency, so delete
@@ -1206,39 +1091,9 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
 
   {
     base::ThreadRestrictions::ScopedAllowWait allow_wait_for_join;
-
-    // Must be size_t so we can subtract from it.
-    for (size_t thread_id = BrowserThread::ID_COUNT - 1;
-         thread_id >= (BrowserThread::UI + 1); --thread_id) {
-      // Find the thread object we want to stop. Looping over all valid
-      // BrowserThread IDs and DCHECKing on a missing case in the switch
-      // statement helps avoid a mismatch between this code and the
-      // BrowserThread::ID enumeration.
-      //
-      // The destruction order is the reverse order of occurrence in the
-      // BrowserThread::ID list. The rationale for the order is that he
-      // PROCESS_LAUNCHER thread must be stopped after IO in case the IO thread
-      // posted a task to terminate a process on the process launcher thread.
-      switch (thread_id) {
-        case BrowserThread::PROCESS_LAUNCHER: {
-          TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:LauncherThread");
-#if defined(OS_ANDROID)
-          ResetThread_PROCESS_LAUNCHER(std::move(process_launcher_thread_));
-#else   // defined(OS_ANDROID)
-          ResetThread_PROCESS_LAUNCHER();
-#endif  // defined(OS_ANDROID)
-          break;
-        }
-        case BrowserThread::IO: {
-          TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:IOThread");
-          ResetThread_IO(std::move(io_thread_));
-          break;
-        }
-        case BrowserThread::UI:
-        case BrowserThread::ID_COUNT:
-          NOTREACHED();
-          break;
-      }
+    {
+      TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:IOThread");
+      ResetThread_IO(std::move(io_thread_));
     }
 
     {
@@ -1315,10 +1170,7 @@ void BrowserMainLoop::GetCompositingModeReporter(
     return;
   }
 
-  if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor))
-    forwarding_compositing_mode_reporter_impl_->BindRequest(std::move(request));
-  else
-    compositing_mode_reporter_impl_->BindRequest(std::move(request));
+  compositing_mode_reporter_impl_->BindRequest(std::move(request));
 #endif
 }
 
@@ -1330,9 +1182,12 @@ void BrowserMainLoop::InitializeMainThread() {
   TRACE_EVENT0("startup", "BrowserMainLoop::InitializeMainThread");
   base::PlatformThread::SetName("CrBrowserMain");
 
-  // Register the main thread by instantiating it, but don't call any methods.
-  main_thread_.reset(
-      new BrowserThreadImpl(BrowserThread::UI, base::MessageLoop::current()));
+  // Register the main thread. The main thread's task runner should already have
+  // been initialized in MainMessageLoopStart() (or before if
+  // MessageLoop::current() was externally provided).
+  DCHECK(base::ThreadTaskRunnerHandle::IsSet());
+  main_thread_.reset(new BrowserThreadImpl(
+      BrowserThread::UI, base::ThreadTaskRunnerHandle::Get()));
 }
 
 int BrowserMainLoop::BrowserThreadsStarted() {
@@ -1392,13 +1247,13 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   if (browser_is_viz_host) {
     host_frame_sink_manager_ = std::make_unique<viz::HostFrameSinkManager>();
     BrowserGpuChannelHostFactory::Initialize(established_gpu_channel);
-    if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor)) {
-      forwarding_compositing_mode_reporter_impl_ =
-          std::make_unique<viz::ForwardingCompositingModeReporterImpl>();
+    compositing_mode_reporter_impl_ =
+        std::make_unique<viz::CompositingModeReporterImpl>();
 
+    if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor)) {
       auto transport_factory = std::make_unique<VizProcessTransportFactory>(
           BrowserGpuChannelHostFactory::instance(), GetResizeTaskRunner(),
-          forwarding_compositing_mode_reporter_impl_.get());
+          compositing_mode_reporter_impl_.get());
       transport_factory->ConnectHostFrameSinkManager();
       ImageTransportFactory::SetFactory(std::move(transport_factory));
     } else {
@@ -1408,8 +1263,6 @@ int BrowserMainLoop::BrowserThreadsStarted() {
       surface_utils::ConnectWithLocalFrameSinkManager(
           host_frame_sink_manager_.get(), frame_sink_manager_impl_.get());
 
-      compositing_mode_reporter_impl_ =
-          std::make_unique<viz::CompositingModeReporterImpl>();
 
       ImageTransportFactory::SetFactory(
           std::make_unique<GpuProcessTransportFactory>(
@@ -1455,9 +1308,12 @@ int BrowserMainLoop::BrowserThreadsStarted() {
 #endif
 
 #if BUILDFLAG(ENABLE_WEBRTC)
-  webrtc_event_log_manager_.reset(
-      WebRtcEventLogManager::CreateSingletonInstance());
-  webrtc_internals_.reset(WebRTCInternals::CreateSingletonInstance());
+  // Instantiated once using CreateSingletonInstance(), and accessed only using
+  // GetInstance(), which is not allowed to create the object. This allows us
+  // to ensure that it cannot be used before objects it relies on have been
+  // created; namely, WebRtcEventLogManager.
+  // Allowed to leak when the browser exits.
+  WebRTCInternals::CreateSingletonInstance();
 #endif
 
   // RDH needs the IO thread to be created
@@ -1503,7 +1359,7 @@ int BrowserMainLoop::BrowserThreadsStarted() {
         "startup",
         "BrowserMainLoop::BrowserThreadsStarted::InitUserInputMonitor");
     user_input_monitor_ = media::UserInputMonitor::Create(
-        io_thread_->task_runner(), main_thread_->task_runner());
+        io_thread_->task_runner(), base::ThreadTaskRunnerHandle::Get());
   }
 
   {
@@ -1523,7 +1379,7 @@ int BrowserMainLoop::BrowserThreadsStarted() {
 #endif
   ui::Clipboard::SetAllowedThreads(allowed_clipboard_threads);
 
-  if (GpuDataManagerImpl::GetInstance()->GpuAccessAllowed(nullptr) &&
+  if (GpuDataManagerImpl::GetInstance()->GpuProcessStartAllowed() &&
       !established_gpu_channel && always_uses_gpu && browser_is_viz_host) {
     TRACE_EVENT_INSTANT0("gpu", "Post task to launch GPU process",
                          TRACE_EVENT_SCOPE_THREAD);
@@ -1533,6 +1389,10 @@ int BrowserMainLoop::BrowserThreadsStarted() {
                        GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED,
                        true /* force_create */));
   }
+
+#if defined(OS_WIN)
+  GpuDataManagerImpl::GetInstance()->RequestGpuSupportedRuntimeVersion();
+#endif
 
 #if defined(OS_MACOSX)
   ThemeHelperMac::GetInstance();
@@ -1653,9 +1513,10 @@ void BrowserMainLoop::InitializeIOThread() {
   options.priority = base::ThreadPriority::DISPLAY;
 #endif
 
-  io_thread_.reset(new BrowserProcessSubThread(BrowserThread::IO));
+  io_thread_ = std::make_unique<BrowserProcessSubThread>(BrowserThread::IO);
+
   if (!io_thread_->StartWithOptions(options))
-    LOG(FATAL) << "Failed to start the browser thread: IO";
+    LOG(FATAL) << "Failed to start BrowserThread::IO";
 }
 
 void BrowserMainLoop::InitializeMojo() {
@@ -1699,7 +1560,8 @@ void BrowserMainLoop::InitializeMojo() {
   if (parsed_command_line_.HasSwitch(switches::kTraceStartup)) {
     base::trace_event::TraceConfig trace_config(
         parsed_command_line_.GetSwitchValueASCII(switches::kTraceStartup),
-        base::trace_event::RECORD_UNTIL_FULL);
+        parsed_command_line_.GetSwitchValueASCII(
+            switches::kTraceStartupRecordMode));
     TracingController::GetInstance()->StartTracing(
         trace_config, TracingController::StartTracingDoneCallback());
   } else if (parsed_command_line_.HasSwitch(switches::kTraceToConsole)) {
@@ -1804,6 +1666,12 @@ void BrowserMainLoop::CreateAudioManager() {
                                     MediaInternals::GetInstance());
   }
   CHECK(audio_manager_);
+
+  AudioMirroringManager* const mirroring_manager =
+      AudioMirroringManager::GetInstance();
+  audio_manager_->SetDiverterCallbacks(
+      mirroring_manager->GetAddDiverterCallback(),
+      mirroring_manager->GetRemoveDiverterCallback());
 
   TRACE_EVENT_INSTANT0("startup", "Starting Audio service task runner",
                        TRACE_EVENT_SCOPE_THREAD);

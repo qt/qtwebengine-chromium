@@ -35,7 +35,7 @@ const LockStateBehavior = {
 
     /**
      * Interface for chrome.quickUnlockPrivate calls. May be overriden by tests.
-     * @private
+     * @private {QuickUnlockPrivate}
      */
     quickUnlockPrivate_: {type: Object, value: chrome.quickUnlockPrivate},
   },
@@ -70,5 +70,10 @@ const LockStateBehavior = {
         this.selectedUnlockType = LockScreenUnlockType.PASSWORD;
       }
     });
+  },
+
+  /** Sets the lock screen enabled state. */
+  setLockScreenEnabled(authToken, enabled) {
+    this.quickUnlockPrivate_.setLockScreenEnabled(authToken, enabled);
   },
 };

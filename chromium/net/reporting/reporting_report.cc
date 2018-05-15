@@ -18,7 +18,7 @@ namespace net {
 namespace {
 
 void RecordReportOutcome(ReportingReport::Outcome outcome) {
-  UMA_HISTOGRAM_ENUMERATION("Reporting.ReportOutcome", outcome,
+  UMA_HISTOGRAM_ENUMERATION("Net.Reporting.ReportOutcome", outcome,
                             ReportingReport::Outcome::MAX);
 }
 
@@ -28,12 +28,14 @@ ReportingReport::ReportingReport(const GURL& url,
                                  const std::string& group,
                                  const std::string& type,
                                  std::unique_ptr<const base::Value> body,
+                                 int depth,
                                  base::TimeTicks queued,
                                  int attempts)
     : url(url),
       group(group),
       type(type),
       body(std::move(body)),
+      depth(depth),
       queued(queued),
       attempts(attempts),
       outcome(Outcome::UNKNOWN),
@@ -59,9 +61,9 @@ void ReportingReport::RecordOutcome(base::TimeTicks now) {
   RecordReportOutcome(outcome);
 
   if (outcome == Outcome::DELIVERED) {
-    UMA_HISTOGRAM_LONG_TIMES_100("Reporting.ReportDeliveredLatency",
+    UMA_HISTOGRAM_LONG_TIMES_100("Net.Reporting.ReportDeliveredLatency",
                                  now - queued);
-    UMA_HISTOGRAM_COUNTS_100("Reporting.ReportDeliveredAttempts", attempts);
+    UMA_HISTOGRAM_COUNTS_100("Net.Reporting.ReportDeliveredAttempts", attempts);
   }
 
   recorded_outcome = true;

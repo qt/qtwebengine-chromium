@@ -10,7 +10,6 @@
 
 #include "base/auto_reset.h"
 #include "base/command_line.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "content/browser/renderer_host/input/gesture_event_queue.h"
@@ -129,7 +128,8 @@ void LegacyInputRouterImpl::SendKeyboardEvent(
 
 void LegacyInputRouterImpl::SendGestureEvent(
     const GestureEventWithLatencyInfo& original_gesture_event) {
-  input_stream_validator_.Validate(original_gesture_event.event);
+  input_stream_validator_.Validate(original_gesture_event.event,
+                                   FlingCancellationIsDeferred());
 
   GestureEventWithLatencyInfo gesture_event(original_gesture_event);
 
@@ -138,7 +138,7 @@ void LegacyInputRouterImpl::SendGestureEvent(
 
   wheel_event_queue_.OnGestureScrollEvent(gesture_event);
 
-  if (gesture_event.event.source_device ==
+  if (gesture_event.event.SourceDevice() ==
       blink::kWebGestureDeviceTouchscreen) {
     if (gesture_event.event.GetType() ==
         blink::WebInputEvent::kGestureScrollBegin) {
@@ -208,11 +208,20 @@ void LegacyInputRouterImpl::BindHost(
 }
 
 void LegacyInputRouterImpl::ProgressFling(base::TimeTicks current_time) {
-  gesture_event_queue_.ProgressFling(current_time);
+  current_fling_velocity_ = gesture_event_queue_.ProgressFling(current_time);
 }
 
 void LegacyInputRouterImpl::StopFling() {
   gesture_event_queue_.StopFling();
+}
+
+bool LegacyInputRouterImpl::FlingCancellationIsDeferred() {
+  return gesture_event_queue_.FlingCancellationIsDeferred();
+}
+
+void LegacyInputRouterImpl::DidStopFlingingOnBrowser() {
+  current_fling_velocity_ = gfx::Vector2dF();
+  client_->DidStopFlinging();
 }
 
 bool LegacyInputRouterImpl::OnMessageReceived(const IPC::Message& message) {
@@ -230,6 +239,8 @@ bool LegacyInputRouterImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(InputHostMsg_SetWhiteListedTouchAction,
                         OnSetWhiteListedTouchAction)
     IPC_MESSAGE_HANDLER(InputHostMsg_DidStopFlinging, OnDidStopFlinging)
+    IPC_MESSAGE_HANDLER(InputHostMsg_DidStartScrollingViewport,
+                        OnDidStartScrollingViewport)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -268,6 +279,10 @@ void LegacyInputRouterImpl::OnFilteringTouchEvent(
   output_stream_validator_.Validate(touch_event);
 }
 
+bool LegacyInputRouterImpl::TouchscreenFlingInProgress() {
+  return gesture_event_queue_.TouchscreenFlingInProgress();
+}
+
 void LegacyInputRouterImpl::OnGestureEventAck(
     const GestureEventWithLatencyInfo& event,
     InputEventAckSource ack_source,
@@ -286,6 +301,12 @@ void LegacyInputRouterImpl::SendGeneratedWheelEvent(
     const MouseWheelEventWithLatencyInfo& wheel_event) {
   client_->ForwardWheelEventWithLatencyInfo(wheel_event.event,
                                             wheel_event.latency);
+}
+
+void LegacyInputRouterImpl::SendGeneratedGestureScrollEvents(
+    const GestureEventWithLatencyInfo& gesture_event) {
+  client_->ForwardGestureEventWithLatencyInfo(gesture_event.event,
+                                              gesture_event.latency);
 }
 
 void LegacyInputRouterImpl::SetNeedsBeginFrameForFlingProgress() {
@@ -452,7 +473,10 @@ void LegacyInputRouterImpl::OnInputEventAck(const InputEventAck& ack) {
 
 void LegacyInputRouterImpl::OnDidOverscroll(
     const ui::DidOverscrollParams& params) {
-  client_->DidOverscroll(params);
+  // Touchpad and Touchscreen flings are handled on the browser side.
+  ui::DidOverscrollParams fling_updated_params = params;
+  fling_updated_params.current_fling_velocity = current_fling_velocity_;
+  client_->DidOverscroll(fling_updated_params);
 }
 
 void LegacyInputRouterImpl::OnMsgMoveCaretAck() {
@@ -521,6 +545,10 @@ void LegacyInputRouterImpl::OnDidStopFlinging() {
   --active_renderer_fling_count_;
 
   client_->DidStopFlinging();
+}
+
+void LegacyInputRouterImpl::OnDidStartScrollingViewport() {
+  client_->DidStartScrollingViewport();
 }
 
 void LegacyInputRouterImpl::ProcessInputEventAck(

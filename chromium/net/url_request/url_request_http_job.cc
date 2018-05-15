@@ -51,13 +51,14 @@
 #include "net/http/http_transaction.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/http/http_util.h"
+#include "net/log/net_log.h"
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_with_source.h"
-#include "net/net_features.h"
+#include "net/net_buildflags.h"
 #include "net/nqe/network_quality_estimator.h"
 #include "net/proxy_resolution/proxy_info.h"
+#include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/proxy_resolution/proxy_retry_info.h"
-#include "net/proxy_resolution/proxy_service.h"
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_config_service.h"
@@ -65,10 +66,11 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_error_job.h"
+#include "net/url_request/url_request_http_job_histogram.h"
 #include "net/url_request/url_request_job_factory.h"
 #include "net/url_request/url_request_redirect_job.h"
 #include "net/url_request/url_request_throttler_manager.h"
-#include "net/websockets/websocket_handshake_stream_base.h"
+#include "net/url_request/websocket_handshake_userdata_key.h"
 #include "url/origin.h"
 
 #if defined(OS_ANDROID)
@@ -228,22 +230,86 @@ void LogChannelIDAndCookieStores(const GURL& url,
                             EPHEMERALITY_MAX);
 }
 
-void LogCookieAgeForNonSecureRequest(const net::CookieList& cookie_list,
-                                     const net::URLRequest& request) {
-  base::Time oldest = base::Time::Max();
-  for (const auto& cookie : cookie_list)
-    oldest = std::min(cookie.CreationDate(), oldest);
-  base::TimeDelta delta = base::Time::Now() - oldest;
-
-  if (net::registry_controlled_domains::SameDomainOrHost(
-          request.url(), request.site_for_cookies(),
-          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES)) {
-    UMA_HISTOGRAM_COUNTS_1000("Cookie.AgeForNonSecureSameSiteRequest",
-                              delta.InDays());
-  } else {
-    UMA_HISTOGRAM_COUNTS_1000("Cookie.AgeForNonSecureCrossSiteRequest",
-                              delta.InDays());
+net::CookieNetworkSecurity HistogramEntryForCookie(
+    const net::CanonicalCookie& cookie,
+    const net::URLRequest& request,
+    const net::HttpRequestInfo& request_info) {
+  if (!request_info.url.SchemeIsCryptographic()) {
+    return net::CookieNetworkSecurity::k1pNonsecureConnection;
   }
+
+  if (cookie.IsSecure()) {
+    return net::CookieNetworkSecurity::k1pSecureAttribute;
+  }
+
+  net::TransportSecurityState* transport_security_state =
+      request.context()->transport_security_state();
+  net::TransportSecurityState::STSState sts_state;
+  const std::string cookie_domain =
+      cookie.IsHostCookie() ? request.url().host() : cookie.Domain().substr(1);
+  const bool hsts =
+      transport_security_state->GetSTSState(cookie_domain, &sts_state) &&
+      sts_state.ShouldUpgradeToSSL();
+  if (!hsts) {
+    return net::CookieNetworkSecurity::k1pSecureConnection;
+  }
+
+  if (cookie.IsHostCookie()) {
+    if (cookie.IsPersistent() && sts_state.expiry >= cookie.ExpiryDate()) {
+      return net::CookieNetworkSecurity::k1pHSTSHostCookie;
+    } else {
+      // Session cookies are assumed to live forever.
+      return net::CookieNetworkSecurity::k1pExpiringHSTSHostCookie;
+    }
+  }
+
+  // Domain cookies require HSTS to include subdomains to prevent spoofing.
+  if (sts_state.include_subdomains) {
+    if (cookie.IsPersistent() && sts_state.expiry >= cookie.ExpiryDate()) {
+      return net::CookieNetworkSecurity::k1pHSTSSubdomainsIncluded;
+    } else {
+      // Session cookies are assumed to live forever.
+      return net::CookieNetworkSecurity::k1pExpiringHSTSSubdomainsIncluded;
+    }
+  }
+
+  return net::CookieNetworkSecurity::k1pHSTSSpoofable;
+}
+
+void LogCookieUMA(const net::CookieList& cookie_list,
+                  const net::URLRequest& request,
+                  const net::HttpRequestInfo& request_info) {
+  const bool secure_request = request_info.url.SchemeIsCryptographic();
+  const bool same_site = net::registry_controlled_domains::SameDomainOrHost(
+      request.url(), request.site_for_cookies(),
+      net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
+
+  const base::Time now = base::Time::Now();
+  base::Time oldest = base::Time::Max();
+  for (const auto& cookie : cookie_list) {
+    const std::string histogram_name =
+        std::string("Cookie.AllAgesFor") +
+        (secure_request ? "Secure" : "NonSecure") +
+        (same_site ? "SameSite" : "CrossSite") + "Request";
+    const int age_in_days = (now - cookie.CreationDate()).InDays();
+    base::UmaHistogramCounts1000(histogram_name, age_in_days);
+    oldest = std::min(cookie.CreationDate(), oldest);
+
+    net::CookieNetworkSecurity entry =
+        HistogramEntryForCookie(cookie, request, request_info);
+    if (!same_site) {
+      entry =
+          static_cast<net::CookieNetworkSecurity>(static_cast<int>(entry) | 1);
+    }
+    UMA_HISTOGRAM_ENUMERATION("Cookie.NetworkSecurity", entry,
+                              net::CookieNetworkSecurity::kCount);
+  }
+
+  const std::string histogram_name =
+      std::string("Cookie.AgeFor") + (secure_request ? "Secure" : "NonSecure") +
+      (same_site ? "SameSite" : "CrossSite") + "Request";
+  const int age_in_days = (now - oldest).InDays();
+  base::UmaHistogramCounts1000(histogram_name, age_in_days);
 }
 
 }  // namespace
@@ -551,8 +617,8 @@ void URLRequestHttpJob::StartTransactionInternal() {
         priority_, &transaction_);
 
     if (rv == OK && request_info_.url.SchemeIsWSOrWSS()) {
-      base::SupportsUserData::Data* data = request_->GetUserData(
-          WebSocketHandshakeStreamBase::CreateHelper::DataKey());
+      base::SupportsUserData::Data* data =
+          request_->GetUserData(kWebSocketHandshakeUserDataKey);
       if (data) {
         transaction_->SetWebSocketHandshakeStreamCreateHelper(
             static_cast<WebSocketHandshakeStreamBase::CreateHelper*>(data));
@@ -652,6 +718,12 @@ void URLRequestHttpJob::AddCookieHeaderAndStart() {
     //   Note that this will generally be the case only for cross-site requests
     //   which target a top-level browsing context.
     //
+    // * Include both "strict" and "lax" same-site cookies if the request is
+    //   tagged with a flag allowing it.
+    //   Note that this can be the case for requests initiated by extensions,
+    //   which need to behave as though they are made by the document itself,
+    //   but appear like cross-site ones.
+    //
     // * Otherwise, do not include same-site cookies.
     if (registry_controlled_domains::SameDomainOrHost(
             request_->url(), request_->site_for_cookies(),
@@ -659,7 +731,8 @@ void URLRequestHttpJob::AddCookieHeaderAndStart() {
       if (!request_->initiator() ||
           registry_controlled_domains::SameDomainOrHost(
               request_->url(), request_->initiator().value().GetURL(),
-              registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES)) {
+              registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES) ||
+          request_->attach_same_site_cookies()) {
         options.set_same_site_cookie_mode(
             CookieOptions::SameSiteCookieMode::INCLUDE_STRICT_AND_LAX);
       } else if (HttpUtil::IsMethodSafe(request_->method())) {
@@ -679,8 +752,7 @@ void URLRequestHttpJob::AddCookieHeaderAndStart() {
 
 void URLRequestHttpJob::SetCookieHeaderAndStart(const CookieList& cookie_list) {
   if (!cookie_list.empty() && CanGetCookies(cookie_list)) {
-    if (!request_info_.url.SchemeIsCryptographic())
-      LogCookieAgeForNonSecureRequest(cookie_list, *request_);
+    LogCookieUMA(cookie_list, *request_, request_info_);
 
     std::string cookie_line = CanonicalCookie::BuildCookieLine(cookie_list);
     UMA_HISTOGRAM_COUNTS_10000("Cookie.HeaderLength", cookie_line.length());
@@ -862,14 +934,23 @@ void URLRequestHttpJob::ProcessNetworkErrorLoggingHeader() {
 
   NetworkErrorLoggingService* service =
       request_->context()->network_error_logging_service();
-  if (!service)
+  if (!service) {
+    NetworkErrorLoggingService::
+        RecordHeaderDiscardedForNoNetworkErrorLoggingService();
     return;
+  }
 
-  // Only accept Report-To headers on HTTPS connections that have no
-  // certificate errors.
+  // Only accept NEL headers on HTTPS connections that have no certificate
+  // errors.
   const SSLInfo& ssl_info = response_info_->ssl_info;
-  if (!ssl_info.is_valid() || IsCertStatusError(ssl_info.cert_status))
+  if (!ssl_info.is_valid()) {
+    NetworkErrorLoggingService::RecordHeaderDiscardedForInvalidSSLInfo();
     return;
+  }
+  if (IsCertStatusError(ssl_info.cert_status)) {
+    NetworkErrorLoggingService::RecordHeaderDiscardedForCertStatusError();
+    return;
+  }
 
   service->OnHeader(url::Origin::Create(request_info_.url), value);
 }

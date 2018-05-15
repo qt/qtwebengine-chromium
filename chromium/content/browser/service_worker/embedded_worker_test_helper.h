@@ -14,7 +14,6 @@
 #include "base/callback.h"
 #include "base/containers/hash_tables.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
 #include "base/time/time.h"
@@ -27,8 +26,8 @@
 #include "ipc/ipc_test_sink.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "net/http/http_response_info.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom.h"
 #include "url/gurl.h"
 
 class GURL;
@@ -275,7 +274,6 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   void SimulateWorkerScriptEvaluated(int embedded_worker_id, bool success);
   void SimulateWorkerStarted(int embedded_worker_id);
   void SimulateWorkerStopped(int embedded_worker_id);
-  void SimulateSend(IPC::Message* message);
 
   EmbeddedWorkerRegistry* registry();
 

@@ -170,16 +170,17 @@ ServiceWorkerLoaderHelpers::CloneResourceRequestBody(
         NOTREACHED();
         break;
       case network::DataElement::TYPE_DATA_PIPE: {
-        network::mojom::DataPipeGetterPtrInfo clone_ptr_info;
-        element.data_pipe()->Clone(mojo::MakeRequest(&clone_ptr_info));
-        network::mojom::DataPipeGetterPtr clone_ptr(std::move(clone_ptr_info));
-        clone->AppendDataPipe(std::move(clone_ptr));
+        clone->AppendDataPipe(element.CloneDataPipeGetter());
         break;
       }
       case network::DataElement::TYPE_RAW_FILE:
         clone->AppendRawFileRange(element.file().Duplicate(), element.path(),
                                   element.offset(), element.length(),
                                   element.expected_modification_time());
+        break;
+      case network::DataElement::TYPE_CHUNKED_DATA_PIPE:
+        NOTREACHED() << "There should be no chunked data pipes going through "
+                        "ServiceWorker";
         break;
       case network::DataElement::TYPE_BLOB:
         NOTREACHED() << "There should be no blob elements in NetworkService";

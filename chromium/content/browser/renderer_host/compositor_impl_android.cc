@@ -18,7 +18,6 @@
 #include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
@@ -35,6 +34,7 @@
 #include "cc/resources/ui_resource_manager.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_settings.h"
+#include "components/viz/client/frame_eviction_manager.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/gl_helper.h"
 #include "components/viz/common/gpu/context_provider.h"
@@ -54,6 +54,7 @@
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/gpu/compositor_util.h"
+#include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/gpu_stream_constants.h"
 #include "content/public/browser/android/compositor.h"
@@ -65,7 +66,7 @@
 #include "gpu/ipc/client/command_buffer_proxy_impl.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "gpu/ipc/common/gpu_surface_tracker.h"
-#include "gpu/vulkan/features.h"
+#include "gpu/vulkan/buildflags.h"
 #include "gpu/vulkan/vulkan_surface.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -234,14 +235,15 @@ void CreateContextProviderAfterGpuChannelEstablished(
 
   constexpr bool automatic_flushes = false;
   constexpr bool support_locking = false;
+  constexpr bool support_grcontext = false;
 
   auto context_provider =
       base::MakeRefCounted<ui::ContextProviderCommandBuffer>(
           std::move(gpu_channel_host), factory->GetGpuMemoryBufferManager(),
           stream_id, stream_priority, handle,
           GURL(std::string("chrome://gpu/Compositor::CreateContextProvider")),
-          automatic_flushes, support_locking, shared_memory_limits, attributes,
-          nullptr /* shared_context */,
+          automatic_flushes, support_locking, support_grcontext,
+          shared_memory_limits, attributes, nullptr /* shared_context */,
           ui::command_buffer_metrics::CONTEXT_TYPE_UNKNOWN);
   callback.Run(std::move(context_provider));
 }
@@ -289,6 +291,8 @@ class AndroidOutputSurface
     GetCommandBufferProxy()->SetSwapBuffersCompletionCallback(
         base::Bind(&AndroidOutputSurface::OnSwapBuffersCompleted,
                    weak_ptr_factory_.GetWeakPtr()));
+    GetCommandBufferProxy()->SetPresentationCallback(base::BindRepeating(
+        &AndroidOutputSurface::OnPresentation, weak_ptr_factory_.GetWeakPtr()));
   }
 
   void EnsureBackbuffer() override {}
@@ -347,6 +351,11 @@ class AndroidOutputSurface
     client_->DidReceiveSwapBuffersAck(params.swap_response.swap_id);
     swap_buffers_callback_.Run();
     latency_info_cache_.OnSwapBuffersCompleted(params.swap_response);
+  }
+
+  void OnPresentation(uint64_t swap_id,
+                      const gfx::PresentationFeedback& feedback) {
+    client_->DidReceivePresentationFeedback(swap_id, feedback);
   }
 
  private:
@@ -535,11 +544,6 @@ void CompositorImpl::SetRootWindow(gfx::NativeWindow root_window) {
   root_window_ = root_window;
   root_window_->SetLayer(root_layer ? root_layer : cc::Layer::Create());
   root_window_->GetLayer()->SetBounds(size_);
-  if (!readback_layer_tree_) {
-    readback_layer_tree_ = cc::Layer::Create();
-    readback_layer_tree_->SetHideLayerAndSubtree(true);
-  }
-  root_window->GetLayer()->AddChild(readback_layer_tree_);
   root_window->AttachCompositor(this);
   if (!host_) {
     CreateLayerTreeHost();
@@ -652,11 +656,13 @@ void CompositorImpl::SetVisible(bool visible) {
           root_window_->GetBeginFrameSource());
     }
     display_.reset();
+    EnqueueLowEndBackgroundCleanup();
   } else {
     host_->SetVisible(true);
     has_submitted_frame_since_became_visible_ = false;
     if (layer_tree_frame_sink_request_pending_)
       HandlePendingLayerTreeFrameSinkRequest();
+    low_end_background_cleanup_task_.Cancel();
   }
 }
 
@@ -789,6 +795,7 @@ void CompositorImpl::OnGpuChannelEstablished(
 
   constexpr bool support_locking = false;
   constexpr bool automatic_flushes = false;
+  constexpr bool support_grcontext = true;
   display_color_space_ = display::Screen::GetScreen()
                              ->GetDisplayNearestWindow(root_window_)
                              .color_space();
@@ -800,7 +807,7 @@ void CompositorImpl::OnGpuChannelEstablished(
           stream_id, stream_priority, surface_handle_,
           GURL(std::string("chrome://gpu/CompositorImpl::") +
                std::string("CompositorContextProvider")),
-          automatic_flushes, support_locking,
+          automatic_flushes, support_locking, support_grcontext,
           GetCompositorContextSharedMemoryLimits(root_window_),
           GetCompositorContextAttributes(display_color_space_,
                                          requires_alpha_channel_),
@@ -916,8 +923,17 @@ void CompositorImpl::DidCommit() {
   root_window_->OnCompositingDidCommit();
 }
 
-void CompositorImpl::AttachLayerForReadback(scoped_refptr<cc::Layer> layer) {
-  readback_layer_tree_->AddChild(layer);
+base::WeakPtr<ui::WindowAndroidCompositor> CompositorImpl::GetWeakPtr() {
+  return weak_factory_.GetWeakPtr();
+}
+
+void CompositorImpl::IncrementReadbackRequestCount() {
+  pending_readback_request_count_++;
+}
+
+void CompositorImpl::DecrementReadbackRequestCount() {
+  DCHECK_GT(pending_readback_request_count_, 0u);
+  pending_readback_request_count_--;
 }
 
 void CompositorImpl::RequestCopyOfOutputOnRootLayer(
@@ -979,7 +995,7 @@ void CompositorImpl::OnDisplayMetricsChanged(const display::Display& display,
 }
 
 bool CompositorImpl::HavePendingReadbacks() {
-  return !readback_layer_tree_->children().empty();
+  return pending_readback_request_count_ > 0u;
 }
 
 std::unique_ptr<ui::CompositorLock> CompositorImpl::GetCompositorLock(
@@ -995,6 +1011,37 @@ bool CompositorImpl::IsDrawingFirstVisibleFrame() const {
 void CompositorImpl::OnCompositorLockStateChanged(bool locked) {
   if (host_)
     host_->SetDeferCommits(locked);
+}
+
+void CompositorImpl::EnqueueLowEndBackgroundCleanup() {
+  if (base::SysInfo::IsLowEndDevice()) {
+    low_end_background_cleanup_task_.Reset(
+        base::BindOnce(&CompositorImpl::DoLowEndBackgroundCleanup,
+                       weak_factory_.GetWeakPtr()));
+    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+        FROM_HERE, low_end_background_cleanup_task_.callback(),
+        base::TimeDelta::FromSeconds(5));
+  }
+}
+
+void CompositorImpl::DoLowEndBackgroundCleanup() {
+  // When we become visible, we immediately cancel the callback that runs this
+  // code.
+  DCHECK(!host_->IsVisible());
+
+  // First, evict all unlocked frames, allowing resources to be reclaimed.
+  viz::FrameEvictionManager::GetInstance()->PurgeAllUnlockedFrames();
+
+  // Next, notify the GPU process to do background processing, which will
+  // lose all renderer contexts.
+  content::GpuProcessHost::CallOnIO(
+      content::GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED,
+      false /* force_create */,
+      base::BindRepeating([](content::GpuProcessHost* host) {
+        if (host) {
+          host->gpu_service()->OnBackgrounded();
+        }
+      }));
 }
 
 }  // namespace content

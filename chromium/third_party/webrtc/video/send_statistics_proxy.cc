@@ -126,7 +126,7 @@ SendStatisticsProxy::SendStatisticsProxy(
     const VideoSendStream::Config& config,
     VideoEncoderConfig::ContentType content_type)
     : clock_(clock),
-      payload_name_(config.encoder_settings.payload_name),
+      payload_name_(config.rtp.payload_name),
       rtp_config_(config.rtp),
       fallback_max_pixels_(GetFallbackMaxPixelsIfFieldTrialEnabled()),
       fallback_max_pixels_disabled_(GetFallbackMaxPixelsIfFieldTrialDisabled()),
@@ -268,7 +268,8 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
   RTC_DCHECK(uma_prefix_ == kRealtimePrefix || uma_prefix_ == kScreenPrefix);
   const int kIndex = uma_prefix_ == kScreenPrefix ? 1 : 0;
   const int kMinRequiredPeriodicSamples = 6;
-  rtc::SimpleStringBuilder<8 * 1024> log_stream;
+  char log_stream_buf[8 * 1024];
+  rtc::SimpleStringBuilder log_stream(log_stream_buf);
   int in_width = input_width_counter_.Avg(kMinRequiredMetricsSamples);
   int in_height = input_height_counter_.Avg(kMinRequiredMetricsSamples);
   if (in_width != -1) {

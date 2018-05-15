@@ -4,6 +4,7 @@
 
 #include "components/browser_sync/profile_sync_test_util.h"
 
+#include <string>
 #include <utility>
 
 #include "base/bind.h"
@@ -232,6 +233,7 @@ ProfileSyncServiceBundle::ProfileSyncServiceBundle()
                       &account_tracker_,
                       nullptr),
 #endif
+      identity_manager_(&signin_manager_, &auth_service_),
       url_request_context_(new net::TestURLRequestContextGetter(
           base::ThreadTaskRunnerHandle::Get())) {
   RegisterPrefsForProfileSyncService(pref_service_.registry());
@@ -249,11 +251,14 @@ ProfileSyncService::InitParams ProfileSyncServiceBundle::CreateBasicInitParams(
 
   init_params.start_behavior = start_behavior;
   init_params.sync_client = std::move(sync_client);
-  init_params.signin_wrapper =
-      std::make_unique<SigninManagerWrapper>(signin_manager());
+  init_params.signin_wrapper = std::make_unique<SigninManagerWrapper>(
+      identity_manager(), signin_manager());
+  init_params.signin_scoped_device_id_callback =
+      base::BindRepeating([]() { return std::string(); });
   init_params.oauth2_token_service = auth_service();
   init_params.network_time_update_callback = base::DoNothing();
-  EXPECT_TRUE(base_directory_.CreateUniqueTempDir());
+  if (!base_directory_.IsValid())
+    EXPECT_TRUE(base_directory_.CreateUniqueTempDir());
   init_params.base_directory = base_directory_.GetPath();
   init_params.url_request_context = url_request_context();
   init_params.debug_identifier = "dummyDebugName";

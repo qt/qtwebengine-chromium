@@ -53,12 +53,13 @@ component("geolocation") {
     "wifi_data_provider_manager.h",
     "wifi_data_provider_win.cc",
     "wifi_data_provider_win.h",
+    "wifi_polling_policy.cc",
     "wifi_polling_policy.h",
   ]
 
   deps = [
     "//base",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//mojo/public/cpp/bindings",
     "//net",
     "//ui/gfx",
@@ -172,6 +173,7 @@ source_set("unittests") {
     "wifi_data_provider_common_unittest.cc",
     "wifi_data_provider_linux_unittest.cc",
     "wifi_data_provider_win_unittest.cc",
+    "wifi_polling_policy_unittest.cc",
   ]
   public_deps = [
     ":geolocation",

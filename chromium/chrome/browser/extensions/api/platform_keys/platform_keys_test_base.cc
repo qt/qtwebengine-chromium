@@ -17,6 +17,7 @@
 #include "chromeos/dbus/session_manager_client.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/policy_constants.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_launcher.h"
 #include "crypto/scoped_test_system_nss_key_slot.h"
 #include "extensions/test/result_catcher.h"
@@ -111,7 +112,7 @@ void PlatformKeysTestBase::SetUpInProcessBrowserTestFixture() {
     user_affiliation_ids.insert(kAffiliationID);
     policy::UserPolicyBuilder user_policy;
     policy::affiliation_test_helper::SetUserAffiliationIDs(
-        &user_policy, fake_session_manager_client, account_id_.GetUserEmail(),
+        &user_policy, fake_session_manager_client, account_id_,
         user_affiliation_ids);
   }
 

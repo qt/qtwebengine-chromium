@@ -117,7 +117,6 @@ function getDefaultShowConfig() {
 
 Polymer({
   is: 'cr-action-menu',
-  extends: 'dialog',
 
   /**
    * The element which the action menu will be anchored to. Also the element
@@ -146,14 +145,15 @@ Polymer({
   /** @private {?ShowAtPositionConfig} */
   lastConfig_: null,
 
-  hostAttributes: {
-    tabindex: 0,
-  },
-
   properties: {
     // Setting this flag will make the menu listen for content size changes and
     // reposition to its anchor accordingly.
     autoReposition: {
+      type: Boolean,
+      value: false,
+    },
+
+    open: {
       type: Boolean,
       value: false,
     },
@@ -168,6 +168,14 @@ Polymer({
   /** override */
   detached: function() {
     this.removeListeners_();
+  },
+
+  /**
+   * Exposing internal <dialog> elements for tests.
+   * @return {!HTMLDialogElement}
+   */
+  getDialog: function() {
+    return this.$.dialog;
   },
 
   /** @private */
@@ -214,10 +222,10 @@ Polymer({
     if (nextOption) {
       if (!this.hasMousemoveListener_) {
         this.hasMousemoveListener_ = true;
-        listenOnce(this, 'mousemove', function(e) {
+        listenOnce(this, 'mousemove', e => {
           this.onMouseover_(e);
           this.hasMousemoveListener_ = false;
-        }.bind(this));
+        });
       }
       nextOption.focus();
     }
@@ -243,7 +251,7 @@ Polymer({
     } while (this != target);
 
     // The user moved the mouse off the options. Reset focus to the dialog.
-    this.focus();
+    this.$.dialog.focus();
   },
 
   /**
@@ -278,11 +286,11 @@ Polymer({
     return nextOption;
   },
 
-  /** @override */
   close: function() {
     // Removing 'resize' and 'popstate' listeners when dialog is closed.
     this.removeListeners_();
-    HTMLDialogElement.prototype.close.call(this);
+    this.$.dialog.close();
+    this.open = false;
     if (this.anchorElement_) {
       cr.ui.focusWithoutInk(assert(this.anchorElement_));
       this.anchorElement_ = null;
@@ -353,7 +361,8 @@ Polymer({
     // and so that the dialog is positioned at the top-start corner of the
     // document.
     this.resetStyle_();
-    this.showModal();
+    this.$.dialog.showModal();
+    this.open = true;
 
     config.top += scrollTop;
     config.left += scrollLeft;
@@ -375,9 +384,9 @@ Polymer({
 
   /** @private */
   resetStyle_: function() {
-    this.style.left = '';
-    this.style.right = '';
-    this.style.top = '0';
+    this.$.dialog.style.left = '';
+    this.$.dialog.style.right = '';
+    this.$.dialog.style.top = '0';
   },
 
   /**
@@ -400,20 +409,22 @@ Polymer({
     if (rtl)
       c.anchorAlignmentX *= -1;
 
+    const offsetWidth = this.$.dialog.offsetWidth;
     var menuLeft = getStartPointWithAnchor(
-        left, right, this.offsetWidth, c.anchorAlignmentX, c.minX, c.maxX);
+        left, right, offsetWidth, c.anchorAlignmentX, c.minX, c.maxX);
 
     if (rtl) {
       var menuRight =
-          document.scrollingElement.clientWidth - menuLeft - this.offsetWidth;
-      this.style.right = menuRight + 'px';
+          document.scrollingElement.clientWidth - menuLeft - offsetWidth;
+      this.$.dialog.style.right = menuRight + 'px';
     } else {
-      this.style.left = menuLeft + 'px';
+      this.$.dialog.style.left = menuLeft + 'px';
     }
 
     var menuTop = getStartPointWithAnchor(
-        top, bottom, this.offsetHeight, c.anchorAlignmentY, c.minY, c.maxY);
-    this.style.top = menuTop + 'px';
+        top, bottom, this.$.dialog.offsetHeight, c.anchorAlignmentY, c.minY,
+        c.maxY);
+    this.$.dialog.style.top = menuTop + 'px';
   },
 
   /**
@@ -421,7 +432,7 @@ Polymer({
    */
   addListeners_: function() {
     this.boundClose_ = this.boundClose_ || function() {
-      if (this.open)
+      if (this.$.dialog.open)
         this.close();
     }.bind(this);
     window.addEventListener('resize', this.boundClose_);
@@ -446,7 +457,7 @@ Polymer({
         }
       });
 
-      this.resizeObserver_.observe(this);
+      this.resizeObserver_.observe(this.$.dialog);
     }
   },
 });

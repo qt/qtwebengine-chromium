@@ -5,7 +5,7 @@
 import("//build/config/features.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 
-source_set("fido") {
+component("fido") {
   sources = [
     "attestation_object.cc",
     "attestation_object.h",
@@ -21,10 +21,10 @@ source_set("fido") {
     "authenticator_get_info_response.h",
     "authenticator_make_credential_response.cc",
     "authenticator_make_credential_response.h",
+    "authenticator_selection_criteria.cc",
+    "authenticator_selection_criteria.h",
     "authenticator_supported_options.cc",
     "authenticator_supported_options.h",
-    "ctap_constants.cc",
-    "ctap_constants.h",
     "ctap_empty_authenticator_request.cc",
     "ctap_empty_authenticator_request.h",
     "ctap_get_assertion_request.cc",
@@ -37,10 +37,46 @@ source_set("fido") {
     "ec_public_key.h",
     "fido_attestation_statement.cc",
     "fido_attestation_statement.h",
+    "fido_ble_connection.cc",
+    "fido_ble_connection.h",
+    "fido_ble_device.cc",
+    "fido_ble_device.h",
+    "fido_ble_discovery.cc",
+    "fido_ble_discovery.h",
+    "fido_ble_frames.cc",
+    "fido_ble_frames.h",
+    "fido_ble_transaction.cc",
+    "fido_ble_transaction.h",
+    "fido_ble_uuids.cc",
+    "fido_ble_uuids.h",
+    "fido_constants.cc",
+    "fido_constants.h",
+    "fido_device.cc",
+    "fido_device.h",
+    "fido_discovery.cc",
+    "fido_discovery.h",
     "fido_hid_message.cc",
     "fido_hid_message.h",
     "fido_hid_packet.cc",
     "fido_hid_packet.h",
+    "fido_request_handler.h",
+    "fido_request_handler_base.cc",
+    "fido_request_handler_base.h",
+    "fido_task.cc",
+    "fido_task.h",
+    "fido_transport_protocol.h",
+    "get_assertion_request_handler.cc",
+    "get_assertion_request_handler.h",
+    "get_assertion_task.cc",
+    "get_assertion_task.h",
+    "make_credential_request_handler.cc",
+    "make_credential_request_handler.h",
+    "make_credential_task.cc",
+    "make_credential_task.h",
+    "opaque_attestation_statement.cc",
+    "opaque_attestation_statement.h",
+    "opaque_public_key.cc",
+    "opaque_public_key.h",
     "public_key.cc",
     "public_key.h",
     "public_key_credential_descriptor.cc",
@@ -51,65 +87,45 @@ source_set("fido") {
     "public_key_credential_rp_entity.h",
     "public_key_credential_user_entity.cc",
     "public_key_credential_user_entity.h",
-    "register_response_data.cc",
-    "register_response_data.h",
     "response_data.cc",
     "response_data.h",
-    "sign_response_data.cc",
-    "sign_response_data.h",
-    "u2f_apdu_command.cc",
-    "u2f_apdu_command.h",
-    "u2f_apdu_response.cc",
-    "u2f_apdu_response.h",
-    "u2f_ble_connection.cc",
-    "u2f_ble_connection.h",
-    "u2f_ble_device.cc",
-    "u2f_ble_device.h",
-    "u2f_ble_discovery.cc",
-    "u2f_ble_discovery.h",
-    "u2f_ble_frames.cc",
-    "u2f_ble_frames.h",
-    "u2f_ble_transaction.cc",
-    "u2f_ble_transaction.h",
-    "u2f_ble_uuids.cc",
-    "u2f_ble_uuids.h",
-    "u2f_command_type.h",
-    "u2f_device.cc",
-    "u2f_device.h",
-    "u2f_discovery.cc",
-    "u2f_discovery.h",
     "u2f_parsing_utils.cc",
     "u2f_parsing_utils.h",
     "u2f_register.cc",
     "u2f_register.h",
     "u2f_request.cc",
     "u2f_request.h",
-    "u2f_return_code.h",
     "u2f_sign.cc",
     "u2f_sign.h",
-    "u2f_transport_protocol.h",
+    "virtual_fido_device.cc",
+    "virtual_fido_device.h",
   ]
 
+  defines = [ "IS_DEVICE_FIDO_IMPL" ]
+
   deps = [
-    "//base",
+    "//components/apdu",
     "//components/cbor",
     "//crypto",
     "//device/base",
-    "//device/bluetooth",
-    "//net",
-    "//services/device/public/mojom",
     "//services/service_manager/public/cpp",
     "//services/service_manager/public/mojom",
     "//third_party/boringssl",
   ]
 
+  public_deps = [
+    "//base",
+    "//device/bluetooth",
+    "//services/device/public/mojom",
+  ]
+
   # HID is not supported on Android.
   if (!is_android) {
     sources += [
-      "u2f_hid_device.cc",
-      "u2f_hid_device.h",
-      "u2f_hid_discovery.cc",
-      "u2f_hid_discovery.h",
+      "fido_hid_device.cc",
+      "fido_hid_device.h",
+      "fido_hid_discovery.cc",
+      "fido_hid_discovery.h",
     ]
 
     deps += [
@@ -123,30 +139,20 @@ source_set("mocks") {
   testonly = true
 
   sources = [
-    "mock_u2f_ble_connection.cc",
-    "mock_u2f_ble_connection.h",
-    "mock_u2f_device.cc",
-    "mock_u2f_device.h",
-    "mock_u2f_discovery.cc",
-    "mock_u2f_discovery.h",
+    "mock_fido_ble_connection.cc",
+    "mock_fido_ble_connection.h",
+    "mock_fido_device.cc",
+    "mock_fido_device.h",
+    "mock_fido_discovery_observer.cc",
+    "mock_fido_discovery_observer.h",
   ]
 
   deps = [
     ":fido",
     "//base",
+    "//components/apdu",
     "//testing/gmock",
   ]
-}
-
-fuzzer_test("u2f_apdu_fuzzer") {
-  sources = [
-    "u2f_apdu_fuzzer.cc",
-  ]
-  deps = [
-    ":fido",
-    "//net",
-  ]
-  libfuzzer_options = [ "max_len=65537" ]
 }
 
 fuzzer_test("fido_hid_message_fuzzer") {
@@ -160,41 +166,14 @@ fuzzer_test("fido_hid_message_fuzzer") {
   libfuzzer_options = [ "max_len=2048" ]
 }
 
-fuzzer_test("u2f_ble_frames_fuzzer") {
+fuzzer_test("fido_ble_frames_fuzzer") {
   sources = [
-    "u2f_ble_frames_fuzzer.cc",
+    "fido_ble_frames_fuzzer.cc",
   ]
   deps = [
     ":fido",
-    "//net",
   ]
   libfuzzer_options = [ "max_len=65535" ]
-}
-
-fuzzer_test("sign_response_data_fuzzer") {
-  sources = [
-    "sign_response_data_fuzzer.cc",
-  ]
-  deps = [
-    ":fido",
-    "//base",
-    "//net",
-  ]
-  seed_corpus = "response_data_fuzzer_corpus/"
-  libfuzzer_options = [ "max_len=65537" ]
-}
-
-fuzzer_test("register_response_data_fuzzer") {
-  sources = [
-    "register_response_data_fuzzer.cc",
-  ]
-  deps = [
-    ":fido",
-    "//net",
-  ]
-
-  seed_corpus = "response_data_fuzzer_corpus/"
-  libfuzzer_options = [ "max_len=65537" ]
 }
 
 fuzzer_test("ctap_response_fuzzer") {
@@ -206,7 +185,7 @@ fuzzer_test("ctap_response_fuzzer") {
     "//base",
     "//base:i18n",
   ]
-  seed_corpus = "ctap_response_fuzzer_corpus/"
+  seed_corpus = "response_data_fuzzer_corpus/"
   libfuzzer_options = [ "max_len=65537" ]
 }
 
@@ -214,19 +193,28 @@ is_linux_without_udev = is_linux && !use_udev
 
 source_set("test_support") {
   testonly = true
+  sources = [
+    "fake_fido_discovery.cc",
+    "fake_fido_discovery.h",
+    "scoped_virtual_fido_device.cc",
+    "scoped_virtual_fido_device.h",
+    "test_callback_receiver.h",
+  ]
+  deps = [
+    "//base",
+    "//components/apdu",
+    "//device/fido",
+    "//mojo/public/cpp/bindings",
+    "//services/device/public/mojom",
+    "//testing/gmock",
+    "//testing/gtest",
+  ]
 
-  # Android doesn't compile.
-  # Linux, requires udev.
+  # Android doesn't compile. Linux requires udev.
   if (!is_linux_without_udev && !is_android) {
-    sources = [
+    sources += [
       "fake_hid_impl_for_testing.cc",
       "fake_hid_impl_for_testing.h",
-    ]
-    deps = [
-      "//base",
-      "//mojo/public/cpp/bindings",
-      "//services/device/public/mojom",
-      "//testing/gmock",
     ]
   }
 }

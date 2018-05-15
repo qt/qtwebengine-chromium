@@ -10,7 +10,7 @@ import("//build/config/ui.gni")
 import("//content/public/common/zygote_features.gni")
 import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
-import("//ppapi/features/features.gni")
+import("//ppapi/buildflags/buildflags.gni")
 import("//third_party/webrtc/webrtc.gni")
 
 # See //content/BUILD.gn for how this works.
@@ -82,7 +82,7 @@ source_set("static_switches") {
 
   # Deps required by the above headers.
   deps = [
-    "//media:media_features",
+    "//media:media_buildflags",
   ]
 }
 
@@ -158,6 +158,8 @@ jumbo_source_set("common_sources") {
     "main_function_params.h",
     "manifest.cc",
     "manifest.h",
+    "manifest_share_target_util.cc",
+    "manifest_share_target_util.h",
     "manifest_util.cc",
     "manifest_util.h",
     "media_metadata.cc",
@@ -215,8 +217,6 @@ jumbo_source_set("common_sources") {
     "screen_orientation_values.h",
     "send_zygote_child_ping_linux.h",
     "service_manager_connection.h",
-    "shared_url_loader_factory.cc",
-    "shared_url_loader_factory.h",
     "simple_connection_filter.cc",
     "simple_connection_filter.h",
     "socket_permission_request.h",
@@ -237,6 +237,8 @@ jumbo_source_set("common_sources") {
     "use_zoom_for_dsf_policy.cc",
     "use_zoom_for_dsf_policy.h",
     "user_agent.h",
+    "weak_wrapper_shared_url_loader_factory.cc",
+    "weak_wrapper_shared_url_loader_factory.h",
     "web_preferences.cc",
     "web_preferences.h",
     "webplugininfo.cc",
@@ -255,10 +257,11 @@ jumbo_source_set("common_sources") {
   public_deps = [
     ":interfaces",
     ":service_names",
+    ":zygote_buildflags",
     "//content/common",
     "//ipc",
     "//media/capture:capture_base",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//mojo/public/cpp/bindings",
     "//net",
     "//services/network:network_service",
@@ -266,28 +269,27 @@ jumbo_source_set("common_sources") {
     "//services/service_manager/embedder",
     "//services/service_manager/public/cpp",
     "//services/service_manager/public/mojom",
-    "//third_party/WebKit/public:blink_headers",
-    "//third_party/WebKit/public:mojo_bindings",
+    "//third_party/blink/public:blink_headers",
+    "//third_party/blink/public:mojo_bindings",
     "//ui/accessibility",
     "//ui/surface",
     "//url/ipc:url_ipc",
   ]
   deps = [
     ":content_descriptor_keys",
-    ":zygote_features",
 
     # This looks needless as we have //content/common in public_deps, but it's
     # needed because of allow_circular_includes_from.
     "//content/common:mojo_bindings",
     "//media",
     "//mojo/common",
+    "//ppapi/buildflags",
     "//ppapi/c",
-    "//ppapi/features",
     "//services/network/public/cpp",
     "//services/service_manager/public/cpp",
     "//skia",
     "//storage/common",
-    "//third_party/WebKit/public/common",
+    "//third_party/blink/public/common",
     "//third_party/icu",
     "//ui/accessibility",
     "//ui/base",
@@ -332,16 +334,16 @@ jumbo_source_set("common_sources") {
   }
 }
 
-buildflag_header("features") {
-  header = "features.h"
+buildflag_header("buildflags") {
+  header = "buildflags.h"
   flags = [ "RTC_USE_H264=$rtc_use_h264" ]
 }
 
 source_set("feature_h264_with_openh264_ffmpeg") {
   deps = [
-    ":features",
+    ":buildflags",
     "//base",
-    "//media:media_features",
+    "//media:media_buildflags",
   ]
   sources = [
     "feature_h264_with_openh264_ffmpeg.cc",
@@ -349,8 +351,8 @@ source_set("feature_h264_with_openh264_ffmpeg") {
   ]
 }
 
-buildflag_header("zygote_features") {
-  header = "zygote_features.h"
+buildflag_header("zygote_buildflags") {
+  header = "zygote_buildflags.h"
   flags = [ "USE_ZYGOTE_HANDLE=$use_zygote_handle" ]
 }
 
@@ -361,13 +363,22 @@ mojom("interfaces") {
     "//content/common/*",
     "//chrome/common:mojo_bindings",
     "//chrome/common:mojo_bindings_blink",
+    "//extensions/common:mojo",
+    "//extensions/common:mojo_blink",
   ]
+
+  # imports vs deps check is disabled for this target to work around
+  # windows multiple definitions linker error caused by having
+  # both a direct and an indirect dependency on the same target
+  skip_deps_check = true
 
   sources = [
     "appcache_info.mojom",
     "fullscreen_video_element.mojom",
     "push_messaging_status.mojom",
+    "resource_load_info.mojom",
     "resource_usage_reporter.mojom",
+    "transferrable_url_loader.mojom",
     "webplugininfo.mojom",
     "window_container_type.mojom",
   ]

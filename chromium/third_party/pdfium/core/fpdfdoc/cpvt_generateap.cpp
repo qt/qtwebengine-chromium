@@ -19,11 +19,11 @@
 #include "core/fpdfapi/parser/cpdf_name.h"
 #include "core/fpdfapi/parser/cpdf_number.h"
 #include "core/fpdfapi/parser/cpdf_reference.h"
-#include "core/fpdfapi/parser/cpdf_simple_parser.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
 #include "core/fpdfdoc/cpdf_annot.h"
+#include "core/fpdfdoc/cpdf_defaultappearance.h"
 #include "core/fpdfdoc/cpdf_formfield.h"
 #include "core/fpdfdoc/cpvt_fontmap.h"
 #include "core/fpdfdoc/cpvt_word.h"
@@ -39,6 +39,8 @@ struct CPVT_Dash {
 };
 
 namespace {
+
+enum class PaintOperation { STROKE, FILL };
 
 ByteString GetPDFWordString(IPVT_FontMap* pFontMap,
                             int32_t nFontIndex,
@@ -468,14 +470,14 @@ std::unique_ptr<CPDF_Dictionary> GenerateExtGStateDict(
     const ByteString& sBlendMode) {
   auto pGSDict =
       pdfium::MakeUnique<CPDF_Dictionary>(pAnnotDict.GetByteStringPool());
-  pGSDict->SetNewFor<CPDF_String>("Type", "ExtGState", false);
+  pGSDict->SetNewFor<CPDF_Name>("Type", "ExtGState");
 
   float fOpacity =
       pAnnotDict.KeyExist("CA") ? pAnnotDict.GetNumberFor("CA") : 1;
   pGSDict->SetNewFor<CPDF_Number>("CA", fOpacity);
   pGSDict->SetNewFor<CPDF_Number>("ca", fOpacity);
   pGSDict->SetNewFor<CPDF_Boolean>("AIS", false);
-  pGSDict->SetNewFor<CPDF_String>("BM", sBlendMode, false);
+  pGSDict->SetNewFor<CPDF_Name>("BM", sBlendMode);
 
   auto pExtGStateDict =
       pdfium::MakeUnique<CPDF_Dictionary>(pAnnotDict.GetByteStringPool());
@@ -512,11 +514,12 @@ void GenerateAndSetAPDict(CPDF_Document* pDoc,
 
   CPDF_Dictionary* pStreamDict = pNormalStream->GetDict();
   pStreamDict->SetNewFor<CPDF_Number>("FormType", 1);
-  pStreamDict->SetNewFor<CPDF_String>("Subtype", "Form", false);
+  pStreamDict->SetNewFor<CPDF_Name>("Type", "XObject");
+  pStreamDict->SetNewFor<CPDF_Name>("Subtype", "Form");
   pStreamDict->SetMatrixFor("Matrix", CFX_Matrix());
 
   CFX_FloatRect rect = bIsTextMarkupAnnotation
-                           ? CPDF_Annot::RectFromQuadPoints(pAnnotDict)
+                           ? CPDF_Annot::BoundingRectFromQuadPoints(pAnnotDict)
                            : pAnnotDict->GetRectFor("Rect");
   pStreamDict->SetRectFor("BBox", rect);
   pStreamDict->SetFor("Resources", std::move(pResourceDict));
@@ -603,13 +606,18 @@ bool GenerateHighlightAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict) {
                                           CFX_Color(CFX_Color::kRGB, 1, 1, 0),
                                           PaintOperation::FILL);
 
-  CFX_FloatRect rect = CPDF_Annot::RectFromQuadPoints(pAnnotDict);
-  rect.Normalize();
+  CPDF_Array* pArray = pAnnotDict->GetArrayFor("QuadPoints");
+  if (pArray) {
+    size_t nQuadPointCount = CPDF_Annot::QuadPointCount(pArray);
+    for (size_t i = 0; i < nQuadPointCount; ++i) {
+      CFX_FloatRect rect = CPDF_Annot::RectFromQuadPoints(pAnnotDict, i);
+      rect.Normalize();
 
-  sAppStream << rect.left << " " << rect.top << " m " << rect.right << " "
-             << rect.top << " l " << rect.right << " " << rect.bottom << " l "
-             << rect.left << " " << rect.bottom << " l "
-             << "h f\n";
+      sAppStream << rect.left << " " << rect.top << " m " << rect.right << " "
+                 << rect.top << " l " << rect.right << " " << rect.bottom
+                 << " l " << rect.left << " " << rect.bottom << " l h f\n";
+    }
+  }
 
   auto pExtGStateDict =
       GenerateExtGStateDict(*pAnnotDict, sExtGSDictName, "Multiply");
@@ -705,13 +713,18 @@ bool GenerateUnderlineAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict) {
                                           CFX_Color(CFX_Color::kRGB, 0, 0, 0),
                                           PaintOperation::STROKE);
 
-  CFX_FloatRect rect = CPDF_Annot::RectFromQuadPoints(pAnnotDict);
-  rect.Normalize();
-
-  float fLineWidth = 1.0;
-  sAppStream << fLineWidth << " w " << rect.left << " "
-             << rect.bottom + fLineWidth << " m " << rect.right << " "
-             << rect.bottom + fLineWidth << " l S\n";
+  CPDF_Array* pArray = pAnnotDict->GetArrayFor("QuadPoints");
+  if (pArray) {
+    static constexpr float kLineWidth = 1.0f;
+    sAppStream << kLineWidth << " w ";
+    size_t nQuadPointCount = CPDF_Annot::QuadPointCount(pArray);
+    for (size_t i = 0; i < nQuadPointCount; ++i) {
+      CFX_FloatRect rect = CPDF_Annot::RectFromQuadPoints(pAnnotDict, i);
+      rect.Normalize();
+      sAppStream << rect.left << " " << rect.bottom + kLineWidth << " m "
+                 << rect.right << " " << rect.bottom + kLineWidth << " l S\n";
+    }
+  }
 
   auto pExtGStateDict =
       GenerateExtGStateDict(*pAnnotDict, sExtGSDictName, "Normal");
@@ -814,35 +827,37 @@ bool GenerateSquigglyAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict) {
                                           CFX_Color(CFX_Color::kRGB, 0, 0, 0),
                                           PaintOperation::STROKE);
 
-  CFX_FloatRect rect = CPDF_Annot::RectFromQuadPoints(pAnnotDict);
-  rect.Normalize();
+  CPDF_Array* pArray = pAnnotDict->GetArrayFor("QuadPoints");
+  if (pArray) {
+    static constexpr float kLineWidth = 1.0f;
+    static constexpr float kDelta = 2.0f;
+    sAppStream << kLineWidth << " w ";
+    size_t nQuadPointCount = CPDF_Annot::QuadPointCount(pArray);
+    for (size_t i = 0; i < nQuadPointCount; ++i) {
+      CFX_FloatRect rect = CPDF_Annot::RectFromQuadPoints(pAnnotDict, i);
+      rect.Normalize();
 
-  float fLineWidth = 1.0;
-  sAppStream << fLineWidth << " w ";
+      const float fTop = rect.bottom + kDelta;
+      const float fBottom = rect.bottom;
+      sAppStream << rect.left << " " << fTop << " m ";
 
-  const float fDelta = 2.0;
-  const float fTop = rect.bottom + fDelta;
-  const float fBottom = rect.bottom;
+      float fX = rect.left + kDelta;
+      bool isUpwards = false;
+      while (fX < rect.right) {
+        sAppStream << fX << " " << (isUpwards ? fTop : fBottom) << " l ";
+        fX += kDelta;
+        isUpwards = !isUpwards;
+      }
 
-  sAppStream << rect.left << " " << fTop << " m ";
+      float fRemainder = rect.right - (fX - kDelta);
+      if (isUpwards)
+        sAppStream << rect.right << " " << fBottom + fRemainder << " l ";
+      else
+        sAppStream << rect.right << " " << fTop - fRemainder << " l ";
 
-  float fX = rect.left + fDelta;
-  bool isUpwards = false;
-
-  while (fX < rect.right) {
-    sAppStream << fX << " " << (isUpwards ? fTop : fBottom) << " l ";
-
-    fX += fDelta;
-    isUpwards = !isUpwards;
+      sAppStream << "S\n";
+    }
   }
-
-  float fRemainder = rect.right - (fX - fDelta);
-  if (isUpwards)
-    sAppStream << rect.right << " " << fBottom + fRemainder << " l ";
-  else
-    sAppStream << rect.right << " " << fTop - fRemainder << " l ";
-
-  sAppStream << "S\n";
 
   auto pExtGStateDict =
       GenerateExtGStateDict(*pAnnotDict, sExtGSDictName, "Normal");
@@ -862,13 +877,19 @@ bool GenerateStrikeOutAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict) {
                                           CFX_Color(CFX_Color::kRGB, 0, 0, 0),
                                           PaintOperation::STROKE);
 
-  CFX_FloatRect rect = CPDF_Annot::RectFromQuadPoints(pAnnotDict);
-  rect.Normalize();
+  CPDF_Array* pArray = pAnnotDict->GetArrayFor("QuadPoints");
+  if (pArray) {
+    static constexpr float kLineWidth = 1.0f;
+    size_t nQuadPointCount = CPDF_Annot::QuadPointCount(pArray);
+    for (size_t i = 0; i < nQuadPointCount; ++i) {
+      CFX_FloatRect rect = CPDF_Annot::RectFromQuadPoints(pAnnotDict, i);
+      rect.Normalize();
 
-  float fLineWidth = 1.0;
-  float fY = (rect.top + rect.bottom) / 2;
-  sAppStream << fLineWidth << " w " << rect.left << " " << fY << " m "
-             << rect.right << " " << fY << " l S\n";
+      float fY = (rect.top + rect.bottom) / 2;
+      sAppStream << kLineWidth << " w " << rect.left << " " << fY << " m "
+                 << rect.right << " " << fY << " l S\n";
+    }
+  }
 
   auto pExtGStateDict =
       GenerateExtGStateDict(*pAnnotDict, sExtGSDictName, "Normal");
@@ -901,14 +922,17 @@ void CPVT_GenerateAP::GenerateFormAP(Type type,
   if (DA.IsEmpty())
     return;
 
-  CPDF_SimpleParser syntax(DA.AsStringView());
-  syntax.FindTagParamFromStart("Tf", 2);
-  ByteString sFontName(syntax.GetWord());
-  sFontName = PDF_NameDecode(sFontName);
+  CPDF_DefaultAppearance appearance(DA);
+
+  float fFontSize = 0;
+  Optional<ByteString> font = appearance.GetFont(&fFontSize);
+  if (!font)
+    return;
+
+  ByteString sFontName = PDF_NameDecode(font->AsStringView());
   if (sFontName.IsEmpty())
     return;
 
-  float fFontSize = FX_atof(syntax.GetWord());
   CFX_Color crText = CFX_Color::ParseColor(DA);
   CPDF_Dictionary* pDRDict = pFormDict->GetDictFor("DR");
   if (!pDRDict)

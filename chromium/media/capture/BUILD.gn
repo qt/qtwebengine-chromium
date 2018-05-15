@@ -9,14 +9,14 @@ import("//testing/test.gni")
 group("capture") {
   public_deps = [
     ":capture_lib",
-    "//media/capture/mojo:image_capture",
-    "//media/capture/mojo:image_capture_types",
-    "//media/capture/mojo:video_capture",
+    "//media/capture/mojom:image_capture",
+    "//media/capture/mojom:image_capture_types",
+    "//media/capture/mojom:video_capture",
     "//services/service_manager/public/cpp",
   ]
 }
 
-# Things needed by //media/capture/mojo/video_capture_types.mojom.
+# Things needed by //media/capture/mojom/video_capture_types.mojom.
 component("capture_base") {
   defines = [ "CAPTURE_IMPLEMENTATION" ]
   sources = [
@@ -86,8 +86,8 @@ source_set("capture_device_specific") {
     "//base:i18n",
     "//gpu/command_buffer/client",
     "//media",
-    "//media/capture/mojo:image_capture",
-    "//media/capture/mojo:image_capture_types",
+    "//media/capture/mojom:image_capture",
+    "//media/capture/mojom:image_capture_types",
     "//media/mojo/interfaces:interfaces",
     "//third_party/libyuv",
     "//ui/gfx",
@@ -170,9 +170,9 @@ component("capture_lib") {
     "//base",
     "//base:i18n",
     "//media",
-    "//media/capture/mojo:image_capture",
-    "//media/capture/mojo:image_capture_types",
-    "//media/capture/mojo:video_capture",
+    "//media/capture/mojom:image_capture",
+    "//media/capture/mojom:image_capture_types",
+    "//media/capture/mojom:video_capture",
     "//media/mojo/interfaces:interfaces",
     "//services/service_manager/public/cpp",
     "//third_party/libyuv",
@@ -232,13 +232,13 @@ component("capture_lib") {
       "video/chromeos/display_rotation_observer.cc",
       "video/chromeos/pixel_format_utils.cc",
       "video/chromeos/stream_buffer_manager.cc",
-      "video/chromeos/video_capture_device_arc_chromeos.cc",
+      "video/chromeos/video_capture_device_chromeos_halv3.cc",
       "video/chromeos/video_capture_device_factory_chromeos.cc",
     ]
     deps += [
       "//chromeos:chromeos",
-      "//media/capture/video/chromeos/mojo:arc_camera3",
-      "//mojo/edk/system",
+      "//media/capture/video/chromeos/mojo:cros_camera",
+      "//mojo/edk",
       "//third_party/libsync",
     ]
   }
@@ -254,8 +254,8 @@ source_set("test_support") {
     ":capture_lib",
     "//base/test:test_support",
     "//media:test_support",
-    "//media/capture/mojo:image_capture",
-    "//media/capture/mojo:image_capture_types",
+    "//media/capture/mojom:image_capture",
+    "//media/capture/mojom:image_capture_types",
     "//testing/gmock",
     "//ui/gfx:test_support",
   ]
@@ -290,9 +290,9 @@ test("capture_unittests") {
     ":test_support",
     "//base/test:test_support",
     "//media:test_support",
-    "//media/capture/mojo:image_capture",
-    "//media/capture/mojo:image_capture_types",
-    "//mojo/edk/system",
+    "//media/capture/mojom:image_capture",
+    "//media/capture/mojom:image_capture_types",
+    "//mojo/edk",
     "//testing/gmock",
     "//testing/gtest",
     "//ui/gfx:test_support",
@@ -306,7 +306,10 @@ test("capture_unittests") {
   }
 
   if (is_win) {
-    sources += [ "video/win/video_capture_device_mf_win_unittest.cc" ]
+    sources += [
+      "video/win/video_capture_device_factory_win_unittest.cc",
+      "video/win/video_capture_device_mf_win_unittest.cc",
+    ]
     libs = [
       "mf.lib",
       "mfplat.lib",
@@ -336,8 +339,8 @@ test("capture_unittests") {
     ]
     deps += [
       "//chromeos:chromeos",
-      "//media/capture/video/chromeos/mojo:arc_camera3",
-      "//mojo/edk/system",
+      "//media/capture/video/chromeos/mojo:cros_camera",
+      "//mojo/edk",
       "//third_party/libdrm",
       "//third_party/libsync",
       "//third_party/minigbm",

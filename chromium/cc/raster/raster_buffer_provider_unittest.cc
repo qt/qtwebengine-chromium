@@ -14,7 +14,6 @@
 #include "base/cancelable_callback.h"
 #include "base/location.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
@@ -28,6 +27,7 @@
 #include "cc/raster/zero_copy_raster_buffer_provider.h"
 #include "cc/resources/resource_pool.h"
 #include "cc/resources/resource_provider.h"
+#include "cc/test/fake_layer_tree_frame_sink.h"
 #include "cc/test/fake_raster_source.h"
 #include "cc/test/fake_resource_provider.h"
 #include "cc/tiles/tile_task_manager.h"
@@ -180,8 +180,8 @@ class RasterBufferProviderTest
         Create3dResourceProvider();
         raster_buffer_provider_ = std::make_unique<GpuRasterBufferProvider>(
             context_provider_.get(), worker_context_provider_.get(),
-            resource_provider_.get(), false, false, 0,
-            viz::PlatformColor::BestTextureFormat(), false);
+            resource_provider_.get(), false, 0,
+            viz::PlatformColor::BestTextureFormat(), gfx::Size(), true, false);
         pool_ = std::make_unique<ResourcePool>(
             resource_provider_.get(), base::ThreadTaskRunnerHandle::Get(),
             base::TimeDelta(), ResourcePool::Mode::kGpu, true);
@@ -189,7 +189,7 @@ class RasterBufferProviderTest
       case RASTER_BUFFER_PROVIDER_TYPE_BITMAP:
         CreateSoftwareResourceProvider();
         raster_buffer_provider_ = std::make_unique<BitmapRasterBufferProvider>(
-            resource_provider_.get(), &shared_bitmap_manager_);
+            layer_tree_frame_sink_.get());
         pool_ = std::make_unique<ResourcePool>(
             resource_provider_.get(), base::ThreadTaskRunnerHandle::Get(),
             base::TimeDelta(), ResourcePool::Mode::kSoftware, true);
@@ -266,6 +266,15 @@ class RasterBufferProviderTest
     resources_.push_back(std::move(resource));
   }
 
+  void AppendTaskWithResource(unsigned id,
+                              const ResourcePool::InUsePoolResource* resource) {
+    std::unique_ptr<RasterBuffer> raster_buffer =
+        raster_buffer_provider_->AcquireBufferForRaster(*resource, 0, 0);
+    TileTask::Vector empty;
+    tasks_.push_back(
+        new TestRasterTaskImpl(this, id, std::move(raster_buffer), &empty));
+  }
+
   const std::vector<RasterTaskResult>& completed_tasks() const {
     return completed_tasks_;
   }
@@ -302,12 +311,14 @@ class RasterBufferProviderTest
     viz::TestWebGraphicsContext3D* context3d =
         context_provider_->TestContext3d();
     context3d->set_support_sync_query(true);
+    layer_tree_frame_sink_ = FakeLayerTreeFrameSink::Create3d();
     resource_provider_ = FakeResourceProvider::CreateLayerTreeResourceProvider(
         context_provider_.get(), &shared_bitmap_manager_,
         &gpu_memory_buffer_manager_);
   }
 
   void CreateSoftwareResourceProvider() {
+    layer_tree_frame_sink_ = FakeLayerTreeFrameSink::CreateSoftware();
     resource_provider_ = FakeResourceProvider::CreateLayerTreeResourceProvider(
         nullptr, &shared_bitmap_manager_, &gpu_memory_buffer_manager_);
   }
@@ -321,6 +332,7 @@ class RasterBufferProviderTest
   scoped_refptr<viz::TestContextProvider> context_provider_;
   scoped_refptr<viz::TestContextProvider> worker_context_provider_;
   std::unique_ptr<ResourcePool> pool_;
+  std::unique_ptr<FakeLayerTreeFrameSink> layer_tree_frame_sink_;
   std::unique_ptr<LayerTreeResourceProvider> resource_provider_;
   std::unique_ptr<TileTaskManager> tile_task_manager_;
   std::unique_ptr<RasterBufferProvider> raster_buffer_provider_;
@@ -451,6 +463,47 @@ TEST_P(RasterBufferProviderTest, ReadyToDrawCallbackNoDuplicate) {
   if (GetParam() == RASTER_BUFFER_PROVIDER_TYPE_GPU ||
       GetParam() == RASTER_BUFFER_PROVIDER_TYPE_ONE_COPY)
     EXPECT_TRUE(callback_id);
+}
+
+TEST_P(RasterBufferProviderTest, WaitOnSyncTokenAfterReschedulingTask) {
+  if (GetParam() != RASTER_BUFFER_PROVIDER_TYPE_GPU &&
+      GetParam() != RASTER_BUFFER_PROVIDER_TYPE_ONE_COPY)
+    return;
+
+  base::Lock lock;
+
+  // Schedule a task that is prevented from completing with a lock.
+  lock.Acquire();
+  AppendBlockingTask(0u, &lock);
+  ScheduleTasks();
+
+  EXPECT_EQ(resources_.size(), 1u);
+  const ResourcePool::InUsePoolResource* resource = &resources_[0];
+
+  // Schedule another task to replace the still-pending task using the same
+  // resource.
+  RasterTaskVector tasks;
+  tasks.swap(tasks_);
+  AppendTaskWithResource(1u, resource);
+  ScheduleTasks();
+
+  // The first task is canceled, but the second task uses the same resource, and
+  // waits on the compositor sync token that was left by the first task.
+  RunMessageLoopUntilAllTasksHaveCompleted();
+
+  {
+    viz::ContextProvider::ScopedContextLock context_lock(
+        worker_context_provider_.get());
+    viz::TestWebGraphicsContext3D* context3d =
+        worker_context_provider_->TestContext3d();
+    EXPECT_TRUE(context3d->last_waited_sync_token().HasData());
+  }
+
+  lock.Release();
+
+  ASSERT_EQ(completed_tasks().size(), 2u);
+  EXPECT_TRUE(completed_tasks()[0].canceled);
+  EXPECT_FALSE(completed_tasks()[1].canceled);
 }
 
 INSTANTIATE_TEST_CASE_P(

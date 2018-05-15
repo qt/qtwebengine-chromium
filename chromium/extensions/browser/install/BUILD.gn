@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//extensions/features/features.gni")
+import("//extensions/buildflags/buildflags.gni")
 
 assert(enable_extensions,
        "Cannot depend on extensions because enable_extensions=false.")
@@ -12,5 +12,10 @@ source_set("install") {
     "crx_install_error.h",
     "extension_install_ui.cc",
     "extension_install_ui.h",
+  ]
+
+  deps = [
+    "//base",
+    "//ui/gfx:native_widget_types",
   ]
 }

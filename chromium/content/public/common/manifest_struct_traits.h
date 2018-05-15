@@ -8,7 +8,7 @@
 #include "content/public/common/manifest.h"
 
 #include "mojo/public/cpp/bindings/struct_traits.h"
-#include "third_party/WebKit/public/platform/modules/manifest/manifest.mojom-shared.h"
+#include "third_party/blink/public/platform/modules/manifest/manifest.mojom-shared.h"
 
 namespace mojo {
 namespace internal {
@@ -142,9 +142,8 @@ struct StructTraits<blink::mojom::ManifestRelatedApplicationDataView,
 template <>
 struct StructTraits<blink::mojom::ManifestShareTargetDataView,
                     content::Manifest::ShareTarget> {
-  static base::Optional<base::StringPiece16> url_template(
-      const content::Manifest::ShareTarget& m) {
-    return internal::TruncateNullableString16(m.url_template);
+  static const GURL& url_template(const content::Manifest::ShareTarget& m) {
+    return m.url_template;
   }
   static bool Read(blink::mojom::ManifestShareTargetDataView data,
                    content::Manifest::ShareTarget* out);

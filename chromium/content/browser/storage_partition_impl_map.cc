@@ -14,7 +14,6 @@
 #include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -403,19 +402,13 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
       ChromeBlobStorageContext::GetFor(browser_context_);
   StreamContext* stream_context = StreamContext::GetFor(browser_context_);
   ProtocolHandlerMap protocol_handlers;
-  protocol_handlers[url::kBlobScheme] =
-      linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
-          new BlobProtocolHandler(blob_storage_context, stream_context));
-  protocol_handlers[url::kFileSystemScheme] =
-      linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
-          CreateFileSystemProtocolHandler(partition_domain,
-                                          partition->GetFileSystemContext()));
+  protocol_handlers[url::kBlobScheme] = std::make_unique<BlobProtocolHandler>(
+      blob_storage_context, stream_context);
+  protocol_handlers[url::kFileSystemScheme] = CreateFileSystemProtocolHandler(
+      partition_domain, partition->GetFileSystemContext());
   for (const auto& scheme : URLDataManagerBackend::GetWebUISchemes()) {
-    protocol_handlers[scheme] =
-        linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
-            URLDataManagerBackend::CreateProtocolHandler(
-                browser_context_->GetResourceContext(), blob_storage_context)
-                .release());
+    protocol_handlers[scheme] = URLDataManagerBackend::CreateProtocolHandler(
+        browser_context_->GetResourceContext(), blob_storage_context);
   }
 
   URLRequestInterceptorScopedVector request_interceptors;
@@ -546,7 +539,7 @@ void StoragePartitionImplMap::PostCreateInitialization(
   }
 
   // Check first to avoid memory leak in unittests.
-  if (BrowserThread::IsMessageLoopValid(BrowserThread::IO)) {
+  if (BrowserThread::IsThreadInitialized(BrowserThread::IO)) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::BindOnce(

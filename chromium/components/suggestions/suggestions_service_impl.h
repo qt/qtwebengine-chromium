@@ -24,6 +24,7 @@
 #include "components/suggestions/proto/suggestions.pb.h"
 #include "components/suggestions/suggestions_service.h"
 #include "components/sync/driver/sync_service_observer.h"
+#include "components/sync/driver/sync_service_utils.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "net/base/backoff_entry.h"
 #include "net/url_request/url_fetcher_delegate.h"
@@ -63,7 +64,7 @@ class SuggestionsServiceImpl : public SuggestionsService,
                          std::unique_ptr<SuggestionsStore> suggestions_store,
                          std::unique_ptr<ImageManager> thumbnail_manager,
                          std::unique_ptr<BlacklistStore> blacklist_store,
-                         std::unique_ptr<base::TickClock> tick_clock);
+                         const base::TickClock* tick_clock);
   ~SuggestionsServiceImpl() override;
 
   // SuggestionsService implementation.
@@ -111,7 +112,8 @@ class SuggestionsServiceImpl : public SuggestionsService,
     SYNC_OR_HISTORY_SYNC_DISABLED,
   };
 
-  // The action that should be taken as the result of a RefreshSyncState call.
+  // The action that should be taken as the result of a RefreshHistorySyncState
+  // call.
   enum RefreshAction { NO_ACTION, FETCH_SUGGESTIONS, CLEAR_SUGGESTIONS };
 
   // Helpers to build the various suggestions URLs. These are static members
@@ -122,12 +124,9 @@ class SuggestionsServiceImpl : public SuggestionsService,
   static GURL BuildSuggestionsBlacklistURL(const GURL& candidate_url);
   static GURL BuildSuggestionsBlacklistClearURL();
 
-  // Computes the appropriate SyncState from |sync_service_|.
-  SyncState ComputeSyncState() const;
-
-  // Re-computes |sync_state_| from the sync service. Returns the action that
-  // should be taken in response.
-  RefreshAction RefreshSyncState() WARN_UNUSED_RESULT;
+  // Re-computes |history_sync_state_| from the sync service. Returns the action
+  // that should be taken in response.
+  RefreshAction RefreshHistorySyncState() WARN_UNUSED_RESULT;
 
   // syncer::SyncServiceObserver implementation.
   void OnStateChanged(syncer::SyncService* sync) override;
@@ -182,7 +181,8 @@ class SuggestionsServiceImpl : public SuggestionsService,
   ScopedObserver<syncer::SyncService, syncer::SyncServiceObserver>
       sync_service_observer_;
 
-  SyncState sync_state_;
+  // The state of history sync, i.e. are we uploading history data to Google?
+  syncer::UploadState history_sync_state_;
 
   net::URLRequestContextGetter* url_request_context_;
 
@@ -195,7 +195,7 @@ class SuggestionsServiceImpl : public SuggestionsService,
   // The local cache for temporary blacklist, until uploaded to the server.
   std::unique_ptr<BlacklistStore> blacklist_store_;
 
-  std::unique_ptr<base::TickClock> tick_clock_;
+  const base::TickClock* tick_clock_;
 
   // Backoff for scheduling blacklist upload tasks.
   net::BackoffEntry blacklist_upload_backoff_;

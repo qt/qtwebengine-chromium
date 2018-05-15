@@ -30,23 +30,28 @@ void vp9_init_layer_context(VP9_COMP *const cpi) {
   svc->spatial_layer_id = 0;
   svc->temporal_layer_id = 0;
   svc->first_spatial_layer_to_encode = 0;
-  svc->rc_drop_superframe = 0;
   svc->force_zero_mode_spatial_ref = 0;
   svc->use_base_mv = 0;
+  svc->use_partition_reuse = 0;
   svc->scaled_temp_is_alloc = 0;
   svc->scaled_one_half = 0;
   svc->current_superframe = 0;
   svc->non_reference_frame = 0;
   svc->skip_enhancement_layer = 0;
+  svc->disable_inter_layer_pred = INTER_LAYER_PRED_ON;
+  svc->framedrop_mode = CONSTRAINED_LAYER_DROP;
 
   for (i = 0; i < REF_FRAMES; ++i) svc->ref_frame_index[i] = -1;
   for (sl = 0; sl < oxcf->ss_number_layers; ++sl) {
+    svc->last_layer_dropped[sl] = 0;
+    svc->drop_spatial_layer[sl] = 0;
     svc->ext_frame_flags[sl] = 0;
     svc->ext_lst_fb_idx[sl] = 0;
     svc->ext_gld_fb_idx[sl] = 1;
     svc->ext_alt_fb_idx[sl] = 2;
     svc->downsample_filter_type[sl] = BILINEAR;
     svc->downsample_filter_phase[sl] = 8;  // Set to 8 for averaging filter.
+    svc->framedrop_thresh[sl] = oxcf->drop_frames_water_mark;
   }
 
   if (cpi->oxcf.error_resilient_mode == 0 && cpi->oxcf.pass == 2) {
@@ -611,7 +616,10 @@ int vp9_one_pass_cbr_svc_start_layer(VP9_COMP *const cpi) {
   int width = 0, height = 0;
   LAYER_CONTEXT *lc = NULL;
   cpi->svc.skip_enhancement_layer = 0;
-  if (cpi->svc.number_spatial_layers > 1) cpi->svc.use_base_mv = 1;
+  if (cpi->svc.number_spatial_layers > 1) {
+    cpi->svc.use_base_mv = 1;
+    cpi->svc.use_partition_reuse = 1;
+  }
   cpi->svc.force_zero_mode_spatial_ref = 1;
   cpi->svc.mi_stride[cpi->svc.spatial_layer_id] = cpi->common.mi_stride;
 
@@ -644,8 +652,13 @@ int vp9_one_pass_cbr_svc_start_layer(VP9_COMP *const cpi) {
     }
   }
 
-  if (cpi->svc.spatial_layer_id == cpi->svc.first_spatial_layer_to_encode)
-    cpi->svc.rc_drop_superframe = 0;
+  // Reset the drop flags for all spatial layers, on the base layer.
+  if (cpi->svc.spatial_layer_id == 0) {
+    int i;
+    for (i = 0; i < cpi->svc.number_spatial_layers; i++) {
+      cpi->svc.drop_spatial_layer[i] = 0;
+    }
+  }
 
   lc = &cpi->svc.layer_context[cpi->svc.spatial_layer_id *
                                    cpi->svc.number_temporal_layers +
@@ -663,19 +676,21 @@ int vp9_one_pass_cbr_svc_start_layer(VP9_COMP *const cpi) {
                        lc->scaling_factor_num, lc->scaling_factor_den, &width,
                        &height);
 
-  // For resolutions <= VGA: set phase of the filter = 8 (for symmetric
-  // averaging filter), use bilinear for now.
-  if (width * height <= 640 * 480) {
-    cpi->svc.downsample_filter_type[cpi->svc.spatial_layer_id] = BILINEAR;
-    // Use Eightap_smooth for low resolutions.
-    if (width * height <= 320 * 240)
-      cpi->svc.downsample_filter_type[cpi->svc.spatial_layer_id] =
-          EIGHTTAP_SMOOTH;
-    cpi->svc.downsample_filter_phase[cpi->svc.spatial_layer_id] = 8;
-  }
+  // Use Eightap_smooth for low resolutions.
+  if (width * height <= 320 * 240)
+    cpi->svc.downsample_filter_type[cpi->svc.spatial_layer_id] =
+        EIGHTTAP_SMOOTH;
+  // For scale factors > 0.75, set the phase to 0 (aligns decimated pixel
+  // to source pixel).
+  lc = &cpi->svc.layer_context[cpi->svc.spatial_layer_id *
+                                   cpi->svc.number_temporal_layers +
+                               cpi->svc.temporal_layer_id];
+  if (lc->scaling_factor_num > (3 * lc->scaling_factor_den) >> 2)
+    cpi->svc.downsample_filter_phase[cpi->svc.spatial_layer_id] = 0;
 
-  // The usage of use_base_mv assumes down-scale of 2x2. For now, turn off use
-  // of base motion vectors if spatial scale factors for any layers are not 2,
+  // The usage of use_base_mv or partition_reuse assumes down-scale of 2x2.
+  // For now, turn off use of base motion vectors and partition reuse if the
+  // spatial scale factors for any layers are not 2,
   // keep the case of 3 spatial layers with scale factor of 4x4 for base layer.
   // TODO(marpan): Fix this to allow for use_base_mv for scale factors != 2.
   if (cpi->svc.number_spatial_layers > 1) {
@@ -687,8 +702,16 @@ int vp9_one_pass_cbr_svc_start_layer(VP9_COMP *const cpi) {
           !(lc->scaling_factor_num == lc->scaling_factor_den >> 2 && sl == 0 &&
             cpi->svc.number_spatial_layers == 3)) {
         cpi->svc.use_base_mv = 0;
+        cpi->svc.use_partition_reuse = 0;
         break;
       }
+    }
+    // For non-zero spatial layers: if the previous spatial layer was dropped
+    // disable the base_mv and partition_reuse features.
+    if (cpi->svc.spatial_layer_id > 0 &&
+        cpi->svc.drop_spatial_layer[cpi->svc.spatial_layer_id - 1]) {
+      cpi->svc.use_base_mv = 0;
+      cpi->svc.use_partition_reuse = 0;
     }
   }
 
@@ -703,120 +726,6 @@ int vp9_one_pass_cbr_svc_start_layer(VP9_COMP *const cpi) {
 
   return 0;
 }
-
-#if CONFIG_SPATIAL_SVC
-#define SMALL_FRAME_FB_IDX 7
-
-int vp9_svc_start_frame(VP9_COMP *const cpi) {
-  int width = 0, height = 0;
-  LAYER_CONTEXT *lc;
-  struct lookahead_entry *buf;
-  int count = 1 << (cpi->svc.number_temporal_layers - 1);
-
-  cpi->svc.spatial_layer_id = cpi->svc.spatial_layer_to_encode;
-  lc = &cpi->svc.layer_context[cpi->svc.spatial_layer_id];
-
-  cpi->svc.temporal_layer_id = 0;
-  while ((lc->current_video_frame_in_layer % count) != 0) {
-    ++cpi->svc.temporal_layer_id;
-    count >>= 1;
-  }
-
-  cpi->ref_frame_flags = VP9_ALT_FLAG | VP9_GOLD_FLAG | VP9_LAST_FLAG;
-
-  cpi->lst_fb_idx = cpi->svc.spatial_layer_id;
-
-  if (cpi->svc.spatial_layer_id == 0)
-    cpi->gld_fb_idx =
-        (lc->gold_ref_idx >= 0) ? lc->gold_ref_idx : cpi->lst_fb_idx;
-  else
-    cpi->gld_fb_idx = cpi->svc.spatial_layer_id - 1;
-
-  if (lc->current_video_frame_in_layer == 0) {
-    if (cpi->svc.spatial_layer_id >= 2) {
-      cpi->alt_fb_idx = cpi->svc.spatial_layer_id - 2;
-    } else {
-      cpi->alt_fb_idx = cpi->lst_fb_idx;
-      cpi->ref_frame_flags &= (~VP9_LAST_FLAG & ~VP9_ALT_FLAG);
-    }
-  } else {
-    if (cpi->oxcf.ss_enable_auto_arf[cpi->svc.spatial_layer_id]) {
-      cpi->alt_fb_idx = lc->alt_ref_idx;
-      if (!lc->has_alt_frame) cpi->ref_frame_flags &= (~VP9_ALT_FLAG);
-    } else {
-      // Find a proper alt_fb_idx for layers that don't have alt ref frame
-      if (cpi->svc.spatial_layer_id == 0) {
-        cpi->alt_fb_idx = cpi->lst_fb_idx;
-      } else {
-        LAYER_CONTEXT *lc_lower =
-            &cpi->svc.layer_context[cpi->svc.spatial_layer_id - 1];
-
-        if (cpi->oxcf.ss_enable_auto_arf[cpi->svc.spatial_layer_id - 1] &&
-            lc_lower->alt_ref_source != NULL)
-          cpi->alt_fb_idx = lc_lower->alt_ref_idx;
-        else if (cpi->svc.spatial_layer_id >= 2)
-          cpi->alt_fb_idx = cpi->svc.spatial_layer_id - 2;
-        else
-          cpi->alt_fb_idx = cpi->lst_fb_idx;
-      }
-    }
-  }
-
-  get_layer_resolution(cpi->oxcf.width, cpi->oxcf.height,
-                       lc->scaling_factor_num, lc->scaling_factor_den, &width,
-                       &height);
-
-  // Workaround for multiple frame contexts. In some frames we can't use prev_mi
-  // since its previous frame could be changed during decoding time. The idea is
-  // we put a empty invisible frame in front of them, then we will not use
-  // prev_mi when encoding these frames.
-
-  buf = vp9_lookahead_peek(cpi->lookahead, 0);
-  if (cpi->oxcf.error_resilient_mode == 0 && cpi->oxcf.pass == 2 &&
-      cpi->svc.encode_empty_frame_state == NEED_TO_ENCODE &&
-      lc->rc.frames_to_key != 0 &&
-      !(buf != NULL && (buf->flags & VPX_EFLAG_FORCE_KF))) {
-    if ((cpi->svc.number_temporal_layers > 1 &&
-         cpi->svc.temporal_layer_id < cpi->svc.number_temporal_layers - 1) ||
-        (cpi->svc.number_spatial_layers > 1 &&
-         cpi->svc.spatial_layer_id == 0)) {
-      struct lookahead_entry *buf = vp9_lookahead_peek(cpi->lookahead, 0);
-
-      if (buf != NULL) {
-        cpi->svc.empty_frame.ts_start = buf->ts_start;
-        cpi->svc.empty_frame.ts_end = buf->ts_end;
-        cpi->svc.encode_empty_frame_state = ENCODING;
-        cpi->common.show_frame = 0;
-        cpi->ref_frame_flags = 0;
-        cpi->common.frame_type = INTER_FRAME;
-        cpi->lst_fb_idx = cpi->gld_fb_idx = cpi->alt_fb_idx =
-            SMALL_FRAME_FB_IDX;
-
-        if (cpi->svc.encode_intra_empty_frame != 0) cpi->common.intra_only = 1;
-
-        width = SMALL_FRAME_WIDTH;
-        height = SMALL_FRAME_HEIGHT;
-      }
-    }
-  }
-
-  cpi->oxcf.worst_allowed_q = vp9_quantizer_to_qindex(lc->max_q);
-  cpi->oxcf.best_allowed_q = vp9_quantizer_to_qindex(lc->min_q);
-
-  vp9_change_config(cpi, &cpi->oxcf);
-
-  if (vp9_set_size_literal(cpi, width, height) != 0)
-    return VPX_CODEC_INVALID_PARAM;
-
-  vp9_set_high_precision_mv(cpi, 1);
-
-  cpi->alt_ref_source = get_layer_context(cpi)->alt_ref_source;
-
-  return 0;
-}
-
-#undef SMALL_FRAME_FB_IDX
-#endif  // CONFIG_SPATIAL_SVC
 
 struct lookahead_entry *vp9_svc_lookahead_pop(VP9_COMP *const cpi,
                                               struct lookahead_ctx *ctx,

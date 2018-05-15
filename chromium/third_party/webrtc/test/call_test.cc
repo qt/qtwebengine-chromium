@@ -41,8 +41,8 @@ CallTest::CallTest()
       num_video_streams_(1),
       num_audio_streams_(0),
       num_flexfec_streams_(0),
-      decoder_factory_(CreateBuiltinAudioDecoderFactory()),
-      encoder_factory_(CreateBuiltinAudioEncoderFactory()),
+      audio_decoder_factory_(CreateBuiltinAudioDecoderFactory()),
+      audio_encoder_factory_(CreateBuiltinAudioEncoderFactory()),
       task_queue_("CallTestTaskQueue") {}
 
 CallTest::~CallTest() {
@@ -194,14 +194,15 @@ void CallTest::CreateVideoSendConfig(VideoSendStream::Config* video_config,
   RTC_DCHECK_LE(num_video_streams + num_used_ssrcs, kNumSsrcs);
   *video_config = VideoSendStream::Config(send_transport);
   video_config->encoder_settings.encoder = &fake_encoder_;
-  video_config->encoder_settings.payload_name = "FAKE";
-  video_config->encoder_settings.payload_type = kFakeVideoSendPayloadType;
+  video_config->rtp.payload_name = "FAKE";
+  video_config->rtp.payload_type = kFakeVideoSendPayloadType;
   video_config->rtp.extensions.push_back(
       RtpExtension(RtpExtension::kTransportSequenceNumberUri,
                    kTransportSequenceNumberExtensionId));
   video_config->rtp.extensions.push_back(RtpExtension(
       RtpExtension::kVideoContentTypeUri, kVideoContentTypeExtensionId));
-  FillEncoderConfiguration(num_video_streams, &video_encoder_config_);
+  FillEncoderConfiguration(kVideoCodecGeneric, num_video_streams,
+                           &video_encoder_config_);
 
   for (size_t i = 0; i < num_video_streams; ++i)
     video_config->rtp.ssrcs.push_back(kVideoSendSsrcs[num_used_ssrcs + i]);
@@ -219,7 +220,7 @@ void CallTest::CreateAudioAndFecSendConfigs(size_t num_audio_streams,
     audio_send_config_.rtp.ssrc = kAudioSendSsrc;
     audio_send_config_.send_codec_spec = AudioSendStream::Config::SendCodecSpec(
         kAudioSendPayloadType, {"opus", 48000, 2, {{"stereo", "1"}}});
-    audio_send_config_.encoder_factory = encoder_factory_;
+    audio_send_config_.encoder_factory = audio_encoder_factory_;
   }
 
   // TODO(brandtr): Update this when we support multistream protection.
@@ -257,7 +258,7 @@ CallTest::CreateMatchingVideoReceiveConfigs(
   video_config.renderer = &fake_renderer_;
   for (size_t i = 0; i < video_send_config.rtp.ssrcs.size(); ++i) {
     VideoReceiveStream::Decoder decoder =
-        test::CreateMatchingDecoder(video_send_config.encoder_settings);
+        test::CreateMatchingDecoder(video_send_config);
     allocated_decoders_.push_back(
         std::unique_ptr<VideoDecoder>(decoder.decoder));
     video_config.decoders.clear();
@@ -277,7 +278,7 @@ void CallTest::CreateMatchingAudioAndFecConfigs(
     audio_config.rtp.local_ssrc = kReceiverLocalAudioSsrc;
     audio_config.rtcp_send_transport = rtcp_send_transport;
     audio_config.rtp.remote_ssrc = audio_send_config_.rtp.ssrc;
-    audio_config.decoder_factory = decoder_factory_;
+    audio_config.decoder_factory = audio_decoder_factory_;
     audio_config.decoder_map = {{kAudioSendPayloadType, {"opus", 48000, 2}}};
     audio_receive_configs_.push_back(audio_config);
   }
@@ -316,7 +317,7 @@ void CallTest::CreateFrameGeneratorCapturerWithDrift(Clock* clock,
                                                      int width,
                                                      int height) {
   frame_generator_capturer_.reset(test::FrameGeneratorCapturer::Create(
-      width, height, framerate * speed, clock));
+      width, height, rtc::nullopt, rtc::nullopt, framerate * speed, clock));
   video_send_stream_->SetSource(
       frame_generator_capturer_.get(),
       VideoSendStream::DegradationPreference::kMaintainFramerate);
@@ -325,19 +326,19 @@ void CallTest::CreateFrameGeneratorCapturerWithDrift(Clock* clock,
 void CallTest::CreateFrameGeneratorCapturer(int framerate,
                                             int width,
                                             int height) {
-  frame_generator_capturer_.reset(
-      test::FrameGeneratorCapturer::Create(width, height, framerate, clock_));
+  frame_generator_capturer_.reset(test::FrameGeneratorCapturer::Create(
+      width, height, rtc::nullopt, rtc::nullopt, framerate, clock_));
   video_send_stream_->SetSource(
       frame_generator_capturer_.get(),
       VideoSendStream::DegradationPreference::kMaintainFramerate);
 }
 
 void CallTest::CreateFakeAudioDevices(
-    std::unique_ptr<FakeAudioDevice::Capturer> capturer,
-    std::unique_ptr<FakeAudioDevice::Renderer> renderer) {
-  fake_send_audio_device_ = new rtc::RefCountedObject<FakeAudioDevice>(
+    std::unique_ptr<TestAudioDeviceModule::Capturer> capturer,
+    std::unique_ptr<TestAudioDeviceModule::Renderer> renderer) {
+  fake_send_audio_device_ = TestAudioDeviceModule::CreateTestAudioDeviceModule(
       std::move(capturer), nullptr, 1.f);
-  fake_recv_audio_device_ = new rtc::RefCountedObject<FakeAudioDevice>(
+  fake_recv_audio_device_ = TestAudioDeviceModule::CreateTestAudioDeviceModule(
       nullptr, std::move(renderer), 1.f);
 }
 
@@ -453,17 +454,6 @@ const int CallTest::kDefaultHeight;
 const int CallTest::kDefaultFramerate;
 const int CallTest::kDefaultTimeoutMs = 30 * 1000;
 const int CallTest::kLongTimeoutMs = 120 * 1000;
-const uint8_t CallTest::kVideoSendPayloadType = 100;
-const uint8_t CallTest::kFakeVideoSendPayloadType = 125;
-const uint8_t CallTest::kSendRtxPayloadType = 98;
-const uint8_t CallTest::kRedPayloadType = 118;
-const uint8_t CallTest::kRtxRedPayloadType = 99;
-const uint8_t CallTest::kUlpfecPayloadType = 119;
-const uint8_t CallTest::kFlexfecPayloadType = 120;
-const uint8_t CallTest::kAudioSendPayloadType = 103;
-const uint8_t CallTest::kPayloadTypeH264 = 122;
-const uint8_t CallTest::kPayloadTypeVP8 = 123;
-const uint8_t CallTest::kPayloadTypeVP9 = 124;
 const uint32_t CallTest::kSendRtxSsrcs[kNumSsrcs] = {
     0xBADCAFD, 0xBADCAFE, 0xBADCAFF, 0xBADCB00, 0xBADCB01, 0xBADCB02};
 const uint32_t CallTest::kVideoSendSsrcs[kNumSsrcs] = {
@@ -496,17 +486,17 @@ BaseTest::BaseTest(unsigned int timeout_ms)
 BaseTest::~BaseTest() {
 }
 
-std::unique_ptr<FakeAudioDevice::Capturer> BaseTest::CreateCapturer() {
-  return FakeAudioDevice::CreatePulsedNoiseCapturer(256, 48000);
+std::unique_ptr<TestAudioDeviceModule::Capturer> BaseTest::CreateCapturer() {
+  return TestAudioDeviceModule::CreatePulsedNoiseCapturer(256, 48000);
 }
 
-std::unique_ptr<FakeAudioDevice::Renderer> BaseTest::CreateRenderer() {
-  return FakeAudioDevice::CreateDiscardRenderer(48000);
+std::unique_ptr<TestAudioDeviceModule::Renderer> BaseTest::CreateRenderer() {
+  return TestAudioDeviceModule::CreateDiscardRenderer(48000);
 }
 
-void BaseTest::OnFakeAudioDevicesCreated(FakeAudioDevice* send_audio_device,
-                                         FakeAudioDevice* recv_audio_device) {
-}
+void BaseTest::OnFakeAudioDevicesCreated(
+    TestAudioDeviceModule* send_audio_device,
+    TestAudioDeviceModule* recv_audio_device) {}
 
 Call::Config BaseTest::GetSenderCallConfig() {
   return Call::Config(event_log_.get());

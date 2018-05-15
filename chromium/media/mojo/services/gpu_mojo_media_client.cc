@@ -12,7 +12,7 @@
 #include "media/base/audio_decoder.h"
 #include "media/base/cdm_factory.h"
 #include "media/base/video_decoder.h"
-#include "media/gpu/features.h"
+#include "media/gpu/buildflags.h"
 #include "media/gpu/ipc/service/media_gpu_channel_manager.h"
 
 #if defined(OS_ANDROID)
@@ -31,9 +31,9 @@
 #endif  // defined(OS_ANDROID)
 
 // OS_WIN guards are needed for cross-compiling on linux.
-#if defined(OS_WIN) && BUILDFLAG(ENABLE_D3D11_VIDEO_DECODER)
+#if defined(OS_WIN)
 #include "media/gpu/windows/d3d11_video_decoder.h"
-#endif  // BUILDFLAG(ENABLE_D3D11_VIDEO_DECODER)
+#endif  // defined(OS_WIN)
 
 namespace media {
 
@@ -61,8 +61,7 @@ std::unique_ptr<MediaDrmStorage> CreateMediaDrmStorage(
 }
 #endif  // defined(OS_ANDROID)
 
-#if defined(OS_ANDROID) || \
-    (defined(OS_WIN) && BUILDFLAG(ENABLE_D3D11_VIDEO_DECODER))
+#if defined(OS_ANDROID) || defined(OS_WIN)
 gpu::CommandBufferStub* GetCommandBufferStub(
     base::WeakPtr<MediaGpuChannelManager> media_gpu_channel_manager,
     base::UnguessableToken channel_token,
@@ -77,7 +76,7 @@ gpu::CommandBufferStub* GetCommandBufferStub(
 
   return channel->LookupCommandBuffer(route_id);
 }
-#endif  // OS_ANDROID || BUILDFLAG(ENABLE_MEDIA_CODEC_VIDEO_D3D11)
+#endif  // OS_ANDROID || OS_WIN
 
 }  // namespace
 
@@ -111,6 +110,10 @@ std::unique_ptr<VideoDecoder> GpuMojoMediaClient::CreateVideoDecoder(
     MediaLog* media_log,
     mojom::CommandBufferIdPtr command_buffer_id,
     RequestOverlayInfoCB request_overlay_info_cb) {
+  // Both MCVD and D3D11 VideoDecoders need a command buffer.
+  if (!command_buffer_id)
+    return nullptr;
+
 #if defined(OS_ANDROID)
   auto get_stub_cb =
       base::Bind(&GetCommandBufferStub, media_gpu_channel_manager_,
@@ -123,7 +126,7 @@ std::unique_ptr<VideoDecoder> GpuMojoMediaClient::CreateVideoDecoder(
       android_overlay_factory_cb_, std::move(request_overlay_info_cb),
       std::make_unique<VideoFrameFactoryImpl>(gpu_task_runner_,
                                               std::move(get_stub_cb)));
-#elif defined(OS_WIN) && BUILDFLAG(ENABLE_D3D11_VIDEO_DECODER)
+#elif defined(OS_WIN)
   return std::make_unique<D3D11VideoDecoder>(
       gpu_task_runner_,
       base::BindRepeating(&GetCommandBufferStub, media_gpu_channel_manager_,
@@ -131,7 +134,7 @@ std::unique_ptr<VideoDecoder> GpuMojoMediaClient::CreateVideoDecoder(
                           command_buffer_id->route_id));
 #else
   return nullptr;
-#endif  // BUILDFLAG(ENABLE_{MEDIA_CODEC | D3D11}_VIDEO_DECODER)
+#endif  // defined(OS_ANDROID)
 }
 
 std::unique_ptr<CdmFactory> GpuMojoMediaClient::CreateCdmFactory(

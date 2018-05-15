@@ -5,12 +5,17 @@
 Polymer({
   is: 'print-preview-destination-settings',
 
+  behaviors: [I18nBehavior],
+
   properties: {
     /** @type {!print_preview.Destination} */
     destination: Object,
 
     /** @type {?print_preview.DestinationStore} */
     destinationStore: Object,
+
+    /** @type {?print_preview.InvitationStore} */
+    invitationStore: Object,
 
     /** @type {!Array<!print_preview.RecentDestination>} */
     recentDestinations: Array,
@@ -37,6 +42,13 @@ Polymer({
       type: Boolean,
       value: true,
     },
+
+    /** @private {boolean} */
+    stale_: {
+      type: Boolean,
+      computed: 'computeStale_(destination)',
+      reflectToAttribute: true,
+    },
   },
 
   observers: ['onDestinationSet_(destination, destination.id)'],
@@ -57,9 +69,20 @@ Polymer({
       this.loadingDestination_ = false;
   },
 
+  /**
+   * @return {string} The connection status text to display.
+   * @private
+   */
+  getStatusText_: function() {
+    return this.destination.shouldShowInvalidCertificateError ?
+        this.i18n('noLongerSupportedFragment') :
+        this.destination.connectionStatusText;
+  },
+
   /** @private */
   onChangeButtonClick_: function() {
     this.destinationStore.startLoadAllDestinations();
+    this.invitationStore.startLoadingInvitations();
     const dialog = this.$.destinationDialog.get();
     // This async() call is a workaround to prevent a DCHECK - see
     // https://crbug.com/804047.
@@ -76,5 +99,16 @@ Polymer({
   isDialogOpen: function() {
     const destinationDialog = this.$$('print-preview-destination-dialog');
     return destinationDialog && destinationDialog.isOpen();
+  },
+
+  /**
+   * @return {boolean} Whether the destination is offline or invalid, indicating
+   *     that "stale" styling should be applied.
+   * @private
+   */
+  computeStale_: function() {
+    return !!this.destination &&
+        (this.destination.isOffline ||
+         this.destination.shouldShowInvalidCertificateError);
   },
 });

@@ -264,12 +264,11 @@ Still reading?
   <issue id="ResourceType" severity="Error">
     <ignore regexp="/javatests/"/>
   </issue>
+  <!-- TODO(crbug.com/831774): Play Services starts complaining about RestrictedApi. Needs investigation -->
+  <issue id="RestrictedApi" severity="ignore"/>
   <issue id="RtlCompat" severity="ignore"/>
   <issue id="RtlEnabled" severity="ignore"/>
   <issue id="RtlSymmetry" severity="ignore"/>
-  <issue id="SdCardPath">
-    <ignore regexp="content/public/android/java/src/org/chromium/content/browser/MediaResourceGetter.java"/>
-  </issue>
   <issue id="SetJavaScriptEnabled" severity="ignore"/>
   <issue id="SignatureOrSystemPermissions" severity="ignore"/>
   <issue id="SpUsage" severity="Error">
@@ -379,7 +378,7 @@ Still reading?
     <ignore regexp="chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkItemsAdapter.java"/>
     <ignore regexp="chrome/android/java/src/org/chromium/chrome/browser/instantapps/InstantAppsHandler.java"/>
     <ignore regexp="chrome/android/java/src/org/chromium/chrome/browser/SSLClientCertificateRequest.java"/>
-    <ignore regexp="chrome/android/java/src/org/chromium/chrome/browser/payments/ui/EditorDialog.java"/>
+    <ignore regexp="chrome/android/java/src/org/chromium/chrome/browser/widget/prefeditor/EditorDialog.java"/>
     <ignore regexp="third_party/android_data_chart/java/src/org/chromium/third_party/android/datausagechart/ChartDataUsageView.java"/>
   </issue>
 </lint>

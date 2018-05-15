@@ -76,6 +76,7 @@ const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
     {CONTENT_SETTINGS_TYPE_CLIPBOARD_READ, "clipboard"},
     {CONTENT_SETTINGS_TYPE_SENSORS, "sensors"},
     {CONTENT_SETTINGS_TYPE_PAYMENT_HANDLER, "payment-handler"},
+    {CONTENT_SETTINGS_TYPE_USB_GUARD, "usb-devices"},
 
     // Add new content settings here if a corresponding Javascript string
     // representation for it is not required. Note some exceptions, such as
@@ -182,8 +183,7 @@ SiteSettingSource CalculateSiteSettingSource(
 
   DCHECK_NE(content_settings::SETTING_SOURCE_NONE, info.source);
   if (info.source == content_settings::SETTING_SOURCE_USER) {
-    if (result.source == PermissionStatusSource::SAFE_BROWSING_BLACKLIST ||
-        result.source == PermissionStatusSource::MULTIPLE_DISMISSALS ||
+    if (result.source == PermissionStatusSource::MULTIPLE_DISMISSALS ||
         result.source == PermissionStatusSource::MULTIPLE_IGNORES) {
       return SiteSettingSource::kEmbargo;  // Source #8.
     }

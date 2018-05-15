@@ -23,7 +23,7 @@
 #include "services/service_manager/public/cpp/bind_source_info.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/mojom/feature_policy/feature_policy.mojom.h"
+#include "third_party/blink/public/mojom/feature_policy/feature_policy.mojom.h"
 
 using base::test::ScopedFeatureList;
 using blink::mojom::PermissionStatus;
@@ -189,7 +189,7 @@ TEST_F(GeolocationServiceTest, PermissionGrantedNoPolicyViolation) {
       [](base::Closure callback, GeopositionPtr geoposition) {
         EXPECT_DOUBLE_EQ(kMockLatitude, geoposition->latitude);
         EXPECT_DOUBLE_EQ(kMockLongitude, geoposition->longitude);
-        callback.Run();
+        std::move(callback).Run();
       },
       loop.QuitClosure()));
   loop.Run();
@@ -212,7 +212,7 @@ TEST_F(GeolocationServiceTest, PermissionGrantedSync) {
       [](base::Closure callback, GeopositionPtr geoposition) {
         EXPECT_DOUBLE_EQ(kMockLatitude, geoposition->latitude);
         EXPECT_DOUBLE_EQ(kMockLongitude, geoposition->longitude);
-        callback.Run();
+        std::move(callback).Run();
       },
       loop.QuitClosure()));
   loop.Run();
@@ -259,7 +259,7 @@ TEST_F(GeolocationServiceTest, PermissionGrantedAsync) {
       [](base::Closure callback, GeopositionPtr geoposition) {
         EXPECT_DOUBLE_EQ(kMockLatitude, geoposition->latitude);
         EXPECT_DOUBLE_EQ(kMockLongitude, geoposition->longitude);
-        callback.Run();
+        std::move(callback).Run();
       },
       loop.QuitClosure()));
   loop.Run();

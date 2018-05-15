@@ -27,7 +27,7 @@
 #include "net/http/transport_security_state.h"
 #include "net/log/net_log_source.h"
 #include "net/log/net_log_with_source.h"
-#include "net/proxy_resolution/proxy_service.h"
+#include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/next_proto.h"
 #include "net/socket/socket_tag.h"
@@ -130,7 +130,8 @@ class SSLClientSocketPoolTest : public testing::Test {
                                       session_->spdy_session_pool(),
                                       session_->quic_stream_factory(),
                                       /*is_trusted_proxy=*/false,
-                                      /*tunnel=*/true)),
+                                      /*tunnel=*/true,
+                                      TRAFFIC_ANNOTATION_FOR_TESTS)),
         http_proxy_socket_pool_(kMaxSockets,
                                 kMaxSocketsPerGroup,
                                 &transport_socket_pool_,
@@ -734,8 +735,8 @@ TEST_F(SSLClientSocketPoolTest, NeedProxyAuth) {
   EXPECT_FALSE(handle.is_ssl_error());
   const HttpResponseInfo& tunnel_info = handle.ssl_error_response_info();
   EXPECT_EQ(tunnel_info.headers->response_code(), 407);
-  std::unique_ptr<ClientSocketHandle> tunnel_handle(
-      handle.release_pending_http_proxy_connection());
+  std::unique_ptr<ClientSocketHandle> tunnel_handle =
+      handle.release_pending_http_proxy_connection();
   EXPECT_TRUE(tunnel_handle->socket());
   EXPECT_FALSE(tunnel_handle->socket()->IsConnected());
 }

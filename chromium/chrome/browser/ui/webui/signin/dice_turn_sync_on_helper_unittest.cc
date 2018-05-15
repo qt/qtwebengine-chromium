@@ -53,6 +53,8 @@ const char kEnterpriseGaiaID[] = "enterprise_gaia_id";
 
 const signin_metrics::AccessPoint kAccessPoint =
     signin_metrics::AccessPoint::ACCESS_POINT_BOOKMARK_MANAGER;
+const signin_metrics::PromoAction kSigninPromoAction =
+    signin_metrics::PromoAction::PROMO_ACTION_WITH_DEFAULT;
 const signin_metrics::Reason kSigninReason =
     signin_metrics::Reason::REASON_REAUTHENTICATION;
 
@@ -224,8 +226,8 @@ class DiceTurnSyncOnHelperTest : public testing::Test {
   DiceTurnSyncOnHelper* CreateDiceTurnOnSyncHelper(
       DiceTurnSyncOnHelper::SigninAbortedMode mode) {
     return new DiceTurnSyncOnHelper(
-        profile(), kAccessPoint, kSigninReason, account_id_, mode,
-        std::make_unique<TestDiceTurnSyncOnHelperDelegate>(this));
+        profile(), kAccessPoint, kSigninPromoAction, kSigninReason, account_id_,
+        mode, std::make_unique<TestDiceTurnSyncOnHelperDelegate>(this));
   }
 
   void UseEnterpriseAccount() {
@@ -234,6 +236,8 @@ class DiceTurnSyncOnHelperTest : public testing::Test {
     user_policy_signin_service_->set_account(account_id_, kEnterpriseEmail);
     token_service_->UpdateCredentials(account_id_, "enterprise_refresh_token");
   }
+
+  void UseInvalidAccount() { account_id_ = "invalid_account"; }
 
   void SetExpectationsForSyncStartupCompleted() {
     browser_sync::ProfileSyncServiceMock* sync_service_mock =
@@ -429,6 +433,15 @@ void TestDiceTurnSyncOnHelperDelegate::ShowSigninPageInNewProfile(
     Profile* new_profile,
     const std::string& username) {
   test_fixture_->OnShowSigninPageInNewProfile(new_profile, username);
+}
+
+// Check that the invalid account is supported.
+TEST_F(DiceTurnSyncOnHelperTest, InvalidAccount) {
+  UseInvalidAccount();
+  CreateDiceTurnOnSyncHelper(
+      DiceTurnSyncOnHelper::SigninAbortedMode::REMOVE_ACCOUNT);
+  base::RunLoop().RunUntilIdle();
+  CheckDelegateCalls();
 }
 
 // Tests that the login error is displayed and that the account is kept.

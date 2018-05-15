@@ -13,7 +13,6 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -37,6 +36,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/origin.h"
 
+using blink::mojom::MediaDeviceType;
 using testing::_;
 using testing::SaveArg;
 using testing::InvokeWithoutArgs;
@@ -60,7 +60,7 @@ void PhysicalDevicesEnumerated(base::Closure quit_closure,
                                MediaDeviceEnumeration* out,
                                const MediaDeviceEnumeration& enumeration) {
   *out = enumeration;
-  quit_closure.Run();
+  std::move(quit_closure).Run();
 }
 
 class MockMediaDevicesListener : public blink::mojom::MediaDevicesListener {
@@ -233,7 +233,9 @@ class MediaDevicesDispatcherHostTest : public testing::TestWithParam<GURL> {
  protected:
   void DevicesEnumerated(
       const base::Closure& closure,
-      const std::vector<std::vector<MediaDeviceInfo>>& devices) {
+      const std::vector<std::vector<MediaDeviceInfo>>& devices,
+      std::vector<blink::mojom::VideoInputDeviceCapabilitiesPtr>
+          video_input_capabilities) {
     enumerated_devices_ = devices;
     closure.Run();
   }
@@ -248,6 +250,7 @@ class MediaDevicesDispatcherHostTest : public testing::TestWithParam<GURL> {
     base::RunLoop run_loop;
     host_->EnumerateDevices(
         enumerate_audio_input, enumerate_video_input, enumerate_audio_output,
+        false,
         base::BindOnce(&MediaDevicesDispatcherHostTest::DevicesEnumerated,
                        base::Unretained(this), run_loop.QuitClosure()));
     run_loop.Run();

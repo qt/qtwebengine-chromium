@@ -37,7 +37,8 @@ class VertexBinding final : angle::NonCopyable
     void setOffset(GLintptr offsetIn) { mOffset = offsetIn; }
 
     const BindingPointer<Buffer> &getBuffer() const { return mBuffer; }
-    void setBuffer(const gl::Context *context, Buffer *bufferIn) { mBuffer.set(context, bufferIn); }
+    void setBuffer(const gl::Context *context, Buffer *bufferIn, bool containerIsBound);
+    void onContainerBindingChanged(bool bound);
 
   private:
     GLuint mStride;
@@ -53,7 +54,7 @@ class VertexBinding final : angle::NonCopyable
 struct VertexAttribute final : private angle::NonCopyable
 {
     explicit VertexAttribute(GLuint bindingIndex);
-    explicit VertexAttribute(VertexAttribute &&attrib);
+    VertexAttribute(VertexAttribute &&attrib);
     VertexAttribute &operator=(VertexAttribute &&attrib);
 
     bool enabled;  // For glEnable/DisableVertexAttribArray

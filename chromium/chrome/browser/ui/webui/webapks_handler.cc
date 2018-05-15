@@ -31,8 +31,8 @@ WebApksHandler::~WebApksHandler() {}
 void WebApksHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "requestWebApksInfo",
-      base::Bind(&WebApksHandler::HandleRequestWebApksInfo,
-                 base::Unretained(this)));
+      base::BindRepeating(&WebApksHandler::HandleRequestWebApksInfo,
+                          base::Unretained(this)));
 }
 
 void WebApksHandler::HandleRequestWebApksInfo(const base::ListValue* args) {
@@ -65,6 +65,9 @@ void WebApksHandler::OnWebApkInfoRetrieved(
     result->SetString("themeColor", ColorToString(webapk_info.theme_color));
     result->SetString("backgroundColor",
                       ColorToString(webapk_info.background_color));
+    result->SetDouble("lastUpdateCheckTimeMs",
+                      webapk_info.last_update_check_time.ToJsTime());
+    result->SetBoolean("relaxUpdates", webapk_info.relax_updates);
     list.Append(std::move(result));
   }
 

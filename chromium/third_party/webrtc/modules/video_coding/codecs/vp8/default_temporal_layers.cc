@@ -284,27 +284,13 @@ std::vector<TemporalLayers::FrameConfig> GetTemporalPattern(size_t num_layers) {
   return {TemporalLayers::FrameConfig(
       TemporalLayers::kNone, TemporalLayers::kNone, TemporalLayers::kNone)};
 }
-
-// Temporary fix for forced SW fallback.
-// For VP8 SW codec, |TemporalLayers| is created and reported to
-// SimulcastRateAllocator::OnTemporalLayersCreated but not for VP8 HW.
-// Causes an issue when going from forced SW -> HW as |TemporalLayers| is not
-// deregistred when deleted by SW codec (tl factory might not exist, owned by
-// SimulcastRateAllocator).
-bool ExcludeOnTemporalLayersCreated(int num_temporal_layers) {
-  return webrtc::field_trial::IsEnabled(
-             "WebRTC-VP8-Forced-Fallback-Encoder-v2") &&
-         num_temporal_layers == 1;
-}
 }  // namespace
 
-DefaultTemporalLayers::DefaultTemporalLayers(int number_of_temporal_layers,
-                                             uint8_t initial_tl0_pic_idx)
+DefaultTemporalLayers::DefaultTemporalLayers(int number_of_temporal_layers)
     : num_layers_(std::max(1, number_of_temporal_layers)),
       temporal_ids_(GetTemporalIds(num_layers_)),
       temporal_layer_sync_(GetTemporalLayerSync(num_layers_)),
       temporal_pattern_(GetTemporalPattern(num_layers_)),
-      tl0_pic_idx_(initial_tl0_pic_idx),
       pattern_idx_(255),
       last_base_layer_sync_(false) {
   RTC_DCHECK_EQ(temporal_pattern_.size(), temporal_layer_sync_.size());
@@ -317,46 +303,27 @@ DefaultTemporalLayers::DefaultTemporalLayers(int number_of_temporal_layers,
   RTC_DCHECK_LE(temporal_ids_.size(), temporal_pattern_.size());
 }
 
-uint8_t DefaultTemporalLayers::Tl0PicIdx() const {
-  return tl0_pic_idx_;
-}
-
-std::vector<uint32_t> DefaultTemporalLayers::OnRatesUpdated(
-    int bitrate_kbps,
-    int max_bitrate_kbps,
-    int framerate) {
-  std::vector<uint32_t> bitrates;
-  for (size_t i = 0; i < num_layers_; ++i) {
-    float layer_bitrate =
-        bitrate_kbps * kVp8LayerRateAlloction[num_layers_ - 1][i];
-    bitrates.push_back(static_cast<uint32_t>(layer_bitrate + 0.5));
+void DefaultTemporalLayers::OnRatesUpdated(
+    const std::vector<uint32_t>& bitrates_bps,
+    int framerate_fps) {
+  RTC_DCHECK_GT(bitrates_bps.size(), 0);
+  RTC_DCHECK_LE(bitrates_bps.size(), num_layers_);
+  // |bitrates_bps| uses individual rate per layer, but Vp8EncoderConfig wants
+  // the accumulated rate, so sum them up.
+  new_bitrates_bps_ = bitrates_bps;
+  new_bitrates_bps_->resize(num_layers_);
+  for (size_t i = 1; i < num_layers_; ++i) {
+    (*new_bitrates_bps_)[i] += (*new_bitrates_bps_)[i - 1];
   }
-  new_bitrates_kbps_ = rtc::Optional<std::vector<uint32_t>>(bitrates);
-
-  // Allocation table is of aggregates, transform to individual rates.
-  uint32_t sum = 0;
-  for (size_t i = 0; i < num_layers_; ++i) {
-    uint32_t layer_bitrate = bitrates[i];
-    RTC_DCHECK_LE(sum, bitrates[i]);
-    bitrates[i] -= sum;
-    sum = layer_bitrate;
-
-    if (sum >= static_cast<uint32_t>(bitrate_kbps)) {
-      // Sum adds up; any subsequent layers will be 0.
-      bitrates.resize(i + 1);
-      break;
-    }
-  }
-
-  return bitrates;
 }
 
 bool DefaultTemporalLayers::UpdateConfiguration(Vp8EncoderConfig* cfg) {
-  if (!new_bitrates_kbps_)
+  if (!new_bitrates_bps_) {
     return false;
+  }
 
   for (size_t i = 0; i < num_layers_; ++i) {
-    cfg->ts_target_bitrate[i] = (*new_bitrates_kbps_)[i];
+    cfg->ts_target_bitrate[i] = (*new_bitrates_bps_)[i] / 1000;
     // ..., 4, 2, 1
     cfg->ts_rate_decimator[i] = 1 << (num_layers_ - i - 1);
   }
@@ -366,7 +333,7 @@ bool DefaultTemporalLayers::UpdateConfiguration(Vp8EncoderConfig* cfg) {
   memcpy(cfg->ts_layer_id, &temporal_ids_[0],
          sizeof(unsigned int) * temporal_ids_.size());
 
-  new_bitrates_kbps_ = rtc::Optional<std::vector<uint32_t>>();
+  new_bitrates_bps_.reset();
 
   return true;
 }
@@ -394,7 +361,6 @@ void DefaultTemporalLayers::PopulateCodecSpecific(
   if (num_layers_ == 1) {
     vp8_info->temporalIdx = kNoTemporalIdx;
     vp8_info->layerSync = false;
-    vp8_info->tl0PicIdx = kNoTl0PicIdx;
   } else {
     vp8_info->temporalIdx = tl_config.packetizer_temporal_idx;
     vp8_info->layerSync = tl_config.layer_sync;
@@ -407,35 +373,8 @@ void DefaultTemporalLayers::PopulateCodecSpecific(
       // be a layer sync.
       vp8_info->layerSync = true;
     }
-    if (vp8_info->temporalIdx == 0)
-      tl0_pic_idx_++;
     last_base_layer_sync_ = frame_is_keyframe;
-    vp8_info->tl0PicIdx = tl0_pic_idx_;
   }
-}
-
-TemporalLayers* TemporalLayersFactory::Create(
-    int simulcast_id,
-    int temporal_layers,
-    uint8_t initial_tl0_pic_idx) const {
-  TemporalLayers* tl =
-      new DefaultTemporalLayers(temporal_layers, initial_tl0_pic_idx);
-  if (listener_ && !ExcludeOnTemporalLayersCreated(temporal_layers))
-    listener_->OnTemporalLayersCreated(simulcast_id, tl);
-  return tl;
-}
-
-std::unique_ptr<TemporalLayersChecker> TemporalLayersFactory::CreateChecker(
-    int /*simulcast_id*/,
-    int temporal_layers,
-    uint8_t initial_tl0_pic_idx) const {
-  TemporalLayersChecker* tlc =
-      new DefaultTemporalLayersChecker(temporal_layers, initial_tl0_pic_idx);
-  return std::unique_ptr<TemporalLayersChecker>(tlc);
-}
-
-void TemporalLayersFactory::SetListener(TemporalLayersListener* listener) {
-  listener_ = listener;
 }
 
 // Returns list of temporal dependencies for each frame in the temporal pattern.
@@ -465,9 +404,8 @@ std::vector<std::set<uint8_t>> GetTemporalDependencies(
 }
 
 DefaultTemporalLayersChecker::DefaultTemporalLayersChecker(
-    int num_temporal_layers,
-    uint8_t initial_tl0_pic_idx)
-    : TemporalLayersChecker(num_temporal_layers, initial_tl0_pic_idx),
+    int num_temporal_layers)
+    : TemporalLayersChecker(num_temporal_layers),
       num_layers_(std::max(1, num_temporal_layers)),
       temporal_ids_(GetTemporalIds(num_layers_)),
       temporal_dependencies_(GetTemporalDependencies(num_layers_)),

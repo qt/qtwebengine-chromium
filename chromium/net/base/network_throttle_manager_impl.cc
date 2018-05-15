@@ -188,7 +188,7 @@ NetworkThrottleManagerImpl::CreateThrottle(
 }
 
 void NetworkThrottleManagerImpl::SetTickClockForTesting(
-    base::TickClock* tick_clock) {
+    const base::TickClock* tick_clock) {
   tick_clock_ = tick_clock;
   DCHECK(!outstanding_recomputation_timer_->IsRunning());
   outstanding_recomputation_timer_ = std::make_unique<base::Timer>(

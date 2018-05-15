@@ -74,6 +74,7 @@ BattOrConnectionImpl::BattOrConnectionImpl(
     scoped_refptr<base::SingleThreadTaskRunner> ui_thread_task_runner)
     : BattOrConnection(listener),
       path_(path),
+      is_open_(false),
       ui_thread_task_runner_(ui_thread_task_runner) {
   std::string serial_log_path =
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
@@ -82,7 +83,7 @@ BattOrConnectionImpl::BattOrConnectionImpl(
     serial_log_.open(serial_log_path.c_str(),
                      std::fstream::out | std::fstream::trunc);
   }
-  tick_clock_ = std::make_unique<base::DefaultTickClock>();
+  tick_clock_ = base::DefaultTickClock::GetInstance();
 }
 
 BattOrConnectionImpl::~BattOrConnectionImpl() = default;
@@ -128,6 +129,7 @@ void BattOrConnectionImpl::OnOpened(bool success) {
     return;
   }
 
+  is_open_ = true;
   base::SequencedTaskRunnerHandle::Get()->PostTask(
       FROM_HERE, base::Bind(&Listener::OnConnectionOpened,
                             base::Unretained(listener_), true));
@@ -136,6 +138,11 @@ void BattOrConnectionImpl::OnOpened(bool success) {
 void BattOrConnectionImpl::Close() {
   LogSerial("Serial connection closed.");
   io_handler_ = nullptr;
+  is_open_ = false;
+}
+
+bool BattOrConnectionImpl::IsOpen() {
+  return is_open_;
 }
 
 void BattOrConnectionImpl::SendBytes(BattOrMessageType type,

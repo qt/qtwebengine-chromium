@@ -11,18 +11,18 @@
 #include "base/format_macros.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "components/download/public/common/download_create_info.h"
+#include "components/download/public/common/download_interrupt_reasons_utils.h"
 #include "components/download/public/common/download_item.h"
 #include "components/download/public/common/download_stats.h"
 #include "components/download/public/common/download_task_runner.h"
+#include "components/download/public/common/download_utils.h"
 #include "content/browser/byte_stream.h"
-#include "content/browser/download/download_interrupt_reasons_utils.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/download/download_request_handle.h"
 #include "content/browser/download/download_utils.h"
@@ -67,6 +67,10 @@ class DownloadRequestData : public base::SupportsUserData::Data {
   std::string guid() const { return guid_; }
   bool is_transient() const { return transient_; }
   bool fetch_error_body() const { return fetch_error_body_; }
+  const download::DownloadUrlParameters::RequestHeadersType& request_headers()
+      const {
+    return request_headers_;
+  }
   const download::DownloadUrlParameters::OnStartedCallback& callback() const {
     return on_started_callback_;
   }
@@ -79,6 +83,7 @@ class DownloadRequestData : public base::SupportsUserData::Data {
   uint32_t download_id_ = download::DownloadItem::kInvalidId;
   std::string guid_;
   bool fetch_error_body_ = false;
+  download::DownloadUrlParameters::RequestHeadersType request_headers_;
   bool transient_ = false;
   download::DownloadUrlParameters::OnStartedCallback on_started_callback_;
   std::string request_origin_;
@@ -97,6 +102,7 @@ void DownloadRequestData::Attach(net::URLRequest* request,
   request_data->download_id_ = download_id;
   request_data->guid_ = parameters->guid();
   request_data->fetch_error_body_ = parameters->fetch_error_body();
+  request_data->request_headers_ = parameters->request_headers();
   request_data->transient_ = parameters->is_transient();
   request_data->on_started_callback_ = parameters->callback();
   request_data->request_origin_ = parameters->request_origin();
@@ -190,6 +196,7 @@ DownloadRequestCore::DownloadRequestCore(
     download_id_ = request_data->download_id();
     guid_ = request_data->guid();
     fetch_error_body_ = request_data->fetch_error_body();
+    request_headers_ = request_data->request_headers();
     transient_ = request_data->is_transient();
     on_started_callback_ = request_data->callback();
     DownloadRequestData::Detach(request_);
@@ -234,6 +241,7 @@ DownloadRequestCore::CreateDownloadCreateInfo(
   create_info->response_headers = request()->response_headers();
   create_info->offset = create_info->save_info->offset;
   create_info->fetch_error_body = fetch_error_body_;
+  create_info->request_headers = request_headers_;
   create_info->request_origin = request_origin_;
   create_info->download_source = download_source_;
   return create_info;
@@ -246,10 +254,10 @@ bool DownloadRequestCore::OnResponseStarted(
   download_start_time_ = base::TimeTicks::Now();
 
   download::DownloadInterruptReason result =
-      request()->response_headers()
-          ? HandleSuccessfulServerResponse(*request()->response_headers(),
-                                           save_info_.get(), fetch_error_body_)
-          : download::DOWNLOAD_INTERRUPT_REASON_NONE;
+      request()->response_headers() ? download::HandleSuccessfulServerResponse(
+                                          *request()->response_headers(),
+                                          save_info_.get(), fetch_error_body_)
+                                    : download::DOWNLOAD_INTERRUPT_REASON_NONE;
 
   if (request()->response_headers()) {
     download::RecordDownloadHttpResponseCode(
@@ -287,7 +295,7 @@ bool DownloadRequestCore::OnResponseStarted(
 
   // Get the last modified time and etag.
   const net::HttpResponseHeaders* headers = request()->response_headers();
-  HandleResponseHeaders(headers, create_info.get());
+  download::HandleResponseHeaders(headers, create_info.get());
 
   // If the content-length header is not present (or contains something other
   // than numbers), the incoming content_length is -1 (unknown size).
@@ -399,9 +407,10 @@ void DownloadRequestCore::OnResponseCompleted(
     if (error_code == net::OK)
       error_code = net::ERR_FAILED;
   }
-  download::DownloadInterruptReason reason = HandleRequestCompletionStatus(
-      error_code, has_strong_validators, request()->ssl_info().cert_status,
-      abort_reason_);
+  download::DownloadInterruptReason reason =
+      download::HandleRequestCompletionStatus(error_code, has_strong_validators,
+                                              request()->ssl_info().cert_status,
+                                              abort_reason_);
 
   std::string accept_ranges;
   if (request()->response_headers()) {

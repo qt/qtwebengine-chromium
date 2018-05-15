@@ -208,6 +208,7 @@ component("browser") {
   ]
 
   public_deps = [
+    "//components/services/filesystem/public/interfaces",
     "//storage/common",
   ]
   deps = [
@@ -305,8 +306,9 @@ source_set("unittests") {
     ":browser",
     ":test_support",
     "//base/test:test_support",
+    "//components/services/filesystem/public/interfaces",
     "//mojo/common",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//net:test_support",
     "//services/network/public/cpp",
     "//sql:test_support",
@@ -321,6 +323,8 @@ static_library("test_support") {
   sources = [
     "test/async_file_test_helper.cc",
     "test/async_file_test_helper.h",
+    "test/fake_progress_client.cc",
+    "test/fake_progress_client.h",
     "test/fileapi_test_file_set.cc",
     "test/fileapi_test_file_set.h",
     "test/mock_blob_registry_delegate.cc",

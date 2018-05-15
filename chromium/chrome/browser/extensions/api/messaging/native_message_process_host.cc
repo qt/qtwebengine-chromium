@@ -66,10 +66,10 @@ NativeMessageProcessHost::~NativeMessageProcessHost() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   if (process_.IsValid()) {
-    // Kill the host process if necessary to make sure we don't leave zombies.
-    // On OSX and Fuchsia base::EnsureProcessTerminated() may block, so we have
-    // to post a task on the blocking pool.
-#if defined(OS_MACOSX) || defined(OS_FUCHSIA)
+// Kill the host process if necessary to make sure we don't leave zombies.
+// TODO(https://crbug.com/806451): On OSX EnsureProcessTerminated() may
+// block, so we have to post a task on the blocking pool.
+#if defined(OS_MACOSX)
     base::PostTaskWithTraits(
         FROM_HERE, {base::MayBlock(), base::TaskPriority::BACKGROUND},
         base::BindOnce(&base::EnsureProcessTerminated, Passed(&process_)));
@@ -226,8 +226,8 @@ void NativeMessageProcessHost::DoRead() {
     read_buffer_ = new net::IOBuffer(kReadBufferSize);
     int result =
         read_stream_->Read(read_buffer_.get(), kReadBufferSize,
-                           base::Bind(&NativeMessageProcessHost::OnRead,
-                                      weak_factory_.GetWeakPtr()));
+                           base::BindOnce(&NativeMessageProcessHost::OnRead,
+                                          weak_factory_.GetWeakPtr()));
     HandleReadResult(result);
   }
 }
@@ -303,11 +303,10 @@ void NativeMessageProcessHost::DoWrite() {
       write_queue_.pop();
     }
 
-    int result =
-        write_stream_->Write(current_write_buffer_.get(),
-                             current_write_buffer_->BytesRemaining(),
-                             base::Bind(&NativeMessageProcessHost::OnWritten,
-                                        weak_factory_.GetWeakPtr()));
+    int result = write_stream_->Write(
+        current_write_buffer_.get(), current_write_buffer_->BytesRemaining(),
+        base::BindOnce(&NativeMessageProcessHost::OnWritten,
+                       weak_factory_.GetWeakPtr()));
     HandleWriteResult(result);
   }
 }

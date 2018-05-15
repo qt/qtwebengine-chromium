@@ -337,7 +337,9 @@ _BANNED_CPP_FUNCTIONS = (
         'Specify libraries to link with in build files and not in the source.',
       ),
       True,
-      (),
+      (
+          r'^third_party[\\\/]abseil-cpp[\\\/].*',
+      ),
     ),
     (
       'base::SequenceChecker',
@@ -454,7 +456,7 @@ _BANNED_CPP_FUNCTIONS = (
     (
       r'/\bbase::Bind\(',
       (
-          'Please consider using base::Bind{Once,Repeating} instead '
+          'Please consider using base::Bind{Once,Repeating} instead',
           'of base::Bind. (crbug.com/714018)',
       ),
       False,
@@ -463,7 +465,7 @@ _BANNED_CPP_FUNCTIONS = (
     (
       r'/\bbase::Callback<',
       (
-          'Please consider using base::{Once,Repeating}Callback instead '
+          'Please consider using base::{Once,Repeating}Callback instead',
           'of base::Callback. (crbug.com/714018)',
       ),
       False,
@@ -472,8 +474,61 @@ _BANNED_CPP_FUNCTIONS = (
     (
       r'/\bbase::Closure\b',
       (
-          'Please consider using base::{Once,Repeating}Closure instead '
+          'Please consider using base::{Once,Repeating}Closure instead',
           'of base::Closure. (crbug.com/714018)',
+      ),
+      False,
+      (),
+    ),
+    (
+      r'RunMessageLoop',
+      (
+          'RunMessageLoop is deprecated, use RunLoop instead.',
+      ),
+      False,
+      (),
+    ),
+    (
+      r'RunThisRunLoop',
+      (
+          'RunThisRunLoop is deprecated, use RunLoop directly instead.',
+      ),
+      False,
+      (),
+    ),
+    (
+      r'RunAllPendingInMessageLoop()',
+      (
+          "Prefer RunLoop over RunAllPendingInMessageLoop, please contact gab@",
+          "if you're convinced you need this.",
+      ),
+      False,
+      (),
+    ),
+    (
+      r'RunAllPendingInMessageLoop(BrowserThread',
+      (
+          'RunAllPendingInMessageLoop is deprecated. Use RunLoop for',
+          'BrowserThread::UI, TestBrowserThreadBundle::RunIOThreadUntilIdle',
+          'for BrowserThread::IO, and prefer RunLoop::QuitClosure to observe',
+          'async events instead of flushing threads.',
+      ),
+      False,
+      (),
+    ),
+    (
+      r'MessageLoopRunner',
+      (
+          'MessageLoopRunner is deprecated, use RunLoop instead.',
+      ),
+      False,
+      (),
+    ),
+    (
+      r'GetDeferredQuitTaskForRunLoop',
+      (
+          "GetDeferredQuitTaskForRunLoop shouldn't be needed, please contact",
+          "gab@ if you found a use case where this is the only solution.",
       ),
       False,
       (),
@@ -490,12 +545,31 @@ _BANNED_CPP_FUNCTIONS = (
         r'^third_party/sqlite/.*\.(c|cc|h)$',
       ),
     ),
+    (
+      'net::URLFetcher',
+      (
+        'net::URLFetcher should no longer be used in content embedders. ',
+        'Instead, use network::SimpleURLLoader instead, which supports ',
+        'an out-of-process network stack. ',
+        'net::URLFetcher may still be used in binaries that do not embed',
+        'content.',
+      ),
+      False,
+      (
+        r'^ios[\\\/].*\.(cc|h)$',
+        r'.*[\\\/]ios[\\\/].*\.(cc|h)$',
+        r'.*_ios\.(cc|h)$',
+        r'^net[\\\/].*\.(cc|h)$',
+        r'.*[\\\/]tools[\\\/].*\.(cc|h)$',
+      ),
+    ),
 )
 
 
 _IPC_ENUM_TRAITS_DEPRECATED = (
     'You are using IPC_ENUM_TRAITS() in your code. It has been deprecated.\n'
-    'See http://www.chromium.org/Home/chromium-security/education/security-tips-for-ipc')
+    'See http://www.chromium.org/Home/chromium-security/education/'
+    'security-tips-for-ipc')
 
 _JAVA_MULTIPLE_DEFINITION_EXCLUDED_PATHS = [
     r".*[\\\/]BuildHooksAndroidImpl\.java",
@@ -555,9 +629,10 @@ _ALL_PYDEPS_FILES = _ANDROID_SPECIFIC_PYDEPS_FILES + _GENERIC_PYDEPS_FILES
 
 # Bypass the AUTHORS check for these accounts.
 _KNOWN_ROBOTS = set(
-  '%s-chromium-autoroll@skia-buildbots.google.com.iam.gserviceaccount.com' % s
-  for s in ('afdo', 'angle', 'catapult', 'depot-tools', 'nacl', 'pdfium',
-            'skia', 'src-internal', 'webrtc'))
+    '%s-chromium-autoroll@skia-buildbots.google.com.iam.gserviceaccount.com' % s
+    for s in ('afdo', 'angle', 'catapult', 'chromite', 'depot-tools',
+              'fuchsia-sdk', 'nacl', 'pdfium', 'skia', 'src-internal', 'webrtc')
+  ) | set('%s@appspot.gserviceaccount.com' % s for s in ('findit-for-me',))
 
 
 def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
@@ -594,6 +669,49 @@ def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
       if (inclusion_pattern.search(line) and
           not comment_pattern.search(line) and
           not exclusion_pattern.search(line)):
+        problems.append(
+          '%s:%d\n    %s' % (local_path, line_number, line.strip()))
+
+  if problems:
+    return [output_api.PresubmitPromptOrNotify(_TEST_ONLY_WARNING, problems)]
+  else:
+    return []
+
+
+def _CheckNoProductionCodeUsingTestOnlyFunctionsJava(input_api, output_api):
+  """This is a simplified version of
+  _CheckNoProductionCodeUsingTestOnlyFunctions for Java files.
+  """
+  javadoc_start_re = input_api.re.compile(r'^\s*/\*\*')
+  javadoc_end_re = input_api.re.compile(r'^\s*\*/')
+  name_pattern = r'ForTest(s|ing)?'
+  # Describes an occurrence of "ForTest*" inside a // comment.
+  comment_re = input_api.re.compile(r'//.*%s' % name_pattern)
+  # Catch calls.
+  inclusion_re = input_api.re.compile(r'(%s)\s*\(' % name_pattern)
+  # Ignore definitions. (Comments are ignored separately.)
+  exclusion_re = input_api.re.compile(r'(%s)[^;]+\{' % name_pattern)
+
+  problems = []
+  sources = lambda x: input_api.FilterSourceFile(
+    x,
+    black_list=(('(?i).*test', r'.*\/junit\/')
+                + input_api.DEFAULT_BLACK_LIST),
+    white_list=(r'.*\.java$',)
+  )
+  for f in input_api.AffectedFiles(include_deletes=False, file_filter=sources):
+    local_path = f.LocalPath()
+    is_inside_javadoc = False
+    for line_number, line in f.ChangedContents():
+      if is_inside_javadoc and javadoc_end_re.search(line):
+        is_inside_javadoc = False
+      if not is_inside_javadoc and javadoc_start_re.search(line):
+        is_inside_javadoc = True
+      if is_inside_javadoc:
+        continue
+      if (inclusion_re.search(line) and
+          not comment_re.search(line) and
+          not exclusion_re.search(line)):
         problems.append(
           '%s:%d\n    %s' % (local_path, line_number, line.strip()))
 
@@ -676,18 +794,40 @@ def _CheckUmaHistogramChanges(input_api, output_api):
   the reverse: changes in histograms.xml not matched in the code itself."""
   touched_histograms = []
   histograms_xml_modifications = []
-  pattern = input_api.re.compile('UMA_HISTOGRAM.*\("(.*)"')
+  call_pattern_c = r'\bUMA_HISTOGRAM.*\('
+  call_pattern_java = r'\bRecordHistogram\.record[a-zA-Z]+Histogram\('
+  name_pattern = r'"(.*?)"'
+  single_line_c_re = input_api.re.compile(call_pattern_c + name_pattern)
+  single_line_java_re = input_api.re.compile(call_pattern_java + name_pattern)
+  split_line_c_prefix_re = input_api.re.compile(call_pattern_c)
+  split_line_java_prefix_re = input_api.re.compile(call_pattern_java)
+  split_line_suffix_re = input_api.re.compile(r'^\s*' + name_pattern)
+  last_line_matched_prefix = False
   for f in input_api.AffectedFiles():
     # If histograms.xml itself is modified, keep the modified lines for later.
     if f.LocalPath().endswith(('histograms.xml')):
       histograms_xml_modifications = f.ChangedContents()
       continue
-    if not f.LocalPath().endswith(('cc', 'mm', 'cpp')):
+    if f.LocalPath().endswith(('cc', 'mm', 'cpp')):
+      single_line_re = single_line_c_re
+      split_line_prefix_re = split_line_c_prefix_re
+    elif f.LocalPath().endswith(('java')):
+      single_line_re = single_line_java_re
+      split_line_prefix_re = split_line_java_prefix_re
+    else:
       continue
     for line_num, line in f.ChangedContents():
-      found = pattern.search(line)
+      if last_line_matched_prefix:
+        suffix_found = split_line_suffix_re.search(line)
+        if suffix_found :
+          touched_histograms.append([suffix_found.group(1), f, line_num])
+          last_line_matched_prefix = False
+          continue
+      found = single_line_re.search(line)
       if found:
         touched_histograms.append([found.group(1), f, line_num])
+        continue
+      last_line_matched_prefix = split_line_prefix_re.search(line)
 
   # Search for the touched histogram names in the local modifications to
   # histograms.xml, and, if not found, on the base histograms.xml file.
@@ -776,7 +916,8 @@ def _CheckNoDEPSGIT(input_api, output_api):
       'Never commit changes to .DEPS.git. This file is maintained by an\n'
       'automated system based on what\'s in DEPS and your changes will be\n'
       'overwritten.\n'
-      'See https://sites.google.com/a/chromium.org/dev/developers/how-tos/get-the-code#Rolling_DEPS\n'
+      'See https://sites.google.com/a/chromium.org/dev/developers/how-tos/'
+      'get-the-code#Rolling_DEPS\n'
       'for more information')]
   return []
 
@@ -937,13 +1078,13 @@ def _CheckUnwantedDependencies(input_api, output_api):
   added_java_imports = []
   for f in input_api.AffectedFiles():
     if CppChecker.IsCppFile(f.LocalPath()):
-      changed_lines = [line for line_num, line in f.ChangedContents()]
+      changed_lines = [line for _, line in f.ChangedContents()]
       added_includes.append([f.AbsoluteLocalPath(), changed_lines])
     elif ProtoChecker.IsProtoFile(f.LocalPath()):
-      changed_lines = [line for line_num, line in f.ChangedContents()]
+      changed_lines = [line for _, line in f.ChangedContents()]
       added_imports.append([f.AbsoluteLocalPath(), changed_lines])
     elif JavaChecker.IsJavaFile(f.LocalPath()):
-      changed_lines = [line for line_num, line in f.ChangedContents()]
+      changed_lines = [line for _, line in f.ChangedContents()]
       added_java_imports.append([f.AbsoluteLocalPath(), changed_lines])
 
   deps_checker = checkdeps.DepsChecker(input_api.PresubmitLocalPath())
@@ -1102,8 +1243,8 @@ def _CheckGoogleSupportAnswerUrl(input_api, output_api):
   results = []
   if errors:
     results.append(output_api.PresubmitPromptWarning(
-      'Found Google support URL addressed by answer number. Please replace with '
-      'a p= identifier instead. See crbug.com/679462\n', errors))
+      'Found Google support URL addressed by answer number. Please replace '
+      'with a p= identifier instead. See crbug.com/679462\n', errors))
   return results
 
 
@@ -1174,7 +1315,7 @@ def _ExtractAddRulesFromParsedDeps(parsed_deps):
       rule[1:] for rule in parsed_deps.get('include_rules', [])
       if rule.startswith('+') or rule.startswith('!')
   ])
-  for specific_file, rules in parsed_deps.get('specific_include_rules',
+  for _, rules in parsed_deps.get('specific_include_rules',
                                               {}).iteritems():
     add_rules.update([
         rule[1:] for rule in rules
@@ -1324,7 +1465,6 @@ def _CheckSpamLogging(input_api, output_api):
                  r"^chrome[\\\/]browser[\\\/]ui[\\\/]startup[\\\/]"
                      r"startup_browser_creator\.cc$",
                  r"^chrome[\\\/]installer[\\\/]setup[\\\/].*",
-                 r"^chrome[\\\/]installer[\\\/]zucchini[\\\/].*",
                  r"chrome[\\\/]browser[\\\/]diagnostics[\\\/]" +
                      r"diagnostics_writer\.cc$",
                  r"^chrome_elf[\\\/]dll_hash[\\\/]dll_hash_main\.cc$",
@@ -1334,6 +1474,7 @@ def _CheckSpamLogging(input_api, output_api):
                      r"dump_stability_report_main_win.cc$",
                  r"^components[\\\/]html_viewer[\\\/]"
                      r"web_test_delegate_impl\.cc$",
+                 r"^components[\\\/]zucchini[\\\/].*",
                  # TODO(peter): Remove this exception. https://crbug.com/534537
                  r"^content[\\\/]browser[\\\/]notifications[\\\/]"
                      r"notification_event_dispatcher_impl\.cc$",
@@ -1446,11 +1587,43 @@ def _CheckUniquePtr(input_api, output_api):
       black_list=(_EXCLUDED_PATHS + _TEST_CODE_EXCLUDED_PATHS +
                   input_api.DEFAULT_BLACK_LIST),
       white_list=(file_inclusion_pattern,))
-  return_construct_pattern = input_api.re.compile(
-      r'(=|\breturn)\s*std::unique_ptr<.*?(?<!])>\([^)]+\)')
+
+  # Pattern to capture a single "<...>" block of template arguments. It can
+  # handle linearly nested blocks, such as "<std::vector<std::set<T>>>", but
+  # cannot handle branching structures, such as "<pair<set<T>,set<U>>". The
+  # latter would likely require counting that < and > match, which is not
+  # expressible in regular languages. Should the need arise, one can introduce
+  # limited counting (matching up to a total number of nesting depth), which
+  # should cover all practical cases for already a low nesting limit.
+  template_arg_pattern = (
+      r'<[^>]*'       # Opening block of <.
+      r'>([^<]*>)?')  # Closing block of >.
+  # Prefix expressing that whatever follows is not already inside a <...>
+  # block.
+  not_inside_template_arg_pattern = r'(^|[^<,\s]\s*)'
   null_construct_pattern = input_api.re.compile(
-      r'\b(?<!<)std::unique_ptr<.*?>\(\)')
-  errors = []
+      not_inside_template_arg_pattern
+      + r'\bstd::unique_ptr'
+      + template_arg_pattern
+      + r'\(\)')
+
+  # Same as template_arg_pattern, but excluding type arrays, e.g., <T[]>.
+  template_arg_no_array_pattern = (
+      r'<[^>]*[^]]'        # Opening block of <.
+      r'>([^(<]*[^]]>)?')  # Closing block of >.
+  # Prefix saying that what follows is the start of an expression.
+  start_of_expr_pattern = r'(=|\breturn|^)\s*'
+  # Suffix saying that what follows are call parentheses with a non-empty list
+  # of arguments.
+  nonempty_arg_list_pattern = r'\(([^)]|$)'
+  return_construct_pattern = input_api.re.compile(
+      start_of_expr_pattern
+      + r'std::unique_ptr'
+      + template_arg_no_array_pattern
+      + nonempty_arg_list_pattern)
+
+  problems_constructor = []
+  problems_nullptr = []
   for f in input_api.AffectedSourceFiles(sources):
     for line_number, line in f.ChangedContents():
       # Disallow:
@@ -1459,17 +1632,26 @@ def _CheckUniquePtr(input_api, output_api):
       # But allow:
       # return std::unique_ptr<T[]>(foo);
       # bar = std::unique_ptr<T[]>(foo);
+      local_path = f.LocalPath()
       if return_construct_pattern.search(line):
-        errors.append(output_api.PresubmitError(
-          ('%s:%d uses explicit std::unique_ptr constructor. ' +
-           'Use std::make_unique<T>() instead.') %
-          (f.LocalPath(), line_number)))
+        problems_constructor.append(
+          '%s:%d\n    %s' % (local_path, line_number, line.strip()))
       # Disallow:
       # std::unique_ptr<T>()
       if null_construct_pattern.search(line):
-        errors.append(output_api.PresubmitError(
-          '%s:%d uses std::unique_ptr<T>(). Use nullptr instead.' %
-          (f.LocalPath(), line_number)))
+        problems_nullptr.append(
+          '%s:%d\n    %s' % (local_path, line_number, line.strip()))
+
+  errors = []
+  if problems_nullptr:
+    errors.append(output_api.PresubmitError(
+        'The following files use std::unique_ptr<T>(). Use nullptr instead.',
+        problems_nullptr))
+  if problems_constructor:
+    errors.append(output_api.PresubmitError(
+        'The following files use explicit std::unique_ptr constructor.'
+        'Use std::make_unique<T>() instead.',
+        problems_constructor))
   return errors
 
 
@@ -1696,7 +1878,7 @@ def _GetOwnersFilesToCheckForIpcOwners(input_api):
               'per-file %s=file://ipc/SECURITY_OWNERS' % pattern,
           ]
       }
-      to_check[owners_file][pattern]['files'].append(f)
+    to_check[owners_file][pattern]['files'].append(input_file)
 
   # Iterate through the affected files to see what we actually need to check
   # for. We should only nag patch authors about per-file rules if a file in that
@@ -1713,7 +1895,12 @@ def _GetOwnersFilesToCheckForIpcOwners(input_api):
       mostly_json_lines = '\n'.join(f.NewContents())
       # Comments aren't allowed in strict JSON, so filter them out.
       json_lines = json_comment_eater.Nom(mostly_json_lines)
-      json_content = input_api.json.loads(json_lines)
+      try:
+        json_content = input_api.json.loads(json_lines)
+      except:
+        # There's another PRESUBMIT check that already verifies that JSON files
+        # are not invalid, so no need to emit another warning here.
+        continue
       if 'interface_provider_specs' in json_content:
         AddPatternToCheck(f, input_api.os_path.basename(f.LocalPath()))
     for pattern in file_patterns:
@@ -1759,7 +1946,7 @@ def _CheckIpcOwners(input_api, output_api):
   for owners_file, patterns in to_check.iteritems():
     missing_lines = []
     files = []
-    for pattern, entry in patterns.iteritems():
+    for _, entry in patterns.iteritems():
       missing_lines.extend(entry['rules'])
       files.extend(['  %s' % f.LocalPath() for f in entry['files']])
     if missing_lines:
@@ -2180,15 +2367,21 @@ def _CheckPydepsNeedsUpdating(input_api, output_api, checker_for_tests=None):
   results = []
   # First, check for new / deleted .pydeps.
   for f in input_api.AffectedFiles(include_deletes=True):
-    if f.LocalPath().endswith('.pydeps'):
-      if f.Action() == 'D' and f.LocalPath() in _ALL_PYDEPS_FILES:
-        results.append(output_api.PresubmitError(
-            'Please update _ALL_PYDEPS_FILES within //PRESUBMIT.py to '
-            'remove %s' % f.LocalPath()))
-      elif f.Action() != 'D' and f.LocalPath() not in _ALL_PYDEPS_FILES:
-        results.append(output_api.PresubmitError(
-            'Please update _ALL_PYDEPS_FILES within //PRESUBMIT.py to '
-            'include %s' % f.LocalPath()))
+    # Check whether we are running the presubmit check for a file in src.
+    # f.LocalPath is relative to repo (src, or internal repo).
+    # os_path.exists is relative to src repo.
+    # Therefore if os_path.exists is true, it means f.LocalPath is relative
+    # to src and we can conclude that the pydeps is in src.
+    if input_api.os_path.exists(f.LocalPath()):
+      if f.LocalPath().endswith('.pydeps'):
+        if f.Action() == 'D' and f.LocalPath() in _ALL_PYDEPS_FILES:
+          results.append(output_api.PresubmitError(
+              'Please update _ALL_PYDEPS_FILES within //PRESUBMIT.py to '
+              'remove %s' % f.LocalPath()))
+        elif f.Action() != 'D' and f.LocalPath() not in _ALL_PYDEPS_FILES:
+          results.append(output_api.PresubmitError(
+              'Please update _ALL_PYDEPS_FILES within //PRESUBMIT.py to '
+              'include %s' % f.LocalPath()))
 
   if results:
     return results
@@ -2217,7 +2410,9 @@ def _CheckSingletonInHeaders(input_api, output_api):
     # It's ok for base/memory/singleton.h to have |Singleton<|.
     black_list = (_EXCLUDED_PATHS +
                   input_api.DEFAULT_BLACK_LIST +
-                  (r"^base[\\\/]memory[\\\/]singleton\.h$",))
+                  (r"^base[\\\/]memory[\\\/]singleton\.h$",
+                   r"^net[\\\/]quic[\\\/]platform[\\\/]impl[\\\/]"
+                       r"quic_singleton_impl\.h$"))
     return input_api.FilterSourceFile(affected_file, black_list=black_list)
 
   pattern = input_api.re.compile(r'(?<!class\sbase::)Singleton\s*<')
@@ -2400,7 +2595,7 @@ def _CheckForRelativeIncludes(input_api, output_api):
     if not CppChecker.IsCppFile(f.LocalPath()):
       continue
 
-    relative_includes = [line for line_num, line in f.ChangedContents()
+    relative_includes = [line for _, line in f.ChangedContents()
                          if "#include" in line and "../" in line]
     if not relative_includes:
       continue
@@ -2576,6 +2771,8 @@ def _CommonChecks(input_api, output_api):
 
   results.extend(
       _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api))
+  results.extend(
+      _CheckNoProductionCodeUsingTestOnlyFunctionsJava(input_api, output_api))
   results.extend(_CheckNoIOStreamInHeaders(input_api, output_api))
   results.extend(_CheckNoUNIT_TESTInSourceFiles(input_api, output_api))
   results.extend(_CheckDCHECK_IS_ONHasBraces(input_api, output_api))
@@ -2604,12 +2801,12 @@ def _CommonChecks(input_api, output_api):
           source_file_filter=lambda x: x.LocalPath().endswith('.grd')))
   results.extend(_CheckSpamLogging(input_api, output_api))
   results.extend(_CheckForAnonymousVariables(input_api, output_api))
-  results.extend(_CheckUniquePtr(input_api, output_api))
   results.extend(_CheckUserActionUpdate(input_api, output_api))
   results.extend(_CheckNoDeprecatedCss(input_api, output_api))
   results.extend(_CheckNoDeprecatedJs(input_api, output_api))
   results.extend(_CheckParseErrors(input_api, output_api))
   results.extend(_CheckForIPCRules(input_api, output_api))
+  results.extend(_CheckForIncludeGuards(input_api, output_api))
   results.extend(_CheckForWindowsLineEndings(input_api, output_api))
   results.extend(_CheckSingletonInHeaders(input_api, output_api))
   results.extend(_CheckPydepsNeedsUpdating(input_api, output_api))
@@ -2622,11 +2819,13 @@ def _CommonChecks(input_api, output_api):
   results.extend(input_api.RunTests(
     input_api.canned_checks.CheckVPythonSpec(input_api, output_api)))
 
-  if any('PRESUBMIT.py' == f.LocalPath() for f in input_api.AffectedFiles()):
-    results.extend(input_api.canned_checks.RunUnitTestsInDirectory(
-        input_api, output_api,
-        input_api.PresubmitLocalPath(),
-        whitelist=[r'^PRESUBMIT_test\.py$']))
+  for f in input_api.AffectedFiles():
+    path, name = input_api.os_path.split(f.LocalPath())
+    if name == 'PRESUBMIT.py':
+      full_path = input_api.os_path.join(input_api.PresubmitLocalPath(), path)
+      results.extend(input_api.canned_checks.RunUnitTestsInDirectory(
+          input_api, output_api, full_path,
+          whitelist=[r'^PRESUBMIT_test\.py$']))
   return results
 
 
@@ -2811,6 +3010,116 @@ def _CheckForIPCRules(input_api, output_api):
     return []
 
 
+def _CheckForIncludeGuards(input_api, output_api):
+  """Check that header files have proper guards against multiple inclusion.
+  If a file should not have such guards (and it probably should) then it
+  should include the string "no-include-guard-because-multiply-included".
+  """
+  def is_header_file(f):
+    return f.LocalPath().endswith('.h')
+
+  def replace_special_with_underscore(string):
+    return input_api.re.sub(r'[\\/.-]', '_', string)
+
+  errors = []
+
+  for f in input_api.AffectedSourceFiles(is_header_file):
+    guard_name = None
+    guard_line_number = None
+    seen_guard_end = False
+
+    file_with_path = input_api.os_path.normpath(f.LocalPath())
+    base_file_name = input_api.os_path.splitext(
+      input_api.os_path.basename(file_with_path))[0]
+    upper_base_file_name = base_file_name.upper()
+
+    expected_guard = replace_special_with_underscore(
+      file_with_path.upper() + '_')
+    expected_guard_if_blink = base_file_name + '_h'
+
+    # For "path/elem/file_name.h" we should really only accept
+    # PATH_ELEM_FILE_NAME_H_ per coding style or, if Blink,
+    # file_name_h.  Unfortunately there are too many (1000+) files
+    # with slight deviations from the coding style. Since the most
+    # important part is that the include guard is there, and that it's
+    # unique, not the name, this check is forgiving for existing files.
+    #
+    # As code becomes more uniform, this could be made stricter.
+
+    guard_name_pattern_list = [
+      # Anything with the right suffix (maybe with an extra _).
+      r'\w+_H__?',
+
+      # To cover include guards with Blink style.
+      r'\w+_h',
+
+      # Anything including the uppercase name of the file.
+      r'\w*' + input_api.re.escape(replace_special_with_underscore(
+        upper_base_file_name)) + r'\w*',
+    ]
+    guard_name_pattern = '|'.join(guard_name_pattern_list)
+    guard_pattern = input_api.re.compile(
+      r'#ifndef\s+(' + guard_name_pattern + ')')
+
+    for line_number, line in enumerate(f.NewContents()):
+      if 'no-include-guard-because-multiply-included' in line:
+        guard_name = 'DUMMY'  # To not trigger check outside the loop.
+        break
+
+      if guard_name is None:
+        match = guard_pattern.match(line)
+        if match:
+          guard_name = match.group(1)
+          guard_line_number = line_number
+
+          # We allow existing files to use slightly wrong include
+          # guards, but new files should get it right.
+          if not f.OldContents():
+            is_in_blink = file_with_path.startswith(input_api.os_path.join(
+              'third_party', 'WebKit'))
+            if not (guard_name == expected_guard or
+                    is_in_blink and guard_name == expected_guard_if_blink):
+              if is_in_blink:
+                expected_text = "%s or %s" % (expected_guard,
+                                              expected_guard_if_blink)
+              else:
+                expected_text = expected_guard
+              errors.append(output_api.PresubmitPromptWarning(
+                'Header using the wrong include guard name %s' % guard_name,
+                ['%s:%d' % (f.LocalPath(), line_number + 1)],
+                'Expected: %r\nFound: %r' % (expected_text, guard_name)))
+      else:
+        # The line after #ifndef should have a #define of the same name.
+        if line_number == guard_line_number + 1:
+          expected_line = '#define %s' % guard_name
+          if line != expected_line:
+            errors.append(output_api.PresubmitPromptWarning(
+              'Missing "%s" for include guard' % expected_line,
+              ['%s:%d' % (f.LocalPath(), line_number + 1)],
+              'Expected: %r\nGot: %r' % (expected_line, line)))
+
+        if not seen_guard_end and line == '#endif  // %s' % guard_name:
+          seen_guard_end = True
+        elif seen_guard_end:
+          if line.strip() != '':
+            errors.append(output_api.PresubmitPromptWarning(
+              'Include guard %s not covering the whole file' % (
+                guard_name), [f.LocalPath()]))
+            break  # Nothing else to check and enough to warn once.
+
+    if guard_name is None:
+      errors.append(output_api.PresubmitPromptWarning(
+        'Missing include guard %s' % expected_guard,
+        [f.LocalPath()],
+        'Missing include guard in %s\n'
+        'Recommended name: %s\n'
+        'This check can be disabled by having the string\n'
+        'no-include-guard-because-multiply-included in the header.' %
+        (f.LocalPath(), expected_guard)))
+
+  return errors
+
+
 def _CheckForWindowsLineEndings(input_api, output_api):
   """Check source code and known ascii text files for Windows style line
   endings.
@@ -2826,9 +3135,12 @@ def _CheckForWindowsLineEndings(input_api, output_api):
   source_file_filter = lambda f: input_api.FilterSourceFile(
       f, white_list=file_inclusion_pattern, black_list=None)
   for f in input_api.AffectedSourceFiles(source_file_filter):
-    for line_number, line in f.ChangedContents():
+    include_file = False
+    for _, line in f.ChangedContents():
       if line.endswith('\r\n'):
-        problems.append(f.LocalPath())
+        include_file = True
+    if include_file:
+      problems.append(f.LocalPath())
 
   if problems:
     return [output_api.PresubmitPromptWarning('Are you sure that you want '
@@ -2838,8 +3150,7 @@ def _CheckForWindowsLineEndings(input_api, output_api):
   return []
 
 
-def _CheckSyslogUseWarning(input_api, output_api, source_file_filter=None,
-                           lint_filters=None, verbose_level=None):
+def _CheckSyslogUseWarning(input_api, output_api, source_file_filter=None):
   """Checks that all source files use SYSLOG properly."""
   syslog_files = []
   for f in input_api.AffectedSourceFiles(source_file_filter):
@@ -2889,6 +3200,7 @@ def CheckChangeOnUpload(input_api, output_api):
   results.extend(_CheckSyslogUseWarning(input_api, output_api))
   results.extend(_CheckGoogleSupportAnswerUrl(input_api, output_api))
   results.extend(_CheckCrbugLinksHaveHttps(input_api, output_api))
+  results.extend(_CheckUniquePtr(input_api, output_api))
   return results
 
 

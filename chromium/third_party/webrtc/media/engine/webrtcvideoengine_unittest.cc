@@ -133,7 +133,7 @@ rtc::scoped_refptr<webrtc::VideoFrameBuffer> CreateBlackFrameBuffer(
 void VerifySendStreamHasRtxTypes(const webrtc::VideoSendStream::Config& config,
                                  const std::map<int, int>& rtx_types) {
   std::map<int, int>::const_iterator it;
-  it = rtx_types.find(config.encoder_settings.payload_type);
+  it = rtx_types.find(config.rtp.payload_type);
   EXPECT_TRUE(it != rtx_types.end() &&
               it->second == config.rtp.rtx.payload_type);
 
@@ -1485,7 +1485,7 @@ TEST_F(WebRtcVideoChannelTest, SetsSyncGroupFromSyncLabel) {
   const std::string kSyncLabel = "AvSyncLabel";
 
   cricket::StreamParams sp = cricket::StreamParams::CreateLegacy(kVideoSsrc);
-  sp.sync_label = kSyncLabel;
+  sp.set_stream_ids({kSyncLabel});
   EXPECT_TRUE(channel_->AddRecvStream(sp));
 
   EXPECT_EQ(1, fake_call_->GetVideoReceiveStreams().size());
@@ -1968,7 +1968,7 @@ TEST_F(WebRtcVideoChannelTest, UsesCorrectSettingsForScreencast) {
   streams = send_stream->GetVideoStreams();
   EXPECT_EQ(capture_format_hd.width, streams.front().width);
   EXPECT_EQ(capture_format_hd.height, streams.front().height);
-  EXPECT_TRUE(streams[0].temporal_layer_thresholds_bps.empty());
+  EXPECT_FALSE(streams[0].num_temporal_layers.has_value());
   EXPECT_TRUE(channel_->SetVideoSend(last_ssrc_, true, nullptr, nullptr));
 }
 
@@ -2004,9 +2004,9 @@ TEST_F(WebRtcVideoChannelTest,
 
   std::vector<webrtc::VideoStream> streams = send_stream->GetVideoStreams();
   ASSERT_EQ(1u, streams.size());
-  ASSERT_EQ(1u, streams[0].temporal_layer_thresholds_bps.size());
+  ASSERT_EQ(2u, streams[0].num_temporal_layers);
   EXPECT_EQ(kConferenceScreencastTemporalBitrateBps,
-            streams[0].temporal_layer_thresholds_bps[0]);
+            streams[0].target_bitrate_bps);
 
   EXPECT_TRUE(channel_->SetVideoSend(last_ssrc_, true, nullptr, nullptr));
 }
@@ -2221,6 +2221,38 @@ TEST_F(Vp9SettingsTest, VerifyVp9SpecificSettings) {
   EXPECT_FALSE(vp9_settings.frameDroppingOn);
 
   EXPECT_TRUE(channel_->SetVideoSend(last_ssrc_, true, nullptr, nullptr));
+}
+
+TEST_F(Vp9SettingsTest, MultipleSsrcsEnablesSvc) {
+  cricket::VideoSendParameters parameters;
+  parameters.codecs.push_back(GetEngineCodec("VP9"));
+  ASSERT_TRUE(channel_->SetSendParameters(parameters));
+
+  std::vector<uint32_t> ssrcs = MAKE_VECTOR(kSsrcs3);
+
+  FakeVideoSendStream* stream =
+      AddSendStream(CreateSimStreamParams("cname", ssrcs));
+
+  webrtc::VideoSendStream::Config config = stream->GetConfig().Copy();
+  EXPECT_EQ(ssrcs.size(), config.rtp.ssrcs.size());
+
+  FakeVideoCapturerWithTaskQueue capturer;
+  EXPECT_EQ(cricket::CS_RUNNING,
+            capturer.Start(capturer.GetSupportedFormats()->front()));
+  EXPECT_TRUE(channel_->SetVideoSend(ssrcs[0], true, nullptr, &capturer));
+  channel_->SetSend(true);
+
+  EXPECT_TRUE(capturer.CaptureFrame());
+
+  webrtc::VideoCodecVP9 vp9_settings;
+  ASSERT_TRUE(stream->GetVp9Settings(&vp9_settings)) << "No VP9 config set.";
+
+  const size_t kNumSpatialLayers = ssrcs.size();
+  const size_t kNumTemporalLayers = 3;
+  EXPECT_EQ(vp9_settings.numberOfSpatialLayers, kNumSpatialLayers);
+  EXPECT_EQ(vp9_settings.numberOfTemporalLayers, kNumTemporalLayers);
+
+  EXPECT_TRUE(channel_->SetVideoSend(ssrcs[0], true, nullptr, nullptr));
 }
 
 class Vp9SettingsTestWithFieldTrial : public Vp9SettingsTest {
@@ -4152,6 +4184,44 @@ TEST_F(WebRtcVideoChannelTest, MapsReceivedPayloadTypeToCodecName) {
   EXPECT_STREQ("", info.receivers[0].codec_name.c_str());
 }
 
+// Tests that when we add a stream without SSRCs, but contains a stream_id
+// that it is stored and its stream id is later used when the first packet
+// arrives to properly create a receive stream with a sync label.
+TEST_F(WebRtcVideoChannelTest, RecvUnsignaledSsrcWithSignaledStreamId) {
+  const char kSyncLabel[] = "sync_label";
+  cricket::StreamParams unsignaled_stream;
+  unsignaled_stream.set_stream_ids({kSyncLabel});
+  ASSERT_TRUE(channel_->AddRecvStream(unsignaled_stream));
+  // The stream shouldn't have been created at this point because it doesn't
+  // have any SSRCs.
+  EXPECT_EQ(0, fake_call_->GetVideoReceiveStreams().size());
+
+  // Create and deliver packet.
+  const size_t kDataLength = 12;
+  uint8_t data[kDataLength];
+  memset(data, 0, sizeof(data));
+  rtc::SetBE32(&data[8], kIncomingUnsignalledSsrc);
+  rtc::CopyOnWriteBuffer packet(data, kDataLength);
+  rtc::PacketTime packet_time;
+  channel_->OnPacketReceived(&packet, packet_time);
+
+  // The stream should now be created with the appropriate sync label.
+  EXPECT_EQ(1u, fake_call_->GetVideoReceiveStreams().size());
+  EXPECT_EQ(kSyncLabel,
+            fake_call_->GetVideoReceiveStreams()[0]->GetConfig().sync_group);
+
+  // Removing the unsignaled stream should clear the cache. This time when
+  // a default video receive stream is created it won't have a sync_group.
+  ASSERT_TRUE(channel_->RemoveRecvStream(0));
+  ASSERT_TRUE(channel_->RemoveRecvStream(kIncomingUnsignalledSsrc));
+  EXPECT_EQ(0u, fake_call_->GetVideoReceiveStreams().size());
+
+  channel_->OnPacketReceived(&packet, packet_time);
+  EXPECT_EQ(1u, fake_call_->GetVideoReceiveStreams().size());
+  EXPECT_TRUE(
+      fake_call_->GetVideoReceiveStreams()[0]->GetConfig().sync_group.empty());
+}
+
 void WebRtcVideoChannelTest::TestReceiveUnsignaledSsrcPacket(
     uint8_t payload_type,
     bool expect_created_receive_stream) {
@@ -5022,10 +5092,13 @@ class WebRtcVideoChannelSimulcastTest : public testing::Test {
       EXPECT_GT(video_streams[i].max_qp, 0);
       EXPECT_EQ(expected_streams[i].max_qp, video_streams[i].max_qp);
 
-      EXPECT_EQ(!conference_mode,
-                expected_streams[i].temporal_layer_thresholds_bps.empty());
-      EXPECT_EQ(expected_streams[i].temporal_layer_thresholds_bps,
-                video_streams[i].temporal_layer_thresholds_bps);
+      EXPECT_EQ(conference_mode,
+                expected_streams[i].num_temporal_layers.has_value());
+
+      if (conference_mode) {
+        EXPECT_EQ(expected_streams[i].num_temporal_layers,
+                  video_streams[i].num_temporal_layers);
+      }
 
       if (i == num_streams - 1) {
         total_max_bitrate_bps += video_streams[i].max_bitrate_bps;

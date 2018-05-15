@@ -55,6 +55,7 @@ static_assert(static_cast<int>(LAUNCH_RESULT_START) >
 
 struct ChildProcessLauncherPriority {
   bool background;
+  unsigned int frame_depth;
   bool boost_for_pending_views;
 #if defined(OS_ANDROID)
   ChildProcessImportance importance;
@@ -130,15 +131,13 @@ class CONTENT_EXPORT ChildProcessLauncher {
   // Terminates the process associated with this ChildProcessLauncher.
   // Returns true if the process was stopped, false if the process had not been
   // started yet or could not be stopped.
-  // Note that |exit_code| and |wait| are not used on Android.
-  bool Terminate(int exit_code, bool wait);
+  // Note that |exit_code| is not used on Android.
+  bool Terminate(int exit_code);
 
   // Similar to Terminate() but takes in a |process|.
   // On Android |process| must have been started by ChildProcessLauncher for
   // this method to work.
-  static bool TerminateProcess(const base::Process& process,
-                               int exit_code,
-                               bool wait);
+  static bool TerminateProcess(const base::Process& process, int exit_code);
 
   // Replaces the ChildProcessLauncher::Client for testing purposes. Returns the
   // previous  client.

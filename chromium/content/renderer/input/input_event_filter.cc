@@ -11,7 +11,6 @@
 #include "base/bind.h"
 #include "base/debug/crash_logging.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
@@ -85,6 +84,11 @@ void InputEventFilter::DidOverscroll(int routing_id,
 
 void InputEventFilter::DidStopFlinging(int routing_id) {
   SendMessage(std::make_unique<InputHostMsg_DidStopFlinging>(routing_id));
+}
+
+void InputEventFilter::DidStartScrollingViewport(int routing_id) {
+  SendMessage(
+      std::make_unique<InputHostMsg_DidStartScrollingViewport>(routing_id));
 }
 
 void InputEventFilter::QueueClosureForMainThreadEventQueue(

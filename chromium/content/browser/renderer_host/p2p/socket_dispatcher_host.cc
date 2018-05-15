@@ -9,7 +9,6 @@
 #include <algorithm>
 
 #include "base/bind.h"
-#include "base/memory/ptr_util.h"
 #include "base/task_scheduler/post_task.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/renderer_host/p2p/socket_host.h"
@@ -43,6 +42,11 @@ const uint8_t kPublicIPv4Host[] = {8, 8, 8, 8};
 const uint8_t kPublicIPv6Host[] = {
     0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0, 0, 0, 0, 0, 0, 0, 0, 0x88, 0x88};
 const int kPublicPort = 53;  // DNS port.
+
+// Experimentation shows that creating too many sockets creates odd problems
+// because of resource exhaustion in the Unix sockets domain.
+// Trouble has been seen on Linux at 3479 sockets in test, so leave a margin.
+const int kMaxSimultaneousSockets = 3000;
 
 }  // namespace
 
@@ -268,6 +272,11 @@ void P2PSocketDispatcherHost::OnCreateSocket(
         std::make_unique<network::ProxyResolvingClientSocketFactory>(
             nullptr, url_context_->GetURLRequestContext());
   }
+  if (sockets_.size() > kMaxSimultaneousSockets) {
+    LOG(ERROR) << "Too many sockets created";
+    Send(new P2PMsg_OnError(socket_id));
+    return;
+  }
   std::unique_ptr<P2PSocketHost> socket(P2PSocketHost::Create(
       this, socket_id, type, url_context_.get(),
       proxy_resolving_socket_factory_.get(), &throttler_));
@@ -384,10 +393,9 @@ net::IPAddress P2PSocketDispatcherHost::GetDefaultLocalAddress(int family) {
   // Creation and connection of a UDP socket might be janky.
   DCHECK(network_list_task_runner_->RunsTasksInCurrentSequence());
 
-  std::unique_ptr<net::DatagramClientSocket> socket(
+  auto socket =
       net::ClientSocketFactory::GetDefaultFactory()->CreateDatagramClientSocket(
-          net::DatagramSocket::DEFAULT_BIND, net::RandIntCallback(), nullptr,
-          net::NetLogSource()));
+          net::DatagramSocket::DEFAULT_BIND, nullptr, net::NetLogSource());
 
   net::IPAddress ip_address;
   if (family == AF_INET) {

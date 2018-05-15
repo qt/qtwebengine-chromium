@@ -43,7 +43,7 @@ class FakePeerConnectionBase : public PeerConnectionInternal {
 
   RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> AddTrack(
       rtc::scoped_refptr<MediaStreamTrackInterface> track,
-      const std::vector<std::string>& stream_labels) override {
+      const std::vector<std::string>& stream_ids) override {
     return RTCError(RTCErrorType::UNSUPPORTED_OPERATION, "Not implemented");
   }
 
@@ -110,6 +110,12 @@ class FakePeerConnectionBase : public PeerConnectionInternal {
   }
 
   void GetStats(RTCStatsCollectorCallback* callback) override {}
+  void GetStats(
+      rtc::scoped_refptr<RtpSenderInterface> selector,
+      rtc::scoped_refptr<RTCStatsCollectorCallback> callback) override {}
+  void GetStats(
+      rtc::scoped_refptr<RtpReceiverInterface> selector,
+      rtc::scoped_refptr<RTCStatsCollectorCallback> callback) override {}
 
   void ClearStatsCache() override {}
 

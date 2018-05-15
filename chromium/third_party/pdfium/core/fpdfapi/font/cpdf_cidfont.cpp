@@ -376,7 +376,7 @@ bool CPDF_CIDFont::Load() {
     auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
     pAcc->LoadAllDataFiltered();
     m_pCMap = pdfium::MakeRetain<CPDF_CMap>();
-    m_pCMap->LoadEmbedded(pAcc->GetData(), pAcc->GetSize());
+    m_pCMap->LoadEmbedded(pAcc->GetSpan());
   } else {
     return false;
   }
@@ -407,20 +407,13 @@ bool CPDF_CIDFont::Load() {
   if (!IsEmbedded())
     LoadSubstFont();
 
-  if (m_pFontFile) {
-    CPDF_Object* pmap = pCIDFontDict->GetDirectObjectFor("CIDToGIDMap");
-    if (pmap) {
-      if (CPDF_Stream* pStream = pmap->AsStream()) {
-        m_pStreamAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
-        m_pStreamAcc->LoadAllDataFiltered();
-      } else if (pmap->GetString() == "Identity") {
-#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
-        if (m_pFontFile)
-          m_bCIDIsGID = true;
-#else
-        m_bCIDIsGID = true;
-#endif
-      }
+  CPDF_Object* pmap = pCIDFontDict->GetDirectObjectFor("CIDToGIDMap");
+  if (pmap) {
+    if (CPDF_Stream* pStream = pmap->AsStream()) {
+      m_pStreamAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
+      m_pStreamAcc->LoadAllDataFiltered();
+    } else if (m_pFontFile && pmap->GetString() == "Identity") {
+      m_bCIDIsGID = true;
     }
   }
 
@@ -751,18 +744,17 @@ int CPDF_CIDFont::GlyphFromCharCode(uint32_t charcode, bool* pVertGlyph) {
   return pdata[0] * 256 + pdata[1];
 }
 
-uint32_t CPDF_CIDFont::GetNextChar(const char* pString,
-                                   int nStrLen,
-                                   int& offset) const {
-  return m_pCMap->GetNextChar(pString, nStrLen, offset);
+uint32_t CPDF_CIDFont::GetNextChar(const ByteStringView& pString,
+                                   size_t& offset) const {
+  return m_pCMap->GetNextChar(pString, offset);
 }
 
 int CPDF_CIDFont::GetCharSize(uint32_t charcode) const {
   return m_pCMap->GetCharSize(charcode);
 }
 
-int CPDF_CIDFont::CountChar(const char* pString, int size) const {
-  return m_pCMap->CountChar(pString, size);
+size_t CPDF_CIDFont::CountChar(const ByteStringView& pString) const {
+  return m_pCMap->CountChar(pString);
 }
 
 int CPDF_CIDFont::AppendChar(char* str, uint32_t charcode) const {

@@ -9,7 +9,6 @@
 #include <memory>
 
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/events/test/event_generator.h"
@@ -163,6 +162,7 @@ TEST_F(MenuRunnerTest, LatinMnemonic) {
   if (IsMus())
     return;
 
+  views::test::DisableMenuClosureAnimations();
   InitMenuRunner(0);
   MenuRunner* runner = menu_runner();
   runner->RunMenuAt(owner(), nullptr, gfx::Rect(), MENU_ANCHOR_TOPLEFT,
@@ -171,6 +171,7 @@ TEST_F(MenuRunnerTest, LatinMnemonic) {
 
   ui::test::EventGenerator generator(GetContext(), owner()->GetNativeWindow());
   generator.PressKey(ui::VKEY_O, 0);
+  views::test::WaitForMenuClosureAnimation();
   EXPECT_FALSE(runner->IsRunning());
   TestMenuDelegate* delegate = menu_delegate();
   EXPECT_EQ(1, delegate->execute_command_id());
@@ -186,6 +187,7 @@ TEST_F(MenuRunnerTest, NonLatinMnemonic) {
   if (IsMus())
     return;
 
+  views::test::DisableMenuClosureAnimations();
   InitMenuRunner(0);
   MenuRunner* runner = menu_runner();
   runner->RunMenuAt(owner(), nullptr, gfx::Rect(), MENU_ANCHOR_TOPLEFT,
@@ -195,6 +197,7 @@ TEST_F(MenuRunnerTest, NonLatinMnemonic) {
   ui::test::EventGenerator generator(GetContext(), owner()->GetNativeWindow());
   ui::KeyEvent key_press(0x062f, ui::VKEY_N, 0);
   generator.Dispatch(&key_press);
+  views::test::WaitForMenuClosureAnimation();
   EXPECT_FALSE(runner->IsRunning());
   TestMenuDelegate* delegate = menu_delegate();
   EXPECT_EQ(2, delegate->execute_command_id());

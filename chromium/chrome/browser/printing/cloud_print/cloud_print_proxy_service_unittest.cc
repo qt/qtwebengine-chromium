@@ -11,7 +11,6 @@
 
 #include "base/command_line.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -51,12 +50,16 @@ class MockServiceProcessControl : public ServiceProcessControl {
 
   MockServiceProcessControl() : connected_(false) { }
 
+  ~MockServiceProcessControl() override {}
+
   MOCK_CONST_METHOD0(IsConnected, bool());
 
-  MOCK_METHOD2(Launch, void(const base::Closure&, const base::Closure&));
+  void Launch(base::OnceClosure success_task,
+              base::OnceClosure failure_task) override;
+
   MOCK_METHOD0(Disconnect, void());
 
-  void SetConnectSuccessMockExpectations(bool post_task);
+  void SetConnectSuccessMockExpectations();
 
  private:
   bool connected_;
@@ -68,28 +71,22 @@ std::string MockServiceProcessControl::EnabledUserId() {
   return std::string("dorothy@somewhere.otr");
 }
 
-void CallTask(const base::Closure& task) {
-  if (!task.is_null())
-    task.Run();
+void CallTask(base::OnceClosure task) {
+  if (task)
+    std::move(task).Run();
 }
 
-void PostTask(const base::Closure& task) {
-  if (!task.is_null())
-    base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, task);
+void MockServiceProcessControl::Launch(base::OnceClosure success_task,
+                                       base::OnceClosure failure_task) {
+  connected_ = true;
+  CallTask(std::move(success_task));
 }
 
-void MockServiceProcessControl::SetConnectSuccessMockExpectations(
-    bool post_task) {
+void MockServiceProcessControl::SetConnectSuccessMockExpectations() {
   EXPECT_CALL(*this, IsConnected()).WillRepeatedly(ReturnPointee(&connected_));
-
-  EXPECT_CALL(*this, Launch(_, _))
-      .WillRepeatedly(
-          DoAll(Assign(&connected_, true),
-                WithArgs<0>(Invoke(post_task ? PostTask : CallTask))));
 
   EXPECT_CALL(*this, Disconnect()).Times(AtMost(1))
       .WillRepeatedly(Assign(&connected_, false));
-
 }
 
 class MockCloudPrintProxy : public cloud_print::mojom::CloudPrint {
@@ -129,11 +126,10 @@ class MockCloudPrintProxy : public cloud_print::mojom::CloudPrint {
   void GetPrinters(GetPrintersCallback callback) override { NOTREACHED(); }
   void DisableCloudPrintProxy() override { disabled_ = true; }
 
-  void EnableCloudPrintProxyWithRobot(
-      const std::string& robot_auth_code,
-      const std::string& robot_email,
-      const std::string& user_email,
-      std::unique_ptr<base::DictionaryValue> user_settings) override {
+  void EnableCloudPrintProxyWithRobot(const std::string& robot_auth_code,
+                                      const std::string& robot_email,
+                                      const std::string& user_email,
+                                      base::Value user_settings) override {
     enabled_ = true;
   }
 
@@ -190,7 +186,7 @@ class TestCloudPrintProxyService : public CloudPrintProxyService {
   void EnableForUser() {
     EnableForUserWithRobot("123", "123@gmail.com",
                            MockServiceProcessControl::EnabledUserId(),
-                           base::DictionaryValue());
+                           base::Value(base::Value::Type::DICTIONARY));
   }
 
  private:
@@ -221,12 +217,12 @@ class CloudPrintProxyPolicyTest : public ::testing::Test {
 
 TEST_F(CloudPrintProxyPolicyTest, VerifyExpectations) {
   MockServiceProcessControl mock_control;
-  mock_control.SetConnectSuccessMockExpectations(false);
+  mock_control.SetConnectSuccessMockExpectations();
 
   EXPECT_FALSE(mock_control.IsConnected());
-  mock_control.Launch(base::Closure(), base::Closure());
+  mock_control.Launch(base::OnceClosure(), base::OnceClosure());
   EXPECT_TRUE(mock_control.IsConnected());
-  mock_control.Launch(base::Closure(), base::Closure());
+  mock_control.Launch(base::OnceClosure(), base::OnceClosure());
   EXPECT_TRUE(mock_control.IsConnected());
   mock_control.Disconnect();
   EXPECT_FALSE(mock_control.IsConnected());
@@ -236,8 +232,7 @@ TEST_F(CloudPrintProxyPolicyTest, StartWithNoPolicyProxyDisabled) {
   TestCloudPrintProxyService service(&profile_);
 
   service.GetMockCloudPrintProxy().ReturnDisabledInfo();
-  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations(
-      false);
+  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations();
 
   sync_preferences::TestingPrefServiceSyncable* prefs =
       profile_.GetTestingPrefService();
@@ -253,8 +248,7 @@ TEST_F(CloudPrintProxyPolicyTest, StartWithNoPolicyProxyDisabled) {
 TEST_F(CloudPrintProxyPolicyTest, StartWithNoPolicyProxyEnabled) {
   TestCloudPrintProxyService service(&profile_);
 
-  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations(
-      false);
+  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations();
   service.GetMockCloudPrintProxy().ReturnEnabledInfo();
 
   sync_preferences::TestingPrefServiceSyncable* prefs =
@@ -272,8 +266,7 @@ TEST_F(CloudPrintProxyPolicyTest, StartWithNoPolicyProxyEnabled) {
 TEST_F(CloudPrintProxyPolicyTest, StartWithPolicySetProxyDisabled) {
   TestCloudPrintProxyService service(&profile_);
 
-  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations(
-      false);
+  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations();
   service.GetMockCloudPrintProxy().ReturnDisabledInfo();
 
   sync_preferences::TestingPrefServiceSyncable* prefs =
@@ -291,8 +284,7 @@ TEST_F(CloudPrintProxyPolicyTest, StartWithPolicySetProxyDisabled) {
 TEST_F(CloudPrintProxyPolicyTest, StartWithPolicySetProxyEnabled) {
   TestCloudPrintProxyService service(&profile_);
 
-  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations(
-      false);
+  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations();
   service.GetMockCloudPrintProxy().ReturnEnabledInfo();
 
   sync_preferences::TestingPrefServiceSyncable* prefs =
@@ -311,8 +303,7 @@ TEST_F(CloudPrintProxyPolicyTest, StartWithPolicySetProxyEnabled) {
 TEST_F(CloudPrintProxyPolicyTest, StartWithNoPolicyProxyDisabledThenSetPolicy) {
   TestCloudPrintProxyService service(&profile_);
 
-  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations(
-      false);
+  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations();
   service.GetMockCloudPrintProxy().ReturnDisabledInfo();
 
   sync_preferences::TestingPrefServiceSyncable* prefs =
@@ -334,8 +325,7 @@ TEST_F(CloudPrintProxyPolicyTest, StartWithNoPolicyProxyDisabledThenSetPolicy) {
 TEST_F(CloudPrintProxyPolicyTest, StartWithNoPolicyProxyEnabledThenSetPolicy) {
   TestCloudPrintProxyService service(&profile_);
 
-  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations(
-      false);
+  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations();
   service.GetMockCloudPrintProxy().ReturnEnabledInfo();
 
   sync_preferences::TestingPrefServiceSyncable* prefs =
@@ -360,8 +350,7 @@ TEST_F(CloudPrintProxyPolicyTest,
        StartWithPolicySetProxyDisabledThenClearPolicy) {
   TestCloudPrintProxyService service(&profile_);
 
-  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations(
-      false);
+  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations();
   service.GetMockCloudPrintProxy().ReturnDisabledInfo();
 
   sync_preferences::TestingPrefServiceSyncable* prefs =
@@ -382,8 +371,7 @@ TEST_F(CloudPrintProxyPolicyTest,
        StartWithPolicySetProxyEnabledThenClearPolicy) {
   TestCloudPrintProxyService service(&profile_);
 
-  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations(
-      false);
+  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations();
   service.GetMockCloudPrintProxy().ReturnEnabledInfo();
 
   sync_preferences::TestingPrefServiceSyncable* prefs =
@@ -404,8 +392,7 @@ TEST_F(CloudPrintProxyPolicyTest,
 TEST_F(CloudPrintProxyPolicyTest, StartWithNoPolicyProxyDisabledThenEnable) {
   TestCloudPrintProxyService service(&profile_);
 
-  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations(
-      false);
+  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations();
   service.GetMockCloudPrintProxy().ReturnDisabledInfo();
 
   sync_preferences::TestingPrefServiceSyncable* prefs =
@@ -428,8 +415,7 @@ TEST_F(CloudPrintProxyPolicyTest,
        StartWithPolicySetProxyEnabledThenClearPolicyAndEnable) {
   TestCloudPrintProxyService service(&profile_);
 
-  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations(
-      false);
+  service.GetMockServiceProcessControl()->SetConnectSuccessMockExpectations();
   service.GetMockCloudPrintProxy().ReturnEnabledInfo();
 
   sync_preferences::TestingPrefServiceSyncable* prefs =

@@ -46,10 +46,9 @@ class CPDF_CIDFont : public CPDF_Font {
   int GlyphFromCharCode(uint32_t charcode, bool* pVertGlyph) override;
   uint32_t GetCharWidthF(uint32_t charcode) override;
   FX_RECT GetCharBBox(uint32_t charcode) override;
-  uint32_t GetNextChar(const char* pString,
-                       int nStrLen,
-                       int& offset) const override;
-  int CountChar(const char* pString, int size) const override;
+  uint32_t GetNextChar(const ByteStringView& pString,
+                       size_t& offset) const override;
+  size_t CountChar(const ByteStringView& pString) const override;
   int AppendChar(char* str, uint32_t charcode) const override;
   bool IsVertWriting() const override;
   bool IsUnicodeCompatible() const override;
@@ -81,13 +80,13 @@ class CPDF_CIDFont : public CPDF_Font {
   uint16_t m_DefaultWidth;
   RetainPtr<CPDF_StreamAcc> m_pStreamAcc;
   bool m_bAnsiWidthsFixed;
-  FX_RECT m_CharBBox[256];
   std::vector<uint32_t> m_WidthList;
   short m_DefaultVY;
   short m_DefaultW1;
   std::vector<uint32_t> m_VertMetrics;
   bool m_bAdobeCourierStd;
   std::unique_ptr<CFX_CTTGSUBTable> m_pTTGSUBTable;
+  FX_RECT m_CharBBox[256];
 };
 
 #endif  // CORE_FPDFAPI_FONT_CPDF_CIDFONT_H_

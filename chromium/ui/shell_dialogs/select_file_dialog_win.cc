@@ -289,6 +289,7 @@ class SelectFileDialogImpl : public ui::SelectFileDialog,
   // semantics for input paramaters as RunOpenFileDialog.
   bool RunOpenMultiFileDialog(const std::wstring& title,
                               const std::wstring& filter,
+                              const base::FilePath& initial_path,
                               HWND owner,
                               std::vector<base::FilePath>* paths);
 
@@ -344,8 +345,8 @@ void SelectFileDialogImpl::SelectFileImpl(
                                      default_extension, BeginRun(owner),
                                      owner, params);
   execute_params.run_state.dialog_thread->task_runner()->PostTask(
-      FROM_HERE, base::Bind(&SelectFileDialogImpl::ExecuteSelectFile, this,
-                            execute_params));
+      FROM_HERE, base::BindOnce(&SelectFileDialogImpl::ExecuteSelectFile, this,
+                                execute_params));
 }
 
 bool SelectFileDialogImpl::HasMultipleFileTypeChoicesImpl() {
@@ -387,23 +388,25 @@ void SelectFileDialogImpl::ExecuteSelectFile(
                                 params.run_state.owner, &path);
   } else if (params.type == SELECT_OPEN_MULTI_FILE) {
     std::vector<base::FilePath> paths;
-    if (RunOpenMultiFileDialog(params.title, filter,
+    if (RunOpenMultiFileDialog(params.title, filter, path,
                                params.run_state.owner, &paths)) {
       params.ui_task_runner->PostTask(
-          FROM_HERE, base::Bind(&SelectFileDialogImpl::MultiFilesSelected, this,
-                                paths, params.params, params.run_state));
+          FROM_HERE,
+          base::BindOnce(&SelectFileDialogImpl::MultiFilesSelected, this, paths,
+                         params.params, params.run_state));
       return;
     }
   }
 
   if (success) {
     params.ui_task_runner->PostTask(
-        FROM_HERE, base::Bind(&SelectFileDialogImpl::FileSelected, this, path,
-                              filter_index, params.params, params.run_state));
+        FROM_HERE,
+        base::BindOnce(&SelectFileDialogImpl::FileSelected, this, path,
+                       filter_index, params.params, params.run_state));
   } else {
     params.ui_task_runner->PostTask(
-        FROM_HERE, base::Bind(&SelectFileDialogImpl::FileNotSelected, this,
-                              params.params, params.run_state));
+        FROM_HERE, base::BindOnce(&SelectFileDialogImpl::FileNotSelected, this,
+                                  params.params, params.run_state));
   }
 }
 
@@ -597,13 +600,12 @@ bool SelectFileDialogImpl::RunSelectFolderDialog(
   return result;
 }
 
-bool SelectFileDialogImpl::RunOpenFileDialog(
-    const std::wstring& title,
-    const std::wstring& filter,
-    HWND owner,
-    base::FilePath* path) {
-  // We use OFN_NOCHANGEDIR so that the user can rename or delete the directory
-  // without having to close Chrome first.
+bool SelectFileDialogImpl::RunOpenFileDialog(const std::wstring& title,
+                                             const std::wstring& filter,
+                                             HWND owner,
+                                             base::FilePath* path) {
+  // We use OFN_NOCHANGEDIR so that the user can rename or delete the
+  // directory without having to close Chrome first.
   ui::win::OpenFileName ofn(owner, OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR);
   if (!path->empty()) {
     if (IsDirectory(*path))
@@ -625,6 +627,7 @@ bool SelectFileDialogImpl::RunOpenFileDialog(
 bool SelectFileDialogImpl::RunOpenMultiFileDialog(
     const std::wstring& title,
     const std::wstring& filter,
+    const base::FilePath& initial_path,
     HWND owner,
     std::vector<base::FilePath>* paths) {
   // We use OFN_NOCHANGEDIR so that the user can rename or delete the directory
@@ -633,7 +636,12 @@ bool SelectFileDialogImpl::RunOpenMultiFileDialog(
                             OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST |
                                 OFN_EXPLORER | OFN_HIDEREADONLY |
                                 OFN_ALLOWMULTISELECT | OFN_NOCHANGEDIR);
-
+  if (!initial_path.empty()) {
+    if (IsDirectory(initial_path))
+      ofn.SetInitialSelection(initial_path, base::FilePath());
+    else
+      ofn.SetInitialSelection(initial_path.DirName(), base::FilePath());
+  }
   if (!filter.empty())
     ofn.GetOPENFILENAME()->lpstrFilter = filter.c_str();
 

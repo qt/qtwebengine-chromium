@@ -11,7 +11,7 @@
 #include "content/browser/appcache/appcache_service_impl.h"
 #include "storage/browser/quota/quota_client.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
-#include "third_party/WebKit/public/mojom/quota/quota_types.mojom.h"
+#include "third_party/blink/public/mojom/quota/quota_types.mojom.h"
 
 namespace content {
 
@@ -101,7 +101,7 @@ base::WeakPtr<AppCacheStorage> AppCacheStorage::GetWeakPtr() {
   return weak_factory_.GetWeakPtr();
 }
 
-void AppCacheStorage::UpdateUsageMapAndNotify(const GURL& origin,
+void AppCacheStorage::UpdateUsageMapAndNotify(const url::Origin& origin,
                                               int64_t new_usage) {
   DCHECK_GE(new_usage, 0);
   int64_t old_usage = usage_map_[origin];
@@ -111,28 +111,27 @@ void AppCacheStorage::UpdateUsageMapAndNotify(const GURL& origin,
     usage_map_.erase(origin);
   if (new_usage != old_usage && service()->quota_manager_proxy()) {
     service()->quota_manager_proxy()->NotifyStorageModified(
-        storage::QuotaClient::kAppcache, url::Origin::Create(origin),
+        storage::QuotaClient::kAppcache, origin,
         blink::mojom::StorageType::kTemporary, new_usage - old_usage);
   }
 }
 
 void AppCacheStorage::ClearUsageMapAndNotify() {
   if (service()->quota_manager_proxy()) {
-    for (UsageMap::const_iterator iter = usage_map_.begin();
-         iter != usage_map_.end(); ++iter) {
+    for (const auto& pair : usage_map_) {
       service()->quota_manager_proxy()->NotifyStorageModified(
-          storage::QuotaClient::kAppcache, url::Origin::Create(iter->first),
-          blink::mojom::StorageType::kTemporary, -(iter->second));
+          storage::QuotaClient::kAppcache, pair.first,
+          blink::mojom::StorageType::kTemporary, -(pair.second));
     }
   }
   usage_map_.clear();
 }
 
-void AppCacheStorage::NotifyStorageAccessed(const GURL& origin) {
+void AppCacheStorage::NotifyStorageAccessed(const url::Origin& origin) {
   if (service()->quota_manager_proxy() &&
       usage_map_.find(origin) != usage_map_.end())
     service()->quota_manager_proxy()->NotifyStorageAccessed(
-        storage::QuotaClient::kAppcache, url::Origin::Create(origin),
+        storage::QuotaClient::kAppcache, origin,
         blink::mojom::StorageType::kTemporary);
 }
 

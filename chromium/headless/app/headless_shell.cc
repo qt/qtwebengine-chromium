@@ -25,6 +25,8 @@
 #include "base/task_runner_util.h"
 #include "base/task_scheduler/post_task.h"
 #include "build/build_config.h"
+#include "cc/base/switches.h"
+#include "components/viz/common/switches.h"
 #include "content/public/app/content_main.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
@@ -329,7 +331,8 @@ void HeadlessShell::DevToolsTargetReady() {
         << "Expected an integer value for --timeout=";
     browser_->BrowserMainThread()->PostDelayedTask(
         FROM_HERE,
-        base::Bind(&HeadlessShell::FetchTimeout, weak_factory_.GetWeakPtr()),
+        base::BindOnce(&HeadlessShell::FetchTimeout,
+                       weak_factory_.GetWeakPtr()),
         base::TimeDelta::FromMilliseconds(timeout_ms));
   }
 
@@ -356,7 +359,7 @@ void HeadlessShell::PollReadyState() {
   // be sure the expected page is ready.
   devtools_client_->GetRuntime()->Evaluate(
       "document.readyState + ' ' + document.location.href",
-      base::Bind(&HeadlessShell::OnReadyState, weak_factory_.GetWeakPtr()));
+      base::BindOnce(&HeadlessShell::OnReadyState, weak_factory_.GetWeakPtr()));
 }
 
 void HeadlessShell::OnReadyState(
@@ -436,7 +439,7 @@ void HeadlessShell::FetchDom() {
       "(document.doctype ? new "
       "XMLSerializer().serializeToString(document.doctype) + '\\n' : '') + "
       "document.documentElement.outerHTML",
-      base::Bind(&HeadlessShell::OnDomFetched, weak_factory_.GetWeakPtr()));
+      base::BindOnce(&HeadlessShell::OnDomFetched, weak_factory_.GetWeakPtr()));
 }
 
 void HeadlessShell::OnDomFetched(
@@ -468,8 +471,8 @@ void HeadlessShell::InputExpression() {
     return;
   }
   devtools_client_->GetRuntime()->Evaluate(
-      expression.str(), base::Bind(&HeadlessShell::OnExpressionResult,
-                                   weak_factory_.GetWeakPtr()));
+      expression.str(), base::BindOnce(&HeadlessShell::OnExpressionResult,
+                                       weak_factory_.GetWeakPtr()));
 }
 
 void HeadlessShell::OnExpressionResult(
@@ -485,8 +488,8 @@ void HeadlessShell::CaptureScreenshot() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   devtools_client_->GetPage()->GetExperimental()->CaptureScreenshot(
       page::CaptureScreenshotParams::Builder().Build(),
-      base::Bind(&HeadlessShell::OnScreenshotCaptured,
-                 weak_factory_.GetWeakPtr()));
+      base::BindOnce(&HeadlessShell::OnScreenshotCaptured,
+                     weak_factory_.GetWeakPtr()));
 }
 
 void HeadlessShell::OnScreenshotCaptured(
@@ -508,7 +511,7 @@ void HeadlessShell::PrintToPDF() {
           .SetPrintBackground(true)
           .SetPreferCSSPageSize(true)
           .Build(),
-      base::Bind(&HeadlessShell::OnPDFCreated, weak_factory_.GetWeakPtr()));
+      base::BindOnce(&HeadlessShell::OnPDFCreated, weak_factory_.GetWeakPtr()));
 }
 
 void HeadlessShell::OnPDFCreated(
@@ -542,8 +545,9 @@ void HeadlessShell::WriteFile(const std::string& file_path_switch,
   file_proxy_ = std::make_unique<base::FileProxy>(file_task_runner_.get());
   if (!file_proxy_->CreateOrOpen(
           file_name, base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE,
-          base::Bind(&HeadlessShell::OnFileOpened, weak_factory_.GetWeakPtr(),
-                     decoded_data, file_name))) {
+          base::BindOnce(&HeadlessShell::OnFileOpened,
+                         weak_factory_.GetWeakPtr(), decoded_data,
+                         file_name))) {
     // Operation could not be started.
     OnFileOpened(std::string(), file_name, base::File::FILE_ERROR_FAILED);
   }
@@ -565,8 +569,8 @@ void HeadlessShell::OnFileOpened(const std::string& decoded_data,
 
   if (!file_proxy_->Write(
           0, buf->data(), buf->size(),
-          base::Bind(&HeadlessShell::OnFileWritten, weak_factory_.GetWeakPtr(),
-                     file_name, buf->size()))) {
+          base::BindOnce(&HeadlessShell::OnFileWritten,
+                         weak_factory_.GetWeakPtr(), file_name, buf->size()))) {
     // Operation may have completed successfully or failed.
     OnFileWritten(file_name, buf->size(), base::File::FILE_ERROR_FAILED, 0);
   }
@@ -585,8 +589,8 @@ void HeadlessShell::OnFileWritten(const base::FilePath file_name,
   } else {
     LOG(INFO) << "Written to file " << file_name.value() << ".";
   }
-  if (!file_proxy_->Close(base::Bind(&HeadlessShell::OnFileClosed,
-                                     weak_factory_.GetWeakPtr()))) {
+  if (!file_proxy_->Close(base::BindOnce(&HeadlessShell::OnFileClosed,
+                                         weak_factory_.GetWeakPtr()))) {
     // Operation could not be started.
     OnFileClosed(base::File::FILE_ERROR_FAILED);
   }
@@ -600,24 +604,12 @@ bool HeadlessShell::RemoteDebuggingEnabled() const {
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
   return (command_line.HasSwitch(switches::kRemoteDebuggingPort) ||
-          command_line.HasSwitch(switches::kRemoteDebuggingSocketFd));
+          command_line.HasSwitch(switches::kRemoteDebuggingPipe));
 }
 
 bool ValidateCommandLine(const base::CommandLine& command_line) {
-#if !defined(OS_POSIX)
-  if (command_line.HasSwitch(switches::kRemoteDebuggingSocketFd)) {
-    LOG(ERROR) << "Remote-debugging-socket can't be set on non-Posix systems";
-    return false;
-  }
-#endif
-  if (command_line.HasSwitch(switches::kRemoteDebuggingPort) &&
-      command_line.HasSwitch(switches::kRemoteDebuggingSocketFd)) {
-    LOG(ERROR) << "Remote-debugging-port and remote-debugging-socket "
-               << "can't both be set.";
-    return false;
-  }
   if (!command_line.HasSwitch(switches::kRemoteDebuggingPort) &&
-      !command_line.HasSwitch(switches::kRemoteDebuggingSocketFd)) {
+      !command_line.HasSwitch(switches::kRemoteDebuggingPipe)) {
     if (command_line.GetArgs().size() <= 1)
       return true;
     LOG(ERROR) << "Open multiple tabs is only supported when "
@@ -704,6 +696,24 @@ int HeadlessShellMain(int argc, const char** argv) {
   builder.SetCrashDumpsDir(dumps_path);
 #endif
 
+  if (command_line.HasSwitch(switches::kDeterministicMode)) {
+    command_line.AppendSwitch(switches::kEnableBeginFrameControl);
+    command_line.AppendSwitch(switches::kDeterministicFetch);
+
+    // Compositor flags
+    command_line.AppendSwitch(::switches::kRunAllCompositorStagesBeforeDraw);
+    command_line.AppendSwitch(::switches::kDisableNewContentRenderingTimeout);
+    command_line.AppendSwitch(::switches::kEnableSurfaceSynchronization);
+    // Ensure that image animations don't resync their animation timestamps when
+    // looping back around.
+    command_line.AppendSwitch(::switches::kDisableImageAnimationResync);
+
+    // Renderer flags
+    command_line.AppendSwitch(cc::switches::kDisableThreadedAnimation);
+    command_line.AppendSwitch(::switches::kDisableThreadedScrolling);
+    command_line.AppendSwitch(cc::switches::kDisableCheckerImaging);
+  }
+
   if (command_line.HasSwitch(switches::kEnableBeginFrameControl))
     builder.SetEnableBeginFrameControl(true);
 
@@ -716,8 +726,7 @@ int HeadlessShellMain(int argc, const char** argv) {
         command_line.GetSwitchValuePath(switches::kCrashDumpsDir));
   }
 
-  // Enable devtools if requested, either by specifying a port (and optional
-  // address), or by specifying the fd of an already-open socket.
+  // Enable devtools if requested, by specifying a port (and optional address).
   if (command_line.HasSwitch(::switches::kRemoteDebuggingPort)) {
     std::string address = kUseLocalHostForDevToolsHttpServer;
     if (command_line.HasSwitch(switches::kRemoteDebuggingAddress)) {
@@ -740,17 +749,9 @@ int HeadlessShellMain(int argc, const char** argv) {
     const net::HostPortPair endpoint(address,
                                      base::checked_cast<uint16_t>(parsed_port));
     builder.EnableDevToolsServer(endpoint);
-  } else if (command_line.HasSwitch(switches::kRemoteDebuggingSocketFd)) {
-    int parsed_fd;
-    std::string fd_str =
-        command_line.GetSwitchValueASCII(switches::kRemoteDebuggingSocketFd);
-    if (!base::StringToInt(fd_str, &parsed_fd) ||
-        !base::IsValueInRangeForNumericType<size_t>(parsed_fd)) {
-      LOG(ERROR) << "Invalid devtools server socket fd";
-      return EXIT_FAILURE;
-    }
-    builder.EnableDevToolsServer(base::checked_cast<size_t>(parsed_fd));
   }
+  if (command_line.HasSwitch(::switches::kRemoteDebuggingPipe))
+    builder.EnableDevToolsPipe();
 
   if (command_line.HasSwitch(switches::kProxyServer)) {
     std::string proxy_server =
@@ -829,7 +830,7 @@ int HeadlessShellMain(int argc, const char** argv) {
 
   return HeadlessBrowserMain(
       builder.Build(),
-      base::Bind(&HeadlessShell::OnStart, base::Unretained(&shell)));
+      base::BindOnce(&HeadlessShell::OnStart, base::Unretained(&shell)));
 }
 
 int HeadlessShellMain(const content::ContentMainParams& params) {

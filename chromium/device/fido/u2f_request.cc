@@ -12,19 +12,14 @@
 #include "base/stl_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
-#include "device/fido/u2f_apdu_command.h"
-#include "device/fido/u2f_ble_discovery.h"
+#include "components/apdu/apdu_command.h"
+#include "components/apdu/apdu_response.h"
 #include "services/service_manager/public/cpp/connector.h"
-
-// HID is not supported on Android.
-#if !defined(OS_ANDROID)
-#include "device/fido/u2f_hid_discovery.h"
-#endif  // !defined(OS_ANDROID)
 
 namespace device {
 
 U2fRequest::U2fRequest(service_manager::Connector* connector,
-                       const base::flat_set<U2fTransportProtocol>& protocols,
+                       const base::flat_set<FidoTransportProtocol>& transports,
                        std::vector<uint8_t> application_parameter,
                        std::vector<uint8_t> challenge_digest,
                        std::vector<std::vector<uint8_t>> registered_keys)
@@ -33,29 +28,19 @@ U2fRequest::U2fRequest(service_manager::Connector* connector,
       challenge_digest_(challenge_digest),
       registered_keys_(registered_keys),
       weak_factory_(this) {
-  for (const auto protocol : protocols) {
-    std::unique_ptr<U2fDiscovery> discovery;
-    switch (protocol) {
-      case U2fTransportProtocol::kUsbHumanInterfaceDevice:
-#if !defined(OS_ANDROID)
-        DCHECK(connector);
-        discovery = std::make_unique<U2fHidDiscovery>(connector);
-#endif  // !defined(OS_ANDROID)
-        break;
-      case U2fTransportProtocol::kBluetoothLowEnergy:
-        discovery = std::make_unique<U2fBleDiscovery>();
-        break;
+  for (const auto transport : transports) {
+    auto discovery = FidoDiscovery::Create(transport, connector);
+    if (discovery == nullptr) {
+      // This can occur if the given transport is not supported, or in tests
+      // when the given transport is not configured.
+      continue;
     }
-
-    discovery->AddObserver(this);
+    discovery->set_observer(this);
     discoveries_.push_back(std::move(discovery));
   }
 }
 
-U2fRequest::~U2fRequest() {
-  for (auto& discovery : discoveries_)
-    discovery->RemoveObserver(this);
-}
+U2fRequest::~U2fRequest() = default;
 
 void U2fRequest::Start() {
   if (state_ == State::INIT) {
@@ -65,43 +50,73 @@ void U2fRequest::Start() {
   }
 }
 
-void U2fRequest::SetDiscoveriesForTesting(
-    std::vector<std::unique_ptr<U2fDiscovery>> discoveries) {
-  discoveries_ = std::move(discoveries);
-  for (auto& discovery : discoveries_)
-    discovery->AddObserver(this);
+// static
+std::vector<uint8_t> U2fRequest::GetBogusRegisterCommand() {
+  apdu::ApduCommand command;
+  std::vector<uint8_t> data(kBogusChallenge.cbegin(), kBogusChallenge.cend());
+  data.insert(data.end(), kBogusAppParam.cbegin(), kBogusAppParam.cend());
+  command.set_ins(base::strict_cast<uint8_t>(U2fApduInstruction::kRegister));
+  command.set_p1(kP1TupRequiredConsumed);
+  command.set_data(data);
+  return command.GetEncodedCommand();
 }
 
 // static
-const std::vector<uint8_t>& U2fRequest::GetBogusApplicationParameter() {
-  static const std::vector<uint8_t> kBogusAppParam(32, 0x41);
-  return kBogusAppParam;
-}
-
-// static
-const std::vector<uint8_t>& U2fRequest::GetBogusChallenge() {
-  static const std::vector<uint8_t> kBogusChallenge(32, 0x42);
-  return kBogusChallenge;
-}
-
-// static
-std::unique_ptr<U2fApduCommand> U2fRequest::GetU2fVersionApduCommand(
+std::vector<uint8_t> U2fRequest::GetU2fVersionApduCommand(
     bool is_legacy_version) {
-  return is_legacy_version ? U2fApduCommand::CreateLegacyVersion()
-                           : U2fApduCommand::CreateVersion();
+  apdu::ApduCommand command;
+  command.set_ins(base::strict_cast<uint8_t>(U2fApduInstruction::kVersion));
+  // Set maximum expected response length to maximum length possible.
+  command.set_response_length(kU2fMaxResponseSize);
+  // Early U2F drafts defined the U2F version command a format
+  // incompatible with ISO 7816-4, so 2 additional 0x0 bytes are necessary.
+  // https://fidoalliance.org/specs/fido-u2f-v1.1-id-20160915/fido-u2f-raw-message-formats-v1.1-id-20160915.html#implementation-considerations
+  auto version_cmd = command.GetEncodedCommand();
+  if (is_legacy_version)
+    version_cmd.insert(version_cmd.end(), kLegacyVersionSuffix.cbegin(),
+                       kLegacyVersionSuffix.cend());
+
+  return version_cmd;
 }
 
-std::unique_ptr<U2fApduCommand> U2fRequest::GetU2fSignApduCommand(
+base::Optional<std::vector<uint8_t>> U2fRequest::GetU2fSignApduCommand(
+    const std::vector<uint8_t>& application_parameter,
     const std::vector<uint8_t>& key_handle,
     bool is_check_only_sign) const {
-  return U2fApduCommand::CreateSign(application_parameter_, challenge_digest_,
-                                    key_handle, is_check_only_sign);
+  if (application_parameter.size() != kU2fParameterLength ||
+      challenge_digest_.size() != kU2fParameterLength ||
+      key_handle.size() > kMaxKeyHandleLength) {
+    return base::nullopt;
+  }
+  apdu::ApduCommand command;
+  std::vector<uint8_t> data(challenge_digest_.begin(), challenge_digest_.end());
+  data.insert(data.end(), application_parameter.begin(),
+              application_parameter.end());
+  data.push_back(static_cast<uint8_t>(key_handle.size()));
+  data.insert(data.end(), key_handle.begin(), key_handle.end());
+  command.set_ins(base::strict_cast<uint8_t>(U2fApduInstruction::kSign));
+  command.set_p1(is_check_only_sign ? kP1CheckOnly : kP1TupRequiredConsumed);
+  command.set_data(data);
+  command.set_response_length(apdu::ApduCommand::kApduMaxResponseLength);
+  return command.GetEncodedCommand();
 }
 
-std::unique_ptr<U2fApduCommand> U2fRequest::GetU2fRegisterApduCommand(
+base::Optional<std::vector<uint8_t>> U2fRequest::GetU2fRegisterApduCommand(
     bool is_individual_attestation) const {
-  return U2fApduCommand::CreateRegister(
-      application_parameter_, challenge_digest_, is_individual_attestation);
+  if (application_parameter_.size() != kU2fParameterLength ||
+      challenge_digest_.size() != kU2fParameterLength) {
+    return base::nullopt;
+  }
+  apdu::ApduCommand command;
+  std::vector<uint8_t> data(challenge_digest_.begin(), challenge_digest_.end());
+  data.insert(data.end(), application_parameter_.begin(),
+              application_parameter_.end());
+  command.set_ins(base::strict_cast<uint8_t>(U2fApduInstruction::kRegister));
+  command.set_p1(kP1TupRequiredConsumed |
+                 (is_individual_attestation ? kP1IndividualAttestation : 0));
+  command.set_data(data);
+  command.set_response_length(apdu::ApduCommand::kApduMaxResponseLength);
+  return command.GetEncodedCommand();
 }
 
 void U2fRequest::Transition() {
@@ -109,13 +124,13 @@ void U2fRequest::Transition() {
     case State::IDLE:
       IterateDevice();
       if (!current_device_) {
-        // No devices available
+        // No devices available.
         state_ = State::OFF;
         break;
       }
       state_ = State::WINK;
       current_device_->TryWink(
-          base::Bind(&U2fRequest::Transition, weak_factory_.GetWeakPtr()));
+          base::BindOnce(&U2fRequest::Transition, weak_factory_.GetWeakPtr()));
       break;
     case State::WINK:
       state_ = State::BUSY;
@@ -126,31 +141,73 @@ void U2fRequest::Transition() {
   }
 }
 
-void U2fRequest::DiscoveryStarted(U2fDiscovery* discovery, bool success) {
-  if (success) {
-    // The discovery might know about devices that have already been added to
-    // the system. Add them to the |devices_| list if we don't already know
-    // about them. This case could happen if a DeviceAdded() event is emitted
-    // before DiscoveryStarted() is invoked. In that case both the U2fRequest
-    // and the U2fDiscovery already know about the just added device.
-    std::set<std::string> current_device_ids;
-    for (const auto* device : attempted_devices_)
-      current_device_ids.insert(device->GetId());
-    if (current_device_)
-      current_device_ids.insert(current_device_->GetId());
-    for (const auto* device : devices_)
-      current_device_ids.insert(device->GetId());
-
-    auto new_devices = discovery->GetDevices();
-    std::copy_if(
-        new_devices.begin(), new_devices.end(), std::back_inserter(devices_),
-        [&current_device_ids](U2fDevice* device) {
-          return !base::ContainsKey(current_device_ids, device->GetId());
-        });
+void U2fRequest::InitiateDeviceTransaction(
+    base::Optional<std::vector<uint8_t>> cmd,
+    FidoDevice::DeviceCallback callback) {
+  if (!cmd) {
+    std::move(callback).Run(base::nullopt);
+    return;
   }
+  current_device_->DeviceTransact(std::move(*cmd), std::move(callback));
+}
+
+void U2fRequest::OnDeviceVersionRequest(
+    VersionCallback callback,
+    base::WeakPtr<FidoDevice> device,
+    bool legacy,
+    base::Optional<std::vector<uint8_t>> response) {
+  const auto apdu_response =
+      response ? apdu::ApduResponse::CreateFromMessage(std::move(*response))
+               : base::nullopt;
+  if (apdu_response &&
+      apdu_response->status() == apdu::ApduResponse::Status::SW_NO_ERROR &&
+      std::equal(apdu_response->data().cbegin(), apdu_response->data().cend(),
+                 kU2fVersionResponse.cbegin(), kU2fVersionResponse.cend())) {
+    std::move(callback).Run(ProtocolVersion::kU2f);
+  } else if (!legacy) {
+    // Standard GetVersion failed, attempt legacy GetVersion command.
+    device->DeviceTransact(
+        GetU2fVersionApduCommand(true),
+        base::BindOnce(&U2fRequest::OnDeviceVersionRequest,
+                       weak_factory_.GetWeakPtr(), std::move(callback), device,
+                       true /* legacy */));
+  } else {
+    std::move(callback).Run(ProtocolVersion::kUnknown);
+  }
+}
+
+void U2fRequest::AbandonCurrentDeviceAndTransition() {
+  DCHECK_NE(nullptr, current_device_);
+  abandoned_devices_.emplace_back(std::exchange(current_device_, nullptr));
+  state_ = State::IDLE;
+  Transition();
+}
+
+void U2fRequest::DiscoveryStarted(FidoDiscovery* discovery, bool success) {
+#if DCHECK_IS_ON()
+  if (success) {
+    // FidoDiscovery::Observer::DeviceAdded should have been already dispatched
+    // for each of devices already known by |discovery|, so we should never
+    // learn anything new here.
+    std::set<std::string> device_ids_known_to_request;
+    for (const auto* device : attempted_devices_)
+      device_ids_known_to_request.insert(device->GetId());
+    if (current_device_)
+      device_ids_known_to_request.insert(current_device_->GetId());
+    for (const auto* device : devices_)
+      device_ids_known_to_request.insert(device->GetId());
+    for (const auto* device : abandoned_devices_)
+      device_ids_known_to_request.insert(device->GetId());
+
+    std::set<std::string> device_ids_from_newly_started_discovery;
+    for (const auto* device : discovery->GetDevices())
+      device_ids_from_newly_started_discovery.insert(device->GetId());
+    DCHECK(base::STLIncludes(device_ids_known_to_request,
+                             device_ids_from_newly_started_discovery));
+  }
+#endif
 
   started_count_++;
-
   if ((state_ == State::IDLE || state_ == State::OFF) &&
       (success || started_count_ == discoveries_.size())) {
     state_ = State::IDLE;
@@ -158,9 +215,7 @@ void U2fRequest::DiscoveryStarted(U2fDiscovery* discovery, bool success) {
   }
 }
 
-void U2fRequest::DiscoveryStopped(U2fDiscovery* discovery, bool success) {}
-
-void U2fRequest::DeviceAdded(U2fDiscovery* discovery, U2fDevice* device) {
+void U2fRequest::DeviceAdded(FidoDiscovery* discovery, FidoDevice* device) {
   devices_.push_back(device);
 
   // Start the state machine if this is the only device
@@ -171,9 +226,9 @@ void U2fRequest::DeviceAdded(U2fDiscovery* discovery, U2fDevice* device) {
   }
 }
 
-void U2fRequest::DeviceRemoved(U2fDiscovery* discovery, U2fDevice* device) {
+void U2fRequest::DeviceRemoved(FidoDiscovery* discovery, FidoDevice* device) {
   const std::string device_id = device->GetId();
-  auto device_id_eq = [&device_id](const U2fDevice* this_device) {
+  auto device_id_eq = [&device_id](const FidoDevice* this_device) {
     return device_id == this_device->GetId();
   };
 
@@ -188,6 +243,7 @@ void U2fRequest::DeviceRemoved(U2fDiscovery* discovery, U2fDevice* device) {
   // Remove the device if it exists in either device list
   devices_.remove_if(device_id_eq);
   attempted_devices_.remove_if(device_id_eq);
+  abandoned_devices_.remove_if(device_id_eq);
 }
 
 void U2fRequest::IterateDevice() {
@@ -205,7 +261,7 @@ void U2fRequest::IterateDevice() {
     devices_.pop_front();
   } else if (attempted_devices_.size() > 0) {
     devices_ = std::move(attempted_devices_);
-    // After trying every device, wait 200ms before trying again
+    // After trying every device, wait 200ms before trying again.
     delay_callback_.Reset(
         base::Bind(&U2fRequest::OnWaitComplete, weak_factory_.GetWeakPtr()));
     base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(

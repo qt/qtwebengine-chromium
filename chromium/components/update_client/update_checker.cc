@@ -6,13 +6,13 @@
 
 #include <stddef.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
@@ -60,7 +60,6 @@ class UpdateCheckerImpl : public UpdateChecker {
                        const IdToComponentPtrMap& components,
                        const std::string& additional_attributes,
                        bool enabled_component_updates,
-                       bool is_foreground,
                        UpdateCheckCallback update_check_callback) override;
 
  private:
@@ -68,8 +67,7 @@ class UpdateCheckerImpl : public UpdateChecker {
   void CheckForUpdatesHelper(const std::string& session_id,
                              const IdToComponentPtrMap& components,
                              const std::string& additional_attributes,
-                             bool enabled_component_updates,
-                             bool is_foreground);
+                             bool enabled_component_updates);
   void OnRequestSenderComplete(const IdToComponentPtrMap& components,
                                int error,
                                const std::string& response,
@@ -107,7 +105,6 @@ void UpdateCheckerImpl::CheckForUpdates(
     const IdToComponentPtrMap& components,
     const std::string& additional_attributes,
     bool enabled_component_updates,
-    bool is_foreground,
     UpdateCheckCallback update_check_callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
@@ -121,7 +118,7 @@ void UpdateCheckerImpl::CheckForUpdates(
       base::BindOnce(&UpdateCheckerImpl::CheckForUpdatesHelper,
                      base::Unretained(this), session_id,
                      base::ConstRef(components), additional_attributes,
-                     enabled_component_updates, is_foreground));
+                     enabled_component_updates));
 }
 
 // This function runs on the blocking pool task runner.
@@ -142,13 +139,23 @@ void UpdateCheckerImpl::CheckForUpdatesHelper(
     const std::string& session_id,
     const IdToComponentPtrMap& components,
     const std::string& additional_attributes,
-    bool enabled_component_updates,
-    bool is_foreground) {
+    bool enabled_component_updates) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   auto urls(config_->UpdateUrl());
   if (IsEncryptionRequired(components))
     RemoveUnsecureUrls(&urls);
+
+  // Components in this update check are either all foreground, or all
+  // background since this member is inherited from the component's update
+  // context. Pick the state of the first component to use in the update check.
+  DCHECK(!components.empty());
+  const bool is_foreground = components.at(ids_checked_[0])->is_foreground();
+  DCHECK(
+      std::all_of(components.cbegin(), components.cend(),
+                  [is_foreground](IdToComponentPtrMap::const_reference& elem) {
+                    return is_foreground == elem.second->is_foreground();
+                  }));
 
   request_sender_ = std::make_unique<RequestSender>(config_);
   request_sender_->Send(

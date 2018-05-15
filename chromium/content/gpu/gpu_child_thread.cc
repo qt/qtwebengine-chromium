@@ -275,7 +275,7 @@ void GpuChildThread::OnGpuServiceConnection(viz::GpuServiceImpl* gpu_service) {
   service_factory_.reset(new GpuServiceFactory(
       gpu_service->gpu_preferences(),
       gpu_service->media_gpu_channel_manager()->AsWeakPtr(),
-      overlay_factory_cb));
+      std::move(overlay_factory_cb)));
 
   if (GetContentClient()->gpu()) {  // NULL in tests.
     GetContentClient()->gpu()->GpuServiceInitialized(
@@ -283,6 +283,13 @@ void GpuChildThread::OnGpuServiceConnection(viz::GpuServiceImpl* gpu_service) {
   }
 
   release_pending_requests_closure_.Run();
+}
+
+void GpuChildThread::PostCompositorThreadCreated(
+    base::SingleThreadTaskRunner* task_runner) {
+  auto* gpu_client = GetContentClient()->gpu();
+  if (gpu_client)
+    gpu_client->PostCompositorThreadCreated(task_runner);
 }
 
 void GpuChildThread::BindServiceFactoryRequest(

@@ -8,7 +8,6 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/task_scheduler/post_task.h"
 #include "base/trace_event/trace_event.h"
 #include "ui/gfx/presentation_feedback.h"
@@ -68,9 +67,10 @@ bool GbmSurfaceless::ScheduleOverlayPlane(int z_order,
                                           gfx::OverlayTransform transform,
                                           gl::GLImage* image,
                                           const gfx::Rect& bounds_rect,
-                                          const gfx::RectF& crop_rect) {
-  unsubmitted_frames_.back()->overlays.push_back(
-      gl::GLSurfaceOverlay(z_order, transform, image, bounds_rect, crop_rect));
+                                          const gfx::RectF& crop_rect,
+                                          bool enable_blend) {
+  unsubmitted_frames_.back()->overlays.push_back(gl::GLSurfaceOverlay(
+      z_order, transform, image, bounds_rect, crop_rect, enable_blend));
   return true;
 }
 

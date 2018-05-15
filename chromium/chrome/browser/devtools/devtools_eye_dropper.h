@@ -9,13 +9,17 @@
 #include "base/macros.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "media/renderers/paint_canvas_video_renderer.h"
+#include "mojo/public/cpp/bindings/binding.h"
+#include "services/viz/privileged/interfaces/compositing/frame_sink_video_capture.mojom.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 namespace blink {
 class WebMouseEvent;
 }
 
-class DevToolsEyeDropper : public content::WebContentsObserver {
+class DevToolsEyeDropper : public content::WebContentsObserver,
+                           public viz::mojom::FrameSinkVideoConsumer {
  public:
   typedef base::Callback<void(int, int, int, int)> EyeDropperCallback;
 
@@ -40,12 +44,34 @@ class DevToolsEyeDropper : public content::WebContentsObserver {
   bool HandleMouseEvent(const blink::WebMouseEvent& event);
   void UpdateCursor();
 
+  // viz::mojom::FrameSinkVideoConsumer implementation.
+  void OnFrameCaptured(
+      mojo::ScopedSharedBufferHandle buffer,
+      uint32_t buffer_size,
+      ::media::mojom::VideoFrameInfoPtr info,
+      const gfx::Rect& update_rect,
+      const gfx::Rect& content_rect,
+      viz::mojom::FrameSinkVideoConsumerFrameCallbacksPtr callbacks) override;
+  void OnTargetLost(const viz::FrameSinkId& frame_sink_id) override;
+  void OnStopped() override;
+
+  // This object keeps the shared memory that backs |frame_| mapped.
+  mojo::ScopedSharedBufferMapping shared_memory_mapping_;
+
+  // This object prevents FrameSinkVideoCapturer from recycling the shared
+  // memory that backs |frame_|.
+  viz::mojom::FrameSinkVideoConsumerFrameCallbacksPtr shared_memory_releaser_;
+
   EyeDropperCallback callback_;
   SkBitmap frame_;
   int last_cursor_x_;
   int last_cursor_y_;
   content::RenderWidgetHost::MouseEventCallback mouse_event_callback_;
   content::RenderWidgetHost* host_;
+  viz::mojom::FrameSinkVideoCapturerPtr video_capturer_;
+  mojo::Binding<viz::mojom::FrameSinkVideoConsumer> video_consumer_binding_;
+  const bool use_video_capture_api_;
+  media::PaintCanvasVideoRenderer video_renderer_;
   base::WeakPtrFactory<DevToolsEyeDropper> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DevToolsEyeDropper);

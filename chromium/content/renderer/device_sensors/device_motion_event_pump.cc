@@ -10,12 +10,14 @@
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/render_thread_impl.h"
-#include "device/sensors/public/cpp/motion_data.h"
+#include "services/device/public/cpp/generic_sensor/motion_data.h"
 #include "services/device/public/mojom/sensor.mojom.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "ui/gfx/geometry/angle_conversions.h"
 
 namespace content {
+
+template class DeviceSensorEventPump<blink::WebDeviceMotionListener>;
 
 DeviceMotionEventPump::DeviceMotionEventPump(RenderThread* thread)
     : DeviceSensorEventPump<blink::WebDeviceMotionListener>(thread),

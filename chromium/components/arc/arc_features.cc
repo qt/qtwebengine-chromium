@@ -6,6 +6,10 @@
 
 namespace arc {
 
+// Controls whether ARC is available for CHILD accounts.
+const base::Feature kAvailableForChildAccountFeature{
+    "ArcAvailableForChildAccount", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Controls ACTION_BOOT_COMPLETED broadcast for third party applications on ARC.
 // When disabled, third party apps will not receive this broadcast.
 const base::Feature kBootCompletedBroadcastFeature {
@@ -20,7 +24,7 @@ const base::Feature kNativeBridgeExperimentFeature {
 // Controls ARC USB host integration.
 // When enabled, Android apps will be able to use usb host features.
 const base::Feature kUsbHostFeature{"ArcUsbHost",
-                                    base::FEATURE_DISABLED_BY_DEFAULT};
+                                    base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Controls ARC VPN integration.
 // When enabled, Chrome traffic will be routed through VPNs connected in

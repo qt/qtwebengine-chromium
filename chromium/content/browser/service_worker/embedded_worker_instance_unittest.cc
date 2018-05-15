@@ -10,7 +10,6 @@
 
 #include "base/command_line.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
@@ -22,7 +21,6 @@
 #include "content/browser/service_worker/service_worker_test_utils.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/common/service_worker/embedded_worker.mojom.h"
-#include "content/common/service_worker/embedded_worker_messages.h"
 #include "content/common/service_worker/service_worker_event_dispatcher.mojom.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/content_switches.h"
@@ -30,8 +28,8 @@
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -88,14 +86,16 @@ class ProviderHostEndpoints : public mojom::ServiceWorkerContainerHost {
       GetRegistrationForReadyCallback callback) override {
     NOTIMPLEMENTED();
   }
-  void GetControllerServiceWorker(
-      mojom::ControllerServiceWorkerRequest request) override {
+  void EnsureControllerServiceWorker(
+      mojom::ControllerServiceWorkerRequest request,
+      mojom::ControllerServiceWorkerPurpose purpose) override {
     NOTIMPLEMENTED();
   }
   void CloneForWorker(
       mojom::ServiceWorkerContainerHostRequest request) override {
     NOTIMPLEMENTED();
   }
+  void Ping(PingCallback callback) override { NOTIMPLEMENTED(); }
 
   mojom::ServiceWorkerContainerAssociatedPtr client_;
   mojo::AssociatedBinding<mojom::ServiceWorkerContainerHost> binding_;
@@ -142,8 +142,6 @@ class EmbeddedWorkerInstanceTest : public testing::Test,
   void OnDetached(EmbeddedWorkerStatus old_status) override {
     RecordEvent(DETACHED, old_status);
   }
-
-  bool OnMessageReceived(const IPC::Message&) override { return false; }
 
   void SetUp() override {
     helper_.reset(new EmbeddedWorkerTestHelper(base::FilePath()));

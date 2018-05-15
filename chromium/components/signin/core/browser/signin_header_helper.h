@@ -11,7 +11,7 @@
 
 #include "components/prefs/pref_member.h"
 #include "components/signin/core/browser/profile_management_switches.h"
-#include "components/signin/core/browser/signin_features.h"
+#include "components/signin/core/browser/signin_buildflags.h"
 #include "url/gurl.h"
 
 namespace content_settings {
@@ -178,9 +178,6 @@ class SigninHeaderHelper {
   virtual bool IsUrlEligibleForRequestHeader(const GURL& url) = 0;
 };
 
-// Returns true if signin cookies are allowed.
-bool SettingsAllowSigninCookies(
-    const content_settings::CookieSettings* cookie_settings);
 
 // Returns the CHROME_CONNECTED cookie, or an empty string if it should not be
 // added to the request to |url|.

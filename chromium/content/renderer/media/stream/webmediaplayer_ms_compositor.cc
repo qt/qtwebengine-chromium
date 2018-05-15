@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 #include <string>
+#include <utility>
 
 #include "base/command_line.h"
 #include "base/hash.h"
@@ -22,9 +23,9 @@
 #include "media/renderers/paint_canvas_video_renderer.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/public/platform/WebMediaStream.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
+#include "third_party/blink/public/platform/web_media_stream.h"
+#include "third_party/blink/public/platform/web_media_stream_source.h"
+#include "third_party/blink/public/platform/web_media_stream_track.h"
 #include "third_party/libyuv/include/libyuv/convert.h"
 #include "third_party/libyuv/include/libyuv/planar_functions.h"
 #include "third_party/libyuv/include/libyuv/video_common.h"
@@ -137,7 +138,8 @@ WebMediaPlayerMSCompositor::WebMediaPlayerMSCompositor(
       last_render_length_(base::TimeDelta::FromSecondsD(1.0 / 60.0)),
       total_frame_count_(0),
       dropped_frame_count_(0),
-      stopped_(true) {
+      stopped_(true),
+      render_started_(!stopped_) {
   main_message_loop_ = base::MessageLoop::current();
 
   blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
@@ -209,6 +211,9 @@ void WebMediaPlayerMSCompositor::EnqueueFrame(
     scoped_refptr<media::VideoFrame> frame) {
   DCHECK(io_task_runner_->BelongsToCurrentThread());
   base::AutoLock auto_lock(current_frame_lock_);
+  TRACE_EVENT_INSTANT1("media", "WebMediaPlayerMSCompositor::EnqueueFrame",
+                       TRACE_EVENT_SCOPE_THREAD, "Timestamp",
+                       frame->timestamp().InMicroseconds());
   ++total_frame_count_;
 
   // With algorithm off, just let |current_frame_| hold the incoming |frame|.
@@ -267,9 +272,9 @@ bool WebMediaPlayerMSCompositor::UpdateCurrentFrame(
     base::TimeTicks deadline_max) {
   DCHECK(compositor_task_runner_->BelongsToCurrentThread());
 
-  TRACE_EVENT_BEGIN2("webmediaplayerms", "UpdateCurrentFrame",
-                     "Actual Render Begin", deadline_min.ToInternalValue(),
-                     "Actual Render End", deadline_max.ToInternalValue());
+  TRACE_EVENT_BEGIN2("media", "UpdateCurrentFrame", "Actual Render Begin",
+                     deadline_min.ToInternalValue(), "Actual Render End",
+                     deadline_max.ToInternalValue());
   if (stopped_)
     return false;
 
@@ -287,9 +292,8 @@ bool WebMediaPlayerMSCompositor::UpdateCurrentFrame(
            "sophisticated video rendering algorithm.";
   }
 
-  TRACE_EVENT_END2("webmediaplayerms", "UpdateCurrentFrame",
-                   "Ideal Render Instant", render_time.ToInternalValue(),
-                   "Serial", serial_);
+  TRACE_EVENT_END2("media", "UpdateCurrentFrame", "Ideal Render Instant",
+                   render_time.ToInternalValue(), "Serial", serial_);
 
   return !current_frame_used_by_compositor_;
 }
@@ -302,6 +306,12 @@ bool WebMediaPlayerMSCompositor::HasCurrentFrame() {
 scoped_refptr<media::VideoFrame> WebMediaPlayerMSCompositor::GetCurrentFrame() {
   DVLOG(3) << __func__;
   base::AutoLock auto_lock(current_frame_lock_);
+  TRACE_EVENT_INSTANT1("media", "WebMediaPlayerMSCompositor::GetCurrentFrame",
+                       TRACE_EVENT_SCOPE_THREAD, "Timestamp",
+                       current_frame_->timestamp().InMicroseconds());
+  if (!render_started_)
+    return nullptr;
+
   current_frame_used_by_compositor_ = true;
   return current_frame_;
 }
@@ -314,11 +324,18 @@ scoped_refptr<media::VideoFrame>
 WebMediaPlayerMSCompositor::GetCurrentFrameWithoutUpdatingStatistics() {
   DVLOG(3) << __func__;
   base::AutoLock auto_lock(current_frame_lock_);
+  if (!render_started_)
+    return nullptr;
+
   return current_frame_;
 }
 
 void WebMediaPlayerMSCompositor::StartRendering() {
   DCHECK(thread_checker_.CalledOnValidThread());
+  {
+    base::AutoLock auto_lock(current_frame_lock_);
+    render_started_ = true;
+  }
   compositor_task_runner_->PostTask(
       FROM_HERE,
       base::BindOnce(&WebMediaPlayerMSCompositor::StartRenderingInternal,
@@ -397,6 +414,9 @@ void WebMediaPlayerMSCompositor::Render(base::TimeTicks deadline_min,
 void WebMediaPlayerMSCompositor::SetCurrentFrame(
     const scoped_refptr<media::VideoFrame>& frame) {
   current_frame_lock_.AssertAcquired();
+  TRACE_EVENT_INSTANT1("media", "WebMediaPlayerMSCompositor::SetCurrentFrame",
+                       TRACE_EVENT_SCOPE_THREAD, "Timestamp",
+                       frame->timestamp().InMicroseconds());
 
   if (!current_frame_used_by_compositor_)
     ++dropped_frame_count_;

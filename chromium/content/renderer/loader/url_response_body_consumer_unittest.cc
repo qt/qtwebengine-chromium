@@ -7,11 +7,10 @@
 #include "base/bind.h"
 #include "base/callback_forward.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
-#include "content/common/weak_wrapper_shared_url_loader_factory.h"
+#include "content/public/common/weak_wrapper_shared_url_loader_factory.h"
 #include "content/public/renderer/request_peer.h"
 #include "content/renderer/loader/request_extra_data.h"
 #include "content/renderer/loader/resource_dispatcher.h"
@@ -21,7 +20,7 @@
 #include "services/network/public/cpp/url_loader_completion_status.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -48,6 +47,11 @@ class TestRequestPeer : public RequestPeer {
 
   void OnReceivedResponse(const network::ResourceResponseInfo& info) override {
     ADD_FAILURE() << "OnReceivedResponse should not be called.";
+  }
+
+  void OnStartLoadingResponseBody(
+      mojo::ScopedDataPipeConsumerHandle body) override {
+    ADD_FAILURE() << "OnStartLoadingResponseBody should not be called.";
   }
 
   void OnDownloadedData(int len, int encoded_data_length) override {
@@ -150,8 +154,9 @@ class URLResponseBodyConsumerTest : public ::testing::Test {
                        TestRequestPeer::Context* context) {
     return dispatcher_->StartAsync(
         std::move(request), 0,
-        blink::scheduler::GetSingleThreadTaskRunnerForTesting(), url::Origin(),
+        blink::scheduler::GetSingleThreadTaskRunnerForTesting(),
         TRAFFIC_ANNOTATION_FOR_TESTS, false,
+        false /* pass_response_pipe_to_peer */,
         std::make_unique<TestRequestPeer>(context, message_loop_.task_runner()),
         base::MakeRefCounted<WeakWrapperSharedURLLoaderFactory>(&factory_),
         std::vector<std::unique_ptr<URLLoaderThrottle>>(),

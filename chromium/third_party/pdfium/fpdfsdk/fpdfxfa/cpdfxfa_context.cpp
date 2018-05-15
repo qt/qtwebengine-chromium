@@ -12,11 +12,11 @@
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fxcrt/fx_fallthrough.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
+#include "fpdfsdk/cpdfsdk_helpers.h"
 #include "fpdfsdk/cpdfsdk_interform.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_page.h"
 #include "fpdfsdk/fpdfxfa/cxfa_fwladaptertimermgr.h"
-#include "fpdfsdk/fsdk_define.h"
 #include "fxjs/cjs_runtime.h"
 #include "fxjs/ijs_runtime.h"
 #include "public/fpdf_formfill.h"
@@ -40,7 +40,6 @@ CPDFXFA_Context::CPDFXFA_Context(std::unique_ptr<CPDF_Document> pPDFDoc)
     : m_pPDFDoc(std::move(pPDFDoc)),
       m_pXFAApp(pdfium::MakeUnique<CXFA_FFApp>(this)),
       m_DocEnv(this) {
-  m_pXFAApp->SetDefaultFontMgr(pdfium::MakeUnique<CFGAS_DefaultFontManager>());
 }
 
 CPDFXFA_Context::~CPDFXFA_Context() {
@@ -91,20 +90,12 @@ bool CPDFXFA_Context::LoadXFADoc() {
   if (!pApp)
     return false;
 
-  m_pXFADoc = pApp->CreateDoc(&m_DocEnv, m_pPDFDoc.get());
-  if (!m_pXFADoc) {
+  m_pXFADoc = pdfium::MakeUnique<CXFA_FFDoc>(pApp, &m_DocEnv);
+  if (!m_pXFADoc->OpenDoc(m_pPDFDoc.get())) {
     SetLastError(FPDF_ERR_XFALOAD);
     return false;
   }
 
-  m_pXFADoc->StartLoad();
-  int iStatus = m_pXFADoc->DoLoad();
-  if (iStatus != XFA_PARSESTATUS_Done) {
-    CloseXFADoc();
-    SetLastError(FPDF_ERR_XFALOAD);
-    return false;
-  }
-  m_pXFADoc->StopLoad();
   m_pXFADoc->GetXFADoc()->InitScriptContext(GetCJSRuntime());
 
   if (m_pXFADoc->GetFormType() == FormType::kXFAFull)

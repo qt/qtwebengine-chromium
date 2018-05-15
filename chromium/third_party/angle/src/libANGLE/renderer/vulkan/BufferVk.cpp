@@ -56,7 +56,7 @@ gl::Error BufferVk::setData(const gl::Context *context,
 
         const VkImageUsageFlags usageFlags =
             (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-             VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+             VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 
         // TODO(jmadill): Proper usage bit implementation. Likely will involve multiple backing
         // buffers like in D3D11.
@@ -84,6 +84,7 @@ gl::Error BufferVk::setData(const gl::Context *context,
         ANGLE_TRY(setDataImpl(contextVk, static_cast<const uint8_t *>(data), size, 0));
     }
 
+    onStateChange(context, angle::SubjectMessage::STORAGE_CHANGED);
     return gl::NoError();
 }
 
@@ -99,6 +100,7 @@ gl::Error BufferVk::setSubData(const gl::Context *context,
     ContextVk *contextVk = vk::GetImpl(context);
     ANGLE_TRY(setDataImpl(contextVk, static_cast<const uint8_t *>(data), size, offset));
 
+    onStateChange(context, angle::SubjectMessage::STORAGE_CHANGED);
     return gl::NoError();
 }
 
@@ -122,6 +124,7 @@ gl::Error BufferVk::map(const gl::Context *context, GLenum access, void **mapPtr
     ANGLE_TRY(
         mBufferMemory.map(device, 0, mState.getSize(), 0, reinterpret_cast<uint8_t **>(mapPtr)));
 
+    onStateChange(context, angle::SubjectMessage::STORAGE_CHANGED);
     return gl::NoError();
 }
 
@@ -138,6 +141,7 @@ gl::Error BufferVk::mapRange(const gl::Context *context,
 
     ANGLE_TRY(mBufferMemory.map(device, offset, length, 0, reinterpret_cast<uint8_t **>(mapPtr)));
 
+    onStateChange(context, angle::SubjectMessage::STORAGE_CHANGED);
     return gl::NoError();
 }
 
@@ -150,6 +154,7 @@ gl::Error BufferVk::unmap(const gl::Context *context, GLboolean *result)
 
     mBufferMemory.unmap(device);
 
+    onStateChange(context, angle::SubjectMessage::STORAGE_CHANGED);
     return gl::NoError();
 }
 
@@ -185,7 +190,7 @@ vk::Error BufferVk::setDataImpl(ContextVk *contextVk,
     VkDevice device      = contextVk->getDevice();
 
     // Use map when available.
-    if (renderer->isSerialInUse(getQueueSerial()))
+    if (checkResourceInUseAndRefreshDeps(renderer))
     {
         vk::StagingBuffer stagingBuffer;
         ANGLE_TRY(stagingBuffer.init(contextVk, static_cast<VkDeviceSize>(size),

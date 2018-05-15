@@ -5,6 +5,7 @@
 import("//build/config/ui.gni")
 import("//components/viz/viz.gni")
 import("//gpu/vulkan/features.gni")
+import("//testing/libfuzzer/fuzzer_test.gni")
 
 config("viz_service_implementation") {
 }
@@ -113,6 +114,7 @@ viz_component("service") {
     "frame_sinks/direct_layer_tree_frame_sink.h",
     "frame_sinks/frame_sink_manager_impl.cc",
     "frame_sinks/frame_sink_manager_impl.h",
+    "frame_sinks/frame_sink_observer.h",
     "frame_sinks/primary_begin_frame_source.cc",
     "frame_sinks/primary_begin_frame_source.h",
     "frame_sinks/referenced_surface_tracker.cc",
@@ -139,6 +141,7 @@ viz_component("service") {
     "hit_test/hit_test_aggregator_delegate.h",
     "hit_test/hit_test_manager.cc",
     "hit_test/hit_test_manager.h",
+    "surfaces/latest_local_surface_id_lookup_delegate.h",
     "surfaces/surface.cc",
     "surfaces/surface.h",
     "surfaces/surface_client.h",
@@ -171,7 +174,7 @@ viz_component("service") {
     # dependency should not be in public_deps.
     "//gpu/ipc/client",
     "//gpu/ipc/service",
-    "//gpu/vulkan:features",
+    "//gpu/vulkan:buildflags",
     "//media",
     "//media/capture:capture_lib",
     "//media/gpu/ipc/service",
@@ -360,5 +363,20 @@ viz_source_set("perf_tests") {
     "//components/viz/test:test_support",
     "//testing/gtest",
     "//testing/perf",
+  ]
+}
+
+fuzzer_test("hit_test_manager_fuzzer") {
+  sources = [
+    "hit_test/hit_test_manager_fuzzer.cc",
+  ]
+
+  libfuzzer_options = [ "max_len=81920" ]
+
+  deps = [
+    ":service",
+    "//base/test:test_support",
+    "//components/viz/test:test_support",
+    "//mojo/edk",
   ]
 }

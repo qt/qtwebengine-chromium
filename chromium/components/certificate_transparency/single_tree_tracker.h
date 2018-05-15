@@ -13,11 +13,11 @@
 #include "base/memory/memory_pressure_monitor.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "components/certificate_transparency/sth_observer.h"
 #include "net/base/hash_value.h"
 #include "net/base/network_change_notifier.h"
 #include "net/cert/ct_verifier.h"
 #include "net/cert/signed_tree_head.h"
-#include "net/cert/sth_observer.h"
 #include "net/log/net_log_with_source.h"
 
 namespace net {
@@ -39,6 +39,38 @@ namespace certificate_transparency {
 
 class LogDnsClient;
 
+// Enum indicating whether an SCT can be checked for inclusion and if not,
+// the reason it cannot.
+//
+// Note: The numeric values are used within a histogram and should not change
+// or be re-assigned.
+enum SCTCanBeCheckedForInclusion {
+  // If the SingleTreeTracker does not have a valid STH, then a valid STH is
+  // first required to evaluate whether the SCT can be checked for inclusion
+  // or not.
+  VALID_STH_REQUIRED = 0,
+
+  // If the STH does not cover the SCT (the timestamp in the SCT is greater than
+  // MMD + timestamp in the STH), then a newer STH is needed.
+  NEWER_STH_REQUIRED = 1,
+
+  // When an SCT is observed, if the SingleTreeTracker instance has a valid STH
+  // and the STH covers the SCT (the timestamp in the SCT is less than MMD +
+  // timestamp in the STH), then it can be checked for inclusion.
+  CAN_BE_CHECKED = 2,
+
+  // This SCT was not audited because the queue of pending entries was
+  // full.
+  NOT_AUDITED_QUEUE_FULL = 3,
+
+  // This SCT was not audited because no DNS lookup was done when first
+  // visiting the website that supplied it. It could compromise the user's
+  // privacy to do an inclusion check over DNS in this scenario.
+  NOT_AUDITED_NO_DNS_LOOKUP = 4,
+
+  SCT_CAN_BE_CHECKED_MAX
+};
+
 // Tracks the state of an individual Certificate Transparency Log's Merkle Tree.
 // A CT Log constantly issues Signed Tree Heads, for which every older STH must
 // be incorporated into the current/newer STH. As new certificates are logged,
@@ -55,11 +87,10 @@ class LogDnsClient;
 //
 // To accomplish this, this class needs to be notified of when new SCTs are
 // observed (which it does by implementing net::CTVerifier::Observer) and when
-// new STHs are observed (which it does by implementing net::ct::STHObserver).
+// new STHs are observed (which it does by implementing STHObserver).
 // Once connected to sources providing that data, the status for a given SCT
 // can be queried by calling GetLogEntryInclusionCheck.
-class SingleTreeTracker : public net::CTVerifier::Observer,
-                          public net::ct::STHObserver {
+class SingleTreeTracker : public net::CTVerifier::Observer, public STHObserver {
  public:
   enum SCTInclusionStatus {
     // SCT was not observed by this class and is not currently pending
@@ -111,7 +142,7 @@ class SingleTreeTracker : public net::CTVerifier::Observer,
                      net::X509Certificate* cert,
                      const net::ct::SignedCertificateTimestamp* sct) override;
 
-  // net::ct::STHObserver implementation.
+  // STHObserver implementation.
   // After verification of the signature over the |sth|, uses this
   // STH for future inclusion checks.
   // Must only be called for STHs issued by the log this instance tracks.

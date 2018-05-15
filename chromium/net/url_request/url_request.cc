@@ -31,6 +31,7 @@
 #include "net/log/net_log.h"
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_source_type.h"
+#include "net/socket/next_proto.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/url_request/redirect_info.h"
 #include "net/url_request/redirect_util.h"
@@ -557,6 +558,7 @@ URLRequest::URLRequest(const GURL& url,
       net_log_(NetLogWithSource::Make(context->net_log(),
                                       NetLogSourceType::URL_REQUEST)),
       url_chain_(1, url),
+      attach_same_site_cookies_(false),
       method_("GET"),
       referrer_policy_(CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE),
       first_party_url_policy_(NEVER_CHANGE_FIRST_PARTY_URL),
@@ -700,7 +702,7 @@ void URLRequest::CancelWithSSLError(int error, const SSLInfo& ssl_info) {
 }
 
 int URLRequest::DoCancel(int error, const SSLInfo& ssl_info) {
-  DCHECK(error < 0);
+  DCHECK_LT(error, 0);
   // If cancelled while calling a delegate, clear delegate info.
   if (calling_delegate_) {
     LogUnblocked();
@@ -1166,8 +1168,11 @@ void URLRequest::OnCallToDelegateComplete() {
 void URLRequest::MaybeGenerateNetworkErrorLoggingReport() {
   NetworkErrorLoggingService* service =
       context()->network_error_logging_service();
-  if (!service)
+  if (!service) {
+    NetworkErrorLoggingService::
+        RecordRequestDiscardedForNoNetworkErrorLoggingService();
     return;
+  }
 
   // TODO(juliatuttle): Figure out whether we should be ignoring errors from
   // non-HTTPS origins.
@@ -1179,22 +1184,28 @@ void URLRequest::MaybeGenerateNetworkErrorLoggingReport() {
   IPEndPoint endpoint;
   if (GetRemoteEndpoint(&endpoint))
     details.server_ip = endpoint.address();
-  // TODO(juliatuttle): Plumb this.
-  details.protocol = kProtoUnknown;
   if (response_headers()) {
     // HttpResponseHeaders::response_code() returns 0 if response code couldn't
     // be parsed, which is also how NEL represents the same.
     details.status_code = response_headers()->response_code();
+    // If we got response headers, assume that the connection used HTTP/1.1
+    // unless ALPN negotation tells us otherwise (handled below).
+    details.protocol = "http/1.1";
   } else {
     details.status_code = 0;
   }
+  if (response_info().was_alpn_negotiated)
+    details.protocol = response_info().alpn_negotiated_protocol;
   details.elapsed_time =
       base::TimeTicks::Now() - load_timing_info_.request_start;
   details.type = status().ToNetError();
 
-  details.is_reporting_upload =
-      context()->reporting_service() &&
-      context()->reporting_service()->RequestIsUpload(*this);
+  if (context()->reporting_service()) {
+    details.reporting_upload_depth =
+        context()->reporting_service()->GetUploadDepth(*this);
+  } else {
+    details.reporting_upload_depth = 0;
+  }
 
   service->OnRequest(details);
 }

@@ -448,6 +448,11 @@ GLenum CheckFramebufferStatusOES(GLenum target)
 	{
 		es1::Framebuffer *framebuffer = context->getFramebuffer();
 
+		if(!framebuffer)
+		{
+			return GL_FRAMEBUFFER_UNDEFINED_OES;
+		}
+
 		return framebuffer->completeness();
 	}
 
@@ -837,17 +842,18 @@ void CopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, 
 
 		es1::Framebuffer *framebuffer = context->getFramebuffer();
 
-		if(framebuffer->completeness() != GL_FRAMEBUFFER_COMPLETE_OES)
+		if(!framebuffer || (framebuffer->completeness() != GL_FRAMEBUFFER_COMPLETE_OES))
 		{
 			return error(GL_INVALID_FRAMEBUFFER_OPERATION_OES);
 		}
 
-		if(context->getFramebufferName() != 0 && framebuffer->getColorbuffer()->getSamples() > 1)
+		es1::Renderbuffer *source = framebuffer->getColorbuffer();
+
+		if(!source || source->getSamples() > 1)
 		{
 			return error(GL_INVALID_OPERATION);
 		}
 
-		es1::Renderbuffer *source = framebuffer->getColorbuffer();
 		GLenum colorbufferFormat = source->getFormat();
 
 		// [OpenGL ES 1.1.12] table 3.9
@@ -902,7 +908,7 @@ void CopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, 
 		{
 			internalformat = colorbufferFormat;
 		}
-		else if(GetRedSize(colorbufferFormat) == 8)
+		else if(GetRedSize(colorbufferFormat) <= 8)
 		{
 			internalformat = gl::GetSizedInternalFormat(internalformat, GL_UNSIGNED_BYTE);
 		}
@@ -963,10 +969,9 @@ void CopyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
 
 	if(context)
 	{
-
 		es1::Framebuffer *framebuffer = context->getFramebuffer();
 
-		if(framebuffer->completeness() != GL_FRAMEBUFFER_COMPLETE_OES)
+		if(!framebuffer || (framebuffer->completeness() != GL_FRAMEBUFFER_COMPLETE_OES))
 		{
 			return error(GL_INVALID_FRAMEBUFFER_OPERATION_OES);
 		}
@@ -2070,6 +2075,11 @@ void GetFramebufferAttachmentParameterivOES(GLenum target, GLenum attachment, GL
 
 		es1::Framebuffer *framebuffer = context->getFramebuffer();
 
+		if(!framebuffer)
+		{
+			return error(GL_INVALID_OPERATION);
+		}
+
 		GLenum attachmentType;
 		GLuint attachmentHandle;
 		switch(attachment)
@@ -2264,6 +2274,7 @@ const GLubyte* GetString(GLenum name)
 			"GL_OES_rgb8_rgba8 "
 			"GL_OES_stencil8 "
 			"GL_OES_stencil_wrap "
+			"GL_OES_surfaceless_context "
 			"GL_OES_texture_mirrored_repeat "
 			"GL_OES_texture_npot "
 			"GL_EXT_blend_minmax "
@@ -4249,7 +4260,7 @@ void TexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width,
 		return error(GL_INVALID_VALUE);
 	}
 
-	GLenum sizedInternalFormat = gl::GetSizedInternalFormat(internalformat, type);
+	GLint sizedInternalFormat = gl::GetSizedInternalFormat(internalformat, type);
 
 	es1::Context *context = es1::getContext();
 

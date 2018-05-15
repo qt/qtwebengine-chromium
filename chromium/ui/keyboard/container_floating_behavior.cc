@@ -4,6 +4,7 @@
 
 #include "ui/keyboard/container_floating_behavior.h"
 
+#include "ui/events/event.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
@@ -115,20 +116,20 @@ gfx::Rect ContainerFloatingBehavior::ContainKeyboardToScreenBounds(
   int bottom = keyboard_bounds.bottom();
 
   // Prevent keyboard from appearing off screen or overlapping with the edge.
-  if (left < 0) {
-    left = 0;
-    right = keyboard_bounds.width();
+  if (left < display_bounds.x()) {
+    left = display_bounds.x();
+    right = left + keyboard_bounds.width();
   }
-  if (right >= display_bounds.width()) {
-    right = display_bounds.width();
+  if (right >= display_bounds.right()) {
+    right = display_bounds.right();
     left = right - keyboard_bounds.width();
   }
-  if (top < 0) {
-    top = 0;
-    bottom = keyboard_bounds.height();
+  if (top < display_bounds.y()) {
+    top = display_bounds.y();
+    bottom = top + keyboard_bounds.height();
   }
-  if (bottom >= display_bounds.height()) {
-    bottom = display_bounds.height();
+  if (bottom >= display_bounds.bottom()) {
+    bottom = display_bounds.bottom();
     top = bottom - keyboard_bounds.height();
   }
 
@@ -162,7 +163,11 @@ gfx::Point ContainerFloatingBehavior::GetPositionForShowingKeyboard(
 
   // Make sure that this location is valid according to the current size of the
   // screen.
-  gfx::Rect keyboard_bounds = gfx::Rect(top_left_offset, keyboard_size);
+  gfx::Rect keyboard_bounds =
+      gfx::Rect(top_left_offset.x() + display_bounds.x(),
+                top_left_offset.y() + display_bounds.y(), keyboard_size.width(),
+                keyboard_size.height());
+
   gfx::Rect valid_keyboard_bounds =
       ContainKeyboardToScreenBounds(keyboard_bounds, display_bounds);
 
@@ -175,9 +180,9 @@ bool ContainerFloatingBehavior::IsDragHandle(
   return draggable_area_.Contains(offset.x(), offset.y());
 }
 
-void ContainerFloatingBehavior::HandlePointerEvent(
+bool ContainerFloatingBehavior::HandlePointerEvent(
     const ui::LocatedEvent& event,
-    const gfx::Rect& display_bounds) {
+    const display::Display& current_display) {
   // Cannot call UI-backed operations without a KeyboardController
   DCHECK(controller_);
   auto kb_offset = gfx::Vector2d(event.x(), event.y());
@@ -188,51 +193,90 @@ void ContainerFloatingBehavior::HandlePointerEvent(
 
   // Don't handle events if this runs in a partially initialized state.
   if (keyboard_bounds.height() <= 0)
-    return;
+    return false;
 
-  bool handle_drag = false;
+  ui::PointerId pointer_id = -1;
+  if (event.IsTouchEvent()) {
+    const ui::TouchEvent* te = event.AsTouchEvent();
+    pointer_id = te->pointer_details().id;
+  }
+
   const ui::EventType type = event.type();
-  if (IsDragHandle(kb_offset, keyboard_bounds.size())) {
-    if (type == ui::ET_TOUCH_PRESSED ||
-        (type == ui::ET_MOUSE_PRESSED &&
-         ((const ui::MouseEvent*)&event)->IsOnlyLeftMouseButton())) {
-      // Drag is starting.
-      // Mouse events are limited to just the left mouse button.
-
-      drag_started_by_touch_ = (type == ui::ET_TOUCH_PRESSED);
-      if (!drag_descriptor_) {
+  switch (type) {
+    case ui::ET_TOUCH_PRESSED:
+    case ui::ET_MOUSE_PRESSED:
+      if (!IsDragHandle(kb_offset, keyboard_bounds.size())) {
+        drag_descriptor_ = nullptr;
+      } else if (type == ui::ET_MOUSE_PRESSED &&
+                 !((const ui::MouseEvent*)&event)->IsOnlyLeftMouseButton()) {
+        // Mouse events are limited to just the left mouse button.
+        drag_descriptor_ = nullptr;
+      } else if (!drag_descriptor_) {
         // If there is no active drag descriptor, start a new one.
+        bool drag_started_by_touch = (type == ui::ET_TOUCH_PRESSED);
         drag_descriptor_.reset(
-            new DragDescriptor(keyboard_bounds.origin(), kb_offset));
+            new DragDescriptor(keyboard_bounds.origin(), kb_offset,
+                               drag_started_by_touch, pointer_id));
       }
-      handle_drag = true;
-    }
+      break;
+
+    case ui::ET_MOUSE_DRAGGED:
+    case ui::ET_TOUCH_MOVED:
+      if (!drag_descriptor_) {
+        // do nothing
+      } else if (drag_descriptor_->is_touch_drag() !=
+                 (type == ui::ET_TOUCH_MOVED)) {
+        // If the event isn't of the same type that started the drag, end the
+        // drag to prevent confusion.
+        drag_descriptor_ = nullptr;
+      } else if (drag_descriptor_->pointer_id() != pointer_id) {
+        // do nothing.
+      } else {
+        // Drag continues.
+        // If there is an active drag, use it to determine the new location
+        // of the keyboard.
+        const gfx::Point original_click_location =
+            drag_descriptor_->original_keyboard_location() +
+            drag_descriptor_->original_click_offset();
+        const gfx::Point current_drag_location =
+            keyboard_bounds.origin() + kb_offset;
+        const gfx::Vector2d cumulative_drag_offset =
+            current_drag_location - original_click_location;
+        const gfx::Point new_keyboard_location =
+            drag_descriptor_->original_keyboard_location() +
+            cumulative_drag_offset;
+        gfx::Rect new_bounds =
+            gfx::Rect(new_keyboard_location, keyboard_bounds.size());
+
+        DisplayUtil display_util;
+        const display::Display& new_display =
+            display_util.FindAdjacentDisplayIfPointIsNearMargin(
+                current_display, current_drag_location);
+
+        if (current_display.id() == new_display.id()) {
+          controller_->MoveKeyboard(new_bounds);
+          return true;
+        } else {
+          new_bounds =
+              ContainKeyboardToScreenBounds(new_bounds, new_display.bounds());
+          // Since the keyboard has jumped across screens, cancel the current
+          // drag descriptor as though the user has lifted their finger.
+          drag_descriptor_ = nullptr;
+
+          // Enqueue a transition to the adjacent display.
+          // TODO(blakeo): pass new_bounds to display transition.
+          controller_->MoveToDisplayWithTransition(new_display);
+          return true;
+        }
+        SavePosition(container->bounds(), new_display.size());
+      }
+      break;
+
+    default:
+      drag_descriptor_ = nullptr;
+      break;
   }
-  if (drag_descriptor_ &&
-      (type == ui::ET_MOUSE_DRAGGED ||
-       (drag_started_by_touch_ && type == ui::ET_TOUCH_MOVED))) {
-    // Drag continues.
-    // If there is an active drag, use it to determine the new location
-    // of the keyboard.
-    const gfx::Point original_click_location =
-        drag_descriptor_->original_keyboard_location() +
-        drag_descriptor_->original_click_offset();
-    const gfx::Point current_drag_location =
-        keyboard_bounds.origin() + kb_offset;
-    const gfx::Vector2d cumulative_drag_offset =
-        current_drag_location - original_click_location;
-    const gfx::Point new_keyboard_location =
-        drag_descriptor_->original_keyboard_location() + cumulative_drag_offset;
-    const gfx::Rect new_bounds =
-        gfx::Rect(new_keyboard_location, keyboard_bounds.size());
-    controller_->MoveKeyboard(new_bounds);
-    SavePosition(container->bounds(), display_bounds.size());
-    handle_drag = true;
-  }
-  if (!handle_drag && drag_descriptor_) {
-    // drag has ended
-    drag_descriptor_ = nullptr;
-  }
+  return false;
 }
 
 void ContainerFloatingBehavior::SetCanonicalBounds(

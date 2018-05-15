@@ -4,7 +4,7 @@
 
 import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
-import("//device/vr/features/features.gni")
+import("//device/vr/buildflags/buildflags.gni")
 import("//testing/test.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 
@@ -59,6 +59,8 @@ jumbo_component("gfx") {
     "color_utils.h",
     "decorated_text.cc",
     "decorated_text.h",
+    "decorated_text_mac.h",
+    "decorated_text_mac.mm",
     "favicon_size.cc",
     "favicon_size.h",
     "font.cc",
@@ -123,6 +125,7 @@ jumbo_component("gfx") {
     "mac/nswindow_frame_controls.h",
     "mac/nswindow_frame_controls.mm",
     "mac/scoped_cocoa_disable_screen_updates.h",
+    "mac/scoped_cocoa_disable_screen_updates.mm",
     "nine_image_painter.cc",
     "nine_image_painter.h",
     "path.cc",
@@ -250,7 +253,7 @@ jumbo_component("gfx") {
     "//base:base_static",
     "//base:i18n",
     "//base/third_party/dynamic_annotations",
-    "//device/vr/features",
+    "//device/vr/buildflags",
     "//skia",
     "//third_party/zlib",
   ]
@@ -601,8 +604,6 @@ static_library("test_support") {
     "image/image_unittest_util.h",
     "image/image_unittest_util_ios.mm",
     "image/image_unittest_util_mac.mm",
-    "test/fontconfig_util_linux.cc",
-    "test/fontconfig_util_linux.h",
     "test/gfx_util.cc",
     "test/gfx_util.h",
     "test/icc_profiles.cc",
@@ -626,10 +627,6 @@ static_library("test_support") {
     sources += [ "render_text_test_api.h" ]
 
     deps += [ "//third_party:freetype_harfbuzz" ]
-  }
-
-  if (is_linux) {
-    deps += [ "//third_party/fontconfig" ]
   }
 }
 
@@ -793,7 +790,7 @@ test("gfx_unittests") {
   if (!is_ios) {
     deps += [
       "//cc/paint",
-      "//mojo/edk/system",
+      "//mojo/edk",
       "//mojo/public/cpp/bindings",
       "//ui/gfx/geometry/mojo:unit_test",
       "//ui/gfx/image/mojo:unit_test",

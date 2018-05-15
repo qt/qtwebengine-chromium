@@ -12,9 +12,6 @@
 #include "base/command_line.h"
 #include "base/i18n/case_conversion.h"
 #include "base/message_loop/message_loop.h"
-#include "base/metrics/histogram_macros.h"
-#include "base/metrics/sparse_histogram.h"
-#include "base/metrics/user_metrics.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -25,8 +22,8 @@
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/popup_item_ids.h"
-#include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_util.h"
+#include "components/signin/core/browser/signin_metrics.h"
 #include "components/strings/grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -42,7 +39,7 @@ bool IsAutofillWarningEntry(int frontend_id) {
          frontend_id == POPUP_ITEM_ID_HTTP_NOT_SECURE_WARNING_MESSAGE;
 }
 
-} // anonymous namespace
+}  // namespace
 
 AutofillExternalDelegate::AutofillExternalDelegate(AutofillManager* manager,
                                                    AutofillDriver* driver)
@@ -144,8 +141,8 @@ void AutofillExternalDelegate::OnSuggestionsReturned(
     signin_promo_suggestion.frontend_id =
         POPUP_ITEM_ID_CREDIT_CARD_SIGNIN_PROMO;
     suggestions.push_back(signin_promo_suggestion);
-    base::RecordAction(
-        base::UserMetricsAction("Signin_Impression_FromAutofillDropdown"));
+    signin_metrics::RecordSigninImpressionUserActionForAccessPoint(
+        signin_metrics::AccessPoint::ACCESS_POINT_AUTOFILL_DROPDOWN);
   }
 
 #if !defined(OS_ANDROID)
@@ -354,17 +351,13 @@ void AutofillExternalDelegate::ApplyAutofillOptions(
     suggestions->back().frontend_id = POPUP_ITEM_ID_CLEAR_FORM;
   }
 
-  // Append the 'Chrome Autofill settings' menu item, or the menu item specified
-  // in the popup layout experiment. If we do not include
-  // |POPUP_ITEM_ID_CLEAR_FORM|, include a hint for keyboard accessory.
-  // Menu item name will be 'Autofill settings' if experiment is enabled.
+  // Append the 'Autofill settings' menu item, or the menu item specified in the
+  // popup layout experiment. If we do not include |POPUP_ITEM_ID_CLEAR_FORM|,
+  // include a hint for keyboard accessory.
   suggestions->push_back(Suggestion(GetSettingsSuggestionValue()));
   suggestions->back().frontend_id = POPUP_ITEM_ID_AUTOFILL_OPTIONS;
-  if (is_all_server_suggestions &&
-      base::FeatureList::IsEnabled(
-          features::kAutofillCreditCardDropdownGooglePayBranding)) {
+  if (is_all_server_suggestions)
     suggestions->back().icon = base::ASCIIToUTF16("googlePay");
-  }
 
 #if defined(OS_ANDROID)
   if (IsKeyboardAccessoryEnabled()) {
@@ -418,17 +411,9 @@ void AutofillExternalDelegate::InsertDataListValues(
 
 base::string16 AutofillExternalDelegate::GetSettingsSuggestionValue()
     const {
-  if (IsKeyboardAccessoryEnabled()) {
-    return l10n_util::GetStringUTF16(IDS_AUTOFILL_OPTIONS_CONTENT_DESCRIPTION);
-  }
-
-  if (base::FeatureList::IsEnabled(
-          features::kAutofillUseNewSettingsNameInDropdown))
-    return l10n_util::GetStringUTF16(IDS_AUTOFILL_SETTINGS_POPUP);
-
-  return l10n_util::GetStringUTF16(is_credit_card_popup_
-                                       ? IDS_AUTOFILL_CREDIT_CARD_OPTIONS_POPUP
-                                       : IDS_AUTOFILL_OPTIONS_POPUP);
+  return l10n_util::GetStringUTF16(
+      IsKeyboardAccessoryEnabled() ? IDS_AUTOFILL_OPTIONS_CONTENT_DESCRIPTION
+                                   : IDS_AUTOFILL_SETTINGS_POPUP);
 }
 
 }  // namespace autofill

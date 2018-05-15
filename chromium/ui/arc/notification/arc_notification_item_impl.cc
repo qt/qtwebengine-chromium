@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-#include "base/memory/ptr_util.h"
+#include "ash/shelf/shelf_constants.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/arc/notification/arc_notification_delegate.h"
@@ -22,7 +22,6 @@ namespace arc {
 
 namespace {
 
-constexpr char kNotifierId[] = "ARC_NOTIFICATION";
 constexpr char kNotificationIdPrefix[] = "ARC_NOTIFICATION_";
 
 // Converts from Android notification priority to Chrome notification priority.
@@ -68,7 +67,8 @@ ArcNotificationItemImpl::~ArcNotificationItemImpl() {
 }
 
 void ArcNotificationItemImpl::OnUpdatedFromAndroid(
-    mojom::ArcNotificationDataPtr data) {
+    mojom::ArcNotificationDataPtr data,
+    const std::string& app_id) {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(notification_key_, data->key);
 
@@ -77,21 +77,17 @@ void ArcNotificationItemImpl::OnUpdatedFromAndroid(
   rich_data.priority = ConvertAndroidPriority(data->priority);
   if (data->small_icon)
     rich_data.small_image = gfx::Image::CreateFrom1xBitmap(*data->small_icon);
-  if (data->accessible_name.has_value()) {
-    accessible_name_ = base::UTF8ToUTF16(*data->accessible_name);
-  } else {
-    accessible_name_ = base::JoinString(
-        {base::UTF8ToUTF16(data->title), base::UTF8ToUTF16(data->message)},
-        base::ASCIIToUTF16("\n"));
-  }
-  rich_data.accessible_name = accessible_name_;
-  if (IsOpeningSettingsSupported()) {
+
+  rich_data.accessible_name = base::UTF8ToUTF16(
+      data->accessible_name.value_or(data->title + "\n" + data->message));
+  if (manager_->IsOpeningSettingsSupported()) {
     rich_data.settings_button_handler =
         message_center::SettingsButtonHandler::DELEGATE;
   }
 
   message_center::NotifierId notifier_id(
-      message_center::NotifierId::ARC_APPLICATION, kNotifierId);
+      message_center::NotifierId::ARC_APPLICATION,
+      app_id.empty() ? ash::kDefaultArcNotifierId : app_id);
   notifier_id.profile_id = profile_id_.GetUserEmail();
 
   auto notification = std::make_unique<message_center::Notification>(
@@ -112,6 +108,7 @@ void ArcNotificationItemImpl::OnUpdatedFromAndroid(
     manually_expanded_or_collapsed_ = true;
   }
 
+  type_ = data->type;
   expand_state_ = data->expand_state;
   shown_contents_ = data->shown_contents;
   swipe_input_rect_ =
@@ -127,9 +124,6 @@ void ArcNotificationItemImpl::OnUpdatedFromAndroid(
     snapshot_ = gfx::ImageSkia(
         gfx::ImageSkiaRep(*data->snapshot_image, data->snapshot_image_scale));
   }
-
-  for (auto& observer : observers_)
-    observer.OnItemUpdated();
 
   message_center_->AddNotification(std::move(notification));
 }
@@ -157,10 +151,6 @@ void ArcNotificationItemImpl::Click() {
 
 void ArcNotificationItemImpl::OpenSettings() {
   manager_->OpenNotificationSettings(notification_key_);
-}
-
-bool ArcNotificationItemImpl::IsOpeningSettingsSupported() const {
-  return manager_->IsOpeningSettingsSupported();
 }
 
 void ArcNotificationItemImpl::ToggleExpansion() {
@@ -208,6 +198,11 @@ const gfx::ImageSkia& ArcNotificationItemImpl::GetSnapshot() const {
   return snapshot_;
 }
 
+mojom::ArcNotificationType ArcNotificationItemImpl::GetNotificationType()
+    const {
+  return type_;
+}
+
 mojom::ArcNotificationExpandState ArcNotificationItemImpl::GetExpandState()
     const {
   return expand_state_;
@@ -232,10 +227,6 @@ const std::string& ArcNotificationItemImpl::GetNotificationKey() const {
 
 const std::string& ArcNotificationItemImpl::GetNotificationId() const {
   return notification_id_;
-}
-
-const base::string16& ArcNotificationItemImpl::GetAccessibleName() const {
-  return accessible_name_;
 }
 
 }  // namespace arc

@@ -11,7 +11,9 @@
 
 #include "base/bind.h"
 #include "base/containers/span.h"
+#include "base/macros.h"
 #include "base/memory/ptr_util.h"
+#include "device/fido/fido_constants.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "mojo/public/cpp/bindings/interface_ptr_set.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
@@ -46,6 +48,9 @@ class MockHidConnection : public device::mojom::HidConnection {
                          SendFeatureReportCallback callback) override;
   void SetNonce(base::span<uint8_t const> nonce);
 
+  void ExpectWriteHidInit();
+  void ExpectHidWriteWithCommand(FidoHidDeviceCommand cmd);
+
   const std::vector<uint8_t>& connection_channel_id() const {
     return connection_channel_id_;
   }
@@ -56,6 +61,8 @@ class MockHidConnection : public device::mojom::HidConnection {
   device::mojom::HidDeviceInfoPtr device_;
   std::vector<uint8_t> nonce_;
   std::vector<uint8_t> connection_channel_id_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockHidConnection);
 };
 
 class FakeHidConnection : public device::mojom::HidConnection {
@@ -79,6 +86,8 @@ class FakeHidConnection : public device::mojom::HidConnection {
 
  private:
   device::mojom::HidDeviceInfoPtr device_;
+
+  DISALLOW_COPY_AND_ASSIGN(FakeHidConnection);
 };
 
 class FakeHidManager : public device::mojom::HidManager {
@@ -105,6 +114,8 @@ class FakeHidManager : public device::mojom::HidManager {
   std::map<std::string, device::mojom::HidConnectionPtr> connections_;
   mojo::AssociatedInterfacePtrSet<device::mojom::HidManagerClient> clients_;
   mojo::BindingSet<device::mojom::HidManager> bindings_;
+
+  DISALLOW_COPY_AND_ASSIGN(FakeHidManager);
 };
 
 }  // namespace device

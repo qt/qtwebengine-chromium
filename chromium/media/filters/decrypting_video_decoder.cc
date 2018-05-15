@@ -23,26 +23,27 @@ const char DecryptingVideoDecoder::kDecoderName[] = "DecryptingVideoDecoder";
 
 DecryptingVideoDecoder::DecryptingVideoDecoder(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
-    MediaLog* media_log,
-    const base::Closure& waiting_for_decryption_key_cb)
+    MediaLog* media_log)
     : task_runner_(task_runner),
       media_log_(media_log),
       state_(kUninitialized),
-      waiting_for_decryption_key_cb_(waiting_for_decryption_key_cb),
       decryptor_(NULL),
       key_added_while_decode_pending_(false),
       trace_id_(0),
+      support_clear_content_(false),
       weak_factory_(this) {}
 
 std::string DecryptingVideoDecoder::GetDisplayName() const {
   return kDecoderName;
 }
 
-void DecryptingVideoDecoder::Initialize(const VideoDecoderConfig& config,
-                                        bool /* low_delay */,
-                                        CdmContext* cdm_context,
-                                        const InitCB& init_cb,
-                                        const OutputCB& output_cb) {
+void DecryptingVideoDecoder::Initialize(
+    const VideoDecoderConfig& config,
+    bool /* low_delay */,
+    CdmContext* cdm_context,
+    const InitCB& init_cb,
+    const OutputCB& output_cb,
+    const WaitingForDecryptionKeyCB& waiting_for_decryption_key_cb) {
   DVLOG(2) << __func__ << ": " << config.AsHumanReadableString();
 
   DCHECK(task_runner_->BelongsToCurrentThread());
@@ -52,12 +53,30 @@ void DecryptingVideoDecoder::Initialize(const VideoDecoderConfig& config,
   DCHECK(decode_cb_.is_null());
   DCHECK(reset_cb_.is_null());
   DCHECK(config.IsValidConfig());
-  DCHECK(cdm_context);
 
   init_cb_ = BindToCurrentLoop(init_cb);
+  if (!cdm_context) {
+    // Once we have a CDM context, one should always be present.
+    DCHECK(!support_clear_content_);
+    base::ResetAndReturn(&init_cb_).Run(false);
+    return;
+  }
+
+  if (!config.is_encrypted() && !support_clear_content_) {
+    base::ResetAndReturn(&init_cb_).Run(false);
+    return;
+  }
+
+  // Once initialized with encryption support, the value is sticky, so we'll use
+  // the decryptor for clear content as well.
+  support_clear_content_ = true;
+
   output_cb_ = BindToCurrentLoop(output_cb);
   weak_this_ = weak_factory_.GetWeakPtr();
   config_ = config;
+
+  DCHECK(!waiting_for_decryption_key_cb.is_null());
+  waiting_for_decryption_key_cb_ = waiting_for_decryption_key_cb;
 
   if (state_ == kUninitialized) {
     if (!cdm_context->GetDecryptor()) {
@@ -79,7 +98,7 @@ void DecryptingVideoDecoder::Initialize(const VideoDecoderConfig& config,
                    &DecryptingVideoDecoder::FinishInitialization, weak_this_)));
 }
 
-void DecryptingVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
+void DecryptingVideoDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
                                     const DecodeCB& decode_cb) {
   DVLOG(3) << "Decode()";
   DCHECK(task_runner_->BelongsToCurrentThread());
@@ -102,7 +121,7 @@ void DecryptingVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
     return;
   }
 
-  pending_buffer_to_decode_ = buffer;
+  pending_buffer_to_decode_ = std::move(buffer);
   state_ = kPendingDecode;
   DecodePendingBuffer();
 }
@@ -222,8 +241,7 @@ void DecryptingVideoDecoder::DeliverFrame(
   key_added_while_decode_pending_ = false;
 
   scoped_refptr<DecoderBuffer> scoped_pending_buffer_to_decode =
-      pending_buffer_to_decode_;
-  pending_buffer_to_decode_ = NULL;
+      std::move(pending_buffer_to_decode_);
 
   if (!reset_cb_.is_null()) {
     base::ResetAndReturn(&decode_cb_).Run(DecodeStatus::ABORTED);
@@ -251,7 +269,7 @@ void DecryptingVideoDecoder::DeliverFrame(
 
     // Set |pending_buffer_to_decode_| back as we need to try decoding the
     // pending buffer again when new key is added to the decryptor.
-    pending_buffer_to_decode_ = scoped_pending_buffer_to_decode;
+    pending_buffer_to_decode_ = std::move(scoped_pending_buffer_to_decode);
 
     if (need_to_try_again_if_nokey_is_returned) {
       // The |state_| is still kPendingDecode.
@@ -275,6 +293,8 @@ void DecryptingVideoDecoder::DeliverFrame(
   }
 
   DCHECK_EQ(status, Decryptor::kSuccess);
+  CHECK(frame);
+
   // Frame returned with kSuccess should not be an end-of-stream frame.
   DCHECK(!frame->metadata()->IsTrue(VideoFrameMetadata::END_OF_STREAM));
 
@@ -292,7 +312,7 @@ void DecryptingVideoDecoder::DeliverFrame(
   if (scoped_pending_buffer_to_decode->end_of_stream()) {
     // Set |pending_buffer_to_decode_| back as we need to keep flushing the
     // decryptor.
-    pending_buffer_to_decode_ = scoped_pending_buffer_to_decode;
+    pending_buffer_to_decode_ = std::move(scoped_pending_buffer_to_decode);
     DecodePendingBuffer();
     return;
   }

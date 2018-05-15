@@ -124,11 +124,11 @@ void DragTest_Part2(int64_t display_id,
   if (!result)
     quit_closure.Run();
 
-  ui::mojom::RemoteEventDispatcher* dispatcher =
-      MusClient::Get()->GetTestingEventDispater();
-  dispatcher->DispatchEvent(
+  ui::mojom::EventInjector* event_injector =
+      MusClient::Get()->GetTestingEventInjector();
+  event_injector->InjectEvent(
       display_id, CreateMouseUpEvent(30, 30),
-      base::Bind(&DragTest_Part3, display_id, quit_closure));
+      base::BindOnce(&DragTest_Part3, display_id, quit_closure));
 }
 
 void DragTest_Part1(int64_t display_id,
@@ -138,11 +138,11 @@ void DragTest_Part1(int64_t display_id,
   if (!result)
     quit_closure.Run();
 
-  ui::mojom::RemoteEventDispatcher* dispatcher =
-      MusClient::Get()->GetTestingEventDispater();
-  dispatcher->DispatchEvent(
+  ui::mojom::EventInjector* event_injector =
+      MusClient::Get()->GetTestingEventInjector();
+  event_injector->InjectEvent(
       display_id, CreateMouseMoveEvent(30, 30),
-      base::Bind(&DragTest_Part2, display_id, quit_closure));
+      base::BindOnce(&DragTest_Part2, display_id, quit_closure));
 }
 
 TEST_F(DragTestInteractive, DragTest) {
@@ -175,11 +175,11 @@ TEST_F(DragTestInteractive, DragTest) {
 
   {
     base::RunLoop run_loop;
-    ui::mojom::RemoteEventDispatcher* dispatcher =
-        MusClient::Get()->GetTestingEventDispater();
-    dispatcher->DispatchEvent(
+    ui::mojom::EventInjector* event_injector =
+        MusClient::Get()->GetTestingEventInjector();
+    event_injector->InjectEvent(
         display_id, CreateMouseDownEvent(10, 10),
-        base::Bind(&DragTest_Part1, display_id, run_loop.QuitClosure()));
+        base::BindOnce(&DragTest_Part1, display_id, run_loop.QuitClosure()));
 
     run_loop.Run();
   }

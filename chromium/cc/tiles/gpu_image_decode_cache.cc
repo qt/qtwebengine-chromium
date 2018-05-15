@@ -11,7 +11,6 @@
 #include "base/hash.h"
 #include "base/memory/discardable_memory_allocator.h"
 #include "base/memory/memory_coordinator_client_registry.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_math.h"
 #include "base/strings/stringprintf.h"
@@ -211,12 +210,16 @@ sk_sp<SkImage> TakeOwnershipOfSkImageBacking(GrContext* context,
 
   GrSurfaceOrigin origin;
   image->getTextureHandle(false /* flushPendingGrContextIO */, &origin);
+  SkColorType color_type = image->colorType();
+  if (color_type == kUnknown_SkColorType) {
+    return nullptr;
+  }
   sk_sp<SkColorSpace> color_space = image->refColorSpace();
   GrBackendTexture backend_texture;
   SkImage::BackendTextureReleaseProc release_proc;
   SkImage::MakeBackendTextureFromSkImage(context, std::move(image),
                                          &backend_texture, &release_proc);
-  return SkImage::MakeFromTexture(context, backend_texture, origin,
+  return SkImage::MakeFromTexture(context, backend_texture, origin, color_type,
                                   kPremul_SkAlphaType, std::move(color_space));
 }
 
@@ -577,22 +580,14 @@ void GpuImageDecodeCache::ImageData::ValidateBudgeted() const {
 GpuImageDecodeCache::GpuImageDecodeCache(viz::RasterContextProvider* context,
                                          bool use_transfer_cache,
                                          SkColorType color_type,
-                                         size_t max_working_set_bytes)
+                                         size_t max_working_set_bytes,
+                                         int max_texture_size)
     : color_type_(color_type),
       use_transfer_cache_(use_transfer_cache),
       context_(context),
+      max_texture_size_(max_texture_size),
       persistent_cache_(PersistentCache::NO_AUTO_EVICT),
       max_working_set_bytes_(max_working_set_bytes) {
-  // Acquire the context_lock so that we can safely retrieve
-  // |max_texture_size_|.
-  {
-    base::Optional<viz::RasterContextProvider::ScopedRasterContextLock>
-        context_lock;
-    if (context_->GetLock())
-      context_lock.emplace(context_);
-    max_texture_size_ = context_->GrContext()->caps()->maxTextureSize();
-  }
-
   // In certain cases, ThreadTaskRunnerHandle isn't set (Android Webview).
   // Don't register a dump provider in these cases.
   if (base::ThreadTaskRunnerHandle::IsSet()) {
@@ -1351,9 +1346,9 @@ void GpuImageDecodeCache::DecodeImageIfNecessary(const DrawImage& draw_image,
                     image_info.minRowBytes());
 
     // Set |pixmap| to the desired colorspace to decode into.
-    if (image_data->mode == DecodedDataMode::kCpu) {
-      // If this is a kCpu image, we want to handle color conversion during
-      // decode, so set the target colorspace here.
+    if (!SupportsColorSpaceConversion()) {
+      pixmap.setColorSpace(nullptr);
+    } else if (image_data->mode == DecodedDataMode::kCpu) {
       pixmap.setColorSpace(draw_image.target_color_space().ToSkColorSpace());
     } else {
       // For kGpu or kTransferCache images color conversion is handled during
@@ -1420,7 +1415,11 @@ void GpuImageDecodeCache::UploadImageIfNecessary(const DrawImage& draw_image,
     if (!image_data->decode.image()->peekPixels(&pixmap))
       return;
 
-    ClientImageTransferCacheEntry image_entry(&pixmap, nullptr);
+    sk_sp<SkColorSpace> color_space =
+        SupportsColorSpaceConversion()
+            ? draw_image.target_color_space().ToSkColorSpace()
+            : nullptr;
+    ClientImageTransferCacheEntry image_entry(&pixmap, color_space.get());
     size_t size = image_entry.SerializedSize();
     void* data = context_->ContextSupport()->MapTransferCacheEntry(size);
     // TODO(piman): handle error (failed to allocate/map shm)
@@ -1445,11 +1444,12 @@ void GpuImageDecodeCache::UploadImageIfNecessary(const DrawImage& draw_image,
 
   // For kGpu, we upload and color convert (if necessary).
   if (image_data->mode == DecodedDataMode::kGpu) {
+    DCHECK(!use_transfer_cache_);
     base::AutoUnlock unlock(lock_);
     uploaded_image =
         uploaded_image->makeTextureImage(context_->GrContext(), nullptr);
 
-    if (uploaded_image && SupportsColorSpaces() &&
+    if (uploaded_image && SupportsColorSpaceConversion() &&
         draw_image.target_color_space().IsValid()) {
       TRACE_EVENT0("cc", "GpuImageDecodeCache::UploadImage - color conversion");
       sk_sp<SkImage> pre_converted_image = uploaded_image;
@@ -1570,11 +1570,6 @@ void GpuImageDecodeCache::RunPendingContextThreadOperations() {
   for (auto* image : images_pending_unlock_) {
     context_->ContextGL()->UnlockDiscardableTextureCHROMIUM(
         GlIdFromSkImage(image));
-  }
-  if (images_pending_unlock_.size() > 0) {
-    // When we unlock images, we remove any outstanding texture bindings. We
-    // need to inform Skia so it will re-generate these bindings if needed.
-    context_->GrContext()->resetContext(kTextureBinding_GrGLBackendState);
   }
   images_pending_unlock_.clear();
 
@@ -1763,7 +1758,7 @@ void GpuImageDecodeCache::OnPurgeMemory() {
   EnsureCapacity(0);
 }
 
-bool GpuImageDecodeCache::SupportsColorSpaces() const {
+bool GpuImageDecodeCache::SupportsColorSpaceConversion() const {
   switch (color_type_) {
     case kRGBA_8888_SkColorType:
     case kBGRA_8888_SkColorType:

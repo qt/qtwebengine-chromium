@@ -729,7 +729,7 @@ Polymer({
     const icons = {
       // Card's icon indicates a cleanup offer.
       SYSTEM: {
-        statusIcon: 'settings:security',
+        statusIcon: 'cr:security',
         statusIconClassName: 'status-icon-remove',
       },
 
@@ -819,7 +819,7 @@ Polymer({
       [
         settings.ChromeCleanerCardState.CLEANING, {
           title: this.i18n('chromeCleanupTitleRemoving'),
-          explanation: this.i18n('chromeCleanupExplanationRemove'),
+          explanation: this.i18n('chromeCleanupExplanationRemoving'),
           icon: null,
           actionButton: null,
           flags: settings.ChromeCleanupCardFlags.WAITING_FOR_RESULT |
@@ -896,7 +896,8 @@ Polymer({
         }
       ],
       [
-        settings.ChromeCleanerCardState.CLEANER_DOWNLOAD_FAILED, {
+        settings.ChromeCleanerCardState.CLEANER_DOWNLOAD_FAILED,
+        {
           // TODO(crbug.com/776538): distinguish between missing network
           // connectivity and cleanups being disabled by the server.
           title: this.i18n('chromeCleanupTitleCleanupUnavailable'),

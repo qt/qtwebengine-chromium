@@ -14,7 +14,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/macros.h"
-#include "net/base/int128.h"
 #include "net/quic/core/quic_connection.h"
 #include "net/quic/core/quic_control_frame_manager.h"
 #include "net/quic/core/quic_crypto_stream.h"
@@ -117,6 +116,7 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   bool HasOpenDynamicStreams() const override;
   void OnPathDegrading() override;
   bool AllowSelfAddressChange() const override;
+  void OnForwardProgressConfirmed() override;
 
   // QuicStreamFrameDataProducer
   bool WriteStreamData(QuicStreamId id,
@@ -199,6 +199,17 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // Called by the QuicCryptoStream when a handshake message is received.
   virtual void OnCryptoHandshakeMessageReceived(
       const CryptoHandshakeMessage& message);
+
+  // Called by the stream on creation to set priority in the write blocked list.
+  virtual void RegisterStreamPriority(QuicStreamId id,
+                                      bool is_static,
+                                      SpdyPriority priority);
+  // Called by the stream on deletion to clear priority crom the write blocked
+  // list.
+  virtual void UnregisterStreamPriority(QuicStreamId id, bool is_static);
+  // Called by the stream on SetPriority to update priority on the write blocked
+  // list.
+  virtual void UpdateStreamPriority(QuicStreamId id, SpdyPriority new_priority);
 
   // Returns mutable config for this session. Returned config is owned
   // by QuicSession.
@@ -294,17 +305,10 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // Returns true if this stream should yield writes to another blocked stream.
   bool ShouldYield(QuicStreamId stream_id);
 
-  // Called to cancel retransmission of unencrypted stream data.
-  void NeuterUnencryptedStreamData();
-
   // Set transmission type of next sending packets.
   void SetTransmissionType(TransmissionType type);
 
-  bool can_use_slices() const { return can_use_slices_; }
-
-  bool session_unblocks_stream() const { return session_unblocks_stream_; }
-
-  bool use_control_frame_manager() const;
+  bool register_streams_early() const { return register_streams_early_; }
 
   bool session_decides_what_to_write() const;
 
@@ -424,7 +428,7 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
 
   // Returns a stateless reset token which will be included in the public reset
   // packet.
-  virtual uint128 GetStatelessResetToken() const;
+  virtual QuicUint128 GetStatelessResetToken() const;
 
   QuicControlFrameManager& control_frame_manager() {
     return control_frame_manager_;
@@ -474,8 +478,15 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // May be null.
   Visitor* visitor_;
 
-  ClosedStreams closed_streams_;
+  // Latched value of quic_reloadable_flag_quic_register_streams_early2.
+  const bool register_streams_early_;
 
+  // A list of streams which need to write more data.  Stream register
+  // themselves in their constructor, and unregisterm themselves in their
+  // destructors, so the write blocked list must outlive all streams.
+  QuicWriteBlockedList write_blocked_streams_;
+
+  ClosedStreams closed_streams_;
   // Streams which are closed, but need to be kept alive. Currently, the only
   // reason is the stream's sent data (including FIN) does not get fully acked.
   ZombieStreamMap zombie_streams_;
@@ -507,9 +518,6 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // been consumed.
   QuicUnorderedSet<QuicStreamId> draining_streams_;
 
-  // A list of streams which need to write more data.
-  QuicWriteBlockedList write_blocked_streams_;
-
   QuicStreamId largest_peer_created_stream_id_;
 
   // A counter for peer initiated streams which are in the dynamic_stream_map_.
@@ -540,17 +548,10 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
 
   QuicControlFrameManager control_frame_manager_;
 
-  // QUIC stream can take ownership of application data provided in reference
-  // counted memory to avoid data copy.
-  const bool can_use_slices_;
-
   // TODO(fayang): switch to linked_hash_set when chromium supports it. The bool
   // is not used here.
   // List of streams with pending retransmissions.
   QuicLinkedHashMap<QuicStreamId, bool> streams_with_pending_retransmission_;
-
-  // Latched value of quic_reloadable_flag_quic_streams_unblocked_by_session2.
-  const bool session_unblocks_stream_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicSession);
 };

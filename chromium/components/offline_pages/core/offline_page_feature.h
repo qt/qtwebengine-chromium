@@ -24,6 +24,10 @@ extern const base::Feature kOfflinePagesResourceBasedSnapshotFeature;
 extern const base::Feature kOfflinePagesPrefetchingUIFeature;
 extern const base::Feature kOfflinePagesLimitlessPrefetchingFeature;
 extern const base::Feature kOfflinePagesDescriptivePendingStatusFeature;
+extern const base::Feature kOfflinePagesInDownloadHomeOpenInCctFeature;
+extern const base::Feature kOfflinePagesDescriptiveFailStatusFeature;
+extern const base::Feature kOfflinePagesCTSuppressNotificationsFeature;
+extern const base::Feature kOfflinePagesShowAlternateDinoPageFeature;
 
 // The parameter name used to find the experiment tag for prefetching offline
 // pages.
@@ -77,9 +81,24 @@ bool ShouldUseTestingSnapshotDelay();
 // Returns true if we should record request origin as part of custom tabs V2.
 bool IsOfflinePagesCTV2Enabled();
 
+// Returns true if descriptive failed download status texts should be used in
+// notifications and Downloads Home.
+bool IsOfflinePagesDescriptiveFailStatusEnabled();
+
 // Returns true if descriptive pending download status texts should be used in
 // notifications and Downloads Home.
 bool IsOfflinePagesDescriptivePendingStatusEnabled();
+
+// Controls whether offline pages opened from the Downloads Home should be
+// opened in CCTs instead of new tabs.
+bool ShouldOfflinePagesInDownloadHomeOpenInCct();
+
+// Returns true if we should suppress completed notifications for certain custom
+// tabs downloads.
+bool IsOfflinePagesSuppressNotificationsEnabled();
+
+// Controls whether we should show a dinosaur page with alternate UI.
+bool ShouldShowAlternateDinoPage();
 
 // Returns an experiment tag provided by the field trial. This experiment tag
 // will be included in a custom header in all requests sent to Offline Prefetch

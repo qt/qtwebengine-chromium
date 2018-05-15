@@ -757,6 +757,10 @@ process_common_toolchain() {
         tgt_isa=x86_64
         tgt_os=darwin16
         ;;
+      *darwin17*)
+        tgt_isa=x86_64
+        tgt_os=darwin17
+        ;;
       x86_64*mingw32*)
         tgt_os=win64
         ;;
@@ -885,6 +889,10 @@ process_common_toolchain() {
       add_cflags  "-mmacosx-version-min=10.12"
       add_ldflags "-mmacosx-version-min=10.12"
       ;;
+    *-darwin17-*)
+      add_cflags  "-mmacosx-version-min=10.13"
+      add_ldflags "-mmacosx-version-min=10.13"
+      ;;
     *-iphonesimulator-*)
       add_cflags  "-miphoneos-version-min=${IOS_VERSION_MIN}"
       add_ldflags "-miphoneos-version-min=${IOS_VERSION_MIN}"
@@ -933,7 +941,6 @@ process_common_toolchain() {
           setup_gnu_toolchain
           arch_int=${tgt_isa##armv}
           arch_int=${arch_int%%te}
-          check_add_asflags --defsym ARCHITECTURE=${arch_int}
           tune_cflags="-mtune="
           if [ ${tgt_isa} = "armv7" ] || [ ${tgt_isa} = "armv7s" ]; then
             if [ -z "${float_abi}" ]; then
@@ -960,6 +967,19 @@ EOF
 
           enabled debug && add_asflags -g
           asm_conversion_cmd="${source_path}/build/make/ads2gas.pl"
+
+          case ${tgt_os} in
+            win*)
+              asm_conversion_cmd="$asm_conversion_cmd -noelf"
+              AS="$CC -c"
+              EXE_SFX=.exe
+              enable_feature thumb
+              ;;
+            *)
+              check_add_asflags --defsym ARCHITECTURE=${arch_int}
+              ;;
+          esac
+
           if enabled thumb; then
             asm_conversion_cmd="$asm_conversion_cmd -thumb"
             check_add_cflags -mthumb
@@ -1202,6 +1222,9 @@ EOF
       ;;
     x86*)
       case  ${tgt_os} in
+        android)
+          soft_enable realtime_only
+          ;;
         win*)
           enabled gcc && add_cflags -fno-common
           ;;
@@ -1371,7 +1394,8 @@ EOF
           add_cflags  ${sim_arch}
           add_ldflags ${sim_arch}
 
-          if [ "$(show_darwin_sdk_major_version iphonesimulator)" -gt 8 ]; then
+          if [ "$(disabled external_build)" ] &&
+              [ "$(show_darwin_sdk_major_version iphonesimulator)" -gt 8 ]; then
             # yasm v1.3.0 doesn't know what -fembed-bitcode means, so turning it
             # on is pointless (unless building a C-only lib). Warn the user, but
             # do nothing here.

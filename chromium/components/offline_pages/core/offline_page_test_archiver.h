@@ -46,6 +46,7 @@ class OfflinePageTestArchiver : public OfflinePageArchiver {
   // OfflinePageArchiver implementation:
   void CreateArchive(const base::FilePath& archives_dir,
                      const CreateArchiveParams& create_archive_params,
+                     content::WebContents* web_contents,
                      const CreateArchiveCallback& callback) override;
 
   void PublishArchive(
@@ -84,6 +85,7 @@ class OfflinePageTestArchiver : public OfflinePageArchiver {
   ArchiverResult result_;
   int64_t size_to_report_;
   bool create_archive_called_;
+  bool publish_archive_called_;
   bool delayed_;
   base::string16 result_title_;
   std::string digest_to_report_;

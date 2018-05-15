@@ -4,8 +4,8 @@
 
 #include "ui/message_center/public/mojo/notification_struct_traits.h"
 
-#include "mojo/common/time_struct_traits.h"
 #include "mojo/public/cpp/base/string16_mojom_traits.h"
+#include "mojo/public/cpp/base/time_mojom_traits.h"
 #include "ui/gfx/image/mojo/image_skia_struct_traits.h"
 #include "ui/message_center/public/mojo/notifier_id_struct_traits.h"
 #include "url/mojom/url_gurl_mojom_traits.h"
@@ -112,12 +112,6 @@ bool RichNotificationDataStructTraits::
 }
 
 // static
-bool RichNotificationDataStructTraits::clickable(
-    const RichNotificationData& r) {
-  return r.clickable;
-}
-
-// static
 bool RichNotificationDataStructTraits::pinned(const RichNotificationData& r) {
   return r.pinned;
 }
@@ -171,7 +165,6 @@ bool RichNotificationDataStructTraits::Read(RichNotificationDataDataView data,
   out->progress = data.progress();
   out->should_make_spoken_feedback_for_popup_updates =
       data.should_make_spoken_feedback_for_popup_updates();
-  out->clickable = data.clickable();
   out->pinned = data.pinned();
 
   // Look up the vector icon by ID. This will only work if RegisterVectorIcon
@@ -179,8 +172,10 @@ bool RichNotificationDataStructTraits::Read(RichNotificationDataDataView data,
   std::string icon_id;
   if (data.ReadVectorSmallImageId(&icon_id) && !icon_id.empty()) {
     out->vector_small_image = message_center::GetRegisteredVectorIcon(icon_id);
-    if (!out->vector_small_image)
+    if (!out->vector_small_image) {
       LOG(ERROR) << "Couldn't find icon: " + icon_id;
+      return false;
+    }
   }
 
   out->accent_color = data.accent_color();

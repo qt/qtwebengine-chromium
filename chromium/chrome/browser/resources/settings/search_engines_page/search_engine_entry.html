@@ -53,11 +53,12 @@
       </div>
       <div id="keyword-column"><div>[[engine.keyword]]</div></div>
       <div id="url-column" class="text-elide">[[engine.url]]</div>
-      <button is="paper-icon-button-light" class="icon-more-vert"
-          on-click="onDotsTap_" title="$i18n{moreActions}" focus-row-control
-          focus-type="cr-menu-button">
-      </button>
-      <dialog is="cr-action-menu">
+      <paper-icon-button-light class="icon-more-vert">
+        <button on-click="onDotsTap_" title="$i18n{moreActions}"
+            focus-row-control focus-type="cr-menu-button">
+        </button>
+      </paper-icon-button-light>
+      <cr-action-menu>
         <button slot="item" class="dropdown-item" on-click="onMakeDefaultTap_"
             hidden$="[[!engine.canBeDefault]]" id="makeDefault">
           $i18n{searchEnginesMakeDefault}
@@ -70,7 +71,7 @@
             hidden$="[[!engine.canBeRemoved]]" id="delete">
           $i18n{searchEnginesRemoveFromList}
         </button>
-      </dialog>
+      </cr-action-menu>
     </div>
     <template is="dom-if" if="[[engine.extension]]">
       <extension-controlled-indicator

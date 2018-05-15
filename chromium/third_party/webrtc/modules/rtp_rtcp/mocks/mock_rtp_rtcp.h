@@ -12,6 +12,7 @@
 #define MODULES_RTP_RTCP_MOCKS_MOCK_RTP_RTCP_H_
 
 #include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -27,6 +28,9 @@ namespace webrtc {
 
 class MockRtpData : public RtpData {
  public:
+  MockRtpData();
+  ~MockRtpData();
+
   MOCK_METHOD3(OnReceivedPayloadData,
                int32_t(const uint8_t* payload_data,
                        size_t payload_size,
@@ -35,6 +39,9 @@ class MockRtpData : public RtpData {
 
 class MockRtpRtcp : public RtpRtcp {
  public:
+  MockRtpRtcp();
+  ~MockRtpRtcp();
+
   MOCK_METHOD1(RegisterDefaultModule, int32_t(RtpRtcp* module));
   MOCK_METHOD0(DeRegisterDefaultModule, int32_t());
   MOCK_METHOD0(DefaultModuleRegistered, bool());
@@ -74,6 +81,7 @@ class MockRtpRtcp : public RtpRtcp {
   MOCK_CONST_METHOD0(GetRtxState, RtpState());
   MOCK_CONST_METHOD0(SSRC, uint32_t());
   MOCK_METHOD1(SetSSRC, void(uint32_t ssrc));
+  MOCK_METHOD1(SetMid, void(const std::string& mid));
   MOCK_CONST_METHOD1(CSRCs, int32_t(uint32_t csrcs[kRtpCsrcSize]));
   MOCK_METHOD1(SetCsrcs, void(const std::vector<uint32_t>& csrcs));
   MOCK_METHOD1(SetCSRCStatus, int32_t(bool include));

@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "content/browser/devtools/devtools_agent_host_impl.h"
@@ -33,7 +32,7 @@
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/url_constants.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
 
 using base::DictionaryValue;
 using base::ListValue;
@@ -343,31 +342,27 @@ ServiceWorkerInternalsUI::ServiceWorkerInternalsUI(WebUI* web_ui)
   WebUIDataSource::Add(browser_context, source);
 
   web_ui->RegisterMessageCallback(
-      "GetOptions",
-      base::Bind(&ServiceWorkerInternalsUI::GetOptions,
-                 base::Unretained(this)));
+      "GetOptions", base::BindRepeating(&ServiceWorkerInternalsUI::GetOptions,
+                                        base::Unretained(this)));
   web_ui->RegisterMessageCallback(
-      "SetOption",
-      base::Bind(&ServiceWorkerInternalsUI::SetOption, base::Unretained(this)));
+      "SetOption", base::BindRepeating(&ServiceWorkerInternalsUI::SetOption,
+                                       base::Unretained(this)));
   web_ui->RegisterMessageCallback(
       "getAllRegistrations",
-      base::Bind(&ServiceWorkerInternalsUI::GetAllRegistrations,
-                 base::Unretained(this)));
+      base::BindRepeating(&ServiceWorkerInternalsUI::GetAllRegistrations,
+                          base::Unretained(this)));
   web_ui->RegisterMessageCallback(
-      "stop", base::Bind(&ServiceWorkerInternalsUI::StopWorker,
-                         base::Unretained(this)));
+      "stop", base::BindRepeating(&ServiceWorkerInternalsUI::StopWorker,
+                                  base::Unretained(this)));
   web_ui->RegisterMessageCallback(
-      "inspect",
-      base::Bind(&ServiceWorkerInternalsUI::InspectWorker,
-                 base::Unretained(this)));
+      "inspect", base::BindRepeating(&ServiceWorkerInternalsUI::InspectWorker,
+                                     base::Unretained(this)));
   web_ui->RegisterMessageCallback(
-      "unregister",
-      base::Bind(&ServiceWorkerInternalsUI::Unregister,
-                 base::Unretained(this)));
+      "unregister", base::BindRepeating(&ServiceWorkerInternalsUI::Unregister,
+                                        base::Unretained(this)));
   web_ui->RegisterMessageCallback(
-      "start",
-      base::Bind(&ServiceWorkerInternalsUI::StartWorker,
-                 base::Unretained(this)));
+      "start", base::BindRepeating(&ServiceWorkerInternalsUI::StartWorker,
+                                   base::Unretained(this)));
 }
 
 ServiceWorkerInternalsUI::~ServiceWorkerInternalsUI() {
@@ -378,7 +373,8 @@ ServiceWorkerInternalsUI::~ServiceWorkerInternalsUI() {
   BrowserContext::StoragePartitionCallback remove_observer_cb =
       base::Bind(&ServiceWorkerInternalsUI::RemoveObserverFromStoragePartition,
                  base::Unretained(this));
-  BrowserContext::ForEachStoragePartition(browser_context, remove_observer_cb);
+  BrowserContext::ForEachStoragePartition(browser_context,
+                                          std::move(remove_observer_cb));
 }
 
 void ServiceWorkerInternalsUI::GetOptions(const ListValue* args) {
@@ -409,7 +405,8 @@ void ServiceWorkerInternalsUI::GetAllRegistrations(const ListValue* args) {
   BrowserContext::StoragePartitionCallback add_context_cb =
       base::Bind(&ServiceWorkerInternalsUI::AddContextFromStoragePartition,
                  base::Unretained(this));
-  BrowserContext::ForEachStoragePartition(browser_context, add_context_cb);
+  BrowserContext::ForEachStoragePartition(browser_context,
+                                          std::move(add_context_cb));
 }
 
 void ServiceWorkerInternalsUI::AddContextFromStoragePartition(
@@ -473,7 +470,8 @@ bool ServiceWorkerInternalsUI::GetServiceWorkerContext(
                  base::Unretained(this),
                  partition_id,
                  &result_partition);
-  BrowserContext::ForEachStoragePartition(browser_context, find_context_cb);
+  BrowserContext::ForEachStoragePartition(browser_context,
+                                          std::move(find_context_cb));
   if (!result_partition)
     return false;
   *context = static_cast<ServiceWorkerContextWrapper*>(
@@ -523,11 +521,11 @@ void ServiceWorkerInternalsUI::InspectWorker(const ListValue* args) {
           ->GetDevToolsAgentHostForWorker(process_host_id,
                                           devtools_agent_route_id));
   if (!agent_host.get()) {
-    callback.Run(SERVICE_WORKER_ERROR_NOT_FOUND);
+    std::move(callback).Run(SERVICE_WORKER_ERROR_NOT_FOUND);
     return;
   }
   agent_host->Inspect();
-  callback.Run(SERVICE_WORKER_OK);
+  std::move(callback).Run(SERVICE_WORKER_OK);
 }
 
 void ServiceWorkerInternalsUI::Unregister(const ListValue* args) {
@@ -547,7 +545,7 @@ void ServiceWorkerInternalsUI::Unregister(const ListValue* args) {
 
   base::Callback<void(ServiceWorkerStatusCode)> callback =
       base::Bind(OperationCompleteCallback, AsWeakPtr(), callback_id);
-  UnregisterWithScope(context, GURL(scope_string), callback);
+  UnregisterWithScope(context, GURL(scope_string), std::move(callback));
 }
 
 void ServiceWorkerInternalsUI::StartWorker(const ListValue* args) {
@@ -566,7 +564,7 @@ void ServiceWorkerInternalsUI::StartWorker(const ListValue* args) {
   }
   base::Callback<void(ServiceWorkerStatusCode)> callback =
       base::Bind(OperationCompleteCallback, AsWeakPtr(), callback_id);
-  context->StartServiceWorker(GURL(scope_string), callback);
+  context->StartServiceWorker(GURL(scope_string), std::move(callback));
 }
 
 void ServiceWorkerInternalsUI::StopWorkerWithId(

@@ -4,11 +4,11 @@
 
 import("//build/buildflag_header.gni")
 import("//build/config/ui.gni")
-import("//device/vr/features/features.gni")
+import("//device/vr/buildflags/buildflags.gni")
 import("//components/vector_icons/vector_icons.gni")
 
-buildflag_header("build_features") {
-  header = "features.h"
+buildflag_header("buildflags") {
+  header = "buildflags.h"
   flags = [ "ENABLE_VR=$enable_vr" ]
 }
 
@@ -17,18 +17,17 @@ aggregate_vector_icons("toolbar_vector_icons") {
 
   icons = [
     "find_in_page.icon",
-    "http.1x.icon",
     "http.icon",
-    "https_invalid.1x.icon",
     "https_invalid.icon",
-    "https_valid.1x.icon",
     "https_valid.icon",
-    "https_valid_in_chip.1x.icon",
+    "http_20.icon",
+    "https_invalid_20.icon",
+    "https_valid_20.icon",
     "https_valid_in_chip.icon",
     "offline_pin.icon",
     "open_in_new.icon",
-    "product.1x.icon",
     "product.icon",
+    "product_20.icon",
     "star_active.icon",
     "star.icon",
   ]
@@ -61,7 +60,7 @@ static_library("toolbar") {
   ]
 
   deps = [
-    ":build_features",
+    ":buildflags",
     "//components/google/core/browser",
     "//components/prefs",
     "//components/resources",

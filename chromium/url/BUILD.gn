@@ -4,6 +4,7 @@
 
 import("//build/buildflag_header.gni")
 import("//testing/test.gni")
+import("//testing/libfuzzer/fuzzer_test.gni")
 import("features.gni")
 
 if (is_android) {
@@ -167,9 +168,21 @@ test("url_unittests") {
 
   if (!is_ios) {
     deps += [
-      "//mojo/edk/system",
+      "//mojo/edk",
       "//mojo/edk/test:test_support",
       "//url/mojom:test_url_mojom_gurl",
     ]
   }
+}
+
+fuzzer_test("gurl_fuzzer") {
+  sources = [
+    "gurl_fuzzer.cc",
+  ]
+  deps = [
+    ":url",
+    "//base",
+    "//base:i18n",
+  ]
+  dict = "gurl_fuzzer.dict"
 }

@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "base/bind_helpers.h"
-#include "base/memory/ptr_util.h"
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/browser/renderer_host/media/video_capture_manager.h"
@@ -15,7 +14,7 @@
 #include "content/public/common/content_features.h"
 #include "content/public/common/media_stream_request.h"
 #include "media/base/bind_to_current_loop.h"
-#include "media/capture/mojo/image_capture_types.h"
+#include "media/capture/mojom/image_capture_types.h"
 #include "media/capture/video/video_capture_device.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
@@ -29,9 +28,6 @@ void GetPhotoStateOnIOThread(const std::string& source_id,
                              ImageCaptureImpl::GetPhotoStateCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-// TODO(mcasas): Enable PhotoState collection in Windows when understood why it
-// prevents normal capture https://crbug.com/722038.
-#if !defined(OS_WIN)
   const int session_id =
       media_stream_manager->VideoDeviceIdToSessionId(source_id);
 
@@ -39,7 +35,6 @@ void GetPhotoStateOnIOThread(const std::string& source_id,
     return;
   media_stream_manager->video_capture_manager()->GetPhotoState(
       session_id, std::move(callback));
-#endif
 }
 
 void SetOptionsOnIOThread(const std::string& source_id,

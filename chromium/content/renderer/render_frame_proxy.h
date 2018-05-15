@@ -10,16 +10,17 @@
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "content/common/content_export.h"
 #include "content/common/frame_messages.h"
+#include "content/common/frame_resize_params.h"
 #include "content/public/common/screen_info.h"
 #include "content/renderer/child_frame_compositor.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
-#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
-#include "third_party/WebKit/public/platform/WebCanvas.h"
-#include "third_party/WebKit/public/platform/WebFocusType.h"
-#include "third_party/WebKit/public/platform/WebInsecureRequestPolicy.h"
-#include "third_party/WebKit/public/web/WebRemoteFrame.h"
-#include "third_party/WebKit/public/web/WebRemoteFrameClient.h"
+#include "third_party/blink/public/common/feature_policy/feature_policy.h"
+#include "third_party/blink/public/platform/web_canvas.h"
+#include "third_party/blink/public/platform/web_focus_type.h"
+#include "third_party/blink/public/platform/web_insecure_request_policy.h"
+#include "third_party/blink/public/web/web_remote_frame.h"
+#include "third_party/blink/public/web/web_remote_frame_client.h"
 #include "url/origin.h"
 
 #if defined(USE_AURA)
@@ -168,7 +169,7 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   }
 
   uint64_t auto_size_sequence_number() const {
-    return pending_resize_params_.sequence_number;
+    return pending_resize_params_.auto_resize_sequence_number;
   }
 
   const viz::FrameSinkId& frame_sink_id() const { return frame_sink_id_; }
@@ -186,7 +187,7 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   void FrameRectsChanged(const blink::WebRect& local_frame_rect,
                          const blink::WebRect& screen_space_rect) override;
   void UpdateRemoteViewportIntersection(
-      const blink::WebRect& viewportIntersection) override;
+      const blink::WebRect& viewport_intersection) override;
   void VisibilityChanged(bool visible) override;
   void SetIsInert(bool) override;
   void UpdateRenderThrottlingStatus(bool is_throttled,
@@ -250,6 +251,8 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   void OnScrollRectToVisible(const gfx::Rect& rect_to_scroll,
                              const blink::WebScrollIntoViewParams& params);
   void OnResizeDueToAutoResize(uint64_t sequence_number);
+  void OnEnableAutoResize(const gfx::Size& min_size, const gfx::Size& max_size);
+  void OnDisableAutoResize();
   void OnSetHasReceivedUserGestureBeforeNavigation(bool value);
 
 #if defined(USE_AURA)
@@ -285,23 +288,15 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   // defined by the browser and passed into Blink upon frame creation.
   base::UnguessableToken devtools_frame_token_;
 
-  // TODO(fsamuel): We might want to unify this with content::ResizeParams.
   // TODO(fsamuel): Most RenderFrameProxys don't host viz::Surfaces and
   // therefore don't care to synchronize ResizeParams with viz::LocalSurfaceIds.
   // Perhaps this can be moved to ChildFrameCompositingHelper?
-  struct ResizeParams {
-    gfx::Rect screen_space_rect;
-    gfx::Size local_frame_size;
-    ScreenInfo screen_info;
-    uint64_t sequence_number = 0lu;
-  };
-
   // The last ResizeParams sent to the browser process, if any.
-  base::Optional<ResizeParams> sent_resize_params_;
+  base::Optional<FrameResizeParams> sent_resize_params_;
 
   // The current set of ResizeParams. This may or may not match
   // |sent_resize_params_|.
-  ResizeParams pending_resize_params_;
+  FrameResizeParams pending_resize_params_;
 
   bool crashed_ = false;
 
@@ -310,6 +305,9 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   viz::ParentLocalSurfaceIdAllocator parent_local_surface_id_allocator_;
 
   bool enable_surface_synchronization_ = false;
+
+  gfx::Rect last_intersection_rect_;
+  gfx::Rect last_compositor_visible_rect_;
 
 #if defined(USE_AURA)
   std::unique_ptr<MusEmbeddedFrame> mus_embedded_frame_;

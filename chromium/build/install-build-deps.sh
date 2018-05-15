@@ -259,6 +259,7 @@ lib_list="\
   libspeechd2
   libstdc++6
   libsqlite3-0
+  libwayland-egl1-mesa
   libx11-6
   libx11-xcb1
   libxau6
@@ -285,7 +286,6 @@ dbg_list="\
   libgtk2.0-0-dbg
   libpcre3-dbg
   libpixman-1-0-dbg
-  libsqlite3-0-dbg
   libxau6-dbg
   libxcb1-dbg
   libxcomposite1-dbg
@@ -361,9 +361,17 @@ if package_exists libxcursor1-dbgsym; then
 elif package_exists libxcursor1-dbg; then
   dbg_list="${dbg_list} libxcursor1-dbg"
 fi
+if package_exists libsqlite3-0-dbgsym; then
+  dbg_list="${dbg_list} libsqlite3-0-dbgsym"
+else
+  dbg_list="${dbg_list} libsqlite3-0-dbg"
+fi
 
 # 32-bit libraries needed e.g. to compile V8 snapshot for Android or armhf
 lib32_list="linux-libc-dev:i386 libpci3:i386"
+
+# 32-bit libraries needed for a 32-bit build
+lib32_list="$lib32_list libx11-xcb1:i386"
 
 # arm cross toolchain packages needed to build chrome on armhf
 EM_REPO="deb http://emdebian.org/tools/debian/ jessie main"
@@ -569,9 +577,9 @@ else
 fi
 
 if test "$do_inst_lib32" = "1" ; then
-  echo "Including 32-bit libraries for ARM/Android."
+  echo "Including 32-bit libraries."
 else
-  echo "Skipping 32-bit libraries for ARM/Android."
+  echo "Skipping 32-bit libraries."
   lib32_list=
 fi
 

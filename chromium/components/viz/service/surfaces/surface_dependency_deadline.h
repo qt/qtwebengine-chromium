@@ -22,7 +22,7 @@ class VIZ_SERVICE_EXPORT SurfaceDependencyDeadline : public BeginFrameObserver {
  public:
   SurfaceDependencyDeadline(SurfaceDeadlineClient* client,
                             BeginFrameSource* begin_frame_source,
-                            base::TickClock* tick_clock);
+                            const base::TickClock* tick_clock);
   ~SurfaceDependencyDeadline() override;
 
   // Sets up a deadline in wall time where
@@ -38,9 +38,12 @@ class VIZ_SERVICE_EXPORT SurfaceDependencyDeadline : public BeginFrameObserver {
 
   bool has_deadline() const { return deadline_.has_value(); }
 
-  // Takes on the same BeginFrameSource and deadline as |other|. Returns
-  // false if they're already the same, and true otherwise.
-  bool InheritFrom(const SurfaceDependencyDeadline& other);
+  base::Optional<base::TimeTicks> deadline_for_testing() const {
+    return deadline_;
+  }
+
+  // Takes on the same BeginFrameSource and deadline as |other|.
+  void InheritFrom(const SurfaceDependencyDeadline& other);
 
   bool operator==(const SurfaceDependencyDeadline& other);
   bool operator!=(const SurfaceDependencyDeadline& other) {
@@ -58,7 +61,7 @@ class VIZ_SERVICE_EXPORT SurfaceDependencyDeadline : public BeginFrameObserver {
 
   SurfaceDeadlineClient* const client_;
   BeginFrameSource* begin_frame_source_ = nullptr;
-  base::TickClock* tick_clock_;
+  const base::TickClock* tick_clock_;
   base::TimeTicks start_time_;
   base::Optional<base::TimeTicks> deadline_;
 

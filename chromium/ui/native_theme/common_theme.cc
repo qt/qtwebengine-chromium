@@ -5,7 +5,6 @@
 #include "ui/native_theme/common_theme.h"
 
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/base/material_design/material_design_controller.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -97,6 +96,8 @@ SkColor GetAuraColor(NativeTheme::ColorId color_id,
   static const SkColor kMenuBorderColor = SkColorSetRGB(0xBA, 0xBA, 0xBA);
   static const SkColor kMenuSeparatorColor = SkColorSetRGB(0xE9, 0xE9, 0xE9);
   static const SkColor kEnabledMenuItemForegroundColor = SK_ColorBLACK;
+  static const SkColor kMenuItemMinorTextColor =
+      SkColorSetA(SK_ColorBLACK, 0x89);
   // Separator:
   static const SkColor kSeparatorColor = SkColorSetRGB(0xE9, 0xE9, 0xE9);
   // Link:
@@ -200,9 +201,8 @@ SkColor GetAuraColor(NativeTheme::ColorId color_id,
       return kEnabledMenuItemForegroundColor;
     case NativeTheme::kColorId_DisabledMenuItemForegroundColor:
       return kDisabledTextColor;
-    case NativeTheme::kColorId_MenuItemSubtitleColor:
-      return base_theme->GetSystemColor(
-          NativeTheme::kColorId_DisabledMenuItemForegroundColor);
+    case NativeTheme::kColorId_MenuItemMinorTextColor:
+      return kMenuItemMinorTextColor;
 
     // Label
     case NativeTheme::kColorId_LabelEnabledColor:

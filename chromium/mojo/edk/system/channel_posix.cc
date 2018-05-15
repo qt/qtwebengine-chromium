@@ -17,6 +17,7 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_pump_for_io.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner.h"
 #include "mojo/edk/embedder/platform_channel_utils_posix.h"
@@ -87,7 +88,7 @@ class MessageView {
 
 class ChannelPosix : public Channel,
                      public base::MessageLoop::DestructionObserver,
-                     public base::MessageLoopForIO::Watcher {
+                     public base::MessagePumpForIO::FdWatcher {
  public:
   ChannelPosix(Delegate* delegate,
                ConnectionParams connection_params,
@@ -105,14 +106,14 @@ class ChannelPosix : public Channel,
       StartOnIOThread();
     } else {
       io_task_runner_->PostTask(
-          FROM_HERE, base::Bind(&ChannelPosix::StartOnIOThread, this));
+          FROM_HERE, base::BindOnce(&ChannelPosix::StartOnIOThread, this));
     }
   }
 
   void ShutDownImpl() override {
     // Always shut down asynchronously when called through the public interface.
     io_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&ChannelPosix::ShutDownOnIOThread, this));
+        FROM_HERE, base::BindOnce(&ChannelPosix::ShutDownOnIOThread, this));
   }
 
   void Write(MessagePtr message) override {
@@ -129,11 +130,11 @@ class ChannelPosix : public Channel,
       }
     }
     if (write_error) {
-      // Do not synchronously invoke OnError(). Write() may have been called by
-      // the delegate and we don't want to re-enter it.
+      // Invoke OnWriteError() asynchronously on the IO thread, in case Write()
+      // was called by the delegate, in which case we should not re-enter it.
       io_task_runner_->PostTask(
-          FROM_HERE,
-          base::Bind(&ChannelPosix::OnError, this, Error::kDisconnected));
+          FROM_HERE, base::BindOnce(&ChannelPosix::OnWriteError, this,
+                                    Error::kDisconnected));
     }
   }
 
@@ -209,18 +210,18 @@ class ChannelPosix : public Channel,
     DCHECK(!read_watcher_);
     DCHECK(!write_watcher_);
     read_watcher_.reset(
-        new base::MessageLoopForIO::FileDescriptorWatcher(FROM_HERE));
+        new base::MessagePumpForIO::FdWatchController(FROM_HERE));
     base::MessageLoop::current()->AddDestructionObserver(this);
     if (handle_.get().needs_connection) {
       base::MessageLoopForIO::current()->WatchFileDescriptor(
           handle_.get().handle, false /* persistent */,
-          base::MessageLoopForIO::WATCH_READ, read_watcher_.get(), this);
+          base::MessagePumpForIO::WATCH_READ, read_watcher_.get(), this);
     } else {
       write_watcher_.reset(
-          new base::MessageLoopForIO::FileDescriptorWatcher(FROM_HERE));
+          new base::MessagePumpForIO::FdWatchController(FROM_HERE));
       base::MessageLoopForIO::current()->WatchFileDescriptor(
           handle_.get().handle, true /* persistent */,
-          base::MessageLoopForIO::WATCH_READ, read_watcher_.get(), this);
+          base::MessagePumpForIO::WATCH_READ, read_watcher_.get(), this);
       base::AutoLock lock(write_lock_);
       FlushOutgoingMessagesNoLock();
     }
@@ -240,10 +241,11 @@ class ChannelPosix : public Channel,
       pending_write_ = true;
       base::MessageLoopForIO::current()->WatchFileDescriptor(
           handle_.get().handle, false /* persistent */,
-          base::MessageLoopForIO::WATCH_WRITE, write_watcher_.get(), this);
+          base::MessagePumpForIO::WATCH_WRITE, write_watcher_.get(), this);
     } else {
       io_task_runner_->PostTask(
-          FROM_HERE, base::Bind(&ChannelPosix::WaitForWriteOnIOThread, this));
+          FROM_HERE,
+          base::BindOnce(&ChannelPosix::WaitForWriteOnIOThread, this));
     }
   }
 
@@ -270,7 +272,7 @@ class ChannelPosix : public Channel,
       ShutDownOnIOThread();
   }
 
-  // base::MessageLoopForIO::Watcher:
+  // base::MessagePumpForIO::FdWatcher:
   void OnFileCanReadWithoutBlocking(int fd) override {
     CHECK_EQ(fd, handle_.get().handle);
     if (handle_.get().needs_connection) {
@@ -340,7 +342,7 @@ class ChannelPosix : public Channel,
         reject_writes_ = write_error = true;
     }
     if (write_error)
-      OnError(Error::kDisconnected);
+      OnWriteError(Error::kDisconnected);
   }
 
   // Attempts to write a message directly to the channel. If the full message
@@ -524,6 +526,23 @@ class ChannelPosix : public Channel,
   }
 #endif  // defined(OS_MACOSX)
 
+  void OnWriteError(Error error) {
+    DCHECK(io_task_runner_->RunsTasksInCurrentSequence());
+    DCHECK(reject_writes_);
+
+    if (error == Error::kDisconnected) {
+      // If we can't write because the pipe is disconnected then continue
+      // reading to fetch any in-flight messages, relying on end-of-stream to
+      // signal the actual disconnection.
+      if (read_watcher_) {
+        write_watcher_.reset();
+        return;
+      }
+    }
+
+    OnError(error);
+  }
+
   // Keeps the Channel alive at least until explicit shutdown on the IO thread.
   scoped_refptr<Channel> self_;
 
@@ -531,8 +550,8 @@ class ChannelPosix : public Channel,
   scoped_refptr<base::TaskRunner> io_task_runner_;
 
   // These watchers must only be accessed on the IO thread.
-  std::unique_ptr<base::MessageLoopForIO::FileDescriptorWatcher> read_watcher_;
-  std::unique_ptr<base::MessageLoopForIO::FileDescriptorWatcher> write_watcher_;
+  std::unique_ptr<base::MessagePumpForIO::FdWatchController> read_watcher_;
+  std::unique_ptr<base::MessagePumpForIO::FdWatchController> write_watcher_;
 
   base::circular_deque<ScopedPlatformHandle> incoming_platform_handles_;
 

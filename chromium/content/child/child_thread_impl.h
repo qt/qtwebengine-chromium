@@ -24,7 +24,7 @@
 #include "content/common/content_export.h"
 #include "content/public/child/child_thread.h"
 #include "ipc/ipc.mojom.h"
-#include "ipc/ipc_features.h"  // For BUILDFLAG(IPC_MESSAGE_LOG_ENABLED).
+#include "ipc/ipc_buildflags.h"  // For BUILDFLAG(IPC_MESSAGE_LOG_ENABLED).
 #include "ipc/ipc_platform_file.h"
 #include "ipc/message_router.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
@@ -33,6 +33,8 @@
 
 #if defined(OS_WIN)
 #include "content/public/common/font_cache_win.mojom.h"
+#elif defined(OS_MACOSX)
+#include "content/common/font_loader_mac.mojom.h"
 #endif
 
 namespace base {
@@ -90,6 +92,11 @@ class CONTENT_EXPORT ChildThreadImpl
 #if defined(OS_WIN)
   void PreCacheFont(const LOGFONT& log_font) override;
   void ReleaseCachedFonts() override;
+#elif defined(OS_MACOSX)
+  bool LoadFont(const base::string16& font_name,
+                float font_point_size,
+                mojo::ScopedSharedBufferHandle* out_font_data,
+                uint32_t* out_font_id) override;
 #endif
   void RecordAction(const base::UserMetricsAction& action) override;
   void RecordComputedAction(const std::string& action) override;
@@ -150,7 +157,9 @@ class CONTENT_EXPORT ChildThreadImpl
 
   // mojom::ChildControl
   void ProcessShutdown() override;
+#if BUILDFLAG(IPC_MESSAGE_LOG_ENABLED)
   void SetIPCLoggingEnabled(bool enable) override;
+#endif
   void OnChildControlRequest(mojom::ChildControlRequest);
 
   virtual bool OnControlMessageReceived(const IPC::Message& msg);
@@ -164,6 +173,10 @@ class CONTENT_EXPORT ChildThreadImpl
   bool on_channel_error_called() const { return on_channel_error_called_; }
 
   bool IsInBrowserProcess() const;
+
+#if defined(OS_MACOSX)
+  virtual mojom::FontLoaderMac* GetFontLoaderMac();
+#endif
 
  private:
   class ChildThreadMessageRouter : public IPC::MessageRouter {
@@ -216,6 +229,8 @@ class CONTENT_EXPORT ChildThreadImpl
   mojom::RouteProviderAssociatedPtr remote_route_provider_;
 #if defined(OS_WIN)
   mojom::FontCacheWinPtr font_cache_win_ptr_;
+#elif defined(OS_MACOSX)
+  mojom::FontLoaderMacPtr font_loader_mac_ptr_;
 #endif
 
   std::unique_ptr<IPC::SyncChannel> channel_;

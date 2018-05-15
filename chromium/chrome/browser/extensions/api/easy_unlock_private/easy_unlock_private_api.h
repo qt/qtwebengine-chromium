@@ -12,8 +12,6 @@
 
 #include "base/macros.h"
 #include "device/bluetooth/bluetooth_device.h"
-#include "extensions/browser/api/bluetooth/bluetooth_extension_function.h"
-#include "extensions/browser/api/bluetooth_socket/bluetooth_socket_api.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/extension_function.h"
 
@@ -64,6 +62,9 @@ class EasyUnlockPrivateAPI : public BrowserContextKeyedAPI {
   // BrowserContextKeyedAPI implementation.
   static const char* service_name() { return "EasyUnlockPrivate"; }
 
+  // KeyedService implementation.
+  void Shutdown() override;
+
   std::unique_ptr<EasyUnlockPrivateCryptoDelegate> crypto_delegate_;
 
   std::unique_ptr<EasyUnlockPrivateConnectionManager> connection_manager_;
@@ -71,8 +72,6 @@ class EasyUnlockPrivateAPI : public BrowserContextKeyedAPI {
   DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateAPI);
 };
 
-// TODO(tbarzic): Replace SyncExtensionFunction/AsyncExtensionFunction overrides
-// with UIThreadExtensionFunction throughout the file.
 class EasyUnlockPrivateGetStringsFunction : public UIThreadExtensionFunction {
  public:
   EasyUnlockPrivateGetStringsFunction();
@@ -91,14 +90,15 @@ class EasyUnlockPrivateGetStringsFunction : public UIThreadExtensionFunction {
 };
 
 class EasyUnlockPrivatePerformECDHKeyAgreementFunction
-    : public AsyncExtensionFunction {
+    : public UIThreadExtensionFunction {
  public:
   EasyUnlockPrivatePerformECDHKeyAgreementFunction();
 
  protected:
   ~EasyUnlockPrivatePerformECDHKeyAgreementFunction() override;
 
-  bool RunAsync() override;
+  // ExtensionFunction:
+  ResponseAction Run() override;
 
  private:
   void OnData(const std::string& secret_key);
@@ -110,14 +110,15 @@ class EasyUnlockPrivatePerformECDHKeyAgreementFunction
 };
 
 class EasyUnlockPrivateGenerateEcP256KeyPairFunction
-    : public AsyncExtensionFunction {
+    : public UIThreadExtensionFunction {
  public:
   EasyUnlockPrivateGenerateEcP256KeyPairFunction();
 
  protected:
   ~EasyUnlockPrivateGenerateEcP256KeyPairFunction() override;
 
-  bool RunAsync() override;
+  // ExtensionFunction:
+  ResponseAction Run() override;
 
  private:
   void OnData(const std::string& public_key,
@@ -130,14 +131,15 @@ class EasyUnlockPrivateGenerateEcP256KeyPairFunction
 };
 
 class EasyUnlockPrivateCreateSecureMessageFunction
-    : public AsyncExtensionFunction {
+    : public UIThreadExtensionFunction {
  public:
   EasyUnlockPrivateCreateSecureMessageFunction();
 
  protected:
   ~EasyUnlockPrivateCreateSecureMessageFunction() override;
 
-  bool RunAsync() override;
+  // ExtensionFunction:
+  ResponseAction Run() override;
 
  private:
   void OnData(const std::string& message);
@@ -149,14 +151,15 @@ class EasyUnlockPrivateCreateSecureMessageFunction
 };
 
 class EasyUnlockPrivateUnwrapSecureMessageFunction
-    : public AsyncExtensionFunction {
+    : public UIThreadExtensionFunction {
  public:
   EasyUnlockPrivateUnwrapSecureMessageFunction();
 
  protected:
   ~EasyUnlockPrivateUnwrapSecureMessageFunction() override;
 
-  bool RunAsync() override;
+  // ExtensionFunction:
+  ResponseAction Run() override;
 
  private:
   void OnData(const std::string& data);
@@ -165,79 +168,6 @@ class EasyUnlockPrivateUnwrapSecureMessageFunction
                              EASYUNLOCKPRIVATE_UNWRAPSECUREMESSAGE)
 
   DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateUnwrapSecureMessageFunction);
-};
-
-class EasyUnlockPrivateSeekBluetoothDeviceByAddressFunction
-    : public AsyncExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.seekBluetoothDeviceByAddress",
-                             EASYUNLOCKPRIVATE_SEEKBLUETOOTHDEVICEBYADDRESS)
-  EasyUnlockPrivateSeekBluetoothDeviceByAddressFunction();
-
- private:
-  ~EasyUnlockPrivateSeekBluetoothDeviceByAddressFunction() override;
-
-  // AsyncExtensionFunction:
-  bool RunAsync() override;
-
-  // Callbacks that are called when the seek operation succeeds or fails.
-  void OnSeekSuccess();
-  void OnSeekFailure(const std::string& error_message);
-
-  DISALLOW_COPY_AND_ASSIGN(
-      EasyUnlockPrivateSeekBluetoothDeviceByAddressFunction);
-};
-
-class EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction
-    : public api::BluetoothSocketAbstractConnectFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION(
-      "easyUnlockPrivate.connectToBluetoothServiceInsecurely",
-      EASYUNLOCKPRIVATE_CONNECTTOBLUETOOTHSERVICEINSECURELY)
-  EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction();
-
- private:
-  ~EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction() override;
-
-  // BluetoothSocketAbstractConnectFunction:
-  void ConnectToService(device::BluetoothDevice* device,
-                        const device::BluetoothUUID& uuid) override;
-
-  DISALLOW_COPY_AND_ASSIGN(
-      EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction);
-};
-
-class EasyUnlockPrivateUpdateScreenlockStateFunction
-    : public UIThreadExtensionFunction {
- public:
-  EasyUnlockPrivateUpdateScreenlockStateFunction();
-
- protected:
-  ~EasyUnlockPrivateUpdateScreenlockStateFunction() override;
-
-  ResponseAction Run() override;
-
- private:
-  DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.updateScreenlockState",
-                             EASYUNLOCKPRIVATE_UPDATESCREENLOCKSTATE)
-
-  DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateUpdateScreenlockStateFunction);
-};
-
-class EasyUnlockPrivateSetPermitAccessFunction
-    : public UIThreadExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.setPermitAccess",
-                             EASYUNLOCKPRIVATE_SETPERMITACCESS)
-  EasyUnlockPrivateSetPermitAccessFunction();
-
- private:
-  ~EasyUnlockPrivateSetPermitAccessFunction() override;
-
-  // ExtensionFunction:
-  ResponseAction Run() override;
-
-  DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateSetPermitAccessFunction);
 };
 
 class EasyUnlockPrivateGetPermitAccessFunction
@@ -258,10 +188,6 @@ class EasyUnlockPrivateGetPermitAccessFunction
  private:
   // ExtensionFunction:
   ResponseAction Run() override;
-
-  // Instead of returning the value set by easyUnlockPrivate.setPermitAccess,
-  // return the permit access used by the native CryptAuthEnrollmentManager.
-  ResponseAction GetPermitAccessForExperiment();
 
   DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateGetPermitAccessFunction);
 };
@@ -299,7 +225,7 @@ class EasyUnlockPrivateSetRemoteDevicesFunction
 };
 
 class EasyUnlockPrivateGetRemoteDevicesFunction
-    : public AsyncExtensionFunction {
+    : public UIThreadExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.getRemoteDevices",
                              EASYUNLOCKPRIVATE_GETREMOTEDEVICES)
@@ -317,12 +243,8 @@ class EasyUnlockPrivateGetRemoteDevicesFunction
   virtual std::vector<cryptauth::ExternalDeviceInfo> GetUnlockKeys();
 
  private:
-  // AsyncExtensionFunction:
-  bool RunAsync() override;
-
-  // Returns devices managed by the native Chrome component if the
-  // kEnableBluetoothLowEnergyDiscovery flag is set.
-  void ReturnDevicesForExperiment();
+  // ExtensionFunction:
+  ResponseAction Run() override;
 
   // Callback when the PSK of a device is derived.
   void OnPSKDerivedForDevice(const cryptauth::ExternalDeviceInfo& device,
@@ -344,41 +266,6 @@ class EasyUnlockPrivateGetRemoteDevicesFunction
   DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateGetRemoteDevicesFunction);
 };
 
-class EasyUnlockPrivateGetSignInChallengeFunction :
-    public AsyncExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.getSignInChallenge",
-                             EASYUNLOCKPRIVATE_GETSIGNINCHALLENGE)
-  EasyUnlockPrivateGetSignInChallengeFunction();
-
- private:
-  ~EasyUnlockPrivateGetSignInChallengeFunction() override;
-
-  // AsyncExtensionFunction:
-  bool RunAsync() override;
-
-  // Called when the challenge and the signed nonce have been generated.
-  void OnDone(const std::string& challenge, const std::string& signed_nonce);
-
-  DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateGetSignInChallengeFunction);
-};
-
-class EasyUnlockPrivateTrySignInSecretFunction
-    : public UIThreadExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.trySignInSecret",
-                             EASYUNLOCKPRIVATE_TRYSIGNINSECRET)
-  EasyUnlockPrivateTrySignInSecretFunction();
-
- private:
-  ~EasyUnlockPrivateTrySignInSecretFunction() override;
-
-  // ExtensionFunction:
-  ResponseAction Run() override;
-
-  DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateTrySignInSecretFunction);
-};
-
 class EasyUnlockPrivateGetUserInfoFunction : public UIThreadExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.getUserInfo",
@@ -392,25 +279,6 @@ class EasyUnlockPrivateGetUserInfoFunction : public UIThreadExtensionFunction {
   ResponseAction Run() override;
 
   DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateGetUserInfoFunction);
-};
-
-class EasyUnlockPrivateGetConnectionInfoFunction
-    : public api::BluetoothExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.getConnectionInfo",
-                             EASYUNLOCKPRIVATE_GETCONNECTIONINFO)
-  EasyUnlockPrivateGetConnectionInfoFunction();
-
- private:
-  ~EasyUnlockPrivateGetConnectionInfoFunction() override;
-
-  // BluetoothExtensionFunction:
-  bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) override;
-
-  void OnConnectionInfo(
-      const device::BluetoothDevice::ConnectionInfo& connection_info);
-
-  DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateGetConnectionInfoFunction);
 };
 
 class EasyUnlockPrivateShowErrorBubbleFunction
@@ -445,24 +313,8 @@ class EasyUnlockPrivateHideErrorBubbleFunction
   DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateHideErrorBubbleFunction);
 };
 
-class EasyUnlockPrivateSetAutoPairingResultFunction
-    : public UIThreadExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.setAutoPairingResult",
-                             EASYUNLOCKPRIVATE_SETAUTOPAIRINGRESULT)
-  EasyUnlockPrivateSetAutoPairingResultFunction();
-
- private:
-  ~EasyUnlockPrivateSetAutoPairingResultFunction() override;
-
-  // ExtensionFunction:
-  ResponseAction Run() override;
-
-  DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateSetAutoPairingResultFunction);
-};
-
 class EasyUnlockPrivateFindSetupConnectionFunction
-    : public AsyncExtensionFunction {
+    : public UIThreadExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.findSetupConnection",
                              EASYUNLOCKPRIVATE_FINDSETUPCONNECTION)
@@ -471,8 +323,8 @@ class EasyUnlockPrivateFindSetupConnectionFunction
  private:
   ~EasyUnlockPrivateFindSetupConnectionFunction() override;
 
-  // AsyncExtensionFunction:
-  bool RunAsync() override;
+  // ExtensionFunction:
+  ResponseAction Run() override;
 
   // Called when the connection with the remote device advertising the setup
   // service was found.
@@ -489,22 +341,6 @@ class EasyUnlockPrivateFindSetupConnectionFunction
   std::unique_ptr<base::Timer> timer_;
 
   DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateFindSetupConnectionFunction);
-};
-
-class EasyUnlockPrivateSetupConnectionStatusFunction
-    : public UIThreadExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.setupConnectionStatus",
-                             EASYUNLOCKPRIVATE_SETUPCONNECTIONSTATUS)
-  EasyUnlockPrivateSetupConnectionStatusFunction();
-
- private:
-  ~EasyUnlockPrivateSetupConnectionStatusFunction() override;
-
-  // ExtensionFunction:
-  ResponseAction Run() override;
-
-  DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateSetupConnectionStatusFunction);
 };
 
 class EasyUnlockPrivateSetupConnectionDisconnectFunction
@@ -537,24 +373,6 @@ class EasyUnlockPrivateSetupConnectionSendFunction
   ResponseAction Run() override;
 
   DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateSetupConnectionSendFunction);
-};
-
-class EasyUnlockPrivateSetupConnectionGetDeviceAddressFunction
-    : public UIThreadExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION(
-      "easyUnlockPrivate.setupConnectionGetDeviceAddress",
-      EASYUNLOCKPRIVATE_SETUPCONNECTIONGETDEVICEADDRESS)
-  EasyUnlockPrivateSetupConnectionGetDeviceAddressFunction();
-
- private:
-  ~EasyUnlockPrivateSetupConnectionGetDeviceAddressFunction() override;
-
-  // ExtensionFunction:
-  ResponseAction Run() override;
-
-  DISALLOW_COPY_AND_ASSIGN(
-      EasyUnlockPrivateSetupConnectionGetDeviceAddressFunction);
 };
 
 }  // namespace extensions

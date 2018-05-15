@@ -22,6 +22,7 @@
 namespace cricket {
 
 FeedbackParams::FeedbackParams() = default;
+FeedbackParams::~FeedbackParams() = default;
 
 bool FeedbackParam::operator==(const FeedbackParam& other) const {
   return _stricmp(other.id().c_str(), id().c_str()) == 0 &&
@@ -343,6 +344,11 @@ bool HasNack(const Codec& codec) {
 bool HasRemb(const Codec& codec) {
   return codec.HasFeedbackParam(
       FeedbackParam(kRtcpFbParamRemb, kParamValueEmpty));
+}
+
+bool HasRrtr(const Codec& codec) {
+  return codec.HasFeedbackParam(
+      FeedbackParam(kRtcpFbParamRrtr, kParamValueEmpty));
 }
 
 bool HasTransportCc(const Codec& codec) {

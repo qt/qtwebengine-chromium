@@ -192,16 +192,18 @@ class MockVideoDecoder : public VideoDecoder {
 
   // VideoDecoder implementation.
   virtual std::string GetDisplayName() const;
-  MOCK_METHOD5(Initialize,
-               void(const VideoDecoderConfig& config,
-                    bool low_delay,
-                    CdmContext* cdm_context,
-                    const InitCB& init_cb,
-                    const OutputCB& output_cb));
-  MOCK_METHOD2(Decode, void(const scoped_refptr<DecoderBuffer>& buffer,
-                            const DecodeCB&));
+  MOCK_METHOD6(
+      Initialize,
+      void(const VideoDecoderConfig& config,
+           bool low_delay,
+           CdmContext* cdm_context,
+           const InitCB& init_cb,
+           const OutputCB& output_cb,
+           const WaitingForDecryptionKeyCB& waiting_for_decryption_key_cb));
+  MOCK_METHOD2(Decode,
+               void(scoped_refptr<DecoderBuffer> buffer, const DecodeCB&));
   MOCK_METHOD1(Reset, void(const base::Closure&));
-  MOCK_CONST_METHOD0(HasAlpha, bool());
+  MOCK_CONST_METHOD0(GetMaxDecodeRequests, int());
   MOCK_CONST_METHOD0(CanReadWithoutStalling, bool());
 
  private:
@@ -217,14 +219,15 @@ class MockAudioDecoder : public AudioDecoder {
 
   // AudioDecoder implementation.
   virtual std::string GetDisplayName() const;
-  MOCK_METHOD4(Initialize,
-               void(const AudioDecoderConfig& config,
-                    CdmContext* cdm_context,
-                    const InitCB& init_cb,
-                    const OutputCB& output_cb));
+  MOCK_METHOD5(
+      Initialize,
+      void(const AudioDecoderConfig& config,
+           CdmContext* cdm_context,
+           const InitCB& init_cb,
+           const OutputCB& output_cb,
+           const WaitingForDecryptionKeyCB& waiting_for_decryption_key_cb));
   MOCK_METHOD2(Decode,
-               void(const scoped_refptr<DecoderBuffer>& buffer,
-                    const DecodeCB&));
+               void(scoped_refptr<DecoderBuffer> buffer, const DecodeCB&));
   MOCK_METHOD1(Reset, void(const base::Closure&));
 
  private:
@@ -392,9 +395,10 @@ class MockDecryptor : public Decryptor {
 
   MOCK_METHOD2(RegisterNewKeyCB, void(StreamType stream_type,
                                       const NewKeyCB& new_key_cb));
-  MOCK_METHOD3(Decrypt, void(StreamType stream_type,
-                             const scoped_refptr<DecoderBuffer>& encrypted,
-                             const DecryptCB& decrypt_cb));
+  MOCK_METHOD3(Decrypt,
+               void(StreamType stream_type,
+                    scoped_refptr<DecoderBuffer> encrypted,
+                    const DecryptCB& decrypt_cb));
   MOCK_METHOD1(CancelDecrypt, void(StreamType stream_type));
   MOCK_METHOD2(InitializeAudioDecoder,
                void(const AudioDecoderConfig& config,
@@ -403,10 +407,10 @@ class MockDecryptor : public Decryptor {
                void(const VideoDecoderConfig& config,
                     const DecoderInitCB& init_cb));
   MOCK_METHOD2(DecryptAndDecodeAudio,
-               void(const scoped_refptr<media::DecoderBuffer>& encrypted,
+               void(scoped_refptr<DecoderBuffer> encrypted,
                     const AudioDecodeCB& audio_decode_cb));
   MOCK_METHOD2(DecryptAndDecodeVideo,
-               void(const scoped_refptr<media::DecoderBuffer>& encrypted,
+               void(scoped_refptr<DecoderBuffer> encrypted,
                     const VideoDecodeCB& video_decode_cb));
   MOCK_METHOD1(ResetDecoder, void(StreamType stream_type));
   MOCK_METHOD1(DeinitializeDecoder, void(StreamType stream_type));

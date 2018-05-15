@@ -13,7 +13,6 @@
 #include "base/feature_list.h"
 #include "base/i18n/break_iterator.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/numerics/ranges.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -278,14 +277,17 @@ void SkiaTextRenderer::DrawStrike(int x,
 
 StyleIterator::StyleIterator(const BreakList<SkColor>& colors,
                              const BreakList<BaselineStyle>& baselines,
+                             const BreakList<int>& font_size_overrides,
                              const BreakList<Font::Weight>& weights,
                              const std::vector<BreakList<bool>>& styles)
     : colors_(colors),
       baselines_(baselines),
+      font_size_overrides_(font_size_overrides),
       weights_(weights),
       styles_(styles) {
   color_ = colors_.breaks().begin();
   baseline_ = baselines_.breaks().begin();
+  font_size_override_ = font_size_overrides_.breaks().begin();
   weight_ = weights_.breaks().begin();
   for (size_t i = 0; i < styles_.size(); ++i)
     style_.push_back(styles_[i].breaks().begin());
@@ -296,6 +298,7 @@ StyleIterator::~StyleIterator() {}
 Range StyleIterator::GetRange() const {
   Range range(colors_.GetRange(color_));
   range = range.Intersect(baselines_.GetRange(baseline_));
+  range = range.Intersect(font_size_overrides_.GetRange(font_size_override_));
   range = range.Intersect(weights_.GetRange(weight_));
   for (size_t i = 0; i < NUM_TEXT_STYLES; ++i)
     range = range.Intersect(styles_[i].GetRange(style_[i]));
@@ -305,6 +308,7 @@ Range StyleIterator::GetRange() const {
 void StyleIterator::UpdatePosition(size_t position) {
   color_ = colors_.GetBreak(position);
   baseline_ = baselines_.GetBreak(position);
+  font_size_override_ = font_size_overrides_.GetBreak(position);
   weight_ = weights_.GetBreak(position);
   for (size_t i = 0; i < NUM_TEXT_STYLES; ++i)
     style_[i] = styles_[i].GetBreak(position);
@@ -380,6 +384,7 @@ std::unique_ptr<RenderText> RenderText::CreateInstanceOfSameStyle(
   render_text->set_truncate_length(truncate_length_);
   render_text->styles_ = styles_;
   render_text->baselines_ = baselines_;
+  render_text->font_size_overrides_ = font_size_overrides_;
   render_text->colors_ = colors_;
   render_text->weights_ = weights_;
   return render_text;
@@ -396,6 +401,7 @@ void RenderText::SetText(const base::string16& text) {
   // the first style to the whole text instead.
   colors_.SetValue(colors_.breaks().begin()->second);
   baselines_.SetValue(baselines_.breaks().begin()->second);
+  font_size_overrides_.SetValue(font_size_overrides_.breaks().begin()->second);
   weights_.SetValue(weights_.breaks().begin()->second);
   for (size_t style = 0; style < NUM_TEXT_STYLES; ++style)
     styles_[style].SetValue(styles_[style].breaks().begin()->second);
@@ -709,6 +715,11 @@ void RenderText::ApplyBaselineStyle(BaselineStyle value, const Range& range) {
   baselines_.ApplyValue(value, range);
 }
 
+void RenderText::ApplyFontSizeOverride(int font_size_override,
+                                       const Range& range) {
+  font_size_overrides_.ApplyValue(font_size_override, range);
+}
+
 void RenderText::SetStyle(TextStyle style, bool value) {
   styles_[style].SetValue(value);
 
@@ -973,9 +984,9 @@ Vector2d RenderText::GetLineOffset(size_t line_number) {
   return offset;
 }
 
-bool RenderText::GetDecoratedWordAtPoint(const Point& point,
-                                         DecoratedText* decorated_word,
-                                         Point* baseline_point) {
+bool RenderText::GetWordLookupDataAtPoint(const Point& point,
+                                          DecoratedText* decorated_word,
+                                          Point* baseline_point) {
   if (obscured())
     return false;
 
@@ -990,9 +1001,16 @@ bool RenderText::GetDecoratedWordAtPoint(const Point& point,
   DCHECK(!word_range.is_reversed());
   DCHECK(!word_range.is_empty());
 
-  const std::vector<Rect> word_bounds = GetSubstringBounds(word_range);
-  if (word_bounds.empty() ||
-      !GetDecoratedTextForRange(word_range, decorated_word)) {
+  return GetLookupDataForRange(word_range, decorated_word, baseline_point);
+}
+
+bool RenderText::GetLookupDataForRange(const Range& range,
+                                       DecoratedText* decorated_text,
+                                       Point* baseline_point) {
+  EnsureLayout();
+
+  const std::vector<Rect> word_bounds = GetSubstringBounds(range);
+  if (word_bounds.empty() || !GetDecoratedTextForRange(range, decorated_text)) {
     return false;
   }
 
@@ -1027,6 +1045,7 @@ RenderText::RenderText()
       composition_range_(Range::InvalidRange()),
       colors_(kDefaultColor),
       baselines_(NORMAL_BASELINE),
+      font_size_overrides_(0),
       weights_(Font::Weight::NORMAL),
       styles_(NUM_TEXT_STYLES),
       composition_and_selection_styles_applied_(false),
@@ -1357,6 +1376,7 @@ void RenderText::UpdateStyleLengths() {
   const size_t text_length = text_.length();
   colors_.SetMax(text_length);
   baselines_.SetMax(text_length);
+  font_size_overrides_.SetMax(text_length);
   weights_.SetMax(text_length);
   for (size_t style = 0; style < NUM_TEXT_STYLES; ++style)
     styles_[style].SetMax(text_length);
@@ -1561,6 +1581,7 @@ base::string16 RenderText::Elide(const base::string16& text,
     for (size_t style = 0; style < NUM_TEXT_STYLES; ++style)
       RestoreBreakList(render_text.get(), &render_text->styles_[style]);
     RestoreBreakList(render_text.get(), &render_text->baselines_);
+    RestoreBreakList(render_text.get(), &render_text->font_size_overrides_);
     render_text->weights_ = weights_;
     RestoreBreakList(render_text.get(), &render_text->weights_);
 

@@ -20,8 +20,10 @@
 #include "modules/audio_mixer/audio_frame_manipulator.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #include "modules/audio_processing/logging/apm_data_dumper.h"
+#include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "system_wrappers/include/metrics.h"
 
 namespace webrtc {
 namespace {
@@ -188,7 +190,6 @@ FrameCombiner::FrameCombiner(LimiterType limiter_type)
       data_dumper_(new ApmDataDumper(0)),
       apm_agc2_limiter_(data_dumper_.get()) {
   apm_agc2_limiter_.SetGain(0.f);
-  apm_agc2_limiter_.EnableLimiter(true);
 }
 
 FrameCombiner::FrameCombiner(bool use_limiter)
@@ -213,6 +214,9 @@ void FrameCombiner::Combine(const std::vector<AudioFrame*>& mix_list,
                             size_t number_of_streams,
                             AudioFrame* audio_frame_for_mixing) {
   RTC_DCHECK(audio_frame_for_mixing);
+
+  LogMixingStats(mix_list, sample_rate, number_of_streams);
+
   SetAudioFrameFields(mix_list, number_of_channels, sample_rate,
                       number_of_streams, audio_frame_for_mixing);
 
@@ -253,6 +257,34 @@ void FrameCombiner::Combine(const std::vector<AudioFrame*>& mix_list,
   }
 
   InterleaveToAudioFrame(mixing_buffer_view, audio_frame_for_mixing);
+}
+
+void FrameCombiner::LogMixingStats(const std::vector<AudioFrame*>& mix_list,
+                                   int sample_rate,
+                                   size_t number_of_streams) const {
+  // Log every second.
+  uma_logging_counter_++;
+  if (uma_logging_counter_ > 1000 / AudioMixerImpl::kFrameDurationInMs) {
+    uma_logging_counter_ = 0;
+    RTC_HISTOGRAM_COUNTS_100("WebRTC.Audio.AudioMixer.NumIncomingStreams",
+                             static_cast<int>(number_of_streams));
+    RTC_HISTOGRAM_ENUMERATION(
+        "WebRTC.Audio.AudioMixer.NumIncomingActiveStreams",
+        static_cast<int>(mix_list.size()),
+        AudioMixerImpl::kMaximumAmountOfMixedAudioSources);
+
+    using NativeRate = AudioProcessing::NativeRate;
+    static constexpr NativeRate native_rates[] = {
+        NativeRate::kSampleRate8kHz, NativeRate::kSampleRate16kHz,
+        NativeRate::kSampleRate32kHz, NativeRate::kSampleRate48kHz};
+    const auto* rate_position = std::lower_bound(
+        std::begin(native_rates), std::end(native_rates), sample_rate);
+
+    RTC_HISTOGRAM_ENUMERATION(
+        "WebRTC.Audio.AudioMixer.MixingRate",
+        std::distance(std::begin(native_rates), rate_position),
+        arraysize(native_rates));
+  }
 }
 
 }  // namespace webrtc

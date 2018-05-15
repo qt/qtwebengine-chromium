@@ -11,7 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
 #include "mojo/public/cpp/bindings/binding.h"
-#include "third_party/WebKit/public/platform/modules/payments/payment_app.mojom.h"
+#include "third_party/blink/public/platform/modules/payments/payment_app.mojom.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -62,7 +62,6 @@ class CONTENT_EXPORT PaymentManager : public payments::mojom::PaymentManager {
   bool should_set_payment_app_info_;
   GURL context_url_;
   GURL scope_;
-  std::string user_hint_;
   mojo::Binding<payments::mojom::PaymentManager> binding_;
   base::WeakPtrFactory<PaymentManager> weak_ptr_factory_;
   DISALLOW_COPY_AND_ASSIGN(PaymentManager);

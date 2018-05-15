@@ -14,7 +14,6 @@
 #include "base/win/scoped_winrt_initializer.h"
 #include "base/win/windows_types.h"
 #include "chrome/install_static/install_util.h"
-#include "chrome/installer/setup/setup_util.h"
 #include "chrome/installer/util/install_util.h"
 #include "chrome/installer/util/registry_key_backup.h"
 #include "chrome/installer/util/util_constants.h"
@@ -24,30 +23,30 @@
 
 namespace {
 
-// Returns the notification_helper process if it is found.
-base::Process FindHelperProcess() {
-  unsigned int helper_pid;
+// Returns the process with name |name| if it is found.
+base::Process FindProcess(const base::string16& name) {
+  unsigned int pid;
   {
-    base::NamedProcessIterator iter(installer::kNotificationHelperExe, nullptr);
+    base::NamedProcessIterator iter(name, nullptr);
     const auto* entry = iter.NextProcessEntry();
     if (!entry)
       return base::Process();
-    helper_pid = entry->pid();
+    pid = entry->pid();
   }
 
-  base::Process helper = base::Process::Open(helper_pid);
-  if (!helper.IsValid())
-    return helper;
+  auto process = base::Process::Open(pid);
+  if (!process.IsValid())
+    return process;
 
   // Since the process could go away suddenly before we open a handle to it,
   // it's possible that a different process was just opened and assigned the
   // same PID due to aggressive PID reuse. Now that a handle is held to *some*
   // process, take another run through the snapshot to see if the process with
   // this PID has the right exe name.
-  base::NamedProcessIterator iter(installer::kNotificationHelperExe, nullptr);
+  base::NamedProcessIterator iter(name, nullptr);
   while (const auto* entry = iter.NextProcessEntry()) {
-    if (entry->pid() == helper_pid)
-      return helper;  // PID was not reused since the PID's match.
+    if (entry->pid() == pid)
+      return process;  // PID was not reused since the PID's match.
   }
   return base::Process();  // The PID was reused.
 }
@@ -57,25 +56,26 @@ base::Process FindHelperProcess() {
 class NotificationHelperTest : public testing::Test {
  protected:
   NotificationHelperTest()
-      : toast_activator_reg_path_(installer::GetToastActivatorRegistryPath()),
+      : toast_activator_reg_path_(InstallUtil::GetToastActivatorRegistryPath()),
         root_(HKEY_CURRENT_USER) {}
 
   void SetUp() override {
     // Back up the existing registration.
-    ASSERT_TRUE(backup_.Initialize(root_, toast_activator_reg_path().c_str(),
+    ASSERT_TRUE(backup_.Initialize(root_, toast_activator_reg_path_.c_str(),
                                    WorkItem::kWow64Default));
 
-    RegisterServer();
+    ASSERT_NO_FATAL_FAILURE(RegisterServer());
   }
 
   void TearDown() override {
-    UnregisterServer();
+    ASSERT_NO_FATAL_FAILURE(UnregisterServer());
 
     // Restore the registration.
-    ASSERT_TRUE(backup_.WriteTo(root_, toast_activator_reg_path().c_str(),
+    ASSERT_TRUE(backup_.WriteTo(root_, toast_activator_reg_path_.c_str(),
                                 WorkItem::kWow64Default));
   }
 
+ private:
   // Registers notification_helper.exe as the server.
   void RegisterServer() {
     std::unique_ptr<WorkItemList> list(WorkItem::CreateWorkItemList());
@@ -83,7 +83,7 @@ class NotificationHelperTest : public testing::Test {
     // Delete the old registration to ensure a clean environment for server
     // registration. This is okay because we have already backed up the existing
     // registration in SetUp(), and will restore it in TearDown().
-    list->AddDeleteRegKeyWorkItem(root_, toast_activator_reg_path(),
+    list->AddDeleteRegKeyWorkItem(root_, toast_activator_reg_path_,
                                   WorkItem::kWow64Default);
 
     // Notification_helper.exe is in the build output directory next to this
@@ -94,7 +94,7 @@ class NotificationHelperTest : public testing::Test {
     base::FilePath notification_helper =
         dir_exe.Append(installer::kNotificationHelperExe);
 
-    base::string16 toast_activator_server_path = toast_activator_reg_path();
+    base::string16 toast_activator_server_path = toast_activator_reg_path_;
     toast_activator_server_path.append(L"\\LocalServer32");
 
     // Command-line featuring the quoted path to the exe.
@@ -117,15 +117,10 @@ class NotificationHelperTest : public testing::Test {
   // Unregisters the server by deleting the registry key installed during the
   // test.
   void UnregisterServer() {
-    ASSERT_TRUE(InstallUtil::DeleteRegistryKey(
-        root_, toast_activator_reg_path(), WorkItem::kWow64Default));
+    ASSERT_TRUE(InstallUtil::DeleteRegistryKey(root_, toast_activator_reg_path_,
+                                               WorkItem::kWow64Default));
   }
 
-  const base::string16& toast_activator_reg_path() const {
-    return toast_activator_reg_path_;
-  }
-
- private:
   // Path to the toast activator registry.
   const base::string16 toast_activator_reg_path_;
 
@@ -144,7 +139,9 @@ TEST_F(NotificationHelperTest, NotificationHelperServerTest) {
 
   // There isn't a way to directly correlate the notification_helper.exe server
   // to this test. So we need to hunt for the server.
-  base::Process helper = FindHelperProcess();
+
+  // Make sure there is no notification_helper process running around.
+  base::Process helper = FindProcess(installer::kNotificationHelperExe);
   ASSERT_FALSE(helper.IsValid());
 
   Microsoft::WRL::ComPtr<IUnknown> notification_activator;
@@ -157,7 +154,7 @@ TEST_F(NotificationHelperTest, NotificationHelperServerTest) {
   // The server module now holds a reference of the instance object, the
   // notification_helper.exe process is alive waiting for that reference to be
   // released.
-  helper = FindHelperProcess();
+  helper = FindProcess(installer::kNotificationHelperExe);
   ASSERT_TRUE(helper.IsValid());
 
   // Release the instance object. Now that the last (and the only) instance

@@ -11,6 +11,7 @@
 #include "content/browser/sandbox_host_linux.h"
 #include "content/browser/zygote_host/zygote_communication_linux.h"
 #include "content/browser/zygote_host/zygote_host_impl_linux.h"
+#include "content/public/browser/child_process_launcher_utils.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/common_sandbox_support_linux.h"
 #include "content/public/common/content_client.h"
@@ -36,7 +37,7 @@ void ChildProcessLauncherHelper::BeforeLaunchOnClientThread() {
 
 std::unique_ptr<FileMappedForLaunch>
 ChildProcessLauncherHelper::GetFilesToMap() {
-  DCHECK_CURRENTLY_ON(BrowserThread::PROCESS_LAUNCHER);
+  DCHECK(CurrentlyOnProcessLauncherTaskRunner());
   return CreateDefaultPosixFilesToMap(child_process_id(), mojo_client_handle(),
                                       true /* include_service_required_files */,
                                       GetProcessType(), command_line());
@@ -130,14 +131,17 @@ base::TerminationStatus ChildProcessLauncherHelper::GetTerminationStatus(
 }
 
 // static
-bool ChildProcessLauncherHelper::TerminateProcess(
-    const base::Process& process, int exit_code, bool wait) {
-  return process.Terminate(exit_code, wait);
+bool ChildProcessLauncherHelper::TerminateProcess(const base::Process& process,
+                                                  int exit_code) {
+  // TODO(https://crbug.com/818244): Determine whether we should also call
+  // EnsureProcessTerminated() to make sure of process-exit, and reap it.
+  return process.Terminate(exit_code, false);
 }
 
 // static
 void ChildProcessLauncherHelper::ForceNormalProcessTerminationSync(
     ChildProcessLauncherHelper::Process process) {
+  DCHECK(CurrentlyOnProcessLauncherTaskRunner());
   process.process.Terminate(RESULT_CODE_NORMAL_EXIT, false);
   // On POSIX, we must additionally reap the child.
   if (process.zygote) {
@@ -152,7 +156,7 @@ void ChildProcessLauncherHelper::ForceNormalProcessTerminationSync(
 void ChildProcessLauncherHelper::SetProcessPriorityOnLauncherThread(
     base::Process process,
     const ChildProcessLauncherPriority& priority) {
-  DCHECK_CURRENTLY_ON(BrowserThread::PROCESS_LAUNCHER);
+  DCHECK(CurrentlyOnProcessLauncherTaskRunner());
   if (process.CanBackgroundProcesses())
     process.SetProcessBackgrounded(priority.background);
 }

@@ -24,16 +24,20 @@ bool ShouldSendOnIO(const std::string& method) {
          method == "Debugger.setBreakpointByUrl" ||
          method == "Debugger.removeBreakpoint" ||
          method == "Debugger.setBreakpointsActive" ||
-         method == "Performance.getMetrics" || method == "Page.crash";
+         method == "Performance.getMetrics" || method == "Page.crash" ||
+         method == "Runtime.terminateExecution" ||
+         method == "Emulation.setScriptExecutionDisabled";
 }
 
 }  // namespace
 
 DevToolsSession::DevToolsSession(DevToolsAgentHostImpl* agent_host,
-                                 DevToolsAgentHostClient* client)
+                                 DevToolsAgentHostClient* client,
+                                 bool restricted)
     : binding_(this),
       agent_host_(agent_host),
       client_(client),
+      restricted_(restricted),
       process_host_id_(ChildProcessHost::kInvalidUniqueID),
       host_(nullptr),
       dispatcher_(new protocol::UberDispatcher(this)),
@@ -123,12 +127,6 @@ void DevToolsSession::DispatchProtocolMessage(const std::string& message) {
 
     if (delegate->HandleCommand(agent_host_, client_, dict_value))
       return;
-
-    if (delegate->HandleAsyncCommand(agent_host_, client_, dict_value,
-                                     base::Bind(&DevToolsSession::SendResponse,
-                                                weak_factory_.GetWeakPtr()))) {
-      return;
-    }
   }
 
   int call_id;

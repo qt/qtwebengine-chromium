@@ -5,6 +5,7 @@
 #include "content/renderer/media/webrtc/rtc_peer_connection_handler.h"
 
 #include <stddef.h>
+#include <string.h>
 
 #include <map>
 #include <memory>
@@ -38,25 +39,25 @@
 #include "content/renderer/media/webrtc/rtc_stats.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebMediaConstraints.h"
-#include "third_party/WebKit/public/platform/WebMediaStream.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
-#include "third_party/WebKit/public/platform/WebRTCConfiguration.h"
-#include "third_party/WebKit/public/platform/WebRTCDTMFSenderHandler.h"
-#include "third_party/WebKit/public/platform/WebRTCDataChannelHandler.h"
-#include "third_party/WebKit/public/platform/WebRTCDataChannelInit.h"
-#include "third_party/WebKit/public/platform/WebRTCError.h"
-#include "third_party/WebKit/public/platform/WebRTCICECandidate.h"
-#include "third_party/WebKit/public/platform/WebRTCPeerConnectionHandlerClient.h"
-#include "third_party/WebKit/public/platform/WebRTCRtpReceiver.h"
-#include "third_party/WebKit/public/platform/WebRTCSessionDescription.h"
-#include "third_party/WebKit/public/platform/WebRTCSessionDescriptionRequest.h"
-#include "third_party/WebKit/public/platform/WebRTCStatsRequest.h"
-#include "third_party/WebKit/public/platform/WebRTCVoidRequest.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
-#include "third_party/WebKit/public/web/WebHeap.h"
+#include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/web_media_constraints.h"
+#include "third_party/blink/public/platform/web_media_stream.h"
+#include "third_party/blink/public/platform/web_media_stream_source.h"
+#include "third_party/blink/public/platform/web_media_stream_track.h"
+#include "third_party/blink/public/platform/web_rtc_configuration.h"
+#include "third_party/blink/public/platform/web_rtc_data_channel_handler.h"
+#include "third_party/blink/public/platform/web_rtc_data_channel_init.h"
+#include "third_party/blink/public/platform/web_rtc_dtmf_sender_handler.h"
+#include "third_party/blink/public/platform/web_rtc_error.h"
+#include "third_party/blink/public/platform/web_rtc_ice_candidate.h"
+#include "third_party/blink/public/platform/web_rtc_peer_connection_handler_client.h"
+#include "third_party/blink/public/platform/web_rtc_rtp_receiver.h"
+#include "third_party/blink/public/platform/web_rtc_session_description.h"
+#include "third_party/blink/public/platform/web_rtc_session_description_request.h"
+#include "third_party/blink/public/platform/web_rtc_stats_request.h"
+#include "third_party/blink/public/platform/web_rtc_void_request.h"
+#include "third_party/blink/public/platform/web_url.h"
+#include "third_party/blink/public/web/web_heap.h"
 #include "third_party/webrtc/api/peerconnectioninterface.h"
 #include "third_party/webrtc/api/rtpreceiverinterface.h"
 #include "third_party/webrtc/stats/test/rtcteststats.h"
@@ -270,9 +271,7 @@ class RTCPeerConnectionHandlerTest : public ::testing::Test {
   void SetUp() override {
     mock_client_.reset(new NiceMock<MockWebRTCPeerConnectionHandlerClient>());
     mock_dependency_factory_.reset(new MockPeerConnectionDependencyFactory());
-    pc_handler_.reset(
-        new RTCPeerConnectionHandlerUnderTest(
-            mock_client_.get(), mock_dependency_factory_.get()));
+    pc_handler_ = CreateRTCPeerConnectionHandlerUnderTest();
     mock_tracker_.reset(new NiceMock<MockPeerConnectionTracker>());
     blink::WebRTCConfiguration config;
     blink::WebMediaConstraints constraints;
@@ -290,6 +289,12 @@ class RTCPeerConnectionHandlerTest : public ::testing::Test {
     mock_dependency_factory_.reset();
     mock_client_.reset();
     blink::WebHeap::CollectAllGarbageForTesting();
+  }
+
+  std::unique_ptr<RTCPeerConnectionHandlerUnderTest>
+  CreateRTCPeerConnectionHandlerUnderTest() {
+    return std::make_unique<RTCPeerConnectionHandlerUnderTest>(
+        mock_client_.get(), mock_dependency_factory_.get());
   }
 
   // Creates a WebKit local MediaStream.
@@ -531,8 +536,8 @@ class RTCPeerConnectionHandlerTest : public ::testing::Test {
 
   template <typename T>
   void InvokeOnSignalingThread(T callback) {
-    mock_dependency_factory_->GetWebRtcSignalingThread()->PostTask(FROM_HERE,
-                                                                   callback);
+    mock_dependency_factory_->GetWebRtcSignalingThread()->PostTask(
+        FROM_HERE, std::move(callback));
     RunMessageLoopsUntilIdle();
   }
 
@@ -1540,6 +1545,18 @@ TEST_F(RTCPeerConnectionHandlerTest, CreateDataChannel) {
   EXPECT_TRUE(channel.get() != nullptr);
   EXPECT_EQ(label, channel->Label());
   channel->SetClient(nullptr);
+}
+
+TEST_F(RTCPeerConnectionHandlerTest, IdIsOfExpectedFormat) {
+  const std::string id = pc_handler_->Id().Ascii();
+  constexpr size_t expected_length = 32u;
+  EXPECT_EQ(id.length(), expected_length);
+  EXPECT_EQ(id.length(), strspn(id.c_str(), "0123456789ABCDEF"));
+}
+
+TEST_F(RTCPeerConnectionHandlerTest, IdIsNotRepeated) {
+  const auto other_pc_handler_ = CreateRTCPeerConnectionHandlerUnderTest();
+  EXPECT_NE(pc_handler_->Id(), other_pc_handler_->Id());
 }
 
 }  // namespace content

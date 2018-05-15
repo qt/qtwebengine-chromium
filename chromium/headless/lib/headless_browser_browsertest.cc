@@ -466,8 +466,8 @@ void URLRequestJobWithCookies::Start() {
   }
   cookie_store->GetCookieListWithOptionsAsync(
       request_->url(), options,
-      base::Bind(&URLRequestJobWithCookies::SaveCookiesAndStart,
-                 weak_factory_.GetWeakPtr()));
+      base::BindOnce(&URLRequestJobWithCookies::SaveCookiesAndStart,
+                     weak_factory_.GetWeakPtr()));
 }
 
 void URLRequestJobWithCookies::SaveCookiesAndStart(
@@ -525,7 +525,8 @@ class CookieSetter {
     web_contents_->GetDevToolsTarget()->AttachClient(devtools_client_.get());
     devtools_client_->GetNetwork()->GetExperimental()->SetCookie(
         std::move(set_cookie_params),
-        base::Bind(&CookieSetter::OnSetCookieResult, base::Unretained(this)));
+        base::BindOnce(&CookieSetter::OnSetCookieResult,
+                       base::Unretained(this)));
   }
 
   ~CookieSetter() {
@@ -838,7 +839,7 @@ class TraceHelper : public tracing::ExperimentalObserver {
 
     client_->GetTracing()->GetExperimental()->Start(
         tracing::StartParams::Builder().Build(),
-        base::Bind(&TraceHelper::OnTracingStarted, base::Unretained(this)));
+        base::BindOnce(&TraceHelper::OnTracingStarted, base::Unretained(this)));
   }
 
   ~TraceHelper() override {
@@ -968,6 +969,25 @@ IN_PROC_BROWSER_TEST_F(HeadlessBrowserTestAppendCommandLineFlags,
 
   // Used only for lifetime.
   (void)web_contents;
+}
+
+IN_PROC_BROWSER_TEST_F(HeadlessBrowserTest, ServerWantsClientCertificate) {
+  net::SpawnedTestServer::SSLOptions ssl_options;
+  ssl_options.request_client_certificate = true;
+
+  net::SpawnedTestServer server(
+      net::SpawnedTestServer::TYPE_HTTPS, ssl_options,
+      base::FilePath(FILE_PATH_LITERAL("headless/test/data")));
+  EXPECT_TRUE(server.Start());
+
+  HeadlessBrowserContext* browser_context =
+      browser()->CreateBrowserContextBuilder().Build();
+
+  HeadlessWebContents* web_contents =
+      browser_context->CreateWebContentsBuilder()
+          .SetInitialURL(server.GetURL("/hello.html"))
+          .Build();
+  EXPECT_TRUE(WaitForLoad(web_contents));
 }
 
 }  // namespace headless

@@ -6,7 +6,10 @@
 #include "base/json/json_writer.h"
 #include "base/macros.h"
 #include "base/path_service.h"
+#include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task_scheduler/post_task.h"
+#include "base/task_scheduler/task_traits.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
@@ -22,6 +25,22 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
+#include "ui/shell_dialogs/select_file_dialog_factory.h"
+#include "ui/shell_dialogs/select_file_policy.h"
+
+namespace {
+
+const base::FilePath::CharType kPolicyToolSessionsDir[] =
+    FILE_PATH_LITERAL("Policy sessions");
+
+const base::FilePath::CharType kPolicyToolDefaultSessionName[] =
+    FILE_PATH_LITERAL("policy");
+
+const base::FilePath::CharType kPolicyToolSessionExtension[] =
+    FILE_PATH_LITERAL("json");
+
+}  // namespace
 
 class PolicyToolUITest : public InProcessBrowserTest {
  public:
@@ -29,8 +48,6 @@ class PolicyToolUITest : public InProcessBrowserTest {
   ~PolicyToolUITest() override;
 
  protected:
-  // InProcessBrowserTest implementation.
-  void SetUpInProcessBrowserTestFixture() override;
   void SetUp() override;
 
   base::FilePath GetSessionsDir();
@@ -40,10 +57,13 @@ class PolicyToolUITest : public InProcessBrowserTest {
 
   void LoadSession(const std::string& session_name);
   void DeleteSession(const std::string& session_name);
+  void RenameSession(const std::string& session_name,
+                     const std::string& new_session_name);
 
   std::unique_ptr<base::DictionaryValue> ExtractPolicyValues(bool need_status);
 
   bool IsInvalidSessionNameErrorMessageDisplayed();
+  bool IsSessionRenameErrorMessageDisplayed();
 
   std::unique_ptr<base::ListValue> ExtractSessionsList();
 
@@ -66,15 +86,15 @@ base::FilePath PolicyToolUITest::GetSessionsDir() {
   base::FilePath profile_dir;
   EXPECT_TRUE(PathService::Get(chrome::DIR_USER_DATA, &profile_dir));
   return profile_dir.AppendASCII(TestingProfile::kTestUserProfileDir)
-      .Append(PolicyToolUIHandler::kPolicyToolSessionsDir);
+      .Append(kPolicyToolSessionsDir);
 }
 
 base::FilePath::StringType PolicyToolUITest::GetDefaultSessionName() {
-  return PolicyToolUIHandler::kPolicyToolDefaultSessionName;
+  return kPolicyToolDefaultSessionName;
 }
 
 base::FilePath::StringType PolicyToolUITest::GetSessionExtension() {
-  return PolicyToolUIHandler::kPolicyToolSessionExtension;
+  return kPolicyToolSessionExtension;
 }
 
 base::FilePath PolicyToolUITest::GetSessionPath(
@@ -87,8 +107,6 @@ base::FilePath PolicyToolUITest::GetSessionPath(
 PolicyToolUITest::PolicyToolUITest() {}
 
 PolicyToolUITest::~PolicyToolUITest() {}
-
-void PolicyToolUITest::SetUpInProcessBrowserTestFixture() {}
 
 void PolicyToolUITest::SetUp() {
   scoped_feature_list_.InitAndEnableFeature(features::kPolicyTool);
@@ -109,6 +127,18 @@ void PolicyToolUITest::DeleteSession(const std::string& session_name) {
   const std::string javascript = "$('session-list').value = '" + session_name +
                                  "';"
                                  "$('delete-session-button').click();";
+  EXPECT_TRUE(content::ExecuteScript(
+      browser()->tab_strip_model()->GetActiveWebContents(), javascript));
+  content::RunAllTasksUntilIdle();
+}
+
+void PolicyToolUITest::RenameSession(const std::string& session_name,
+                                     const std::string& new_session_name) {
+  const std::string javascript =
+      base::StrCat({"$('session-list').value = '", session_name, "';",
+                    "$('rename-session-button').click();",
+                    "$('new-session-name-field').value = '", new_session_name,
+                    "';", "$('confirm-rename-button').click();"});
   EXPECT_TRUE(content::ExecuteScript(
       browser()->tab_strip_model()->GetActiveWebContents(), javascript));
   content::RunAllTasksUntilIdle();
@@ -170,6 +200,16 @@ bool PolicyToolUITest::IsInvalidSessionNameErrorMessageDisplayed() {
   return result;
 }
 
+bool PolicyToolUITest::IsSessionRenameErrorMessageDisplayed() {
+  constexpr char kJavascript[] =
+      "domAutomationController.send($('session-rename-error').hidden == false)";
+  content::WebContents* contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  bool result = false;
+  EXPECT_TRUE(ExecuteScriptAndExtractBool(contents, kJavascript, &result));
+  return result;
+}
+
 void PolicyToolUITest::CreateMultipleSessionFiles(int count) {
   base::ScopedAllowBlockingForTesting allow_blocking;
   EXPECT_TRUE(base::CreateDirectory(GetSessionsDir()));
@@ -221,6 +261,85 @@ std::string PolicyToolUITest::ExtractSinglePolicyValue(
   EXPECT_EQ(base::Value::Type::STRING, value->type());
   return value->GetString();
 }
+
+class PolicyToolUIExportTest : public PolicyToolUITest {
+ public:
+  PolicyToolUIExportTest();
+  ~PolicyToolUIExportTest() override;
+
+ protected:
+  // InProcessBrowserTest implementation.
+  void SetUpInProcessBrowserTestFixture() override;
+
+  // The temporary directory and file path for policy saving.
+  base::ScopedTempDir export_policies_test_dir_;
+  base::FilePath export_policies_test_file_path_;
+};
+
+PolicyToolUIExportTest::PolicyToolUIExportTest() {}
+
+PolicyToolUIExportTest::~PolicyToolUIExportTest() {}
+
+void PolicyToolUIExportTest::SetUpInProcessBrowserTestFixture() {
+  ASSERT_TRUE(export_policies_test_dir_.CreateUniqueTempDir());
+  const std::string filename = "policy.json";
+  export_policies_test_file_path_ =
+      export_policies_test_dir_.GetPath().AppendASCII(filename);
+}
+
+// An artificial SelectFileDialog that immediately returns the location of test
+// file instead of showing the UI file picker.
+class TestSelectFileDialogPolicyTool : public ui::SelectFileDialog {
+ public:
+  TestSelectFileDialogPolicyTool(ui::SelectFileDialog::Listener* listener,
+                                 std::unique_ptr<ui::SelectFilePolicy> policy,
+                                 const base::FilePath& default_selected_path)
+      : ui::SelectFileDialog(listener, std::move(policy)) {
+    default_path_ = default_selected_path;
+  }
+
+  void SelectFileImpl(Type type,
+                      const base::string16& title,
+                      const base::FilePath& default_path,
+                      const FileTypeInfo* file_types,
+                      int file_type_index,
+                      const base::FilePath::StringType& default_extension,
+                      gfx::NativeWindow owning_window,
+                      void* params) override {
+    listener_->FileSelected(default_path_, /*index=*/0, /*params=*/nullptr);
+  }
+
+  bool IsRunning(gfx::NativeWindow owning_window) const override {
+    return false;
+  }
+
+  void ListenerDestroyed() override {}
+
+  bool HasMultipleFileTypeChoicesImpl() override { return false; }
+
+ private:
+  ~TestSelectFileDialogPolicyTool() override {}
+  base::FilePath default_path_;
+};
+
+// A factory associated with the artificial file picker.
+class TestSelectFileDialogFactoryPolicyTool
+    : public ui::SelectFileDialogFactory {
+ public:
+  TestSelectFileDialogFactoryPolicyTool(
+      const base::FilePath& default_selected_path) {
+    default_path_ = default_selected_path;
+  }
+
+ private:
+  base::FilePath default_path_;
+  ui::SelectFileDialog* Create(
+      ui::SelectFileDialog::Listener* listener,
+      std::unique_ptr<ui::SelectFilePolicy> policy) override {
+    return new TestSelectFileDialogPolicyTool(listener, std::move(policy),
+                                              default_path_);
+  }
+};
 
 IN_PROC_BROWSER_TEST_F(PolicyToolUITest, CreatingSessionFiles) {
   base::ScopedAllowBlockingForTesting allow_blocking;
@@ -327,6 +446,8 @@ IN_PROC_BROWSER_TEST_F(PolicyToolUITest, InvalidSessionName) {
   EXPECT_FALSE(IsInvalidSessionNameErrorMessageDisplayed());
   LoadSession("../test");
   EXPECT_TRUE(IsInvalidSessionNameErrorMessageDisplayed());
+  LoadSession("/full_path");
+  EXPECT_TRUE(IsInvalidSessionNameErrorMessageDisplayed());
   LoadSession("policy");
   EXPECT_FALSE(IsInvalidSessionNameErrorMessageDisplayed());
 }
@@ -428,4 +549,100 @@ IN_PROC_BROWSER_TEST_F(PolicyToolUITest, DeleteSession) {
   DeleteSession("2");
   expected.GetList().erase(expected.GetList().begin());
   EXPECT_EQ(expected, *ExtractSessionsList());
+}
+
+IN_PROC_BROWSER_TEST_F(PolicyToolUITest, RenameSession) {
+  CreateMultipleSessionFiles(3);
+  ui_test_utils::NavigateToURL(browser(), GURL("chrome://policy-tool"));
+  EXPECT_EQ("2", ExtractSinglePolicyValue("SessionId"));
+
+  // Check that a non-current session is renamed correctly.
+  RenameSession("0", "4");
+  EXPECT_FALSE(IsSessionRenameErrorMessageDisplayed());
+  base::ListValue expected;
+  expected.GetList().push_back(base::Value("2"));
+  expected.GetList().push_back(base::Value("1"));
+  expected.GetList().push_back(base::Value("4"));
+  EXPECT_EQ(expected, *ExtractSessionsList());
+
+  // Check that the current session can be renamed properly.
+  RenameSession("2", "5");
+  EXPECT_FALSE(IsSessionRenameErrorMessageDisplayed());
+  expected.GetList()[0] = base::Value("5");
+  EXPECT_EQ(expected, *ExtractSessionsList());
+}
+
+IN_PROC_BROWSER_TEST_F(PolicyToolUITest, RenameSessionWithExistingSessionName) {
+  CreateMultipleSessionFiles(3);
+  ui_test_utils::NavigateToURL(browser(), GURL("chrome://policy-tool"));
+  EXPECT_EQ("2", ExtractSinglePolicyValue("SessionId"));
+
+  // Check that a session can not be renamed with a name of another existing
+  // session.
+  RenameSession("2", "1");
+  EXPECT_TRUE(IsSessionRenameErrorMessageDisplayed());
+  base::ListValue expected;
+  expected.GetList().push_back(base::Value("2"));
+  expected.GetList().push_back(base::Value("1"));
+  expected.GetList().push_back(base::Value("0"));
+  EXPECT_EQ(expected, *ExtractSessionsList());
+}
+
+IN_PROC_BROWSER_TEST_F(PolicyToolUITest, RenameSessionInvalidName) {
+  CreateMultipleSessionFiles(3);
+  ui_test_utils::NavigateToURL(browser(), GURL("chrome://policy-tool"));
+  EXPECT_EQ("2", ExtractSinglePolicyValue("SessionId"));
+
+  RenameSession("2", "../");
+  EXPECT_TRUE(IsSessionRenameErrorMessageDisplayed());
+  base::ListValue expected;
+  expected.GetList().push_back(base::Value("2"));
+  expected.GetList().push_back(base::Value("1"));
+  expected.GetList().push_back(base::Value("0"));
+  EXPECT_EQ(expected, *ExtractSessionsList());
+
+  // Check that full path is not allowed
+  RenameSession("2", "/full_path");
+  EXPECT_TRUE(IsSessionRenameErrorMessageDisplayed());
+  EXPECT_EQ(expected, *ExtractSessionsList());
+}
+
+IN_PROC_BROWSER_TEST_F(PolicyToolUIExportTest, ExportSessionPolicyToLinux) {
+  CreateMultipleSessionFiles(3);
+
+  // Set SelectFileDialog to use our factory.
+  ui::SelectFileDialog::SetFactory(new TestSelectFileDialogFactoryPolicyTool(
+      export_policies_test_file_path_));
+
+  // Test if the current session policy is successfully exported.
+  ui_test_utils::NavigateToURL(browser(), GURL("chrome://policy-tool"));
+  std::string javascript =
+      "$('show-unset').click();"
+      "var policyEntry = document.querySelectorAll("
+      "    'section.policy-table-section > * > tbody')[0];"
+      "policyEntry.getElementsByClassName('edit-button')[0].click();"
+      "policyEntry.getElementsByClassName('value-edit-field')[0].value ="
+      "                                                           'test';"
+      "policyEntry.getElementsByClassName('save-button')[0].click();"
+      "$('export-policies-linux').click()";
+
+  content::WebContents* contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  EXPECT_TRUE(content::ExecuteScript(contents, javascript));
+
+  // Because we created 3 session policies (with paths {0, 1, 2}), the last one
+  // is the current active session policy.
+  EXPECT_TRUE(base::ContentsEqual(export_policies_test_file_path_,
+                                  GetSessionPath(FILE_PATH_LITERAL("2"))));
+
+  // Test if after an export action, we can continue exporting.
+  std::string change_session_js =
+      "$('session-name-field').value = '1';"
+      "$('load-session-button').click();";
+
+  EXPECT_TRUE(content::ExecuteScript(contents, change_session_js + javascript));
+  base::TaskScheduler::GetInstance()->FlushForTesting();
+  EXPECT_TRUE(base::ContentsEqual(export_policies_test_file_path_,
+                                  GetSessionPath(FILE_PATH_LITERAL("1"))));
+  TestSelectFileDialogPolicyTool::SetFactory(nullptr);
 }

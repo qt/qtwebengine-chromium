@@ -12,7 +12,6 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "build/build_config.h"
 #include "cc/blink/web_layer_impl.h"
 #include "cc/layers/video_frame_provider_client_impl.h"
 #include "cc/layers/video_layer.h"
@@ -37,11 +36,11 @@
 #include "media/blink/webmediaplayer_util.h"
 #include "media/video/gpu_memory_buffer_video_frame_pool.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
-#include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
-#include "third_party/WebKit/public/platform/WebMediaPlayerSource.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/public/platform/WebSize.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/blink/public/platform/web_media_player_client.h"
+#include "third_party/blink/public/platform/web_media_player_source.h"
+#include "third_party/blink/public/platform/web_rect.h"
+#include "third_party/blink/public/platform/web_size.h"
+#include "third_party/blink/public/web/web_local_frame.h"
 
 namespace {
 enum class RendererReloadAction {
@@ -49,9 +48,20 @@ enum class RendererReloadAction {
   REMOVE_RENDERER,
   NEW_RENDERER
 };
+
 }  // namespace
 
 namespace content {
+
+#if defined(OS_WIN)
+// Since we do not have native GMB support in Windows, using GMBs can cause a
+// CPU regression. This is more apparent and can have adverse affects in lower
+// resolution content which are defined by these thresholds, see
+// https://crbug.com/835752.
+// static
+const gfx::Size WebMediaPlayerMS::kUseGpuMemoryBufferVideoFramesMinResolution =
+    gfx::Size(1920, 1080);
+#endif  // defined(OS_WIN)
 
 // FrameDeliverer is responsible for delivering frames received on
 // the IO thread by calling of EnqueueFrame() method of |compositor_|.
@@ -72,6 +82,7 @@ class WebMediaPlayerMS::FrameDeliverer {
         player_(player),
         enqueue_frame_cb_(enqueue_frame_cb),
         media_task_runner_(media_task_runner),
+        weak_factory_for_pool_(this),
         weak_factory_(this) {
     io_thread_checker_.DetachFromThread();
 
@@ -87,6 +98,7 @@ class WebMediaPlayerMS::FrameDeliverer {
   ~FrameDeliverer() {
     DCHECK(io_thread_checker_.CalledOnValidThread());
     if (gpu_memory_buffer_pool_) {
+      DropCurrentPoolTasks();
       media_task_runner_->DeleteSoon(FROM_HERE,
                                      gpu_memory_buffer_pool_.release());
     }
@@ -95,38 +107,76 @@ class WebMediaPlayerMS::FrameDeliverer {
   void OnVideoFrame(scoped_refptr<media::VideoFrame> frame) {
     DCHECK(io_thread_checker_.CalledOnValidThread());
 
+// On Android, stop passing frames.
 #if defined(OS_ANDROID)
     if (render_frame_suspended_)
       return;
 #endif  // defined(OS_ANDROID)
 
     if (!gpu_memory_buffer_pool_) {
-      FrameReady(frame);
+      EnqueueFrame(std::move(frame));
       return;
     }
 
-    //  |gpu_memory_buffer_pool_| deletion is going to be posted to
-    //  |media_task_runner_|. base::Unretained() usage is fine since
-    //  |gpu_memory_buffer_pool_| outlives the task.
+#if defined(OS_WIN)
+    const bool skip_creating_gpu_memory_buffer =
+        frame->visible_rect().width() <
+            kUseGpuMemoryBufferVideoFramesMinResolution.width() ||
+        frame->visible_rect().height() <
+            kUseGpuMemoryBufferVideoFramesMinResolution.height();
+#else
+    const bool skip_creating_gpu_memory_buffer = false;
+#endif  // defined(OS_WIN)
+
+    // If |render_frame_suspended_|, we can keep passing the frames to keep the
+    // latest frame in compositor up to date. However, creating GMB backed
+    // frames is unnecessary, because the frames are not going to be shown for
+    // the time period.
+    if (render_frame_suspended_ || skip_creating_gpu_memory_buffer) {
+      EnqueueFrame(std::move(frame));
+      // If there are any existing MaybeCreateHardwareFrame() calls, we do not
+      // want those frames to be placed after the current one, so just drop
+      // them.
+      DropCurrentPoolTasks();
+      return;
+    }
+
+    // |gpu_memory_buffer_pool_| deletion is going to be posted to
+    // |media_task_runner_|. base::Unretained() usage is fine since
+    // |gpu_memory_buffer_pool_| outlives the task.
     media_task_runner_->PostTask(
         FROM_HERE,
         base::BindOnce(
             &media::GpuMemoryBufferVideoFramePool::MaybeCreateHardwareFrame,
             base::Unretained(gpu_memory_buffer_pool_.get()), frame,
-            media::BindToCurrentLoop(base::BindRepeating(
-                &FrameDeliverer::FrameReady, weak_factory_.GetWeakPtr()))));
+            media::BindToCurrentLoop(
+                base::BindOnce(&FrameDeliverer::EnqueueFrame,
+                               weak_factory_for_pool_.GetWeakPtr()))));
   }
 
-  void FrameReady(const scoped_refptr<media::VideoFrame>& frame) {
+  void SetRenderFrameSuspended(bool render_frame_suspended) {
+    DCHECK(io_thread_checker_.CalledOnValidThread());
+    render_frame_suspended_ = render_frame_suspended;
+  }
+
+  MediaStreamVideoRenderer::RepaintCB GetRepaintCallback() {
+    return base::Bind(&FrameDeliverer::OnVideoFrame,
+                      weak_factory_.GetWeakPtr());
+  }
+
+ private:
+  friend class WebMediaPlayerMS;
+
+  void EnqueueFrame(const scoped_refptr<media::VideoFrame>& frame) {
     DCHECK(io_thread_checker_.CalledOnValidThread());
 
     base::TimeTicks render_time;
     if (frame->metadata()->GetTimeTicks(
             media::VideoFrameMetadata::REFERENCE_TIME, &render_time)) {
-      TRACE_EVENT1("webmediaplayerms", "FrameReady", "Ideal Render Instant",
+      TRACE_EVENT1("media", "EnqueueFrame", "Ideal Render Instant",
                    render_time.ToInternalValue());
     } else {
-      TRACE_EVENT0("webmediaplayerms", "FrameReady");
+      TRACE_EVENT0("media", "EnqueueFrame");
     }
 
     const bool is_opaque = media::IsOpaque(frame->format());
@@ -159,28 +209,27 @@ class WebMediaPlayerMS::FrameDeliverer {
     enqueue_frame_cb_.Run(frame);
   }
 
-#if defined(OS_ANDROID)
-  void SetRenderFrameSuspended(bool render_frame_suspended) {
+  void DropCurrentPoolTasks() {
     DCHECK(io_thread_checker_.CalledOnValidThread());
-    render_frame_suspended_ = render_frame_suspended;
-  }
-#endif  // defined(OS_ANDROID)
+    DCHECK(gpu_memory_buffer_pool_);
 
-  MediaStreamVideoRenderer::RepaintCB GetRepaintCallback() {
-    return base::Bind(&FrameDeliverer::OnVideoFrame,
-                      weak_factory_.GetWeakPtr());
-  }
+    if (!weak_factory_for_pool_.HasWeakPtrs())
+      return;
 
- private:
-  friend class WebMediaPlayerMS;
+    //  |gpu_memory_buffer_pool_| deletion is going to be posted to
+    //  |media_task_runner_|. base::Unretained() usage is fine since
+    //  |gpu_memory_buffer_pool_| outlives the task.
+    media_task_runner_->PostTask(
+        FROM_HERE,
+        base::BindOnce(&media::GpuMemoryBufferVideoFramePool::Abort,
+                       base::Unretained(gpu_memory_buffer_pool_.get())));
+    weak_factory_for_pool_.InvalidateWeakPtrs();
+  }
 
   bool last_frame_opaque_;
   media::VideoRotation last_frame_rotation_;
   bool received_first_frame_;
-
-#if defined(OS_ANDROID)
   bool render_frame_suspended_ = false;
-#endif  // defined(OS_ANDROID)
 
   const scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
   const base::WeakPtr<WebMediaPlayerMS> player_;
@@ -193,6 +242,7 @@ class WebMediaPlayerMS::FrameDeliverer {
   // Used for DCHECKs to ensure method calls are executed on the correct thread.
   base::ThreadChecker io_thread_checker_;
 
+  base::WeakPtrFactory<FrameDeliverer> weak_factory_for_pool_;
   base::WeakPtrFactory<FrameDeliverer> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(FrameDeliverer);
@@ -554,6 +604,12 @@ void WebMediaPlayerMS::EnterPictureInPicture() {
   // WebMediaPlayerMS. See http://crbug/746182.
 }
 
+void WebMediaPlayerMS::ExitPictureInPicture() {
+  NOTIMPLEMENTED();
+  // TODO(apacible): Implement after video in surfaces is supported for
+  // WebMediaPlayerMS. See http://crbug/746182.
+}
+
 void WebMediaPlayerMS::SetSinkId(
     const blink::WebString& sink_id,
     const blink::WebSecurityOrigin& security_origin,
@@ -736,27 +792,29 @@ size_t WebMediaPlayerMS::VideoDecodedByteCount() const {
 }
 
 void WebMediaPlayerMS::OnFrameHidden() {
-#if defined(OS_ANDROID)
   DCHECK(thread_checker_.CalledOnValidThread());
-
-  // Method called when the RenderFrame is sent to background and suspended
-  // (android). Substitute the displayed VideoFrame with a copy to avoid
-  // holding on to it unnecessarily.
-  //
-  // During undoable tab closures OnHidden() may be called back to back, so we
-  // can't rely on |render_frame_suspended_| being false here.
+  // This method is called when the RenderFrame is sent to background or
+  // suspended. During undoable tab closures OnHidden() may be called back to
+  // back, so we can't rely on |render_frame_suspended_| being false here.
   if (frame_deliverer_) {
     io_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&FrameDeliverer::SetRenderFrameSuspended,
-                              base::Unretained(frame_deliverer_.get()), true));
+        FROM_HERE,
+        base::BindOnce(&FrameDeliverer::SetRenderFrameSuspended,
+                       base::Unretained(frame_deliverer_.get()), true));
   }
 
+// On Android, substitute the displayed VideoFrame with a copy to avoid holding
+// onto it unnecessarily.
+#if defined(OS_ANDROID)
   if (!paused_)
     compositor_->ReplaceCurrentFrameWithACopy();
 #endif  // defined(OS_ANDROID)
 }
 
 void WebMediaPlayerMS::OnFrameClosed() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+// On Android, pause the video completely for this time period.
 #if defined(OS_ANDROID)
   if (!paused_) {
     Pause();
@@ -764,26 +822,29 @@ void WebMediaPlayerMS::OnFrameClosed() {
   }
 
   delegate_->PlayerGone(delegate_id_);
+#endif  // defined(OS_ANDROID)
 
   if (frame_deliverer_) {
     io_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&FrameDeliverer::SetRenderFrameSuspended,
-                              base::Unretained(frame_deliverer_.get()), true));
+        FROM_HERE,
+        base::BindOnce(&FrameDeliverer::SetRenderFrameSuspended,
+                       base::Unretained(frame_deliverer_.get()), true));
   }
-#endif  // defined(OS_ANDROID)
 }
 
 void WebMediaPlayerMS::OnFrameShown() {
-#if defined(OS_ANDROID)
   DCHECK(thread_checker_.CalledOnValidThread());
 
   if (frame_deliverer_) {
     io_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&FrameDeliverer::SetRenderFrameSuspended,
-                              base::Unretained(frame_deliverer_.get()), false));
+        FROM_HERE,
+        base::BindOnce(&FrameDeliverer::SetRenderFrameSuspended,
+                       base::Unretained(frame_deliverer_.get()), false));
   }
 
-  // Resume playback on visibility. play() clears |should_play_upon_shown_|.
+// On Android, resume playback on visibility. play() clears
+// |should_play_upon_shown_|.
+#if defined(OS_ANDROID)
   if (should_play_upon_shown_)
     Play();
 #endif  // defined(OS_ANDROID)
@@ -829,7 +890,7 @@ bool WebMediaPlayerMS::CopyVideoTextureToPlatformTexture(
     bool flip_y,
     int already_uploaded_id,
     VideoFrameUploadMetadata* out_metadata) {
-  TRACE_EVENT0("webmediaplayerms", "copyVideoTextureToPlatformTexture");
+  TRACE_EVENT0("media", "copyVideoTextureToPlatformTexture");
   DCHECK(thread_checker_.CalledOnValidThread());
 
   scoped_refptr<media::VideoFrame> video_frame =
@@ -864,7 +925,7 @@ bool WebMediaPlayerMS::TexImageImpl(TexImageFunctionID functionID,
                                     int zoffset,
                                     bool flip_y,
                                     bool premultiply_alpha) {
-  TRACE_EVENT0("webmediaplayerms", "texImageImpl");
+  TRACE_EVENT0("media", "texImageImpl");
   DCHECK(thread_checker_.CalledOnValidThread());
 
   const scoped_refptr<media::VideoFrame> video_frame =

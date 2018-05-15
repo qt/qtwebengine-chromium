@@ -338,6 +338,11 @@ TEST_F(MultiprocessMessagePipeTest, SharedBufferPassing) {
     MojoHandle shared_buffer;
     ASSERT_EQ(MOJO_RESULT_OK,
               MojoCreateSharedBuffer(&options, 100, &shared_buffer));
+    MojoSharedBufferInfo buffer_info;
+    buffer_info.struct_size = sizeof(buffer_info);
+    ASSERT_EQ(MOJO_RESULT_OK,
+              MojoGetBufferInfo(shared_buffer, nullptr, &buffer_info));
+    EXPECT_EQ(100U, buffer_info.size);
 
     // Send the shared buffer.
     const std::string go1("go 1");
@@ -346,6 +351,10 @@ TEST_F(MultiprocessMessagePipeTest, SharedBufferPassing) {
     ASSERT_EQ(MOJO_RESULT_OK,
               MojoDuplicateBufferHandle(shared_buffer, nullptr,
                                         &duplicated_shared_buffer));
+    buffer_info.size = 0;
+    ASSERT_EQ(MOJO_RESULT_OK,
+              MojoGetBufferInfo(shared_buffer, nullptr, &buffer_info));
+    EXPECT_EQ(100U, buffer_info.size);
     MojoHandle handles[1];
     handles[0] = duplicated_shared_buffer;
     ASSERT_EQ(MOJO_RESULT_OK,
@@ -1284,7 +1293,8 @@ DEFINE_TEST_CLIENT_TEST_WITH_PIPE(MessagePipeStatusChangeInTransitClient,
   // Wait on handle 1 using a SimpleWatcher.
   {
     base::RunLoop run_loop;
-    SimpleWatcher watcher(FROM_HERE, SimpleWatcher::ArmingPolicy::AUTOMATIC);
+    SimpleWatcher watcher(FROM_HERE, SimpleWatcher::ArmingPolicy::AUTOMATIC,
+                          base::SequencedTaskRunnerHandle::Get());
     watcher.Watch(Handle(handles[1]), MOJO_HANDLE_SIGNAL_PEER_CLOSED,
                   base::Bind(
                       [](base::RunLoop* loop, MojoResult result) {

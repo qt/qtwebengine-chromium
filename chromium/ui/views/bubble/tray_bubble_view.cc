@@ -150,7 +150,8 @@ TrayBubbleView::InitParams::InitParams(const InitParams& other) = default;
 TrayBubbleView::RerouteEventHandler::RerouteEventHandler(
     TrayBubbleView* tray_bubble_view)
     : tray_bubble_view_(tray_bubble_view) {
-  aura::Env::GetInstance()->PrependPreTargetHandler(this);
+  aura::Env::GetInstance()->AddPreTargetHandler(
+      this, ui::EventTarget::Priority::kSystem);
 }
 
 TrayBubbleView::RerouteEventHandler::~RerouteEventHandler() {
@@ -210,7 +211,8 @@ TrayBubbleView::TrayBubbleView(const InitParams& init_params)
       preferred_width_(init_params.min_width),
       bubble_border_(new BubbleBorder(
           arrow(),
-          BubbleBorder::NO_ASSETS,
+          init_params.has_shadow ? BubbleBorder::NO_ASSETS
+                                 : BubbleBorder::NO_SHADOW,
           init_params.bg_color.value_or(gfx::kPlaceholderColor))),
       owned_bubble_border_(bubble_border_),
       is_gesture_dragging_(false),
@@ -221,6 +223,8 @@ TrayBubbleView::TrayBubbleView(const InitParams& init_params)
   bubble_border_->set_use_theme_background_color(!init_params.bg_color);
   bubble_border_->set_alignment(BubbleBorder::ALIGN_EDGE_TO_ANCHOR_EDGE);
   bubble_border_->set_paint_arrow(BubbleBorder::PAINT_NONE);
+  if (init_params.corner_radius)
+    bubble_border_->SetCornerRadius(init_params.corner_radius.value());
   set_parent_window(params_.parent_window);
   set_can_activate(false);
   set_notify_enter_exit_on_child(true);
@@ -313,6 +317,13 @@ int TrayBubbleView::GetDialogButtons() const {
   return ui::DIALOG_BUTTON_NONE;
 }
 
+ax::mojom::Role TrayBubbleView::GetAccessibleWindowRole() const {
+  // We override the role because the base class sets it to alert dialog.
+  // This would make screen readers announce the whole of the system tray
+  // which is undesirable.
+  return ax::mojom::Role::kDialog;
+}
+
 void TrayBubbleView::SizeToContents() {
   BubbleDialogDelegateView::SizeToContents();
   bubble_content_mask_->layer()->SetBounds(GetBubbleBounds());
@@ -320,9 +331,11 @@ void TrayBubbleView::SizeToContents() {
 
 void TrayBubbleView::OnBeforeBubbleWidgetInit(Widget::InitParams* params,
                                               Widget* bubble_widget) const {
-  // Apply a WM-provided shadow (see ui/wm/core/).
-  params->shadow_type = Widget::InitParams::SHADOW_TYPE_DROP;
-  params->shadow_elevation = wm::kShadowElevationActiveWindow;
+  if (bubble_border_->shadow() == BubbleBorder::NO_ASSETS) {
+    // Apply a WM-provided shadow (see ui/wm/core/).
+    params->shadow_type = Widget::InitParams::SHADOW_TYPE_DROP;
+    params->shadow_elevation = wm::kShadowElevationActiveWindow;
+  }
 }
 
 void TrayBubbleView::OnWidgetClosing(Widget* widget) {

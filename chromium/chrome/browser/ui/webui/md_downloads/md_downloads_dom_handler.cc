@@ -32,7 +32,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/download/public/common/download_danger_type.h"
 #include "components/download/public/common/download_item.h"
 #include "components/prefs/pref_service.h"
 #include "components/safe_browsing/common/safe_browsing_prefs.h"
@@ -77,8 +76,9 @@ MdDownloadsDOMHandler::MdDownloadsDOMHandler(
     content::DownloadManager* download_manager, content::WebUI* web_ui)
     : list_tracker_(download_manager, web_ui) {
   // Create our fileicon data source.
-  profile_ = Profile::FromBrowserContext(download_manager->GetBrowserContext());
-  content::URLDataSource::Add(profile_, new FileIconSource());
+  Profile* profile =
+      Profile::FromBrowserContext(download_manager->GetBrowserContext());
+  content::URLDataSource::Add(profile, new FileIconSource());
   CheckForRemovedFiles();
 }
 
@@ -89,48 +89,50 @@ MdDownloadsDOMHandler::~MdDownloadsDOMHandler() {
 // MdDownloadsDOMHandler, public: ---------------------------------------------
 
 void MdDownloadsDOMHandler::RegisterMessages() {
-  web_ui()->RegisterMessageCallback("getDownloads",
-      base::Bind(&MdDownloadsDOMHandler::HandleGetDownloads,
-                 weak_ptr_factory_.GetWeakPtr()));
+  web_ui()->RegisterMessageCallback(
+      "getDownloads",
+      base::BindRepeating(&MdDownloadsDOMHandler::HandleGetDownloads,
+                          weak_ptr_factory_.GetWeakPtr()));
   web_ui()->RegisterMessageCallback(
       "openFileRequiringGesture",
-      base::Bind(&MdDownloadsDOMHandler::HandleOpenFile,
-                 weak_ptr_factory_.GetWeakPtr()));
-  web_ui()->RegisterMessageCallback("drag",
-      base::Bind(&MdDownloadsDOMHandler::HandleDrag,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::BindRepeating(&MdDownloadsDOMHandler::HandleOpenFile,
+                          weak_ptr_factory_.GetWeakPtr()));
+  web_ui()->RegisterMessageCallback(
+      "drag", base::BindRepeating(&MdDownloadsDOMHandler::HandleDrag,
+                                  weak_ptr_factory_.GetWeakPtr()));
   web_ui()->RegisterMessageCallback(
       "saveDangerousRequiringGesture",
-      base::Bind(&MdDownloadsDOMHandler::HandleSaveDangerous,
-                 weak_ptr_factory_.GetWeakPtr()));
-  web_ui()->RegisterMessageCallback("discardDangerous",
-      base::Bind(&MdDownloadsDOMHandler::HandleDiscardDangerous,
-                 weak_ptr_factory_.GetWeakPtr()));
-  web_ui()->RegisterMessageCallback("show",
-      base::Bind(&MdDownloadsDOMHandler::HandleShow,
-                 weak_ptr_factory_.GetWeakPtr()));
-  web_ui()->RegisterMessageCallback("pause",
-      base::Bind(&MdDownloadsDOMHandler::HandlePause,
-                 weak_ptr_factory_.GetWeakPtr()));
-  web_ui()->RegisterMessageCallback("resume",
-      base::Bind(&MdDownloadsDOMHandler::HandleResume,
-                 weak_ptr_factory_.GetWeakPtr()));
-  web_ui()->RegisterMessageCallback("remove",
-      base::Bind(&MdDownloadsDOMHandler::HandleRemove,
-                 weak_ptr_factory_.GetWeakPtr()));
-  web_ui()->RegisterMessageCallback("undo",
-      base::Bind(&MdDownloadsDOMHandler::HandleUndo,
-                 weak_ptr_factory_.GetWeakPtr()));
-  web_ui()->RegisterMessageCallback("cancel",
-      base::Bind(&MdDownloadsDOMHandler::HandleCancel,
-                 weak_ptr_factory_.GetWeakPtr()));
-  web_ui()->RegisterMessageCallback("clearAll",
-      base::Bind(&MdDownloadsDOMHandler::HandleClearAll,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::BindRepeating(&MdDownloadsDOMHandler::HandleSaveDangerous,
+                          weak_ptr_factory_.GetWeakPtr()));
+  web_ui()->RegisterMessageCallback(
+      "discardDangerous",
+      base::BindRepeating(&MdDownloadsDOMHandler::HandleDiscardDangerous,
+                          weak_ptr_factory_.GetWeakPtr()));
+  web_ui()->RegisterMessageCallback(
+      "show", base::BindRepeating(&MdDownloadsDOMHandler::HandleShow,
+                                  weak_ptr_factory_.GetWeakPtr()));
+  web_ui()->RegisterMessageCallback(
+      "pause", base::BindRepeating(&MdDownloadsDOMHandler::HandlePause,
+                                   weak_ptr_factory_.GetWeakPtr()));
+  web_ui()->RegisterMessageCallback(
+      "resume", base::BindRepeating(&MdDownloadsDOMHandler::HandleResume,
+                                    weak_ptr_factory_.GetWeakPtr()));
+  web_ui()->RegisterMessageCallback(
+      "remove", base::BindRepeating(&MdDownloadsDOMHandler::HandleRemove,
+                                    weak_ptr_factory_.GetWeakPtr()));
+  web_ui()->RegisterMessageCallback(
+      "undo", base::BindRepeating(&MdDownloadsDOMHandler::HandleUndo,
+                                  weak_ptr_factory_.GetWeakPtr()));
+  web_ui()->RegisterMessageCallback(
+      "cancel", base::BindRepeating(&MdDownloadsDOMHandler::HandleCancel,
+                                    weak_ptr_factory_.GetWeakPtr()));
+  web_ui()->RegisterMessageCallback(
+      "clearAll", base::BindRepeating(&MdDownloadsDOMHandler::HandleClearAll,
+                                      weak_ptr_factory_.GetWeakPtr()));
   web_ui()->RegisterMessageCallback(
       "openDownloadsFolderRequiringGesture",
-      base::Bind(&MdDownloadsDOMHandler::HandleOpenDownloadsFolder,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::BindRepeating(&MdDownloadsDOMHandler::HandleOpenDownloadsFolder,
+                          weak_ptr_factory_.GetWeakPtr()));
 
   Observe(GetWebUIWebContents());
 }
@@ -196,32 +198,8 @@ void MdDownloadsDOMHandler::HandleDrag(const base::ListValue* args) {
 void MdDownloadsDOMHandler::HandleSaveDangerous(const base::ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_SAVE_DANGEROUS);
   download::DownloadItem* file = GetDownloadByValue(args);
-  SaveDownload(file);
-}
-
-void MdDownloadsDOMHandler::SaveDownload(download::DownloadItem* download) {
-  if (!download)
-    return;
-  // If danger type is NOT DANGEROUS_FILE, chrome shows users a download danger
-  // prompt.
-  if (download->GetDangerType() !=
-      download::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE) {
-    ShowDangerPrompt(download);
-  } else {
-    // If danger type is DANGEROUS_FILE, chrome proceeds to keep this download
-    // without showing download danger prompt.
-    if (profile_) {
-      PrefService* prefs = profile_->GetPrefs();
-      if (!profile_->IsOffTheRecord() &&
-          prefs->GetBoolean(prefs::kSafeBrowsingEnabled)) {
-        DownloadDangerPrompt::SendSafeBrowsingDownloadReport(
-            safe_browsing::ClientSafeBrowsingReportRequest::
-                DANGEROUS_DOWNLOAD_RECOVERY,
-            true, *download);
-      }
-    }
-    DangerPromptDone(download->GetId(), DownloadDangerPrompt::ACCEPT);
-  }
+  if (file)
+    ShowDangerPrompt(file);
 }
 
 void MdDownloadsDOMHandler::HandleDiscardDangerous(

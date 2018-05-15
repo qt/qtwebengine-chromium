@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/callback_forward.h"
+#include "base/callback_helpers.h"
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
@@ -14,7 +15,9 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/browser/notifications/blink_notification_service_impl.h"
 #include "content/browser/notifications/platform_notification_context_impl.h"
+#include "content/browser/service_worker/embedded_worker_test_helper.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
+#include "content/common/service_worker/service_worker_types.h"
 #include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -24,16 +27,17 @@
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/modules/notifications/notification_service.mojom.h"
-#include "third_party/WebKit/public/platform/modules/permissions/permission_status.mojom.h"
+#include "third_party/blink/public/platform/modules/notifications/notification_service.mojom.h"
+#include "third_party/blink/public/platform/modules/permissions/permission_status.mojom.h"
 
 namespace content {
 
 namespace {
 
 const int kFakeRenderProcessId = 1;
+
 const char kTestOrigin[] = "https://example.com";
-const int64_t kFakeServiceWorkerRegistrationId = 1234;
+const char kTestServiceWorkerUrl[] = "https://example.com/sw.js";
 
 class MockNonPersistentNotificationListener
     : public blink::mojom::NonPersistentNotificationListener {
@@ -79,6 +83,8 @@ class BlinkNotificationServiceImplTest : public ::testing::Test {
   // at time of writing EmbeddedWorkerTestHelper didn't seem to support that.
   BlinkNotificationServiceImplTest()
       : thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP),
+        embedded_worker_helper_(
+            std::make_unique<EmbeddedWorkerTestHelper>(base::FilePath())),
         notification_browser_client_(&mock_platform_service_) {
     SetBrowserClientForTesting(&notification_browser_client_);
   }
@@ -89,7 +95,7 @@ class BlinkNotificationServiceImplTest : public ::testing::Test {
   void SetUp() override {
     notification_context_ = new PlatformNotificationContextImpl(
         base::FilePath(), &browser_context_,
-        nullptr /* service_worker_context */);
+        embedded_worker_helper_->context_wrapper());
     notification_context_->Initialize();
 
     // Wait for notification context to be initialized to avoid TSAN detecting
@@ -100,8 +106,86 @@ class BlinkNotificationServiceImplTest : public ::testing::Test {
     blink::mojom::NotificationServicePtr notification_service_ptr;
     notification_service_ = std::make_unique<BlinkNotificationServiceImpl>(
         notification_context_.get(), &browser_context_, &resource_context_,
-        kFakeRenderProcessId, url::Origin::Create(GURL(kTestOrigin)),
+        embedded_worker_helper_->context_wrapper(), kFakeRenderProcessId,
+        url::Origin::Create(GURL(kTestOrigin)),
         mojo::MakeRequest(&notification_service_ptr));
+  }
+
+  void TearDown() override {
+    embedded_worker_helper_.reset();
+
+    // Give pending shutdown operations a chance to finish.
+    base::RunLoop().RunUntilIdle();
+  }
+
+  void RegisterServiceWorker(
+      scoped_refptr<ServiceWorkerRegistration>* service_worker_registration) {
+    int64_t service_worker_registration_id =
+        blink::mojom::kInvalidServiceWorkerRegistrationId;
+
+    blink::mojom::ServiceWorkerRegistrationOptions options;
+    options.scope = GURL(kTestOrigin);
+
+    {
+      base::RunLoop run_loop;
+      embedded_worker_helper_->context()->RegisterServiceWorker(
+          GURL(kTestServiceWorkerUrl), options,
+          base::AdaptCallbackForRepeating(base::BindOnce(
+              &BlinkNotificationServiceImplTest::DidRegisterServiceWorker,
+              base::Unretained(this), &service_worker_registration_id,
+              run_loop.QuitClosure())));
+      run_loop.Run();
+    }
+
+    if (service_worker_registration_id ==
+        blink::mojom::kInvalidServiceWorkerRegistrationId) {
+      ADD_FAILURE() << "Could not obtain a valid Service Worker registration";
+    }
+
+    {
+      base::RunLoop run_loop;
+      embedded_worker_helper_->context()->storage()->FindRegistrationForId(
+          service_worker_registration_id, GURL(kTestOrigin),
+          base::BindOnce(&BlinkNotificationServiceImplTest::
+                             DidFindServiceWorkerRegistration,
+                         base::Unretained(this), service_worker_registration,
+                         run_loop.QuitClosure()));
+
+      run_loop.Run();
+    }
+
+    // Wait for the worker to be activated.
+    base::RunLoop().RunUntilIdle();
+
+    if (!*service_worker_registration) {
+      ADD_FAILURE() << "Could not find the new Service Worker registration.";
+    }
+  }
+
+  void DidRegisterServiceWorker(int64_t* out_service_worker_registration_id,
+                                base::OnceClosure quit_closure,
+                                ServiceWorkerStatusCode status,
+                                const std::string& status_message,
+                                int64_t service_worker_registration_id) {
+    DCHECK(out_service_worker_registration_id);
+    EXPECT_EQ(SERVICE_WORKER_OK, status) << ServiceWorkerStatusToString(status);
+
+    *out_service_worker_registration_id = service_worker_registration_id;
+
+    std::move(quit_closure).Run();
+  }
+
+  void DidFindServiceWorkerRegistration(
+      scoped_refptr<ServiceWorkerRegistration>* out_service_worker_registration,
+      base::OnceClosure quit_closure,
+      ServiceWorkerStatusCode status,
+      scoped_refptr<ServiceWorkerRegistration> service_worker_registration) {
+    DCHECK(out_service_worker_registration);
+    EXPECT_EQ(SERVICE_WORKER_OK, status) << ServiceWorkerStatusToString(status);
+
+    *out_service_worker_registration = service_worker_registration;
+
+    std::move(quit_closure).Run();
   }
 
   void DidGetPermissionStatus(
@@ -120,6 +204,14 @@ class BlinkNotificationServiceImplTest : public ::testing::Test {
     std::move(quit_closure).Run();
   }
 
+  void DidGetNotifications(
+      base::OnceClosure quit_closure,
+      const std::vector<std::string>& notification_ids,
+      const std::vector<PlatformNotificationData>& notification_datas) {
+    get_notifications_callback_result_ = notification_ids;
+    std::move(quit_closure).Run();
+  }
+
   void DidGetDisplayedNotifications(
       base::OnceClosure quit_closure,
       std::unique_ptr<std::set<std::string>> notification_ids,
@@ -128,15 +220,30 @@ class BlinkNotificationServiceImplTest : public ::testing::Test {
     std::move(quit_closure).Run();
   }
 
-  void DisplayPersistentNotificationSync() {
+  void DisplayPersistentNotificationSync(
+      int64_t service_worker_registration_id,
+      const PlatformNotificationData& platform_notification_data,
+      const NotificationResources& notification_resources) {
     base::RunLoop run_loop;
     notification_service_->DisplayPersistentNotification(
-        kFakeServiceWorkerRegistrationId, PlatformNotificationData(),
-        NotificationResources(),
+        service_worker_registration_id, platform_notification_data,
+        notification_resources,
         base::BindOnce(
             &BlinkNotificationServiceImplTest::DidDisplayPersistentNotification,
             base::Unretained(this), run_loop.QuitClosure()));
     run_loop.Run();
+  }
+
+  std::vector<std::string> GetNotificationsSync(
+      int64_t service_worker_registration_id,
+      const std::string& filter_tag) {
+    base::RunLoop run_loop;
+    notification_service_->GetNotifications(
+        service_worker_registration_id, filter_tag,
+        base::BindOnce(&BlinkNotificationServiceImplTest::DidGetNotifications,
+                       base::Unretained(this), run_loop.QuitClosure()));
+    run_loop.Run();
+    return get_notifications_callback_result_;
   }
 
   // Synchronous wrapper of
@@ -154,6 +261,8 @@ class BlinkNotificationServiceImplTest : public ::testing::Test {
 
  protected:
   TestBrowserThreadBundle thread_bundle_;  // Must be first member.
+
+  std::unique_ptr<EmbeddedWorkerTestHelper> embedded_worker_helper_;
 
   std::unique_ptr<BlinkNotificationServiceImpl> notification_service_;
 
@@ -174,6 +283,8 @@ class BlinkNotificationServiceImplTest : public ::testing::Test {
       blink::mojom::PermissionStatus::ASK;
 
   std::set<std::string> get_displayed_callback_result_;
+
+  std::vector<std::string> get_notifications_callback_result_;
 
   MockResourceContext resource_context_;
 
@@ -245,7 +356,11 @@ TEST_F(BlinkNotificationServiceImplTest,
        DisplayPersistentNotificationWithPermission) {
   mock_platform_service_.SetPermission(blink::mojom::PermissionStatus::GRANTED);
 
-  DisplayPersistentNotificationSync();
+  scoped_refptr<ServiceWorkerRegistration> registration;
+  RegisterServiceWorker(&registration);
+
+  DisplayPersistentNotificationSync(
+      registration->id(), PlatformNotificationData(), NotificationResources());
 
   EXPECT_EQ(blink::mojom::PersistentNotificationError::NONE,
             display_persistent_callback_result_);
@@ -260,7 +375,11 @@ TEST_F(BlinkNotificationServiceImplTest,
        DisplayPersistentNotificationWithoutPermission) {
   mock_platform_service_.SetPermission(blink::mojom::PermissionStatus::DENIED);
 
-  DisplayPersistentNotificationSync();
+  scoped_refptr<ServiceWorkerRegistration> registration;
+  RegisterServiceWorker(&registration);
+
+  DisplayPersistentNotificationSync(
+      registration->id(), PlatformNotificationData(), NotificationResources());
 
   EXPECT_EQ(blink::mojom::PersistentNotificationError::PERMISSION_DENIED,
             display_persistent_callback_result_);
@@ -275,13 +394,85 @@ TEST_F(BlinkNotificationServiceImplTest,
        DisplayMultiplePersistentNotifications) {
   mock_platform_service_.SetPermission(blink::mojom::PermissionStatus::GRANTED);
 
-  DisplayPersistentNotificationSync();
+  scoped_refptr<ServiceWorkerRegistration> registration;
+  RegisterServiceWorker(&registration);
 
-  DisplayPersistentNotificationSync();
+  DisplayPersistentNotificationSync(
+      registration->id(), PlatformNotificationData(), NotificationResources());
+
+  DisplayPersistentNotificationSync(
+      registration->id(), PlatformNotificationData(), NotificationResources());
 
   // Wait for service to receive all the Display calls.
   RunAllTasksUntilIdle();
 
   EXPECT_EQ(2u, GetDisplayedNotifications().size());
 }
+
+TEST_F(BlinkNotificationServiceImplTest, GetNotifications) {
+  mock_platform_service_.SetPermission(blink::mojom::PermissionStatus::GRANTED);
+
+  scoped_refptr<ServiceWorkerRegistration> registration;
+  RegisterServiceWorker(&registration);
+
+  EXPECT_EQ(
+      0u, GetNotificationsSync(registration->id(), "" /* filter_tag */).size());
+
+  DisplayPersistentNotificationSync(
+      registration->id(), PlatformNotificationData(), NotificationResources());
+
+  // Wait for service to receive all the Display calls.
+  RunAllTasksUntilIdle();
+
+  EXPECT_EQ(
+      1u, GetNotificationsSync(registration->id(), "" /* filter_tag */).size());
+}
+
+TEST_F(BlinkNotificationServiceImplTest, GetNotificationsWithoutPermission) {
+  mock_platform_service_.SetPermission(blink::mojom::PermissionStatus::GRANTED);
+
+  scoped_refptr<ServiceWorkerRegistration> registration;
+  RegisterServiceWorker(&registration);
+
+  DisplayPersistentNotificationSync(
+      registration->id(), PlatformNotificationData(), NotificationResources());
+
+  // Wait for service to receive all the Display calls.
+  RunAllTasksUntilIdle();
+
+  mock_platform_service_.SetPermission(blink::mojom::PermissionStatus::DENIED);
+
+  EXPECT_EQ(
+      0u, GetNotificationsSync(registration->id(), "" /* filter_tag */).size());
+}
+
+TEST_F(BlinkNotificationServiceImplTest, GetNotificationsWithFilter) {
+  mock_platform_service_.SetPermission(blink::mojom::PermissionStatus::GRANTED);
+
+  scoped_refptr<ServiceWorkerRegistration> registration;
+  RegisterServiceWorker(&registration);
+
+  PlatformNotificationData platform_notification_data;
+  platform_notification_data.tag = "tagA";
+
+  PlatformNotificationData other_platform_notification_data;
+  other_platform_notification_data.tag = "tagB";
+
+  DisplayPersistentNotificationSync(
+      registration->id(), platform_notification_data, NotificationResources());
+
+  DisplayPersistentNotificationSync(registration->id(),
+                                    other_platform_notification_data,
+                                    NotificationResources());
+
+  // Wait for service to receive all the Display calls.
+  RunAllTasksUntilIdle();
+
+  EXPECT_EQ(2u, GetNotificationsSync(registration->id(), "").size());
+  EXPECT_EQ(1u, GetNotificationsSync(registration->id(), "tagA").size());
+  EXPECT_EQ(1u, GetNotificationsSync(registration->id(), "tagB").size());
+  EXPECT_EQ(0u, GetNotificationsSync(registration->id(), "tagC").size());
+  EXPECT_EQ(0u, GetNotificationsSync(registration->id(), "tag").size());
+}
+
 }  // namespace content

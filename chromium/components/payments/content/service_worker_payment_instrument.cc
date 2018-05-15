@@ -78,9 +78,14 @@ ServiceWorkerPaymentInstrument::ServiceWorkerPaymentInstrument(
   DCHECK(frame_origin_.is_valid());
   DCHECK(spec_);
 
-  // Icon is not available in WebAppInstallationInfo for now, so create an empty
-  // icon image to avoid using invalid icon resource id.
-  icon_image_ = gfx::ImageSkia::CreateFrom1xBitmap(SkBitmap()).DeepCopy();
+  if (installable_web_app_info_->icon) {
+    icon_image_ =
+        gfx::ImageSkia::CreateFrom1xBitmap(*(installable_web_app_info_->icon))
+            .DeepCopy();
+  } else {
+    // Create an empty icon image to avoid using invalid icon resource id.
+    icon_image_ = gfx::ImageSkia::CreateFrom1xBitmap(SkBitmap()).DeepCopy();
+  }
 }
 
 ServiceWorkerPaymentInstrument::~ServiceWorkerPaymentInstrument() {
@@ -100,6 +105,13 @@ void ServiceWorkerPaymentInstrument::ValidateCanMakePayment(
     ValidateCanMakePaymentCallback callback) {
   // Returns true for payment app that needs installation.
   if (needs_installation_) {
+    OnCanMakePayment(std::move(callback), true);
+    return;
+  }
+
+  // Do not send CanMakePayment event to payment apps that have not been
+  // explicitly verified.
+  if (!stored_payment_app_info_->has_explicitly_verified_methods) {
     OnCanMakePayment(std::move(callback), true);
     return;
   }
@@ -191,10 +203,13 @@ void ServiceWorkerPaymentInstrument::InvokePaymentApp(Delegate* delegate) {
   if (needs_installation_) {
     content::PaymentAppProvider::GetInstance()->InstallAndInvokePaymentApp(
         web_contents_, CreatePaymentRequestEventData(),
-        installable_web_app_info_->name, installable_web_app_info_->sw_js_url,
+        installable_web_app_info_->name,
+        installable_web_app_info_->icon == nullptr
+            ? SkBitmap()
+            : *(installable_web_app_info_->icon),
+        installable_web_app_info_->sw_js_url,
         installable_web_app_info_->sw_scope,
-        installable_web_app_info_->sw_use_cache,
-        std::vector<std::string>(1, installable_enabled_method_),
+        installable_web_app_info_->sw_use_cache, installable_enabled_method_,
         base::BindOnce(&ServiceWorkerPaymentInstrument::OnPaymentAppInvoked,
                        weak_ptr_factory_.GetWeakPtr()));
   } else {

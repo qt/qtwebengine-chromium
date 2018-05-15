@@ -55,6 +55,13 @@ void AutofillHandlerProxy::OnFocusOnFormFieldImpl(
   provider_->OnFocusOnFormField(this, form, field, bounding_box);
 }
 
+void AutofillHandlerProxy::OnSelectControlDidChangeImpl(
+    const FormData& form,
+    const FormFieldData& field,
+    const gfx::RectF& bounding_box) {
+  provider_->OnSelectControlDidChange(this, form, field, bounding_box);
+}
+
 void AutofillHandlerProxy::OnFocusNoLongerOnForm() {
   provider_->OnFocusNoLongerOnForm(this);
 }
@@ -79,6 +86,8 @@ void AutofillHandlerProxy::OnHidePopup() {}
 void AutofillHandlerProxy::OnSetDataList(
     const std::vector<base::string16>& values,
     const std::vector<base::string16>& labels) {}
+
+void AutofillHandlerProxy::SelectFieldOptionsDidChange(const FormData& form) {}
 
 void AutofillHandlerProxy::Reset() {
   provider_->Reset(this);

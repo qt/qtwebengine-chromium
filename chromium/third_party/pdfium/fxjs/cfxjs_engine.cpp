@@ -93,20 +93,20 @@ class CFXJS_PerObjectData {
   static void SetInObject(CFXJS_PerObjectData* pData,
                           v8::Local<v8::Object> pObj) {
     if (pObj->InternalFieldCount() == 2) {
-      pObj->SetAlignedPointerInInternalField(0, pData);
       pObj->SetAlignedPointerInInternalField(
-          1, static_cast<void*>(kPerObjectDataTag));
+          0, static_cast<void*>(kPerObjectDataTag));
+      pObj->SetAlignedPointerInInternalField(1, pData);
     }
   }
 
   static CFXJS_PerObjectData* GetFromObject(v8::Local<v8::Object> pObj) {
     if (pObj.IsEmpty() || pObj->InternalFieldCount() != 2 ||
-        pObj->GetAlignedPointerFromInternalField(1) !=
+        pObj->GetAlignedPointerFromInternalField(0) !=
             static_cast<void*>(kPerObjectDataTag)) {
       return nullptr;
     }
     return static_cast<CFXJS_PerObjectData*>(
-        pObj->GetAlignedPointerFromInternalField(0));
+        pObj->GetAlignedPointerFromInternalField(1));
   }
 
   const int m_ObjDefID;
@@ -377,16 +377,19 @@ void CFXJS_Engine::DefineObjProperty(int nObjDefnID,
 
 void CFXJS_Engine::DefineObjAllProperties(
     int nObjDefnID,
-    v8::NamedPropertyQueryCallback pPropQurey,
-    v8::NamedPropertyGetterCallback pPropGet,
-    v8::NamedPropertySetterCallback pPropPut,
-    v8::NamedPropertyDeleterCallback pPropDel) {
+    v8::GenericNamedPropertyQueryCallback pPropQurey,
+    v8::GenericNamedPropertyGetterCallback pPropGet,
+    v8::GenericNamedPropertySetterCallback pPropPut,
+    v8::GenericNamedPropertyDeleterCallback pPropDel) {
   v8::Isolate::Scope isolate_scope(GetIsolate());
   v8::HandleScope handle_scope(GetIsolate());
   CFXJS_ObjDefinition* pObjDef =
       CFXJS_ObjDefinition::ForID(GetIsolate(), nObjDefnID);
-  pObjDef->GetInstanceTemplate()->SetNamedPropertyHandler(pPropGet, pPropPut,
-                                                          pPropQurey, pPropDel);
+  pObjDef->GetInstanceTemplate()->SetHandler(
+      v8::NamedPropertyHandlerConfiguration(
+          pPropGet, pPropPut, pPropQurey, pPropDel, nullptr,
+          v8::Local<v8::Value>(),
+          v8::PropertyHandlerFlags::kOnlyInterceptStrings));
 }
 
 void CFXJS_Engine::DefineObjConst(int nObjDefnID,
@@ -434,6 +437,19 @@ void CFXJS_Engine::InitializeEngine() {
 
   v8::Local<v8::Context> v8Context = v8::Context::New(
       GetIsolate(), nullptr, GetGlobalObjectTemplate(GetIsolate()));
+
+  // May not have the internal fields when called from tests.
+  v8::Local<v8::Object> pThisProxy = v8Context->Global();
+  if (pThisProxy->InternalFieldCount() == 2) {
+    pThisProxy->SetAlignedPointerInInternalField(0, nullptr);
+    pThisProxy->SetAlignedPointerInInternalField(1, nullptr);
+  }
+  v8::Local<v8::Object> pThis = pThisProxy->GetPrototype().As<v8::Object>();
+  if (pThis->InternalFieldCount() == 2) {
+    pThis->SetAlignedPointerInInternalField(0, nullptr);
+    pThis->SetAlignedPointerInInternalField(1, nullptr);
+  }
+
   v8::Context::Scope context_scope(v8Context);
   SetIntoContext(v8Context);
 

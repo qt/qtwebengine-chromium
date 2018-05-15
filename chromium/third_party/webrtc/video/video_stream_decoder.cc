@@ -35,8 +35,7 @@ VideoStreamDecoder::VideoStreamDecoder(
     rtc::VideoSinkInterface<VideoFrame>* incoming_video_stream)
     : video_receiver_(video_receiver),
       receive_stats_callback_(receive_statistics_proxy),
-      incoming_video_stream_(incoming_video_stream),
-      last_rtt_ms_(0) {
+      incoming_video_stream_(incoming_video_stream) {
   RTC_DCHECK(video_receiver_);
 
   static const int kMaxPacketAgeToNack = 450;
@@ -126,10 +125,7 @@ void VideoStreamDecoder::OnCompleteFrame(bool is_keyframe,
                                          size_t size_bytes,
                                          VideoContentType content_type) {}
 
-void VideoStreamDecoder::OnRttUpdate(int64_t avg_rtt_ms, int64_t max_rtt_ms) {
+void VideoStreamDecoder::UpdateRtt(int64_t max_rtt_ms) {
   video_receiver_->SetReceiveChannelParameters(max_rtt_ms);
-
-  rtc::CritScope lock(&crit_);
-  last_rtt_ms_ = avg_rtt_ms;
 }
 }  // namespace webrtc

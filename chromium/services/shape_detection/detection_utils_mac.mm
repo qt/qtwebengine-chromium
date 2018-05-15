@@ -5,11 +5,7 @@
 #include "services/shape_detection/detection_utils_mac.h"
 
 #include "base/mac/scoped_cftyperef.h"
-#include "base/mac/scoped_nsobject.h"
-#include "base/memory/shared_memory.h"
-#include "mojo/public/cpp/system/platform_handle.h"
-#include "services/shape_detection/barcode_detection_impl.h"
-#include "skia/ext/skia_utils_mac.h"
+#include "base/numerics/checked_math.h"
 #include "third_party/skia/include/utils/mac/SkCGUtils.h"
 
 namespace shape_detection {
@@ -39,6 +35,15 @@ base::scoped_nsobject<CIImage> CreateCIImageFromSkBitmap(
     return base::scoped_nsobject<CIImage>();
   }
   return ci_image;
+}
+
+gfx::RectF ConvertCGToGfxCoordinates(CGRect bounds, int height) {
+  // In the default Core Graphics coordinate space, the origin is located
+  // in the lower-left corner, and thus |ci_image| is flipped vertically.
+  // We need to adjust |y| coordinate of bounding box before sending it.
+  return gfx::RectF(bounds.origin.x,
+                    height - bounds.origin.y - bounds.size.height,
+                    bounds.size.width, bounds.size.height);
 }
 
 }  // namespace shape_detection

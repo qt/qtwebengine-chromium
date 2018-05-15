@@ -4,7 +4,6 @@
 <translation id="1135328998467923690">Paket tidak valid: '<ph name="ERROR_CODE" />'.</translation>
 <translation id="1140871961407805696">Kamera belakang</translation>
 <translation id="1196338895211115272">Gagal mengekspor kunci pribadi.</translation>
-<translation id="1256619696651732561">Pengurai Manifes Ekstensi</translation>
 <translation id="1420684932347524586">Wah! Gagal membuat kunci pribadi RSA acak.</translation>
 <translation id="1445572445564823378">Ekstensi ini memperlambat <ph name="PRODUCT_NAME" />. Anda harus menonaktifkannya agar dapat memulihkan kinerja <ph name="PRODUCT_NAME" />.</translation>
 <translation id="1468038450257740950">WebGL tidak didukung.</translation>
@@ -15,18 +14,20 @@
 <translation id="2576842806987913196">Sudah ada file CRX dengan nama ini.</translation>
 <translation id="2753617847762399167">jalur ilegal (mutlak atau relatif dengan '..'): '<ph name="IMAGE_PATH" />'</translation>
 <translation id="27822970480436970">Ekstensi ini gagal memodifikasi permintaan jaringan karena modifikasi bentrok dengan ekstensi lain.</translation>
+<translation id="2785530881066938471">Tidak dapat memuat file '<ph name="RELATIVE_PATH" />' untuk skrip konten. File ini tidak bersandiaksara UTF-8.</translation>
 <translation id="2903070246402204397"><ph name="EXTENSION_NAME" /> (ID ekstensi "<ph name="EXTENSION_ID" />") diblokir oleh administrator. <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">Tidak dapat memasang paket: '<ph name="ERROR_CODE" />'</translation>
-<translation id="3097628171361913691">Pemasang File Zip</translation>
 <translation id="3115238746683532089">Produk <ph name="PRODUCT_ID" /> tak dikenal dari vendor <ph name="VENDOR_ID" /> (nomor seri <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="3144135466825225871">Gagal mengganti file crx. Cek apakah file sedang digunakan.</translation>
 <translation id="3163201441334626963">Produk <ph name="PRODUCT_ID" /> tak dikenal dari vendor <ph name="VENDOR_ID" /></translation>
+<translation id="3302709122321372472">Tidak dapat memuat css '<ph name="RELATIVE_PATH" />' untuk skrip konten.</translation>
 <translation id="3369521687965833290">Tidak dapat membuka paket ekstensi. Untuk membuka paket ekstensi dengan aman, harus tersedia jalur ke direktori profil Anda yang mulai dengan sebuah huruf drive dan tidak berisi junction point, mount point, atau link simbolik. Tidak ada jalur yang seperti itu untuk profil Anda.</translation>
 <translation id="3393440416772303020"><ph name="PRODUCT_NAME" /> (nomor seri <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="3466070586188012397"><ph name="PRODUCT_NAME" /> dari vendor <ph name="VENDOR_ID" /> (nomor seri <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="3561217442734750519">Nilai masukan untuk kunci pribadi harus jalur yang valid.</translation>
 <translation id="388442998277590542">Tidak dapat memuat halaman opsi '<ph name="OPTIONS_PAGE" />'.</translation>
 <translation id="3984413272403535372">Kesalahan ketika menandai ekstensi.</translation>
+<translation id="39964277676607559">Tidak dapat memuat javascript '<ph name="RELATIVE_PATH" />' untuk skrip konten.</translation>
 <translation id="4115165561519362854">Administrator perangkat ini mewajibkan <ph name="EXTENSION_NAME" /> untuk menjalankan versi minimum <ph name="EXTENSION_VERSION" />. Ekstensi tidak dapat diaktifkan sampai diperbarui ke versi tersebut (atau yang lebih tinggi).</translation>
 <translation id="4233778200880751280">Tidak dapat memuat halaman tentang '<ph name="ABOUT_PAGE" />'.</translation>
 <translation id="471800408830181311">Gagal mengeluarkan kunci pribadi.</translation>
@@ -64,7 +65,6 @@
 <translation id="8517576857589387417">File manifes tidak ada atau tidak dapat dibaca</translation>
 <translation id="8636666366616799973">Paket tidak valid. Detail: '<ph name="ERROR_MESSAGE" />'.</translation>
 <translation id="8670869118777164560">Ekstensi ini gagal mengalihkan permintaan jaringan ke <ph name="ATTEMPTED_REDIRECT_DESTINATION" /> karena ekstensi lain (<ph name="EXTENSION_NAME" />) mengalihkannya ke <ph name="ACTUAL_REDIRECT_DESTINATION" />.</translation>
-<translation id="8712265948125780616">Pembuka Ekstensi</translation>
 <translation id="8761756413268424715">"<ph name="APP_NAME" />" meminta akses ke salah satu perangkat Anda:</translation>
 <translation id="8825366169884721447">Ekstensi ini gagal memodifikasi tajuk permintaan "<ph name="HEADER_NAME" />" dari suatu permintaan jaringan karena modifikasi bertentangan dengan ekstensi lain (<ph name="EXTENSION_NAME" />).</translation>
 <translation id="8885905466771744233">Kunci pribadi untuk ekstensi yang ditentukan sudah ada. Gunakan kembali kunci itu atau hapus terlebih dulu.</translation>

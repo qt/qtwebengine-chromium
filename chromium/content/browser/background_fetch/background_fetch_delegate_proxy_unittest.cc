@@ -12,6 +12,7 @@
 #include "content/browser/background_fetch/background_fetch_test_base.h"
 #include "content/public/browser/background_fetch_delegate.h"
 #include "content/public/browser/background_fetch_response.h"
+#include "content/public/browser/browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
@@ -20,16 +21,22 @@ namespace {
 
 const char kExampleUniqueId[] = "7e57ab1e-c0de-a150-ca75-1e75f005ba11";
 const char kExampleUniqueId2[] = "17467386-60b4-4c5b-b66c-aabf793fd39b";
+const int kIconDisplaySize = 192;
 
 class FakeBackgroundFetchDelegate : public BackgroundFetchDelegate {
  public:
   FakeBackgroundFetchDelegate() {}
 
   // BackgroundFetchDelegate implementation:
+  void GetIconDisplaySize(
+      BackgroundFetchDelegate::GetIconDisplaySizeCallback callback) override {
+    std::move(callback).Run(gfx::Size(kIconDisplaySize, kIconDisplaySize));
+  }
   void CreateDownloadJob(
       const std::string& job_unique_id,
       const std::string& title,
       const url::Origin& origin,
+      const SkBitmap& icon,
       int completed_parts,
       int total_parts,
       const std::vector<std::string>& current_guids) override {}
@@ -111,6 +118,13 @@ class FakeController : public BackgroundFetchDelegateProxy::Controller {
 class BackgroundFetchDelegateProxyTest : public BackgroundFetchTestBase {
  public:
   BackgroundFetchDelegateProxyTest() : delegate_proxy_(&delegate_) {}
+  void DidGetIconDisplaySize(base::Closure quit_closure,
+                             gfx::Size* out_display_size,
+                             const gfx::Size& display_size) {
+    DCHECK(out_display_size);
+    *out_display_size = display_size;
+    std::move(quit_closure).Run();
+  }
 
  protected:
   FakeBackgroundFetchDelegate delegate_;
@@ -140,9 +154,9 @@ TEST_F(BackgroundFetchDelegateProxyTest, StartRequest) {
   EXPECT_FALSE(controller.request_started_);
   EXPECT_FALSE(controller.request_completed_);
 
-  delegate_proxy_.CreateDownloadJob(kExampleUniqueId, "Job 1", url::Origin(),
-                                    controller.weak_ptr_factory_.GetWeakPtr(),
-                                    0, 1, {});
+  delegate_proxy_.CreateDownloadJob(
+      kExampleUniqueId, "Job 1", url::Origin(), SkBitmap(),
+      controller.weak_ptr_factory_.GetWeakPtr(), 0, 1, {});
 
   delegate_proxy_.StartRequest(kExampleUniqueId, url::Origin(), request);
   base::RunLoop().RunUntilIdle();
@@ -160,9 +174,9 @@ TEST_F(BackgroundFetchDelegateProxyTest, StartRequest_NotCompleted) {
   EXPECT_FALSE(controller.request_completed_);
 
   delegate_.set_complete_downloads(false);
-  delegate_proxy_.CreateDownloadJob(kExampleUniqueId, "Job 1", url::Origin(),
-                                    controller.weak_ptr_factory_.GetWeakPtr(),
-                                    0, 1, {});
+  delegate_proxy_.CreateDownloadJob(
+      kExampleUniqueId, "Job 1", url::Origin(), SkBitmap(),
+      controller.weak_ptr_factory_.GetWeakPtr(), 0, 1, {});
 
   delegate_proxy_.StartRequest(kExampleUniqueId, url::Origin(), request);
   base::RunLoop().RunUntilIdle();
@@ -184,13 +198,13 @@ TEST_F(BackgroundFetchDelegateProxyTest, Abort) {
   EXPECT_FALSE(controller2.request_started_);
   EXPECT_FALSE(controller2.request_completed_);
 
-  delegate_proxy_.CreateDownloadJob(kExampleUniqueId, "Job 1", url::Origin(),
-                                    controller.weak_ptr_factory_.GetWeakPtr(),
-                                    0, 1, {});
+  delegate_proxy_.CreateDownloadJob(
+      kExampleUniqueId, "Job 1", url::Origin(), SkBitmap(),
+      controller.weak_ptr_factory_.GetWeakPtr(), 0, 1, {});
 
-  delegate_proxy_.CreateDownloadJob(kExampleUniqueId2, "Job 2", url::Origin(),
-                                    controller2.weak_ptr_factory_.GetWeakPtr(),
-                                    0, 1, {});
+  delegate_proxy_.CreateDownloadJob(
+      kExampleUniqueId2, "Job 2", url::Origin(), SkBitmap(),
+      controller2.weak_ptr_factory_.GetWeakPtr(), 0, 1, {});
 
   delegate_proxy_.StartRequest(kExampleUniqueId, url::Origin(), request);
   delegate_proxy_.StartRequest(kExampleUniqueId2, url::Origin(), request2);
@@ -201,6 +215,17 @@ TEST_F(BackgroundFetchDelegateProxyTest, Abort) {
   EXPECT_FALSE(controller.request_completed_) << "Aborted job completed";
   EXPECT_TRUE(controller2.request_started_) << "Normal job did not start";
   EXPECT_TRUE(controller2.request_completed_) << "Normal job did not complete";
+}
+
+TEST_F(BackgroundFetchDelegateProxyTest, GetIconDisplaySize) {
+  gfx::Size out_display_size;
+  base::RunLoop run_loop;
+  delegate_proxy_.GetIconDisplaySize(base::BindOnce(
+      &BackgroundFetchDelegateProxyTest::DidGetIconDisplaySize,
+      base::Unretained(this), run_loop.QuitClosure(), &out_display_size));
+  run_loop.Run();
+  EXPECT_EQ(out_display_size.width(), kIconDisplaySize);
+  EXPECT_EQ(out_display_size.height(), kIconDisplaySize);
 }
 
 }  // namespace content

@@ -4,6 +4,11 @@
 
 #include "components/exo/client_controlled_shell_surface.h"
 
+#include "ash/frame/caption_buttons/caption_button_model.h"
+#include "ash/frame/caption_buttons/frame_caption_button_container_view.h"
+#include "ash/frame/custom_frame_view_ash.h"
+#include "ash/frame/header_view.h"
+#include "ash/frame/wide_frame_view.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/public/interfaces/window_pin_type.mojom.h"
 #include "ash/shell.h"
@@ -16,6 +21,7 @@
 #include "ash/wm/window_util.h"
 #include "ash/wm/wm_event.h"
 #include "ash/wm/workspace_controller_test_api.h"
+#include "base/strings/utf_string_conversions.h"
 #include "components/exo/buffer.h"
 #include "components/exo/display.h"
 #include "components/exo/pointer.h"
@@ -28,11 +34,11 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/compositor_extra/shadow.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/event_targeter.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/views/widget/widget.h"
-#include "ui/wm/core/shadow.h"
 #include "ui/wm/core/shadow_controller.h"
 #include "ui/wm/core/shadow_types.h"
 
@@ -266,10 +272,10 @@ TEST_F(ClientControlledShellSurfaceTest, SurfaceShadow) {
   EXPECT_FALSE(wm::ShadowController::GetShadowForWindow(window));
 
   // 3) Create a shadow.
-  surface->SetFrame(SurfaceFrameType::NORMAL);
+  surface->SetFrame(SurfaceFrameType::SHADOW);
   shell_surface->SetShadowBounds(gfx::Rect(10, 10, 100, 100));
   surface->Commit();
-  wm::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
+  ui::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
   ASSERT_TRUE(shadow);
   EXPECT_TRUE(shadow->layer()->visible());
 
@@ -321,7 +327,7 @@ TEST_F(ClientControlledShellSurfaceTest, ShadowWithStateChange) {
   const gfx::Rect original_bounds(gfx::Point(10, 10), content_size);
   shell_surface->SetGeometry(original_bounds);
   surface->Attach(buffer.get());
-  surface->SetFrame(SurfaceFrameType::NORMAL);
+  surface->SetFrame(SurfaceFrameType::SHADOW);
   surface->Commit();
 
   // Placing a shadow at screen origin will make the shadow's origin (-10, -10).
@@ -333,7 +339,7 @@ TEST_F(ClientControlledShellSurfaceTest, ShadowWithStateChange) {
 
   views::Widget* widget = shell_surface->GetWidget();
   aura::Window* window = widget->GetNativeWindow();
-  wm::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
+  ui::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
 
   shell_surface->SetShadowBounds(shadow_bounds);
   surface->Commit();
@@ -380,11 +386,11 @@ TEST_F(ClientControlledShellSurfaceTest, ShadowWithTransform) {
   const gfx::Rect original_bounds(gfx::Point(10, 10), content_size);
   shell_surface->SetGeometry(original_bounds);
   surface->Attach(buffer.get());
-  surface->SetFrame(SurfaceFrameType::NORMAL);
+  surface->SetFrame(SurfaceFrameType::SHADOW);
   surface->Commit();
 
   aura::Window* window = shell_surface->GetWidget()->GetNativeWindow();
-  wm::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
+  ui::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
 
   // Placing a shadow at screen origin will make the shadow's origin (-10, -10).
   const gfx::Rect shadow_bounds(content_size);
@@ -410,7 +416,7 @@ TEST_F(ClientControlledShellSurfaceTest, ShadowStartMaximized) {
       exo_test_helper()->CreateClientControlledShellSurface(surface.get());
   shell_surface->SetMaximized();
   surface->Attach(buffer.get());
-  surface->SetFrame(SurfaceFrameType::NORMAL);
+  surface->SetFrame(SurfaceFrameType::SHADOW);
   surface->Commit();
 
   views::Widget* widget = shell_surface->GetWidget();
@@ -427,10 +433,86 @@ TEST_F(ClientControlledShellSurfaceTest, ShadowStartMaximized) {
   // Restore the window and make sure the shadow is created, visible and
   // has the latest bounds.
   widget->Restore();
-  wm::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
+  ui::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
   ASSERT_TRUE(shadow);
   EXPECT_TRUE(shadow->layer()->visible());
   EXPECT_EQ(gfx::Rect(10, 10, 100, 100), shadow->content_bounds());
+}
+
+TEST_F(ClientControlledShellSurfaceTest, Frame) {
+  gfx::Size buffer_size(256, 256);
+  std::unique_ptr<Buffer> buffer(
+      new Buffer(exo_test_helper()->CreateGpuMemoryBuffer(buffer_size)));
+
+  std::unique_ptr<Surface> surface(new Surface);
+
+  gfx::Rect client_bounds(20, 50, 300, 200);
+  gfx::Rect fullscreen_bounds(0, 0, 800, 500);
+  // The window bounds is the client bounds + frame size.
+  gfx::Rect normal_window_bounds(20, 17, 300, 233);
+
+  auto shell_surface =
+      exo_test_helper()->CreateClientControlledShellSurface(surface.get());
+  surface->Attach(buffer.get());
+  shell_surface->SetGeometry(client_bounds);
+  surface->SetFrame(SurfaceFrameType::NORMAL);
+  surface->Commit();
+
+  views::Widget* widget = shell_surface->GetWidget();
+  ash::CustomFrameViewAsh* frame_view = static_cast<ash::CustomFrameViewAsh*>(
+      widget->non_client_view()->frame_view());
+
+  // Normal state.
+  EXPECT_TRUE(frame_view->visible());
+  EXPECT_EQ(normal_window_bounds, widget->GetWindowBoundsInScreen());
+  EXPECT_EQ(client_bounds,
+            frame_view->GetClientBoundsForWindowBounds(normal_window_bounds));
+
+  // Maximized
+  shell_surface->SetMaximized();
+  shell_surface->SetGeometry(fullscreen_bounds);
+  surface->Commit();
+
+  EXPECT_TRUE(frame_view->visible());
+  EXPECT_EQ(fullscreen_bounds, widget->GetWindowBoundsInScreen());
+  EXPECT_EQ(
+      gfx::Size(800, 467),
+      frame_view->GetClientBoundsForWindowBounds(fullscreen_bounds).size());
+
+  // AutoHide
+  surface->SetFrame(SurfaceFrameType::AUTOHIDE);
+  EXPECT_TRUE(frame_view->visible());
+  EXPECT_EQ(fullscreen_bounds, widget->GetWindowBoundsInScreen());
+  EXPECT_EQ(fullscreen_bounds,
+            frame_view->GetClientBoundsForWindowBounds(fullscreen_bounds));
+
+  // Fullscreen state.
+  shell_surface->SetFullscreen(true);
+  surface->Commit();
+  EXPECT_TRUE(frame_view->visible());
+  EXPECT_EQ(fullscreen_bounds, widget->GetWindowBoundsInScreen());
+  EXPECT_EQ(fullscreen_bounds,
+            frame_view->GetClientBoundsForWindowBounds(fullscreen_bounds));
+
+  // Restore to normal state.
+  shell_surface->SetRestored();
+  shell_surface->SetGeometry(client_bounds);
+  surface->SetFrame(SurfaceFrameType::NORMAL);
+  surface->Commit();
+  EXPECT_TRUE(frame_view->visible());
+  EXPECT_EQ(normal_window_bounds, widget->GetWindowBoundsInScreen());
+  EXPECT_EQ(client_bounds,
+            frame_view->GetClientBoundsForWindowBounds(normal_window_bounds));
+
+  // No frame. The all bounds are same as client bounds.
+  shell_surface->SetRestored();
+  shell_surface->SetGeometry(client_bounds);
+  surface->SetFrame(SurfaceFrameType::NONE);
+  surface->Commit();
+  EXPECT_FALSE(frame_view->visible());
+  EXPECT_EQ(client_bounds, widget->GetWindowBoundsInScreen());
+  EXPECT_EQ(client_bounds,
+            frame_view->GetClientBoundsForWindowBounds(client_bounds));
 }
 
 TEST_F(ClientControlledShellSurfaceTest, CompositorLockInRotation) {
@@ -876,9 +958,8 @@ TEST_F(ClientControlledShellSurfaceTest, ClientIniatedResize) {
   surface->Attach(desktop_buffer.get());
   shell_surface->SetGeometry(gfx::Rect(window_size));
   surface->Commit();
-
   EXPECT_TRUE(shell_surface->GetWidget()->widget_delegate()->CanResize());
-  shell_surface->StartResize(HTTOP);
+  shell_surface->StartDrag(HTTOP, gfx::Point(0, 0));
 
   aura::Window* window = shell_surface->GetWidget()->GetNativeWindow();
   // Client cannot start drag if mouse isn't pressed.
@@ -889,7 +970,7 @@ TEST_F(ClientControlledShellSurfaceTest, ClientIniatedResize) {
   ui::test::EventGenerator& event_generator = GetEventGenerator();
   event_generator.MoveMouseToCenterOf(window);
   event_generator.PressLeftButton();
-  shell_surface->StartResize(HTTOP);
+  shell_surface->StartDrag(HTTOP, gfx::Point(0, 0));
   ASSERT_TRUE(window_state->is_dragged());
   event_generator.ReleaseLeftButton();
   ASSERT_FALSE(window_state->is_dragged());
@@ -897,8 +978,134 @@ TEST_F(ClientControlledShellSurfaceTest, ClientIniatedResize) {
   // Press pressed outside of the window.
   event_generator.MoveMouseTo(gfx::Point(200, 50));
   event_generator.PressLeftButton();
-  shell_surface->StartResize(HTTOP);
+  shell_surface->StartDrag(HTTOP, gfx::Point(0, 0));
   ASSERT_FALSE(window_state->is_dragged());
+}
+
+TEST_F(ClientControlledShellSurfaceTest, CaptionButtonModel) {
+  std::unique_ptr<Surface> surface(new Surface);
+  auto shell_surface =
+      exo_test_helper()->CreateClientControlledShellSurface(surface.get());
+
+  std::unique_ptr<Buffer> desktop_buffer(
+      new Buffer(exo_test_helper()->CreateGpuMemoryBuffer(gfx::Size(64, 64))));
+  surface->Attach(desktop_buffer.get());
+  shell_surface->SetGeometry(gfx::Rect(0, 0, 64, 64));
+  surface->Commit();
+
+  constexpr ash::CaptionButtonIcon kAllButtons[] = {
+      ash::CAPTION_BUTTON_ICON_MINIMIZE,
+      ash::CAPTION_BUTTON_ICON_MAXIMIZE_RESTORE,
+      ash::CAPTION_BUTTON_ICON_CLOSE,
+      ash::CAPTION_BUTTON_ICON_BACK,
+      ash::CAPTION_BUTTON_ICON_MENU,
+  };
+  constexpr uint32_t kAllButtonMask =
+      1 << ash::CAPTION_BUTTON_ICON_MINIMIZE |
+      1 << ash::CAPTION_BUTTON_ICON_MAXIMIZE_RESTORE |
+      1 << ash::CAPTION_BUTTON_ICON_CLOSE | 1 << ash::CAPTION_BUTTON_ICON_BACK |
+      1 << ash::CAPTION_BUTTON_ICON_MENU;
+
+  ash::CustomFrameViewAsh* frame_view = static_cast<ash::CustomFrameViewAsh*>(
+      shell_surface->GetWidget()->non_client_view()->frame_view());
+  ash::FrameCaptionButtonContainerView* container =
+      static_cast<ash::HeaderView*>(frame_view->GetHeaderView())
+          ->caption_button_container();
+
+  // Visible
+  for (auto visible : kAllButtons) {
+    uint32_t visible_buttons = 1 << visible;
+    shell_surface->SetFrameButtons(visible_buttons, 0);
+    const ash::CaptionButtonModel* model = container->model();
+    for (auto not_visible : kAllButtons) {
+      if (not_visible != visible)
+        EXPECT_FALSE(model->IsVisible(not_visible));
+    }
+    EXPECT_TRUE(model->IsVisible(visible));
+    EXPECT_FALSE(model->IsEnabled(visible));
+  }
+
+  // Enable
+  for (auto enabled : kAllButtons) {
+    uint32_t enabled_buttons = 1 << enabled;
+    shell_surface->SetFrameButtons(kAllButtonMask, enabled_buttons);
+    const ash::CaptionButtonModel* model = container->model();
+    for (auto not_enabled : kAllButtons) {
+      if (not_enabled != enabled)
+        EXPECT_FALSE(model->IsEnabled(not_enabled));
+    }
+    EXPECT_TRUE(model->IsEnabled(enabled));
+    EXPECT_TRUE(model->IsVisible(enabled));
+  }
+
+  // Zoom mode
+  EXPECT_FALSE(container->model()->InZoomMode());
+  shell_surface->SetFrameButtons(
+      kAllButtonMask | 1 << ash::CAPTION_BUTTON_ICON_ZOOM, kAllButtonMask);
+  EXPECT_TRUE(container->model()->InZoomMode());
+}
+
+TEST_F(ClientControlledShellSurfaceTest, SetExtraTitle) {
+  std::unique_ptr<Buffer> buffer(
+      new Buffer(exo_test_helper()->CreateGpuMemoryBuffer(gfx::Size(64, 64))));
+  std::unique_ptr<Surface> surface(new Surface);
+  auto shell_surface =
+      exo_test_helper()->CreateClientControlledShellSurface(surface.get());
+  surface->Attach(buffer.get());
+  surface->Commit();
+
+  // NativeWindow's title is used within the overview mode. It should be the
+  // specified title, as ShellSurface does. On the other hand, the frame's
+  // GetWindowTitle() should return the extra -- showing the debugging info
+  // in the title bar but otherwise it should have empty string.
+  // See https://crbug.com/831383.
+  const aura::Window* window = shell_surface->GetWidget()->GetNativeWindow();
+  const ash::CustomFrameViewAsh* frame =
+      static_cast<const ash::CustomFrameViewAsh*>(
+          shell_surface->GetWidget()->non_client_view()->frame_view());
+
+  shell_surface->SetExtraTitle(base::ASCIIToUTF16("extra"));
+  EXPECT_EQ(base::string16(), window->GetTitle());
+  EXPECT_EQ(base::ASCIIToUTF16("extra"), frame->GetFrameTitle());
+
+  shell_surface->SetTitle(base::ASCIIToUTF16("title"));
+  EXPECT_EQ(base::ASCIIToUTF16("title"), window->GetTitle());
+  EXPECT_EQ(base::ASCIIToUTF16("extra"), frame->GetFrameTitle());
+
+  shell_surface->SetExtraTitle(base::string16());
+  EXPECT_EQ(base::ASCIIToUTF16("title"), window->GetTitle());
+  EXPECT_EQ(base::string16(), frame->GetFrameTitle());
+}
+
+TEST_F(ClientControlledShellSurfaceTest, WideFrame) {
+  std::unique_ptr<Surface> surface(new Surface);
+  auto shell_surface =
+      exo_test_helper()->CreateClientControlledShellSurface(surface.get());
+
+  std::unique_ptr<Buffer> desktop_buffer(
+      new Buffer(exo_test_helper()->CreateGpuMemoryBuffer(gfx::Size(64, 64))));
+  surface->Attach(desktop_buffer.get());
+  shell_surface->SetGeometry(gfx::Rect(0, 0, 64, 64));
+  shell_surface->SetMaximized();
+  surface->SetFrame(SurfaceFrameType::NORMAL);
+  surface->Commit();
+
+  auto* wide_frame = shell_surface->wide_frame_for_test();
+  ASSERT_TRUE(wide_frame);
+  EXPECT_FALSE(wide_frame->header_view()->in_immersive_mode());
+
+  // Set AutoHide mode.
+  surface->SetFrame(SurfaceFrameType::AUTOHIDE);
+  EXPECT_TRUE(wide_frame->header_view()->in_immersive_mode());
+
+  // Exit AutoHide mode.
+  surface->SetFrame(SurfaceFrameType::NORMAL);
+  EXPECT_FALSE(wide_frame->header_view()->in_immersive_mode());
+
+  // Unmaximize it and the frame should be normal.
+  shell_surface->SetRestored();
+  surface->Commit();
+  EXPECT_FALSE(shell_surface->wide_frame_for_test());
 }
 
 }  // namespace exo

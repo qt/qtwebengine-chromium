@@ -14,13 +14,14 @@ import common
 
 
 def main_run(args):
-  rc = common.run_command([
+  command_line = [
       sys.executable,
       os.path.join(common.SRC_DIR, 'tools', 'traffic_annotation', 'scripts',
                    'check_annotations.py'),
       '--build-path',
       os.path.join(args.paths['checkout'], 'out', args.build_config_fs),
-  ])
+  ]
+  rc = common.run_command(command_line)
 
   json.dump({
       'valid': True,

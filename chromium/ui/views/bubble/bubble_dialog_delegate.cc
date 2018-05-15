@@ -4,7 +4,6 @@
 
 #include "ui/views/bubble/bubble_dialog_delegate.h"
 
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "build/build_config.h"
 #include "ui/accessibility/ax_node_data.h"
@@ -38,6 +37,10 @@ Widget* CreateBubbleWidget(BubbleDialogDelegateView* bubble) {
   bubble_params.delegate = bubble;
   bubble_params.opacity = Widget::InitParams::TRANSLUCENT_WINDOW;
   bubble_params.accept_events = bubble->accept_events();
+  // Use a window default shadow if the bubble doesn't provides its own.
+  bubble_params.shadow_type = bubble->shadow() == BubbleBorder::NO_ASSETS
+                                  ? Widget::InitParams::SHADOW_TYPE_DEFAULT
+                                  : Widget::InitParams::SHADOW_TYPE_NONE;
   if (bubble->parent_window())
     bubble_params.parent = bubble->parent_window();
   else if (bubble->anchor_widget())
@@ -47,8 +50,13 @@ Widget* CreateBubbleWidget(BubbleDialogDelegateView* bubble) {
                                   : Widget::InitParams::ACTIVATABLE_NO;
   bubble->OnBeforeBubbleWidgetInit(&bubble_params, bubble_widget);
   bubble_widget->Init(bubble_params);
+#if !defined(OS_MACOSX)
+  // On Mac, having a parent window creates a permanent stacking order, so
+  // there's no need to do this. Also, calling StackAbove() on Mac shows the
+  // bubble implicitly, for which the bubble is currently not ready.
   if (bubble_params.parent)
     bubble_widget->StackAbove(bubble_params.parent);
+#endif
   return bubble_widget;
 }
 
@@ -214,14 +222,15 @@ BubbleDialogDelegateView::BubbleDialogDelegateView()
     : BubbleDialogDelegateView(nullptr, BubbleBorder::TOP_LEFT) {}
 
 BubbleDialogDelegateView::BubbleDialogDelegateView(View* anchor_view,
-                                                   BubbleBorder::Arrow arrow)
+                                                   BubbleBorder::Arrow arrow,
+                                                   BubbleBorder::Shadow shadow)
     : close_on_deactivate_(true),
       anchor_view_tracker_(std::make_unique<ViewTracker>()),
       anchor_widget_(nullptr),
       arrow_(arrow),
       mirror_arrow_in_rtl_(
           ViewsDelegate::GetInstance()->ShouldMirrorArrowsInRTL()),
-      shadow_(BubbleBorder::DIALOG_SHADOW),
+      shadow_(shadow),
       color_explicitly_set_(false),
       accept_events_(true),
       adjust_if_offscreen_(true),
@@ -248,6 +257,13 @@ gfx::Rect BubbleDialogDelegateView::GetBubbleBounds() {
   return GetBubbleFrameView()->GetUpdatedWindowBounds(
       anchor_rect, GetWidget()->client_view()->GetPreferredSize(),
       adjust_if_offscreen_ && !anchor_minimized && has_anchor);
+}
+
+ax::mojom::Role BubbleDialogDelegateView::GetAccessibleWindowRole() const {
+  // We return |ax::mojom::Role::kAlertDialog| which will make screen
+  // readers announce the contents of the bubble dialog as soon as it appears,
+  // as long as we also fire |ax::mojom::Event::kAlert|.
+  return ax::mojom::Role::kAlertDialog;
 }
 
 void BubbleDialogDelegateView::OnNativeThemeChanged(
@@ -325,9 +341,11 @@ void BubbleDialogDelegateView::HandleVisibilityChanged(Widget* widget,
   // the bubble in its entirety rather than just its title and initially focused
   // view.  See http://crbug.com/474622 for details.
   if (widget == GetWidget() && visible) {
-    if (GetAccessibleWindowRole() == ax::mojom::Role::kAlertDialog)
+    if (GetAccessibleWindowRole() == ax::mojom::Role::kAlert ||
+        GetAccessibleWindowRole() == ax::mojom::Role::kAlertDialog) {
       widget->GetRootView()->NotifyAccessibilityEvent(ax::mojom::Event::kAlert,
                                                       true);
+    }
   }
 }
 

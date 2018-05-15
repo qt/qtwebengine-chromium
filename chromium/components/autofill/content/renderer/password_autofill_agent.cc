@@ -15,7 +15,6 @@
 #include "base/bind.h"
 #include "base/i18n/case_conversion.h"
 #include "base/memory/linked_ptr.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
@@ -40,17 +39,17 @@
 #include "content/public/renderer/render_view.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
-#include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
-#include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/web/WebAutofillClient.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebFormElement.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebNode.h"
-#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
-#include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/blink/public/platform/web_input_event.h"
+#include "third_party/blink/public/platform/web_security_origin.h"
+#include "third_party/blink/public/platform/web_vector.h"
+#include "third_party/blink/public/web/web_autofill_client.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_element.h"
+#include "third_party/blink/public/web/web_form_element.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_node.h"
+#include "third_party/blink/public/web/web_user_gesture_indicator.h"
+#include "third_party/blink/public/web/web_view.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "url/gurl.h"
@@ -176,21 +175,24 @@ bool FindFormInputElement(
       continue;
     }
 
+    // Check for a non-unique match.
     if (found_input) {
-      if (ambiguous_or_empty_names) {
-        // In case of ambigous or empty names, there might be multiple
-        // appropriate inputs. Check if the current input is better than
-        // previously found one.
+      // For change password form keep only the first password field entry.
+      if (does_password_field_has_ambigous_or_empty_name) {
         if (!form_util::IsWebElementVisible((*result)[field_name])) {
           // If a previously chosen field was invisible then take the current
           // one.
           (*result)[field_name] = input_element;
         }
+        continue;
       }
-    } else {
-      (*result)[field_name] = input_element;
-      found_input = true;
+
+      found_input = false;
+      break;
     }
+
+    (*result)[field_name] = input_element;
+    found_input = true;
   }
 
   // A required element was not found. This is not the right form.
@@ -469,10 +471,25 @@ bool IsPublicSuffixDomainMatch(const std::string& url1,
          gurl1.port() == gurl2.port();
 }
 
-// Annotate |forms| with form and field signatures as HTML attributes.
-void AnnotateFormsWithSignatures(
-    blink::WebVector<blink::WebFormElement> forms) {
-  for (blink::WebFormElement form : forms) {
+// Annotate |fields| with field signatures as HTML attributes.
+void AnnotateFieldsWithSignatures(
+    std::vector<blink::WebFormControlElement>* fields) {
+  for (blink::WebFormControlElement& control_element : *fields) {
+    FieldSignature field_signature = CalculateFieldSignatureByNameAndType(
+        control_element.NameForAutofill().Utf16(),
+        control_element.FormControlTypeForAutofill().Utf8());
+    control_element.SetAttribute(
+        blink::WebString::FromASCII(kDebugAttributeForFieldSignature),
+        blink::WebString::FromUTF8(base::NumberToString(field_signature)));
+  }
+}
+
+// Annotate |forms| and all fields in the |frame| with form and field signatures
+// as HTML attributes.
+void AnnotateFormsAndFieldsWithSignatures(
+    blink::WebLocalFrame* frame,
+    blink::WebVector<blink::WebFormElement>* forms) {
+  for (blink::WebFormElement& form : *forms) {
     std::unique_ptr<PasswordForm> password_form(
         CreatePasswordFormFromWebForm(form, nullptr, nullptr, nullptr));
     if (password_form) {
@@ -480,26 +497,16 @@ void AnnotateFormsWithSignatures(
           blink::WebString::FromASCII(kDebugAttributeForFormSignature),
           blink::WebString::FromUTF8(base::NumberToString(
               CalculateFormSignature(password_form->form_data))));
-
-      std::vector<blink::WebFormControlElement> control_elements =
-          form_util::ExtractAutofillableElementsInForm(form);
-
-      if (control_elements.size() != password_form->form_data.fields.size())
-        return;
-
-      for (size_t i = 0; i < control_elements.size(); ++i) {
-        blink::WebFormControlElement control_element = control_elements[i];
-
-        const FormFieldData& field = password_form->form_data.fields[i];
-        if (field.name != control_element.NameForAutofill().Utf16())
-          continue;
-        control_element.SetAttribute(
-            blink::WebString::FromASCII(kDebugAttributeForFieldSignature),
-            blink::WebString::FromUTF8(
-                base::NumberToString(CalculateFieldSignatureForField(field))));
-      }
     }
+    std::vector<blink::WebFormControlElement> form_fields =
+        form_util::ExtractAutofillableElementsInForm(form);
+    AnnotateFieldsWithSignatures(&form_fields);
   }
+
+  std::vector<blink::WebFormControlElement> unowned_elements =
+      form_util::GetUnownedAutofillableFormFieldElements(
+          frame->GetDocument().All(), nullptr);
+  AnnotateFieldsWithSignatures(&unowned_elements);
 }
 
 // Returns true iff there is a password field in |frame|.
@@ -1091,7 +1098,7 @@ void PasswordAutofillAgent::SendPasswordForms(bool only_visible) {
   frame->GetDocument().Forms(forms);
 
   if (IsShowAutofillSignaturesEnabled())
-    AnnotateFormsWithSignatures(forms);
+    AnnotateFormsAndFieldsWithSignatures(frame, &forms);
   if (logger)
     logger->LogNumber(Logger::STRING_NUMBER_OF_ALL_FORMS, forms.size());
 
@@ -1721,14 +1728,11 @@ void PasswordAutofillAgent::ProvisionallySavePassword(
 
   provisionally_saved_form_.Set(std::move(password_form), form, element);
 
-  if (base::FeatureList::IsEnabled(
-          password_manager::features::kManualSaving)) {
-    if (has_password) {
-      GetPasswordManagerDriver()->ShowManualFallbackForSaving(
-          provisionally_saved_form_.password_form());
-    } else {
-      GetPasswordManagerDriver()->HideManualFallbackForSaving();
-    }
+  if (has_password) {
+    GetPasswordManagerDriver()->ShowManualFallbackForSaving(
+        provisionally_saved_form_.password_form());
+  } else {
+    GetPasswordManagerDriver()->HideManualFallbackForSaving();
   }
 }
 
@@ -1857,11 +1861,20 @@ bool PasswordAutofillAgent::FillFormOnPasswordReceived(
 
 void PasswordAutofillAgent::OnProvisionallySaveForm(
     const blink::WebFormElement& form,
-    const blink::WebInputElement& element,
+    const blink::WebFormControlElement& element,
     ElementChangeSource source) {
+  // PasswordAutofillAgent isn't interested in SELECT control change.
+  if (source == ElementChangeSource::SELECT_CHANGED)
+    return;
+
+  blink::WebInputElement input_element;
+  if (!element.IsNull() && element.HasHTMLTagName("input"))
+    input_element = *ToWebInputElement(&element);
+
   if (source == ElementChangeSource::TEXTFIELD_CHANGED) {
+    DCHECK(!input_element.IsNull());
     // keeps track of all text changes even if it isn't displaying UI.
-    UpdateStateForTextChange(element);
+    UpdateStateForTextChange(input_element);
     return;
   }
 
@@ -1879,7 +1892,8 @@ void PasswordAutofillAgent::OnProvisionallySaveForm(
   // cleared by some scripts (http://crbug.com/28910, http://crbug.com/391693).
   // Had the user cleared the password, |provisionally_saved_form_| would
   // already have been updated in TextDidChangeInTextField.
-  ProvisionallySavePassword(form, element, RESTRICTION_NON_EMPTY_PASSWORD);
+  ProvisionallySavePassword(form, input_element,
+                            RESTRICTION_NON_EMPTY_PASSWORD);
 }
 
 void PasswordAutofillAgent::OnFormSubmitted(const blink::WebFormElement& form) {

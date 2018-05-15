@@ -12,12 +12,13 @@
 #include "core/fpdfdoc/cpdf_aaction.h"
 #include "core/fpdfdoc/cpdf_action.h"
 #include "core/fpdfdoc/cpdf_annot.h"
+#include "core/fpdfdoc/cpdf_formfield.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_color.h"
 #include "fpdfsdk/cpdfsdk_baannot.h"
-#include "fpdfsdk/pdfsdk_fieldaction.h"
+#include "fpdfsdk/cpdfsdk_fieldaction.h"
 
 class CFX_RenderDevice;
 class CPDF_Annot;
@@ -42,7 +43,7 @@ class CPDFSDK_Widget : public CPDFSDK_BAAnnot {
 
   bool HasXFAAAction(PDFSDK_XFAAActionType eXFAAAT);
   bool OnXFAAAction(PDFSDK_XFAAActionType eXFAAAT,
-                    PDFSDK_FieldAction* data,
+                    CPDFSDK_FieldAction* data,
                     CPDFSDK_PageView* pPageView);
 
   void Synchronize(bool bSynchronizeElse);
@@ -100,7 +101,7 @@ class CPDFSDK_Widget : public CPDFSDK_BAAnnot {
   WideString OnFormat(bool& bFormatted);
 
   bool OnAAction(CPDF_AAction::AActionType type,
-                 PDFSDK_FieldAction* data,
+                 CPDFSDK_FieldAction* data,
                  CPDFSDK_PageView* pPageView);
 
   CPDFSDK_InterForm* GetInterForm() const { return m_pInterForm.Get(); }

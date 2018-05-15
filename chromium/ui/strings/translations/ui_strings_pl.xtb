@@ -63,6 +63,7 @@
 <translation id="385051799172605136">Wstecz</translation>
 <translation id="3889424535448813030">Strzałka w prawo</translation>
 <translation id="3892641579809465218">Wyświetlacz wewnętrzny</translation>
+<translation id="3897092660631435901">Menu</translation>
 <translation id="3909791450649380159">Wy&amp;tnij</translation>
 <translation id="3990502903496589789">Krawędź po prawej</translation>
 <translation id="4202807286478387388">przejdź</translation>
@@ -85,6 +86,7 @@
 <translation id="5266161281976477809">Trójkąt rozwinięcia</translation>
 <translation id="528468243742722775">End</translation>
 <translation id="5329858601952122676">&amp;Usuń</translation>
+<translation id="5463830097259460683">Emotikony i symbole</translation>
 <translation id="5476505524087279545">odznacz</translation>
 <translation id="5574202486608032840">System <ph name="IDS_SHORT_PRODUCT_OS_NAME" /></translation>
 <translation id="5583640892426849032">Backspace</translation>
@@ -136,6 +138,7 @@
 <translation id="7389409599945284130">– <ph name="MESSAGE" /></translation>
 <translation id="7410957453383678442">{MINUTES,plural, =1{Pozostała 1 minuta}few{Pozostały # minuty}many{Pozostały # minut}other{Pozostało # minuty}}</translation>
 <translation id="7460907917090416791"><ph name="QUANTITY" /> TB</translation>
+<translation id="7507604095951736240">Emotikony</translation>
 <translation id="7658239707568436148">Anuluj</translation>
 <translation id="7781829728241885113">Wczoraj</translation>
 <translation id="7814458197256864873">&amp;Kopiuj</translation>

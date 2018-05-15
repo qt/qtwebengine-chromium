@@ -11,13 +11,39 @@
 #define LIBANGLE_RENDERER_VULKAN_TEXTUREVK_H_
 
 #include "libANGLE/renderer/TextureImpl.h"
+#include "libANGLE/renderer/vulkan/CommandGraph.h"
 #include "libANGLE/renderer/vulkan/RenderTargetVk.h"
-#include "libANGLE/renderer/vulkan/vk_utils.h"
+#include "libANGLE/renderer/vulkan/vk_helpers.h"
 
 namespace rx
 {
 
-class TextureVk : public TextureImpl, public ResourceVk
+class StagingStorage final : angle::NonCopyable
+{
+  public:
+    StagingStorage();
+    ~StagingStorage();
+
+    void release(RendererVk *renderer);
+
+    gl::Error stageSubresourceUpdate(ContextVk *contextVk,
+                                     const gl::Extents &extents,
+                                     const gl::InternalFormat &formatInfo,
+                                     const gl::PixelUnpackState &unpack,
+                                     GLenum type,
+                                     const uint8_t *pixels);
+
+    vk::Error flushUpdatesToImage(RendererVk *renderer,
+                                  vk::ImageHelper *image,
+                                  vk::CommandBuffer *commandBuffer);
+
+  private:
+    vk::DynamicBuffer mStagingBuffer;
+    VkBuffer mCurrentBufferHandle;
+    VkBufferImageCopy mCurrentCopyRegion;
+};
+
+class TextureVk : public TextureImpl, public vk::CommandGraphResource
 {
   public:
     TextureVk(const gl::TextureState &state);
@@ -25,8 +51,7 @@ class TextureVk : public TextureImpl, public ResourceVk
     gl::Error onDestroy(const gl::Context *context) override;
 
     gl::Error setImage(const gl::Context *context,
-                       GLenum target,
-                       size_t level,
+                       const gl::ImageIndex &index,
                        GLenum internalFormat,
                        const gl::Extents &size,
                        GLenum format,
@@ -34,8 +59,7 @@ class TextureVk : public TextureImpl, public ResourceVk
                        const gl::PixelUnpackState &unpack,
                        const uint8_t *pixels) override;
     gl::Error setSubImage(const gl::Context *context,
-                          GLenum target,
-                          size_t level,
+                          const gl::ImageIndex &index,
                           const gl::Box &area,
                           GLenum format,
                           GLenum type,
@@ -43,16 +67,14 @@ class TextureVk : public TextureImpl, public ResourceVk
                           const uint8_t *pixels) override;
 
     gl::Error setCompressedImage(const gl::Context *context,
-                                 GLenum target,
-                                 size_t level,
+                                 const gl::ImageIndex &index,
                                  GLenum internalFormat,
                                  const gl::Extents &size,
                                  const gl::PixelUnpackState &unpack,
                                  size_t imageSize,
                                  const uint8_t *pixels) override;
     gl::Error setCompressedSubImage(const gl::Context *context,
-                                    GLenum target,
-                                    size_t level,
+                                    const gl::ImageIndex &index,
                                     const gl::Box &area,
                                     GLenum format,
                                     const gl::PixelUnpackState &unpack,
@@ -60,30 +82,28 @@ class TextureVk : public TextureImpl, public ResourceVk
                                     const uint8_t *pixels) override;
 
     gl::Error copyImage(const gl::Context *context,
-                        GLenum target,
-                        size_t level,
+                        const gl::ImageIndex &index,
                         const gl::Rectangle &sourceArea,
                         GLenum internalFormat,
-                        const gl::Framebuffer *source) override;
+                        gl::Framebuffer *source) override;
     gl::Error copySubImage(const gl::Context *context,
-                           GLenum target,
-                           size_t level,
+                           const gl::ImageIndex &index,
                            const gl::Offset &destOffset,
                            const gl::Rectangle &sourceArea,
-                           const gl::Framebuffer *source) override;
+                           gl::Framebuffer *source) override;
 
     gl::Error setStorage(const gl::Context *context,
-                         GLenum target,
+                         gl::TextureType type,
                          size_t levels,
                          GLenum internalFormat,
                          const gl::Extents &size) override;
 
     gl::Error setEGLImageTarget(const gl::Context *context,
-                                GLenum target,
+                                gl::TextureType type,
                                 egl::Image *image) override;
 
     gl::Error setImageExternal(const gl::Context *context,
-                               GLenum target,
+                               gl::TextureType type,
                                egl::Stream *stream,
                                const egl::Stream::GLTextureDescription &desc) override;
 
@@ -102,7 +122,7 @@ class TextureVk : public TextureImpl, public ResourceVk
     void syncState(const gl::Texture::DirtyBits &dirtyBits) override;
 
     gl::Error setStorageMultisample(const gl::Context *context,
-                                    GLenum target,
+                                    gl::TextureType type,
                                     GLsizei samples,
                                     GLint internalformat,
                                     const gl::Extents &size,
@@ -111,24 +131,22 @@ class TextureVk : public TextureImpl, public ResourceVk
     gl::Error initializeContents(const gl::Context *context,
                                  const gl::ImageIndex &imageIndex) override;
 
-    const vk::Image &getImage() const;
+    const vk::ImageHelper &getImage() const;
     const vk::ImageView &getImageView() const;
     const vk::Sampler &getSampler() const;
 
-  private:
-    gl::Error setSubImageImpl(ContextVk *contextVk,
-                              const gl::InternalFormat &formatInfo,
-                              const gl::PixelUnpackState &unpack,
-                              GLenum type,
-                              const uint8_t *pixels);
+    vk::Error ensureImageInitialized(RendererVk *renderer);
 
-    // TODO(jmadill): support a more flexible storage back-end.
-    vk::Image mImage;
-    vk::DeviceMemory mDeviceMemory;
+  private:
+    void releaseImage(const gl::Context *context, RendererVk *renderer);
+
+    vk::ImageHelper mImage;
     vk::ImageView mImageView;
     vk::Sampler mSampler;
 
     RenderTargetVk mRenderTarget;
+
+    StagingStorage mStagingStorage;
 };
 
 }  // namespace rx

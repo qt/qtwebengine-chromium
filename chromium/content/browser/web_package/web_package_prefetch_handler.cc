@@ -7,8 +7,8 @@
 #include "content/browser/web_package/signed_exchange_url_loader_factory_for_non_network_service.h"
 #include "content/browser/web_package/web_package_loader.h"
 #include "content/browser/web_package/web_package_request_handler.h"
-#include "content/common/weak_wrapper_shared_url_loader_factory.h"
 #include "content/public/common/content_features.h"
+#include "content/public/common/weak_wrapper_shared_url_loader_factory.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "services/network/public/cpp/features.h"
@@ -29,10 +29,11 @@ bool WebPackagePrefetchHandler::IsResponseForWebPackage(
 }
 
 WebPackagePrefetchHandler::WebPackagePrefetchHandler(
+    int frame_tree_node_id,
     const network::ResourceResponseHead& response,
     network::mojom::URLLoaderPtr network_loader,
     network::mojom::URLLoaderClientRequest network_client_request,
-    scoped_refptr<SharedURLLoaderFactory> network_loader_factory,
+    scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory,
     url::Origin request_initiator,
     URLLoaderThrottlesGetter loader_throttles_getter,
     ResourceContext* resource_context,
@@ -45,7 +46,7 @@ WebPackagePrefetchHandler::WebPackagePrefetchHandler(
           std::move(network_client_request));
   network::mojom::URLLoaderClientPtr client;
   loader_client_binding_.Bind(mojo::MakeRequest(&client));
-  scoped_refptr<SharedURLLoaderFactory> url_loader_factory;
+  scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory;
   if (!base::FeatureList::IsEnabled(network::features::kNetworkService)) {
     url_loader_factory = base::MakeRefCounted<
         SignedExchangeURLLoaderFactoryForNonNetworkService>(
@@ -56,7 +57,8 @@ WebPackagePrefetchHandler::WebPackagePrefetchHandler(
   web_package_loader_ = std::make_unique<WebPackageLoader>(
       response, std::move(client), std::move(endpoints),
       std::move(request_initiator), network::mojom::kURLLoadOptionNone,
-      std::move(url_loader_factory), loader_throttles_getter);
+      frame_tree_node_id, std::move(url_loader_factory),
+      loader_throttles_getter, request_context_getter);
 }
 
 WebPackagePrefetchHandler::~WebPackagePrefetchHandler() = default;
@@ -75,7 +77,6 @@ WebPackagePrefetchHandler::FollowRedirect(
 
 void WebPackagePrefetchHandler::OnReceiveResponse(
     const network::ResourceResponseHead& head,
-    const base::Optional<net::SSLInfo>& ssl_info,
     network::mojom::DownloadedTempFilePtr downloaded_file) {
   NOTREACHED();
 }

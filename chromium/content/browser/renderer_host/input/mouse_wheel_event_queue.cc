@@ -4,7 +4,6 @@
 
 #include "content/browser/renderer_host/input/mouse_wheel_event_queue.h"
 
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/trace_event/trace_event.h"
 #include "content/common/input/input_event_dispatch_type.h"
@@ -96,15 +95,13 @@ void MouseWheelEventQueue::ProcessMouseWheelAck(
        scrolling_device_ == blink::kWebGestureDeviceTouchpad)) {
     WebGestureEvent scroll_update(
         WebInputEvent::kGestureScrollUpdate, WebInputEvent::kNoModifiers,
-        event_sent_for_gesture_ack_->event.TimeStampSeconds());
+        event_sent_for_gesture_ack_->event.TimeStampSeconds(),
+        blink::kWebGestureDeviceTouchpad);
 
-    scroll_update.x = event_sent_for_gesture_ack_->event.PositionInWidget().x;
-    scroll_update.y = event_sent_for_gesture_ack_->event.PositionInWidget().y;
-    scroll_update.global_x =
-        event_sent_for_gesture_ack_->event.PositionInScreen().x;
-    scroll_update.global_y =
-        event_sent_for_gesture_ack_->event.PositionInScreen().y;
-    scroll_update.source_device = blink::kWebGestureDeviceTouchpad;
+    scroll_update.SetPositionInWidget(
+        event_sent_for_gesture_ack_->event.PositionInWidget());
+    scroll_update.SetPositionInScreen(
+        event_sent_for_gesture_ack_->event.PositionInScreen());
     scroll_update.resending_plugin_id = -1;
 
     // Swap X & Y if Shift is down and when there is no horizontal movement.
@@ -267,8 +264,8 @@ void MouseWheelEventQueue::OnGestureScrollEvent(
     const GestureEventWithLatencyInfo& gesture_event) {
   if (gesture_event.event.GetType() ==
       blink::WebInputEvent::kGestureScrollBegin) {
-    scrolling_device_ = gesture_event.event.source_device;
-  } else if (scrolling_device_ == gesture_event.event.source_device &&
+    scrolling_device_ = gesture_event.event.SourceDevice();
+  } else if (scrolling_device_ == gesture_event.event.SourceDevice() &&
              (gesture_event.event.GetType() ==
                   blink::WebInputEvent::kGestureScrollEnd ||
               (gesture_event.event.GetType() ==

@@ -17,7 +17,6 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -105,10 +104,10 @@ void RegistryHandler(void* data,
         wl_registry_bind(registry, id, &wp_presentation_interface, 1)));
   } else if (strcmp(interface, "zaura_shell") == 0) {
     globals->aura_shell.reset(static_cast<zaura_shell*>(
-        wl_registry_bind(registry, id, &zaura_shell_interface, 1)));
+        wl_registry_bind(registry, id, &zaura_shell_interface, 5)));
   } else if (strcmp(interface, "zwp_linux_dmabuf_v1") == 0) {
     globals->linux_dmabuf.reset(static_cast<zwp_linux_dmabuf_v1*>(
-        wl_registry_bind(registry, id, &zwp_linux_dmabuf_v1_interface, 1)));
+        wl_registry_bind(registry, id, &zwp_linux_dmabuf_v1_interface, 2)));
   } else if (strcmp(interface, "wl_subcompositor") == 0) {
     globals->subcompositor.reset(static_cast<wl_subcompositor*>(
         wl_registry_bind(registry, id, &wl_subcompositor_interface, 1)));

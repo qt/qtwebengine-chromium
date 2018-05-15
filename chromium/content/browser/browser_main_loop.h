@@ -13,9 +13,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
-#include "content/browser/browser_process_sub_thread.h"
 #include "content/public/browser/browser_main_runner.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "services/viz/public/interfaces/compositing/compositing_mode_watcher.mojom.h"
 #include "ui/base/ui_features.h"
@@ -85,7 +84,6 @@ class ImageCursorsSet;
 
 namespace viz {
 class CompositingModeReporterImpl;
-class ForwardingCompositingModeReporterImpl;
 class FrameSinkManagerImpl;
 class HostFrameSinkManager;
 }
@@ -93,6 +91,7 @@ class HostFrameSinkManager;
 namespace content {
 class BrowserMainParts;
 class BrowserOnlineStateObserver;
+class BrowserProcessSubThread;
 class BrowserThreadImpl;
 class LoaderDelegateImpl;
 class MediaStreamManager;
@@ -104,11 +103,6 @@ class StartupTaskRunner;
 class SwapMetricsDriver;
 class TracingControllerImpl;
 struct MainFunctionParams;
-
-#if BUILDFLAG(ENABLE_WEBRTC)
-class WebRTCInternals;
-class WebRtcEventLogManager;
-#endif
 
 #if defined(OS_ANDROID)
 class ScreenOrientationDelegate;
@@ -249,7 +243,10 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   void MainMessageLoopRun();
 
+  // Initializes |io_thread_|. It will not be promoted to BrowserThread::IO
+  // until CreateThreads().
   void InitializeIOThread();
+
   void InitializeMojo();
   base::FilePath GetStartupTraceFileName(
       const base::CommandLine& command_line) const;
@@ -291,6 +288,7 @@ class CONTENT_EXPORT BrowserMainLoop {
   std::unique_ptr<base::MessageLoop> main_message_loop_;
 
   // Members initialized in |PostMainMessageLoopStart()| -----------------------
+  std::unique_ptr<BrowserProcessSubThread> io_thread_;
   std::unique_ptr<base::SystemMonitor> system_monitor_;
   std::unique_ptr<base::PowerMonitor> power_monitor_;
   std::unique_ptr<base::HighResolutionTimerManager> hi_res_timer_manager_;
@@ -341,23 +339,6 @@ class CONTENT_EXPORT BrowserMainLoop {
       gpu_data_manager_visual_proxy_;
 #endif
 
-  // Members initialized in |CreateThreads()| ----------------------------------
-  // Only the IO thread is a real thread by default, other BrowserThreads are
-  // redirected to TaskScheduler under the hood.
-  std::unique_ptr<BrowserProcessSubThread> io_thread_;
-#if defined(OS_ANDROID)
-  // On Android, the PROCESS_LAUNCHER thread is handled by Java,
-  // |process_launcher_thread_| is merely a proxy to the real message loop.
-  std::unique_ptr<BrowserProcessSubThread> process_launcher_thread_;
-#elif defined(OS_WIN)
-  // TaskScheduler doesn't support async I/O on Windows as CACHE thread is
-  // the only user and this use case is going away in
-  // https://codereview.chromium.org/2216583003/.
-  // TODO(gavinp): Remove this (and thus enable redirection of the CACHE thread
-  // on Windows) once that CL lands.
-  std::unique_ptr<BrowserProcessSubThread> cache_thread_;
-#endif
-
   // Members initialized in |BrowserThreadsStarted()| --------------------------
   std::unique_ptr<ServiceManagerContext> service_manager_context_;
   std::unique_ptr<mojo::edk::ScopedIPCSupport> mojo_ipc_support_;
@@ -381,11 +362,6 @@ class CONTENT_EXPORT BrowserMainLoop {
   std::unique_ptr<media::DeviceMonitorMac> device_monitor_mac_;
 #endif
 
-#if BUILDFLAG(ENABLE_WEBRTC)
-  std::unique_ptr<WebRtcEventLogManager> webrtc_event_log_manager_;
-  std::unique_ptr<WebRTCInternals> webrtc_internals_;
-#endif
-
   std::unique_ptr<LoaderDelegateImpl> loader_delegate_;
   std::unique_ptr<ResourceDispatcherHostImpl> resource_dispatcher_host_;
   std::unique_ptr<MediaStreamManager> media_stream_manager_;
@@ -402,10 +378,6 @@ class CONTENT_EXPORT BrowserMainLoop {
   // http://crbug.com/657959.
   std::unique_ptr<viz::FrameSinkManagerImpl> frame_sink_manager_impl_;
 
-  // Forwards requests to watch the compositing mode on to the viz process. This
-  // is null if the display compositor in this process.
-  std::unique_ptr<viz::ForwardingCompositingModeReporterImpl>
-      forwarding_compositing_mode_reporter_impl_;
   // Reports on the compositing mode in the system for clients to submit
   // resources of the right type. This is null if the display compositor
   // is not in this process.

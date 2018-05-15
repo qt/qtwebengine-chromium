@@ -20,10 +20,11 @@
 #include "modules/video_coding/codecs/test/objc_codec_factory_helper.h"
 #endif
 
+#include "api/video_codecs/sdp_video_format.h"
 #include "common_types.h"  // NOLINT(build/include)
-#include "media/base/h264_profile_level_id.h"
 #include "media/engine/internaldecoderfactory.h"
 #include "media/engine/internalencoderfactory.h"
+#include "media/engine/simulcast_encoder_adapter.h"
 #include "media/engine/videodecodersoftwarefallbackwrapper.h"
 #include "media/engine/videoencodersoftwarefallbackwrapper.h"
 #include "modules/video_coding/codecs/vp8/include/vp8_common_types.h"
@@ -36,7 +37,6 @@
 #include "rtc_base/ptr_util.h"
 #include "system_wrappers/include/sleep.h"
 #include "test/testsupport/fileutils.h"
-#include "test/testsupport/metrics/video_metrics.h"
 
 namespace webrtc {
 namespace test {
@@ -53,33 +53,6 @@ bool RunEncodeInRealTime(const TestConfig& config) {
 #else
   return false;
 #endif
-}
-
-SdpVideoFormat CreateSdpVideoFormat(const TestConfig& config) {
-  switch (config.codec_settings.codecType) {
-    case kVideoCodecVP8:
-      return SdpVideoFormat(cricket::kVp8CodecName);
-
-    case kVideoCodecVP9:
-      return SdpVideoFormat(cricket::kVp9CodecName);
-
-    case kVideoCodecH264: {
-      const char* packetization_mode =
-          config.h264_codec_settings.packetization_mode ==
-                  H264PacketizationMode::NonInterleaved
-              ? "1"
-              : "0";
-      return SdpVideoFormat(
-          cricket::kH264CodecName,
-          {{cricket::kH264FmtpProfileLevelId,
-            *H264::ProfileLevelIdToString(H264::ProfileLevelId(
-                config.h264_codec_settings.profile, H264::kLevel3_1))},
-           {cricket::kH264FmtpPacketizationMode, packetization_mode}});
-    }
-    default:
-      RTC_NOTREACHED();
-      return SdpVideoFormat("");
-  }
 }
 
 }  // namespace
@@ -169,6 +142,7 @@ void VideoProcessorIntegrationTest::ProcessFramesAndMaybeVerify(
     const BitstreamThresholds* bs_thresholds,
     const VisualizationParams* visualization_params) {
   RTC_DCHECK(!rate_profiles.empty());
+
   // The Android HW codec needs to be run on a task queue, so we simply always
   // run the test on a task queue.
   rtc::TaskQueue task_queue("VidProc TQ");
@@ -177,9 +151,7 @@ void VideoProcessorIntegrationTest::ProcessFramesAndMaybeVerify(
       &task_queue, static_cast<const int>(rate_profiles[0].target_kbps),
       static_cast<const int>(rate_profiles[0].input_fps), visualization_params);
   PrintSettings(&task_queue);
-
   ProcessAllFrames(&task_queue, rate_profiles);
-
   ReleaseAndCloseObjects(&task_queue);
 
   AnalyzeAllFrames(rate_profiles, rc_thresholds, quality_thresholds,
@@ -217,7 +189,7 @@ void VideoProcessorIntegrationTest::ProcessAllFrames(
 
     if (RunEncodeInRealTime(config_)) {
       // Roughly pace the frames.
-      size_t frame_duration_ms =
+      const size_t frame_duration_ms =
           rtc::kNumMillisecsPerSec / rate_profiles[rate_update_index].input_fps;
       SleepMs(static_cast<int>(frame_duration_ms));
     }
@@ -229,7 +201,7 @@ void VideoProcessorIntegrationTest::ProcessAllFrames(
 
   // Give the VideoProcessor pipeline some time to process the last frame,
   // and then release the codecs.
-  if (config_.hw_encoder || config_.hw_decoder) {
+  if (config_.IsAsyncCodec()) {
     SleepMs(1 * rtc::kNumMillisecsPerSec);
   }
 
@@ -272,6 +244,10 @@ void VideoProcessorIntegrationTest::AnalyzeAllFrames(
                          bs_thresholds,
                          rate_profiles[rate_update_idx].target_kbps,
                          rate_profiles[rate_update_idx].input_fps);
+  }
+
+  if (config_.print_frame_level_stats) {
+    stats_.PrintFrameStatistics();
   }
 
   cpu_process_time_->Print();
@@ -323,19 +299,18 @@ void VideoProcessorIntegrationTest::VerifyVideoStatistic(
 }
 
 void VideoProcessorIntegrationTest::CreateEncoderAndDecoder() {
-  std::unique_ptr<VideoEncoderFactory> encoder_factory;
   if (config_.hw_encoder) {
 #if defined(WEBRTC_ANDROID)
-    encoder_factory = CreateAndroidEncoderFactory();
+    encoder_factory_ = CreateAndroidEncoderFactory();
 #elif defined(WEBRTC_IOS)
     EXPECT_EQ(kVideoCodecH264, config_.codec_settings.codecType)
         << "iOS HW codecs only support H264.";
-    encoder_factory = CreateObjCEncoderFactory();
+    encoder_factory_ = CreateObjCEncoderFactory();
 #else
     RTC_NOTREACHED() << "Only support HW encoder on Android and iOS.";
 #endif
   } else {
-    encoder_factory = rtc::MakeUnique<InternalEncoderFactory>();
+    encoder_factory_ = rtc::MakeUnique<InternalEncoderFactory>();
   }
 
   std::unique_ptr<VideoDecoderFactory> decoder_factory;
@@ -353,8 +328,13 @@ void VideoProcessorIntegrationTest::CreateEncoderAndDecoder() {
     decoder_factory = rtc::MakeUnique<InternalDecoderFactory>();
   }
 
-  const SdpVideoFormat format = CreateSdpVideoFormat(config_);
-  encoder_ = encoder_factory->CreateVideoEncoder(format);
+  const SdpVideoFormat format = config_.ToSdpVideoFormat();
+  if (config_.simulcast_adapted_encoder) {
+    EXPECT_EQ("VP8", format.name);
+    encoder_.reset(new SimulcastEncoderAdapter(encoder_factory_.get()));
+  } else {
+    encoder_ = encoder_factory_->CreateVideoEncoder(format);
+  }
 
   const size_t num_simulcast_or_spatial_layers = std::max(
       config_.NumberOfSimulcastStreams(), config_.NumberOfSpatialLayers());
@@ -365,6 +345,9 @@ void VideoProcessorIntegrationTest::CreateEncoderAndDecoder() {
   }
 
   if (config_.sw_fallback_encoder) {
+    EXPECT_FALSE(config_.simulcast_adapted_encoder)
+        << "SimulcastEncoderAdapter and VideoEncoderSoftwareFallbackWrapper "
+           "are not jointly supported.";
     encoder_ = rtc::MakeUnique<VideoEncoderSoftwareFallbackWrapper>(
         InternalEncoderFactory().CreateVideoEncoder(format),
         std::move(encoder_));
@@ -385,14 +368,15 @@ void VideoProcessorIntegrationTest::CreateEncoderAndDecoder() {
 }
 
 void VideoProcessorIntegrationTest::DestroyEncoderAndDecoder() {
-  encoder_.reset();
   decoders_.clear();
+  encoder_.reset();
+  encoder_factory_.reset();
 }
 
 void VideoProcessorIntegrationTest::SetUpAndInitObjects(
     rtc::TaskQueue* task_queue,
-    const int initial_bitrate_kbps,
-    const int initial_framerate_fps,
+    int initial_bitrate_kbps,
+    int initial_framerate_fps,
     const VisualizationParams* visualization_params) {
   CreateEncoderAndDecoder();
 

@@ -15,7 +15,6 @@ include_rules = [
   "+device/base/synchronization",
   "+device/gamepad/public/cpp",
   "+device/gamepad/public/mojom",
-  "+device/sensors/public",
   "+device/usb/public",
   "+gin",
   "+jingle/glue",
@@ -24,7 +23,7 @@ include_rules = [
   "-storage/browser",
   "+third_party/hyphen/hyphen.h",
   "+third_party/webrtc_overrides",
-  "+third_party/WebKit/public/common",
+  "+third_party/blink/public/common",
   "+v8/include",
   "+v8/src/third_party/vtune",
 ]

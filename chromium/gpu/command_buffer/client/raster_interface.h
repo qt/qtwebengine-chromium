@@ -19,6 +19,7 @@ namespace gfx {
 class Rect;
 class Size;
 class Vector2dF;
+enum class BufferUsage;
 }  // namespace gfx
 
 extern "C" typedef struct _ClientBuffer* ClientBuffer;
@@ -34,77 +35,12 @@ class RasterInterface {
   RasterInterface() {}
   virtual ~RasterInterface() {}
 
-  // Texture objects.
-  virtual void GenTextures(GLsizei n, GLuint* textures) = 0;
-  virtual void BindTexture(GLenum target, GLuint texture) = 0;
-  virtual void ActiveTexture(GLenum texture) = 0;
-  virtual void GenerateMipmap(GLenum target) = 0;
-  virtual void SetColorSpaceMetadataCHROMIUM(GLuint texture_id,
-                                             GLColorSpace color_space) = 0;
-
-  // Mailboxes.
-  virtual void GenMailboxCHROMIUM(GLbyte* mailbox) = 0;
-  virtual void ProduceTextureDirectCHROMIUM(GLuint texture,
-                                            const GLbyte* mailbox) = 0;
-  virtual GLuint CreateAndConsumeTextureCHROMIUM(const GLbyte* mailbox) = 0;
-
-  // Image objects.
-  virtual void BindTexImage2DCHROMIUM(GLenum target, GLint imageId) = 0;
-  virtual void ReleaseTexImage2DCHROMIUM(GLenum target, GLint imageId) = 0;
-
-  // Texture allocation and copying.
-  virtual void TexImage2D(GLenum target,
-                          GLint level,
-                          GLint internalformat,
-                          GLsizei width,
-                          GLsizei height,
-                          GLint border,
-                          GLenum format,
-                          GLenum type,
-                          const void* pixels) = 0;
-  virtual void TexSubImage2D(GLenum target,
-                             GLint level,
-                             GLint xoffset,
-                             GLint yoffset,
-                             GLsizei width,
-                             GLsizei height,
-                             GLenum format,
-                             GLenum type,
-                             const void* pixels) = 0;
-  virtual void CompressedTexImage2D(GLenum target,
-                                    GLint level,
-                                    GLenum internalformat,
-                                    GLsizei width,
-                                    GLsizei height,
-                                    GLint border,
-                                    GLsizei imageSize,
-                                    const void* data) = 0;
-  virtual void TexStorageForRaster(GLenum target,
-                                   viz::ResourceFormat format,
-                                   GLsizei width,
-                                   GLsizei height,
-                                   RasterTexStorageFlags flags) = 0;
-  virtual void CopySubTextureCHROMIUM(GLuint source_id,
-                                      GLint source_level,
-                                      GLenum dest_target,
-                                      GLuint dest_id,
-                                      GLint dest_level,
-                                      GLint xoffset,
-                                      GLint yoffset,
-                                      GLint x,
-                                      GLint y,
-                                      GLsizei width,
-                                      GLsizei height,
-                                      GLboolean unpack_flip_y,
-                                      GLboolean unpack_premultiply_alpha,
-                                      GLboolean unpack_unmultiply_alpha) = 0;
   // OOP-Raster
   virtual void BeginRasterCHROMIUM(
       GLuint texture_id,
       GLuint sk_color,
       GLuint msaa_sample_count,
       GLboolean can_use_lcd_text,
-      GLboolean use_distance_field_text,
       GLint pixel_config,
       const cc::RasterColorSpace& raster_color_space) = 0;
   virtual void RasterCHROMIUM(const cc::DisplayItemList* list,

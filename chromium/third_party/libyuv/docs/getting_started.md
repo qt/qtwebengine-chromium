@@ -98,10 +98,14 @@ arm64
 
 ios simulator
 
-    gn gen out/Release "--args=is_debug=false target_os=\"ios\" ios_enable_code_signing=false target_cpu=\"x86\""
-    gn gen out/Debug "--args=is_debug=true target_os=\"ios\" ios_enable_code_signing=false target_cpu=\"x86\""
+    gn gen out/Release "--args=is_debug=false target_os=\"ios\" ios_enable_code_signing=false use_xcode_clang=true target_cpu=\"x86\""
+    gn gen out/Debug "--args=is_debug=true target_os=\"ios\" ios_enable_code_signing=false use_xcode_clang=true target_cpu=\"x86\""
     ninja -v -C out/Debug libyuv_unittest
     ninja -v -C out/Release libyuv_unittest
+
+ios disassembly
+
+    otool -tV ./out/Release/obj/libyuv_neon/row_neon64.o >row_neon64.txt
 
 ### Android
 https://code.google.com/p/chromium/wiki/AndroidBuildInstructions
@@ -143,6 +147,8 @@ arm disassembly:
     third_party/android_ndk/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin/aarch64-linux-android-objdump -d ./out/Release/obj/libyuv_neon/row_neon.o >row_neon.txt
 
     third_party/android_ndk/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin/aarch64-linux-android-objdump -d ./out/Release/obj/libyuv_neon/row_neon64.o >row_neon64.txt
+
+    Caveat: Disassembly may require optimize_max be disabled in BUILD.gn
 
 Running tests:
 

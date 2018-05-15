@@ -127,7 +127,7 @@ used when committed.
 *   [base::Optional](optional.md) - How to use `base::Optional` in C++ code.
 *   [Using the Origin Trials Framework](origin_trials_integration.md) - A
     framework for conditionally enabling experimental APIs for testing.
-*   [`SharedModelTypeProcessor` in Unified Sync and Storage](sync/uss/shared_model_type_processor.md) -
+*   [`ClientTagBasedModelTypeProcessor` in Unified Sync and Storage](sync/uss/client_tag_based_model_type_processor.md) -
     Notes on the central data structure used in Chrome Sync.
 *   [Chrome Sync's Model API](sync/model_api.md) - Data models used for syncing
     information across devices using Chrome Sync.
@@ -194,7 +194,7 @@ used when committed.
     on crash dumping a process running in a seccomp sandbox.
 *   [Linux Password Storage](linux_password_storage.md) - Keychain integrations
     between Chromium and Linux.
-*   [Linux Sublime Development](linux_sublime_dev.md) - Using Sublime as an IDE
+*   [Linux Sublime Development](sublime_ide.md) - Using Sublime as an IDE
     for Chromium development on Linux.
 *   [Building and Debugging GTK](linux_building_debug_gtk.md) - Building
     Chromium against GTK using lower optimization levels and/or more debugging
@@ -246,6 +246,12 @@ used when committed.
     `android.util.Log` on Android, and usage guidelines.
 *   [Chromoting Android Hacking](chromoting_android_hacking.md) - Viewing the
     logs and debugging the Chrome Remote Desktop Android client.
+*   [Android Java Static Analysis](../build/android/docs/lint.md) - Catching
+    Java related issues at compile time with the 'lint' tool.
+*   [Java Code Coverage](../build/android/docs/coverage.md) - Collecting code
+    coverage data with the EMMA tool.
+*   [Android BuildConfig files](../build/android/docs/build_config.md) -
+    What are .build_config files and how they are used.
 
 ### Misc iOS-Specific Docs
 *   [Continuous Build and Test Infrastructure for Chromium for iOS](ios/infra.md)

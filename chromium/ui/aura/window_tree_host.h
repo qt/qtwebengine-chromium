@@ -10,7 +10,6 @@
 #include <memory>
 
 #include "base/containers/flat_set.h"
-#include "base/event_types.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -22,11 +21,10 @@
 #include "ui/compositor/compositor_observer.h"
 #include "ui/display/display_observer.h"
 #include "ui/events/event_source.h"
-#include "ui/gfx/geometry/insets.h"
+#include "ui/events/platform_event.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace gfx {
-class Insets;
 class Point;
 class Rect;
 class Size;
@@ -98,21 +96,12 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
   virtual gfx::Transform GetInverseRootTransformForLocalEventCoordinates()
       const;
 
-  // Sets padding applied to the output surface. The output surface is sized to
-  // to the size of the host plus output surface padding. |window()| is offset
-  // by |padding_in_pixels|, that is, |window|'s origin is set to
-  // padding_in_pixels.left(), padding_in_pixels.top().
-  // This does not impact the bounds as returned from GetBounds(), only the
-  // output surface size and location of window(). Additionally window() is
-  // sized to the size set by bounds (more specifically the size passed to
-  // OnHostResizedInPixels()), but the location of window() is set to that of
-  // |padding_in_pixels|.
-  void SetOutputSurfacePaddingInPixels(const gfx::Insets& padding_in_pixels);
-
   // Updates the root window's size using |host_size_in_pixels|, current
   // transform and outsets.
-  virtual void UpdateRootWindowSizeInPixels(
-      const gfx::Size& host_size_in_pixels);
+  // TODO(ccameron): Make this function no longer public. The interaction
+  // between this call, GetBounds, and OnHostResizedInPixels is ambiguous and
+  // allows for inconsistencies.
+  void UpdateRootWindowSizeInPixels();
 
   // Converts |point| from the root window's coordinate system to native
   // screen's.
@@ -192,6 +181,11 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
   void Hide();
 
   // Gets/Sets the size of the WindowTreeHost (in pixels).
+  // TODO(ccameron): The existence of OnHostMoved/ResizedInPixels and this
+  // function create confusion as to the source of the true bounds. Should it
+  // be expected that this will always return the values most recently
+  // specified by OnHostMoved/ResizedInPixels? If so, why do we ask the
+  // sub-classes to return the value when this class already knows the value?
   virtual gfx::Rect GetBoundsInPixels() const = 0;
   virtual void SetBoundsInPixels(const gfx::Rect& bounds_in_pixels) = 0;
 
@@ -200,6 +194,10 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
 
   // Releases OS capture of the root window.
   virtual void ReleaseCapture() = 0;
+
+  // Returns the device scale assumed by the WindowTreeHost (set during the
+  // most recent call to OnHostResizedInPixels).
+  float device_scale_factor() const { return device_scale_factor_; }
 
   // Requests that |keys| be intercepted at the platform level and routed
   // directly to the web content.  If |keys| is empty, all keys will be
@@ -232,6 +230,9 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
   virtual gfx::Point GetLocationOnScreenInPixels() const = 0;
 
   void OnHostMovedInPixels(const gfx::Point& new_location_in_pixels);
+  // TODO(ccameron): This needs to specify a device scale factor. It should
+  // arguably be merged with OnHostMovedInPixels (since all callers are pulling
+  // the size or position from a rect which also feeds OnHostMovedInPixels).
   void OnHostResizedInPixels(const gfx::Size& new_size_in_pixels);
   void OnHostWorkspaceChanged();
   void OnHostDisplayChanged();
@@ -271,7 +272,12 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
   // Stops capturing system keyboard events.
   virtual void ReleaseSystemKeyEventCapture() = 0;
 
- protected:
+  // True if |native_key_code| is reserved for an active KeyboardLock request.
+  virtual bool IsKeyLocked(int native_key_code) = 0;
+
+  virtual gfx::Rect GetTransformedRootWindowBoundsInPixels(
+      const gfx::Size& size_in_pixels) const;
+
   const base::ObserverList<WindowTreeHostObserver>& observers() const {
     return observers_;
   }
@@ -305,6 +311,11 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
 
   std::unique_ptr<ui::Compositor> compositor_;
 
+  // The device scale factor is snapshotted in OnHostResizedInPixels.
+  // TODO(ccameron): The size and location from OnHostResizedInPixels and
+  // OnHostMovedInPixels should be snapshotted here as well.
+  float device_scale_factor_ = 1.f;
+
   // Last cursor set.  Used for testing.
   gfx::NativeCursor last_cursor_;
   gfx::Point last_cursor_request_position_in_host_;
@@ -318,8 +329,6 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
 
   // Whether the InputMethod instance is owned by this WindowTreeHost.
   bool owned_input_method_;
-
-  gfx::Insets output_surface_padding_in_pixels_;
 
   // Set to the time the synchronization event began.
   base::TimeTicks synchronization_start_time_;

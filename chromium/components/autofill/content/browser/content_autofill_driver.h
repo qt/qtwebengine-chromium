@@ -85,6 +85,9 @@ class ContentAutofillDriver : public AutofillDriver,
   void TextFieldDidScroll(const FormData& form,
                           const FormFieldData& field,
                           const gfx::RectF& bounding_box) override;
+  void SelectControlDidChange(const FormData& form,
+                              const FormFieldData& field,
+                              const gfx::RectF& bounding_box) override;
   void QueryFormFieldAutofill(int32_t id,
                               const FormData& form,
                               const FormFieldData& field,
@@ -100,6 +103,7 @@ class ContentAutofillDriver : public AutofillDriver,
   void DidEndTextFieldEditing() override;
   void SetDataList(const std::vector<base::string16>& values,
                    const std::vector<base::string16>& labels) override;
+  void SelectFieldOptionsDidChange(const FormData& form) override;
 
   // Called when the main frame has navigated. Explicitely will not trigger for
   // subframe navigations. See navigation_handle.h for details.

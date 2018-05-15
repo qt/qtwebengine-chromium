@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/macros.h"
+#include "base/memory/ref_counted_memory.h"
 #include "base/task_scheduler/post_task.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
@@ -72,7 +73,7 @@ class ScreenshotData : public base::RefCountedThreadSafe<ScreenshotData> {
     // Encode the A8 bitmap to grayscale PNG treating alpha as color intensity.
     std::vector<unsigned char> data;
     if (gfx::PNGCodec::EncodeA8SkBitmap(grayscale_bitmap, &data))
-      data_ = new base::RefCountedBytes(data);
+      data_ = base::RefCountedBytes::TakeVector(&data);
   }
 
   scoped_refptr<base::RefCountedBytes> data_;
@@ -92,8 +93,10 @@ NavigationEntryScreenshotManager::~NavigationEntryScreenshotManager() {
 }
 
 void NavigationEntryScreenshotManager::TakeScreenshot() {
-  if (OverscrollConfig::GetMode() != OverscrollConfig::Mode::kParallaxUi)
+  if (OverscrollConfig::GetHistoryNavigationMode() !=
+      OverscrollConfig::HistoryNavigationMode::kParallaxUi) {
     return;
+  }
 
   NavigationEntryImpl* entry = owner_->GetLastCommittedEntry();
   if (!entry)

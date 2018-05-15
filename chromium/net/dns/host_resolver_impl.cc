@@ -562,9 +562,6 @@ void MakeNotStale(HostCache::EntryStaleness* stale_info) {
   stale_info->stale_hits = 0;
 }
 
-// Persist data every five minutes (potentially, cache and learned RTT).
-const int64_t kPersistDelaySec = 300;
-
 }  // namespace
 
 //-----------------------------------------------------------------------------
@@ -669,6 +666,9 @@ class HostResolverImpl::RequestImpl : public HostResolver::Request {
 //------------------------------------------------------------------------------
 
 // Calls HostResolverProc in TaskScheduler. Performs retries if necessary.
+//
+// In non-test code, the HostResolverProc is always SystemHostResolverProc,
+// which calls a platform API that implements host resolution.
 //
 // Whenever we try to resolve the host, we post a delayed task to check if host
 // resolution (OnLookupComplete) is completed or not. If the original attempt
@@ -966,7 +966,11 @@ class HostResolverImpl::ProcTask
 
 //-----------------------------------------------------------------------------
 
-// Resolves the hostname using DnsTransaction.
+// Resolves the hostname using DnsTransaction, which is a full implementation of
+// a DNS stub resolver. One DnsTransaction is created for each resolution
+// needed, which for AF_UNSPEC resolutions includes both A and AAAA. The
+// transactions are scheduled separately and started separately.
+//
 // TODO(szym): This could be moved to separate source file as well.
 class HostResolverImpl::DnsTask : public base::SupportsWeakPtr<DnsTask> {
  public:
@@ -1769,8 +1773,6 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
     net_log_.EndEventWithNetErrorCode(NetLogEventType::HOST_RESOLVER_IMPL_JOB,
                                       entry.error());
 
-    resolver_->SchedulePersist();
-
     DCHECK(!requests_.empty());
 
     if (entry.error() == OK || entry.error() == ERR_ICANN_NAME_COLLISION) {
@@ -1977,7 +1979,6 @@ HostResolverImpl::HostResolverImpl(const Options& options, NetLog* net_log)
       last_ipv6_probe_result_(true),
       additional_resolver_flags_(0),
       fallback_to_proctask_(true),
-      persist_initialized_(false),
       weak_ptr_factory_(this),
       probe_weak_ptr_factory_(this) {
   if (options.enable_caching)
@@ -2415,8 +2416,7 @@ bool HostResolverImpl::IsGloballyReachable(const IPAddress& dest,
                                            const NetLogWithSource& net_log) {
   std::unique_ptr<DatagramClientSocket> socket(
       ClientSocketFactory::GetDefaultFactory()->CreateDatagramClientSocket(
-          DatagramSocket::DEFAULT_BIND, RandIntCallback(), net_log.net_log(),
-          net_log.source()));
+          DatagramSocket::DEFAULT_BIND, net_log.net_log(), net_log.source()));
   int rv = socket->Connect(IPEndPoint(dest, 53));
   if (rv != OK)
     return false;
@@ -2644,36 +2644,6 @@ void HostResolverImpl::SetDnsClient(std::unique_ptr<DnsClient> dns_client) {
   }
 
   AbortDnsTasks();
-}
-
-void HostResolverImpl::InitializePersistence(
-    const PersistCallback& persist_callback,
-    std::unique_ptr<const base::Value> old_data) {
-  DCHECK(!persist_initialized_);
-  persist_callback_ = persist_callback;
-  persist_initialized_ = true;
-  if (old_data)
-    ApplyPersistentData(std::move(old_data));
-}
-
-void HostResolverImpl::ApplyPersistentData(
-    std::unique_ptr<const base::Value> data) {}
-
-std::unique_ptr<const base::Value> HostResolverImpl::GetPersistentData() {
-  return std::unique_ptr<const base::Value>();
-}
-
-void HostResolverImpl::SchedulePersist() {
-  if (!persist_initialized_ || persist_timer_.IsRunning())
-    return;
-  persist_timer_.Start(
-      FROM_HERE, base::TimeDelta::FromSeconds(kPersistDelaySec),
-      base::Bind(&HostResolverImpl::DoPersist, weak_ptr_factory_.GetWeakPtr()));
-}
-
-void HostResolverImpl::DoPersist() {
-  DCHECK(persist_initialized_);
-  persist_callback_.Run(GetPersistentData());
 }
 
 HostResolverImpl::RequestImpl::~RequestImpl() {

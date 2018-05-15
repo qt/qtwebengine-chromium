@@ -27,13 +27,13 @@ extern const base::Feature kIPHDownloadHomeFeature;
 extern const base::Feature kIPHDownloadPageFeature;
 extern const base::Feature kIPHDownloadPageScreenshotFeature;
 extern const base::Feature kIPHChromeHomeExpandFeature;
-extern const base::Feature kIPHChromeHomeMenuHeaderFeature;
 extern const base::Feature kIPHChromeHomePullToRefreshFeature;
 extern const base::Feature kIPHMediaDownloadFeature;
 extern const base::Feature kIPHContextualSearchWebSearchFeature;
 extern const base::Feature kIPHContextualSearchPromoteTapFeature;
 extern const base::Feature kIPHContextualSearchPromotePanelOpenFeature;
 extern const base::Feature kIPHContextualSearchOptInFeature;
+extern const base::Feature kIPHContextualSuggestionsFeature;
 #endif  // defined(OS_ANDROID)
 
 #if BUILDFLAG(ENABLE_DESKTOP_IN_PRODUCT_HELP)

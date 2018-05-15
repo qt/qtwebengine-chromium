@@ -47,6 +47,7 @@ class PrefetchDispatcherImpl : public PrefetchDispatcher,
           success_downloads) override;
   void DownloadCompleted(
       const PrefetchDownloadResult& download_result) override;
+  void ItemDownloaded(int64_t offline_id, const ClientId& client_id) override;
   void ArchiveImported(int64_t offline_id, bool success) override;
 
   // TaskQueue::Delegate implementation:

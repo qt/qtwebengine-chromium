@@ -21,6 +21,7 @@
 #include "base/sys_byteorder.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/time/time.h"
+#include "base/values.h"
 #include "net/base/ip_address.h"
 #include "net/base/port_util.h"
 #include "net/base/upload_bytes_element_reader.h"
@@ -31,6 +32,8 @@
 #include "net/dns/dns_session.h"
 #include "net/dns/dns_test_util.h"
 #include "net/dns/dns_util.h"
+#include "net/log/net_log.h"
+#include "net/log/net_log_capture_mode.h"
 #include "net/log/net_log_with_source.h"
 #include "net/proxy_resolution/proxy_config_service_fixed.h"
 #include "net/socket/socket_test_util.h"
@@ -229,7 +232,6 @@ class TestSocketFactory : public MockClientSocketFactory {
 
   std::unique_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
-      const RandIntCallback& rand_int_cb,
       NetLog* net_log,
       const NetLogSource& source) override {
     if (fail_next_socket_) {
@@ -238,9 +240,7 @@ class TestSocketFactory : public MockClientSocketFactory {
           new FailingUDPClientSocket(&empty_data_, net_log));
     }
     SocketDataProvider* data_provider = mock_data().GetNext();
-    std::unique_ptr<TestUDPClientSocket> socket(
-        new TestUDPClientSocket(this, data_provider, net_log));
-    return std::move(socket);
+    return std::make_unique<TestUDPClientSocket>(this, data_provider, net_log);
   }
 
   void OnConnect(const IPEndPoint& endpoint) {
@@ -282,9 +282,10 @@ class TransactionHelper {
   void StartTransaction(DnsTransactionFactory* factory) {
     EXPECT_EQ(NULL, transaction_.get());
     transaction_ = factory->CreateTransaction(
-        hostname_, qtype_, base::Bind(&TransactionHelper::OnTransactionComplete,
-                                      base::Unretained(this)),
-        NetLogWithSource());
+        hostname_, qtype_,
+        base::Bind(&TransactionHelper::OnTransactionComplete,
+                   base::Unretained(this)),
+        NetLogWithSource::Make(&net_log_, net::NetLogSourceType::NONE));
     transaction_->SetRequestContext(&request_context_);
     transaction_->SetRequestPriority(DEFAULT_PRIORITY);
     EXPECT_EQ(hostname_, transaction_->GetHostname());
@@ -366,6 +367,8 @@ class TransactionHelper {
 
   TestURLRequestContext* request_context() { return &request_context_; }
 
+  NetLog* net_log() { return &net_log_; }
+
  private:
   std::string hostname_;
   uint16_t qtype_;
@@ -375,6 +378,7 @@ class TransactionHelper {
   TestURLRequestContext request_context_;
   std::unique_ptr<base::RunLoop> transaction_complete_run_loop_;
   bool completed_;
+  NetLog net_log_;
 };
 
 // Callback that allows a test to modify HttpResponseinfo
@@ -785,8 +789,7 @@ class DnsTransactionTest : public testing::Test {
 
   void TearDown() override {
     // Check that all socket data was at least written to.
-    if (base::MessageLoop::current() &&
-        base::MessageLoop::current()->IsType(base::MessageLoop::TYPE_IO)) {
+    if (base::MessageLoopForIO::IsCurrent()) {
       URLRequestFilter* filter = URLRequestFilter::GetInstance();
       filter->ClearHandlers();
     }
@@ -1816,6 +1819,46 @@ TEST_F(DnsTransactionTest, HttpsCantLookupDohServers) {
   transaction_ids_.push_back(0);
   transaction_ids_.push_back(1);
   EXPECT_TRUE(helper0.RunUntilDone(transaction_factory_.get()));
+}
+
+class CountingObserver : public net::NetLog::ThreadSafeObserver {
+ public:
+  CountingObserver() : count_(0), dict_count_(0) {}
+
+  ~CountingObserver() override {
+    if (net_log())
+      net_log()->RemoveObserver(this);
+  }
+
+  void OnAddEntry(const NetLogEntry& entry) override {
+    ++count_;
+    std::unique_ptr<base::Value> value = entry.ParametersToValue();
+    if (value && value->is_dict())
+      dict_count_++;
+  }
+
+  int count() const { return count_; }
+
+  int dict_count() const { return dict_count_; }
+
+ private:
+  int count_;
+  int dict_count_;
+};
+
+TEST_F(DnsTransactionTest, HttpsPostLookupWithLog) {
+  ConfigDohServers(true /* clear_udp */, true /* use_post */);
+  AddQueryAndResponse(0, kT0HostName, kT0Qtype, kT0ResponseDatagram,
+                      arraysize(kT0ResponseDatagram), SYNCHRONOUS,
+                      Transport::HTTPS);
+  TransactionHelper helper0(kT0HostName, kT0Qtype, kT0RecordCount);
+  CountingObserver observer;
+  helper0.net_log()->AddObserver(&observer,
+                                 NetLogCaptureMode::IncludeSocketBytes());
+  EXPECT_TRUE(helper0.RunUntilDone(transaction_factory_.get()));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(observer.count(), 5);
+  EXPECT_EQ(observer.dict_count(), 3);
 }
 
 TEST_F(DnsTransactionTest, TCPLookup) {

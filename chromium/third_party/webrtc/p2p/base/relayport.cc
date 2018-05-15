@@ -443,7 +443,8 @@ void RelayConnection::OnSendPacket(const void* data, size_t size,
   rtc::PacketOptions options;  // Default dscp set to NO_CHANGE.
   int sent = socket_->SendTo(data, size, GetAddress(), options);
   if (sent <= 0) {
-    RTC_LOG(LS_VERBOSE) << "OnSendPacket: failed sending to " << GetAddress()
+    RTC_LOG(LS_VERBOSE) << "OnSendPacket: failed sending to "
+                        << GetAddress().ToString()
                         << strerror(socket_->GetError());
     RTC_DCHECK(sent < 0);
   }
@@ -508,7 +509,7 @@ void RelayEntry::Connect() {
         rtc::SocketAddress(port_->Network()->GetBestIP(), 0), ra->address,
         port_->proxy(), port_->user_agent(), opts);
   } else {
-    RTC_LOG(LS_WARNING) << "Unknown protocol (" << ra->proto << ")";
+    RTC_LOG(LS_WARNING) << "Unknown protocol: " << ra->proto;
   }
 
   // If we failed to get a socket, move on to the next protocol.
@@ -652,7 +653,7 @@ void RelayEntry::OnMessage(rtc::Message *pmsg) {
   if (current_connection_) {
     const ProtocolAddress* ra = current_connection_->protocol_address();
     RTC_LOG(LS_WARNING) << "Relay " << ra->proto << " connection to "
-                        << ra->address << " timed out";
+                        << ra->address.ToString() << " timed out";
 
     // Currently we connect to each server address in sequence. If we
     // have more addresses to try, treat this is an error and move on to
@@ -832,9 +833,8 @@ void AllocateRequest::OnErrorResponse(StunMessage* response) {
   if (!attr) {
     RTC_LOG(LS_ERROR) << "Missing allocate response error code.";
   } else {
-    RTC_LOG(INFO) << "Allocate error response:"
-                  << " code=" << attr->code() << " reason='" << attr->reason()
-                  << "'";
+    RTC_LOG(INFO) << "Allocate error response: code=" << attr->code()
+                  << " reason=" << attr->reason();
   }
 
   if (rtc::TimeMillis() - start_time_ <= kRetryTimeout)

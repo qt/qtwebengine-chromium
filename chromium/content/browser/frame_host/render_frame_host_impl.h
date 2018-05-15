@@ -36,10 +36,10 @@
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/webui/web_ui_impl.h"
 #include "content/common/ax_content_node_data.h"
+#include "content/common/buildflags.h"
 #include "content/common/content_export.h"
 #include "content/common/content_security_policy/csp_context.h"
 #include "content/common/download/mhtml_save_status.h"
-#include "content/common/features.h"
 #include "content/common/frame.mojom.h"
 #include "content/common/frame_message_enums.h"
 #include "content/common/frame_replication_state.h"
@@ -51,6 +51,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/javascript_dialog_type.h"
 #include "content/public/common/previews_state.h"
+#include "content/public/common/transferrable_url_loader.mojom.h"
 #include "media/mojo/interfaces/interface_factory.mojom.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "mojo/public/cpp/system/data_pipe.h"
@@ -59,16 +60,16 @@
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/mojom/interface_provider.mojom.h"
 #include "services/viz/public/interfaces/hit_test/input_target_client.mojom.h"
-#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
-#include "third_party/WebKit/public/platform/WebFocusType.h"
-#include "third_party/WebKit/public/platform/WebInsecureRequestPolicy.h"
-#include "third_party/WebKit/public/platform/WebSuddenTerminationDisablerType.h"
-#include "third_party/WebKit/public/platform/modules/bluetooth/web_bluetooth.mojom.h"
-#include "third_party/WebKit/public/platform/modules/presentation/presentation.mojom.h"
-#include "third_party/WebKit/public/platform/modules/webauth/authenticator.mojom.h"
-#include "third_party/WebKit/public/web/WebTextDirection.h"
-#include "third_party/WebKit/public/web/WebTreeScopeType.h"
-#include "third_party/WebKit/public/web/commit_result.mojom.h"
+#include "third_party/blink/public/common/feature_policy/feature_policy.h"
+#include "third_party/blink/public/platform/modules/bluetooth/web_bluetooth.mojom.h"
+#include "third_party/blink/public/platform/modules/presentation/presentation.mojom.h"
+#include "third_party/blink/public/platform/modules/webauth/authenticator.mojom.h"
+#include "third_party/blink/public/platform/web_focus_type.h"
+#include "third_party/blink/public/platform/web_insecure_request_policy.h"
+#include "third_party/blink/public/platform/web_sudden_termination_disabler_type.h"
+#include "third_party/blink/public/web/commit_result.mojom.h"
+#include "third_party/blink/public/web/web_text_direction.h"
+#include "third_party/blink/public/web/web_tree_scope_type.h"
 #include "ui/accessibility/ax_modes.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/base/mojo/window_open_disposition.mojom.h"
@@ -107,7 +108,7 @@ class Range;
 namespace network {
 class ResourceRequestBody;
 struct ResourceResponse;
-}
+}  // namespace network
 
 namespace content {
 class AssociatedInterfaceProviderImpl;
@@ -157,8 +158,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
       public CSPContext {
  public:
   using AXTreeSnapshotCallback =
-      base::Callback<void(
-          const ui::AXTreeUpdate&)>;
+      base::OnceCallback<void(const ui::AXTreeUpdate&)>;
 
   // An accessibility reset is only allowed to prevent very rare corner cases
   // or race conditions where the browser and renderer get out of sync. If
@@ -339,6 +339,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // cases, use GetLastCommittedURL instead.
   const GURL& last_successful_url() { return last_successful_url_; }
 
+  // Allows overriding the last committed origin in tests.
+  void SetLastCommittedOriginForTesting(const url::Origin& origin);
+
   // Fetch the link-rel canonical URL to be used for sharing to external
   // applications.
   void GetCanonicalUrlForSharing(
@@ -494,7 +497,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   // Request a one-time snapshot of the accessibility tree without changing
   // the accessibility mode.
-  void RequestAXTreeSnapshot(AXTreeSnapshotCallback callback);
+  void RequestAXTreeSnapshot(AXTreeSnapshotCallback callback,
+                             ui::AXMode ax_mode);
 
   // Resets the accessibility serializer in the renderer.
   void AccessibilityReset();
@@ -564,6 +568,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
       const RequestNavigationParams& request_params,
       bool is_view_source,
       base::Optional<SubresourceLoaderParams> subresource_loader_params,
+      base::Optional<std::vector<mojom::TransferrableURLLoaderPtr>>
+          subresource_overrides,
       const base::UnguessableToken& devtools_navigation_token);
 
   // Indicates that a navigation failed and that this RenderFrame should display
@@ -695,16 +701,21 @@ class CONTENT_EXPORT RenderFrameHostImpl
     return active_sandbox_flags_;
   }
 
-  // Call |FlushForTesting()| on Network Service and FrameNavigationControl
+  // Calls |FlushForTesting()| on Network Service and FrameNavigationControl
   // related interfaces to make sure all in-flight mojo messages have been
   // received by the other end. For test use only.
   void FlushNetworkAndNavigationInterfacesForTesting();
 
-  // Notifies the render frame that a user gesture was received.
-  void SetHasReceivedUserGesture();
+  // Notifies the render frame about a user activation from the browser side.
+  void NotifyUserActivation();
 
   // Returns the current size for this frame.
   const base::Optional<gfx::Size>& frame_size() const { return frame_size_; }
+
+  // Re-creates loader factories and pushes them to |RenderFrame|.
+  // Used in case we need to add or remove intercepting proxies to the
+  // running renderer, or in case of Network Service connection errors.
+  void UpdateSubresourceLoaderFactories();
 
  protected:
   friend class RenderFrameHostFactory;
@@ -748,6 +759,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
                            RenderViewHostIsNotReusedAfterDelayedSwapOutACK);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
+                           RenderViewHostStaysActiveWithLateSwapoutACK);
+  FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
                            LoadEventForwardingWhilePendingDeletion);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
                            ContextMenuAfterCrossProcessNavigation);
@@ -755,6 +768,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
                            ActiveSandboxFlagsRetainedAfterSwapOut);
   FRIEND_TEST_ALL_PREFIXES(SecurityExploitBrowserTest,
                            AttemptDuplicateRenderViewHost);
+
+  class DroppedInterfaceRequestLogger;
 
   // IPC Message handlers.
   void OnDidAddMessageToConsole(int32_t level,
@@ -788,12 +803,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnVisualStateResponse(uint64_t id);
   void OnRunJavaScriptDialog(const base::string16& message,
                              const base::string16& default_prompt,
-                             const GURL& frame_url,
                              JavaScriptDialogType dialog_type,
                              IPC::Message* reply_msg);
-  void OnRunBeforeUnloadConfirm(const GURL& frame_url,
-                                bool is_reload,
-                                IPC::Message* reply_msg);
+  void OnRunBeforeUnloadConfirm(bool is_reload, IPC::Message* reply_msg);
   void OnRunFileChooser(const FileChooserParams& params);
   void OnTextSurroundingSelectionResponse(const base::string16& content,
                                           uint32_t start_offset,
@@ -888,13 +900,12 @@ class CONTENT_EXPORT RenderFrameHostImpl
       std::unique_ptr<FrameHostMsg_DidCommitProvisionalLoad_Params>
           validated_params) override;
   void BeginNavigation(const CommonNavigationParams& common_params,
-                       mojom::BeginNavigationParamsPtr begin_params) override;
+                       mojom::BeginNavigationParamsPtr begin_params,
+                       blink::mojom::BlobURLTokenPtr blob_url_token) override;
   void SubresourceResponseStarted(const GURL& url,
-                                  const GURL& referrer,
-                                  const std::string& method,
-                                  ResourceType resource_type,
-                                  const std::string& ip,
-                                  uint32_t cert_status) override;
+                                  net::CertStatus cert_status) override;
+  void ResourceLoadComplete(
+      mojom::ResourceLoadInfoPtr resource_load_info) override;
   void DidChangeName(const std::string& name,
                      const std::string& unique_name) override;
   void EnforceInsecureRequestPolicy(
@@ -907,7 +918,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void UpdateEncoding(const std::string& encoding) override;
   void FrameSizeChanged(const gfx::Size& frame_size) override;
   void OnUpdatePictureInPictureSurfaceId(
-      const viz::SurfaceId& surface_id) override;
+      const viz::SurfaceId& surface_id,
+      const gfx::Size& natural_size) override;
+  void OnExitPictureInPicture() override;
 
   // Registers Mojo interfaces that this frame host makes available.
   void RegisterMojoInterfaces();
@@ -948,10 +961,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void UpdatePermissionsForNavigation(
       const CommonNavigationParams& common_params,
       const RequestNavigationParams& request_params);
-
-  // Handle Network Service connection errors. Will re-create broken Network
-  // Service-backed factories and send to |RenderFrame|.
-  void OnNetworkServiceConnectionError();
 
   // Creates a Network Service-backed factory from appropriate |NetworkContext|
   // and sets a connection error handler to trigger
@@ -1018,6 +1027,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   void BindMediaInterfaceFactoryRequest(
       media::mojom::InterfaceFactoryRequest request);
+
+  void CreateWebSocket(network::mojom::WebSocketRequest request);
 
   // Callback for connection error on the media::mojom::InterfaceFactory client.
   void OnMediaInterfaceFactoryConnectionError();
@@ -1229,6 +1240,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // to OnBeforeUnloadACK(), or until the timeout triggers.
   std::unique_ptr<TimeoutMonitor> beforeunload_timeout_;
 
+  // Returns whether the tab was previously discarded.
+  // This is passed to RequestNavigationParams in NavigationRequest.
+  bool was_discarded_;
+
   // Indicates whether this RenderFrameHost is in the process of loading a
   // document or not.
   bool is_loading_;
@@ -1372,8 +1387,16 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // If true then this frame's document has a focused element which is editable.
   bool has_focused_editable_element_;
 
-  typedef std::pair<CommonNavigationParams, mojom::BeginNavigationParamsPtr>
-      PendingNavigation;
+  struct PendingNavigation {
+    PendingNavigation(
+        const CommonNavigationParams& common_params,
+        mojom::BeginNavigationParamsPtr begin_params,
+        scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory);
+    ~PendingNavigation();
+    CommonNavigationParams common_params;
+    mojom::BeginNavigationParamsPtr begin_params;
+    scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory;
+  };
   std::unique_ptr<PendingNavigation> pending_navigate_;
 
   // A collection of non-network URLLoaderFactory implementations which are used
@@ -1472,6 +1495,14 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // interfaces.
   mojo::Binding<service_manager::mojom::InterfaceProvider>
       document_scoped_interface_provider_binding_;
+
+  // Logs interface requests that arrive after the frame has already committed a
+  // non-same-document navigation, and has already unbound
+  // |document_scoped_interface_provider_binding_| from the interface connection
+  // that had been used to service RenderFrame::GetRemoteInterface for the
+  // previously active document in the frame.
+  std::unique_ptr<DroppedInterfaceRequestLogger>
+      dropped_interface_request_logger_;
 
   // IPC-friendly token that represents this host for AndroidOverlays, if we
   // have created one yet.

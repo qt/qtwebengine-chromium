@@ -13,6 +13,7 @@
 
 #include <map>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -81,8 +82,6 @@ class RTPSender {
 
   int32_t DeRegisterSendPayload(const int8_t payload_type);
 
-  void SetSendPayloadType(int8_t payload_type);
-
   void SetSendingMediaStatus(bool enabled);
   bool SendingMedia() const;
 
@@ -93,6 +92,8 @@ class RTPSender {
   void SetTimestampOffset(uint32_t timestamp);
 
   void SetSSRC(uint32_t ssrc);
+
+  void SetMid(const std::string& mid);
 
   uint16_t SequenceNumber() const;
   void SetSequenceNumber(uint16_t seq);
@@ -134,9 +135,10 @@ class RTPSender {
 
   bool StorePackets() const;
 
-  int32_t ReSendPacket(uint16_t packet_id, int64_t min_resend_time = 0);
+  int32_t ReSendPacket(uint16_t packet_id);
 
-  // Feedback to decide when to stop sending playout delay.
+  // Feedback to decide when to stop sending the playout delay and MID header
+  // extensions.
   void OnReceivedRtcpReportBlocks(const ReportBlockList& report_blocks);
 
   // RTX.
@@ -150,6 +152,9 @@ class RTPSender {
 
   // Size info for header extensions used by FEC packets.
   static rtc::ArrayView<const RtpExtensionSize> FecExtensionSizes();
+
+  // Size info for header extensions used by video packets.
+  static rtc::ArrayView<const RtpExtensionSize> VideoExtensionSizes();
 
   // Create empty packet, fills ssrc, csrcs and reserve place for header
   // extensions RtpSender updates before sending.
@@ -274,7 +279,7 @@ class RTPSender {
 
   size_t max_packet_size_;
 
-  int8_t payload_type_ RTC_GUARDED_BY(send_critsect_);
+  int8_t last_payload_type_ RTC_GUARDED_BY(send_critsect_);
   std::map<int8_t, RtpUtility::Payload*> payload_type_map_;
 
   RtpHeaderExtensionMap rtp_header_extension_map_
@@ -315,6 +320,8 @@ class RTPSender {
   // Must be explicitly set by the application, use of rtc::Optional
   // only to keep track of correct use.
   rtc::Optional<uint32_t> ssrc_ RTC_GUARDED_BY(send_critsect_);
+  // MID value to send in the MID header extension.
+  std::string mid_ RTC_GUARDED_BY(send_critsect_);
   uint32_t last_rtp_timestamp_ RTC_GUARDED_BY(send_critsect_);
   int64_t capture_time_ms_ RTC_GUARDED_BY(send_critsect_);
   int64_t last_timestamp_time_ms_ RTC_GUARDED_BY(send_critsect_);

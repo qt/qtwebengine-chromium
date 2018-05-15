@@ -17,7 +17,6 @@
 #include <string>
 
 #include "api/rtpparameters.h"
-#include "common_types.h"  // NOLINT(build/include)
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
@@ -51,6 +50,8 @@ RTPExtensionType StringToRtpExtensionType(const std::string& extension) {
     return kRtpExtensionVideoContentType;
   if (extension == RtpExtension::kVideoTimingUri)
     return kRtpExtensionVideoTiming;
+  if (extension == RtpExtension::kMidUri)
+    return kRtpExtensionMid;
   RTC_NOTREACHED() << "Looking up unsupported RTP extension.";
   return kRtpExtensionNone;
 }
@@ -283,11 +284,6 @@ int32_t ModuleRtpRtcpImpl::RegisterSendPayload(
       voice_codec.channels, (voice_codec.rate < 0) ? 0 : voice_codec.rate);
 }
 
-int32_t ModuleRtpRtcpImpl::RegisterSendPayload(const VideoCodec& video_codec) {
-  return rtp_sender_->RegisterPayload(video_codec.plName, video_codec.plType,
-                                     90000, 0, 0);
-}
-
 void ModuleRtpRtcpImpl::RegisterVideoSendPayload(int payload_type,
                                                  const char* payload_name) {
   RTC_CHECK_EQ(
@@ -344,6 +340,14 @@ void ModuleRtpRtcpImpl::SetSSRC(const uint32_t ssrc) {
   }
   rtcp_sender_.SetSSRC(ssrc);
   SetRtcpReceiverSsrcs(ssrc);
+}
+
+void ModuleRtpRtcpImpl::SetMid(const std::string& mid) {
+  if (rtp_sender_) {
+    rtp_sender_->SetMid(mid);
+  }
+  // TODO(bugs.webrtc.org/4050): If we end up supporting the MID SDES item for
+  // RTCP, this will need to be passed down to the RTCPSender also.
 }
 
 void ModuleRtpRtcpImpl::SetCsrcs(const std::vector<uint32_t>& csrcs) {

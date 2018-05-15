@@ -10,7 +10,7 @@
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "content/browser/loader/url_loader_request_handler.h"
+#include "content/browser/loader/navigation_loader_interceptor.h"
 #include "content/browser/service_worker/service_worker_fetch_dispatcher.h"
 #include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_response_type.h"
@@ -21,8 +21,8 @@
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
-#include "third_party/WebKit/public/mojom/blob/blob.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_stream_handle.mojom.h"
+#include "third_party/blink/public/mojom/blob/blob.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_stream_handle.mojom.h"
 
 namespace content {
 
@@ -30,17 +30,18 @@ struct ServiceWorkerResponse;
 class ServiceWorkerVersion;
 
 // S13nServiceWorker:
-// ServiceWorkerNavigationLoader is the URLLoader used for navigation requests
-// that (potentially) go through a service worker. This loader is only used for
-// the main resource request; once the navigation is committed, the page loads
+// ServiceWorkerNavigationLoader is the URLLoader used for main resource
+// requests (i.e., navigation and shared worker requests) that (potentially) go
+// through a service worker. This loader is only used for the main resource
+// request; once the response is delivered, the resulting client loads
 // subresources via ServiceWorkerSubresourceLoader.
 //
 // This class works similarly to ServiceWorkerURLRequestJob but with
 // network::mojom::URLLoader instead of URLRequest.
 //
 // This class is owned by the job wrapper until it is bound to a URLLoader
-// request. After it is bound |this| is kept alive until the Mojo connection
-// to this URLLoader is dropped.
+// request. After it is bound |this| is kept alive until the Mojo connection to
+// this URLLoader is dropped.
 class CONTENT_EXPORT ServiceWorkerNavigationLoader
     : public network::mojom::URLLoader {
  public:
@@ -48,9 +49,9 @@ class CONTENT_EXPORT ServiceWorkerNavigationLoader
   using ResponseType = ServiceWorkerResponseType;
 
   // Created by ServiceWorkerControlleeRequestHandler::MaybeCreateLoader
-  // when starting to load a page for navigation.
+  // when starting to load a main resource.
   //
-  // This job typically works in the following order:
+  // For the navigation case, this job typically works in the following order:
   // 1. One of the FallbackTo* or ForwardTo* methods are called via
   //    URLJobWrapper by ServiceWorkerControlleeRequestHandler, which
   //    determines how the request should be served (e.g. should fallback
@@ -71,8 +72,11 @@ class CONTENT_EXPORT ServiceWorkerNavigationLoader
   //    NavigationURLLoaderNetworkService (for resource loading for navigation).
   //    This forwards the blob/stream data pipe to the NavigationURLLoader if
   //    the response body was sent as a blob/stream.
+  //
+  // Loads for shared workers work similarly, except SharedWorkerScriptLoader
+  // is used instead of NavigationURLLoaderNetworkService.
   ServiceWorkerNavigationLoader(
-      URLLoaderRequestHandler::LoaderCallback loader_callback,
+      NavigationLoaderInterceptor::LoaderCallback loader_callback,
       Delegate* delegate,
       const network::ResourceRequest& resource_request,
       scoped_refptr<URLLoaderFactoryGetter> url_loader_factory_getter);
@@ -148,7 +152,7 @@ class CONTENT_EXPORT ServiceWorkerNavigationLoader
   void DeleteIfNeeded();
 
   ResponseType response_type_ = ResponseType::NOT_DETERMINED;
-  URLLoaderRequestHandler::LoaderCallback loader_callback_;
+  NavigationLoaderInterceptor::LoaderCallback loader_callback_;
 
   Delegate* delegate_;
   network::ResourceRequest resource_request_;

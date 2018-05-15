@@ -10,7 +10,6 @@
 
 #include "base/auto_reset.h"
 #include "base/command_line.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "content/browser/renderer_host/input/gesture_event_queue.h"
@@ -117,6 +116,7 @@ void InputRouterImpl::SendWheelEvent(
 
 void InputRouterImpl::SendKeyboardEvent(
     const NativeWebKeyboardEventWithLatencyInfo& key_event) {
+  gesture_event_queue_.StopFling();
   gesture_event_queue_.FlingHasBeenHalted();
   mojom::WidgetInputHandler::DispatchEventCallback callback = base::BindOnce(
       &InputRouterImpl::KeyboardEventHandled, weak_this_, key_event);
@@ -126,7 +126,8 @@ void InputRouterImpl::SendKeyboardEvent(
 
 void InputRouterImpl::SendGestureEvent(
     const GestureEventWithLatencyInfo& original_gesture_event) {
-  input_stream_validator_.Validate(original_gesture_event.event);
+  input_stream_validator_.Validate(original_gesture_event.event,
+                                   FlingCancellationIsDeferred());
 
   GestureEventWithLatencyInfo gesture_event(original_gesture_event);
 
@@ -139,7 +140,7 @@ void InputRouterImpl::SendGestureEvent(
 
   wheel_event_queue_.OnGestureScrollEvent(gesture_event);
 
-  if (gesture_event.event.source_device ==
+  if (gesture_event.event.SourceDevice() ==
       blink::kWebGestureDeviceTouchscreen) {
     if (gesture_event.event.GetType() ==
         blink::WebInputEvent::kGestureScrollBegin) {
@@ -209,11 +210,20 @@ void InputRouterImpl::BindHost(mojom::WidgetInputHandlerHostRequest request,
 }
 
 void InputRouterImpl::ProgressFling(base::TimeTicks current_time) {
-  gesture_event_queue_.ProgressFling(current_time);
+  current_fling_velocity_ = gesture_event_queue_.ProgressFling(current_time);
 }
 
 void InputRouterImpl::StopFling() {
   gesture_event_queue_.StopFling();
+}
+
+bool InputRouterImpl::FlingCancellationIsDeferred() {
+  return gesture_event_queue_.FlingCancellationIsDeferred();
+}
+
+void InputRouterImpl::DidStopFlingingOnBrowser() {
+  current_fling_velocity_ = gfx::Vector2dF();
+  client_->DidStopFlinging();
 }
 
 void InputRouterImpl::CancelTouchTimeout() {
@@ -231,7 +241,10 @@ void InputRouterImpl::SetWhiteListedTouchAction(cc::TouchAction touch_action,
 }
 
 void InputRouterImpl::DidOverscroll(const ui::DidOverscrollParams& params) {
-  client_->DidOverscroll(params);
+  // Touchpad and Touchscreen flings are handled on the browser side.
+  ui::DidOverscrollParams fling_updated_params = params;
+  fling_updated_params.current_fling_velocity = current_fling_velocity_;
+  client_->DidOverscroll(fling_updated_params);
 }
 
 void InputRouterImpl::DidStopFlinging() {
@@ -241,6 +254,10 @@ void InputRouterImpl::DidStopFlinging() {
   // cannot use this bookkeeping for logic like tap suppression.
   --active_renderer_fling_count_;
   client_->DidStopFlinging();
+}
+
+void InputRouterImpl::DidStartScrollingViewport() {
+  client_->DidStartScrollingViewport();
 }
 
 void InputRouterImpl::ImeCancelComposition() {
@@ -341,6 +358,10 @@ void InputRouterImpl::OnFilteringTouchEvent(const WebTouchEvent& touch_event) {
   output_stream_validator_.Validate(touch_event);
 }
 
+bool InputRouterImpl::TouchscreenFlingInProgress() {
+  return gesture_event_queue_.TouchscreenFlingInProgress();
+}
+
 void InputRouterImpl::SendGestureEventImmediately(
     const GestureEventWithLatencyInfo& gesture_event) {
   mojom::WidgetInputHandler::DispatchEventCallback callback = base::BindOnce(
@@ -361,6 +382,12 @@ void InputRouterImpl::SendGeneratedWheelEvent(
     const MouseWheelEventWithLatencyInfo& wheel_event) {
   client_->ForwardWheelEventWithLatencyInfo(wheel_event.event,
                                             wheel_event.latency);
+}
+
+void InputRouterImpl::SendGeneratedGestureScrollEvents(
+    const GestureEventWithLatencyInfo& gesture_event) {
+  client_->ForwardGestureEventWithLatencyInfo(gesture_event.event,
+                                              gesture_event.latency);
 }
 
 void InputRouterImpl::SetNeedsBeginFrameForFlingProgress() {
@@ -404,6 +431,8 @@ void InputRouterImpl::FilterAndSendWebInputEvent(
   InputEventAckState filtered_state =
       client_->FilterInputEvent(input_event, latency_info);
   if (WasHandled(filtered_state)) {
+    TRACE_EVENT_INSTANT0("input", "InputEventFiltered",
+                         TRACE_EVENT_SCOPE_THREAD);
     if (filtered_state != INPUT_EVENT_ACK_STATE_UNKNOWN) {
       std::move(callback).Run(InputEventAckSource::BROWSER, latency_info,
                               filtered_state, base::nullopt, base::nullopt);
@@ -415,10 +444,14 @@ void InputRouterImpl::FilterAndSendWebInputEvent(
       ScaleEvent(input_event, device_scale_factor_), latency_info);
   if (WebInputEventTraits::ShouldBlockEventStream(
           input_event, wheel_scroll_latching_enabled_)) {
+    TRACE_EVENT_INSTANT0("input", "InputEventSentBlocking",
+                         TRACE_EVENT_SCOPE_THREAD);
     client_->IncrementInFlightEventCount();
     client_->GetWidgetInputHandler()->DispatchEvent(std::move(event),
                                                     std::move(callback));
   } else {
+    TRACE_EVENT_INSTANT0("input", "InputEventSentNonBlocking",
+                         TRACE_EVENT_SCOPE_THREAD);
     client_->GetWidgetInputHandler()->DispatchNonBlockingEvent(
         std::move(event));
     std::move(callback).Run(InputEventAckSource::BROWSER, latency_info,

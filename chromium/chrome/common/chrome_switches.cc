@@ -5,8 +5,8 @@
 #include "chrome/common/chrome_switches.h"
 
 #include "build/build_config.h"
-#include "ppapi/features/features.h"
-#include "printing/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
+#include "printing/buildflags/buildflags.h"
 
 namespace switches {
 
@@ -232,11 +232,6 @@ const char kDisableOfflineAutoReload[]      = "disable-offline-auto-reload";
 const char kDisableOfflineAutoReloadVisibleOnly[] =
     "disable-offline-auto-reload-visible-only";
 
-// Disables permission action reporting to Safe Browsing servers for opted in
-// users.
-const char kDisablePermissionActionReporting[] =
-    "disable-permission-action-reporting";
-
 // Disable pop-up blocking.
 const char kDisablePopupBlocking[]          = "disable-popup-blocking";
 
@@ -300,11 +295,6 @@ const char kEnableDevToolsExperiments[]     = "enable-devtools-experiments";
 // Enables Domain Reliability Monitoring.
 const char kEnableDomainReliability[] = "enable-domain-reliability";
 
-// Enables an experimental full screen exit UI to allow exiting fullscreen from
-// mouse or touch.
-const char kEnableExperimentalFullscreenExitUI[] =
-    "enable-experimental-fullscreen-exit-ui";
-
 // Enables logging for extension activity.
 const char kEnableExtensionActivityLogging[] =
     "enable-extension-activity-logging";
@@ -336,11 +326,6 @@ const char kEnableOfflineAutoReload[]       = "enable-offline-auto-reload";
 const char kEnableOfflineAutoReloadVisibleOnly[] =
     "enable-offline-auto-reload-visible-only";
 
-// Enables permission action reporting to Safe Browsing servers for opted in
-// users.
-const char kEnablePermissionActionReporting[] =
-    "enable-permission-action-reporting";
-
 // Enables a number of potentially annoying security features (strict mixed
 // content mode, powerful feature restrictions, etc.)
 const char kEnablePotentiallyAnnoyingSecurityFeatures[] =
@@ -363,6 +348,10 @@ const char kEnableSiteSettings[] = "enable-site-settings";
 // Enables user control over muting tab audio from the tab strip.
 const char kEnableTabAudioMuting[]  = "enable-tab-audio-muting";
 
+// Enables DevTools server for UI (mus, ash, etc). Value should be the port the
+// server is started on. Default port is 9223.
+const char kEnableUiDevTools[] = "enable-ui-devtools";
+
 // Name of the command line flag to force content verification to be on in one
 // of various modes.
 const char kExtensionContentVerification[] = "extension-content-verification";
@@ -381,9 +370,6 @@ const char kExtensionsInstallVerification[] = "extensions-install-verification";
 // be treated as not from the webstore when doing install verification.
 const char kExtensionsNotWebstore[] = "extensions-not-webstore";
 
-// Frequency in seconds for Extensions auto-update.
-const char kExtensionsUpdateFrequency[]     = "extensions-update-frequency";
-
 // If this flag is present then this command line is being delegated to an
 // already running chrome process via the fast path, ie: before chrome.dll is
 // loaded. It is useful to tell the difference for tracking purposes.
@@ -400,10 +386,6 @@ const char kForceAppMode[]                  = "force-app-mode";
 // Forces Desktop to iOS promotion to appear in windows whenever an entrypoint
 // is triggered.
 const char kForceDesktopIOSPromotion[] = "force-desktop-ios-promotion";
-
-// Forces Network Quality Estimator (NQE) to return a specific effective
-// connection type.
-const char kForceEffectiveConnectionType[] = "force-effective-connection-type";
 
 // Forces metrics reporting to be enabled.
 const char kForceEnableMetricsReporting[] = "force-enable-metrics-reporting";
@@ -466,24 +448,6 @@ const char kMakeDefaultBrowser[]            = "make-default-browser";
 
 // Forces the maximum disk space to be used by the media cache, in bytes.
 const char kMediaCacheSize[]                = "media-cache-size";
-
-// Enables the out-of-process memory logging.
-const char kMemlog[] = "memlog";
-const char kMemlogKeepSmallAllocations[] = "memlog-keep-small-allocations";
-const char kMemlogModeAll[] = "all";
-const char kMemlogModeAllRenderers[] = "all-renderers";
-const char kMemlogModeBrowser[] = "browser";
-const char kMemlogModeGpu[] = "gpu";
-const char kMemlogModeManual[] = "manual";
-const char kMemlogModeMinimal[] = "minimal";
-const char kMemlogModeRendererSampling[] = "renderer-sampling";
-const char kMemlogSampling[] = "memlog-sampling";
-const char kMemlogSamplingRate[] = "memlog-sampling-rate";
-const char kMemlogStackMode[] = "memlog-stack-mode";
-const char kMemlogStackModeMixed[] = "mixed";
-const char kMemlogStackModeNative[] = "native";
-const char kMemlogStackModeNativeWithThreadNames[] = "native-with-thread-names";
-const char kMemlogStackModePseudo[] = "pseudo";
 
 // Allows setting a different destination ID for connection-monitoring GCM
 // messages. Useful when running against a non-prod management server.
@@ -730,6 +694,27 @@ const char kValidateCrx[]                   = "validate-crx";
 // Prints version information and quits.
 const char kVersion[]                       = "version";
 
+// Allows privileged JS applications to trigger event logging for peer
+// connections, and to later upload those logs to a remote server.
+// * If "disable" or "disabled", remote-logging will be disabled.
+// * If "enable" or "enabled", remote-logging will be enabled.
+// * If unset (or set to any other value), the platform-specific behavior
+//   will be used. (This behavior may depend on additional factors.)
+const char kWebRtcRemoteEventLog[] = "webrtc-remote-event-log";
+
+// Sets the delay (in seconds) between proactive prunings of remote-bound
+// WebRTC event logs which are pending upload.
+// All positive values are legal.
+// All negative values are illegal, and ignored.
+// If set to 0, the meaning is "no proactive pruning".
+const char kWebRtcRemoteEventLogProactivePruningDelta[] =
+    "webrtc-event-log-proactive-pruning-delta";
+
+// Normally, remote-bound WebRTC event logs are uploaded only when no
+// peer connections are active. With this flag, the upload is never suppressed.
+const char kWebRtcRemoteEventLogUploadNoSuppression[] =
+    "webrtc-event-log-upload-no-suppression";
+
 // Specify the initial window position: --window-position=x,y
 const char kWindowPosition[]                = "window-position";
 
@@ -794,6 +779,9 @@ const char kMarketUrlForTesting[] = "market-url-for-testing";
 
 // Specifies Android phone page loading progress bar animation.
 const char kProgressBarAnimation[]          = "progress-bar-animation";
+
+// Specifies a base URL for the trusted CDN for tests.
+const char kTrustedCDNBaseURLForTests[] = "trusted-cdn-base-url-for-tests";
 
 // Custom WebAPK server URL for the sake of testing.
 const char kWebApkServerUrl[] = "webapk-server-url";
@@ -931,6 +919,10 @@ const char kHideIcons[]                     = "hide-icons";
 // This flag is only relevant for Windows currently.
 const char kNoNetworkProfileWarning[]       = "no-network-profile-warning";
 
+// Used in combination with kNotificationLaunchId to specify the inline reply
+// entered in the toast in the Windows Action Center.
+const char kNotificationInlineReply[] = "notification-inline-reply";
+
 // Used for launching Chrome when a toast displayed in the Windows Action Center
 // has been activated. Should contain the launch ID encoded by Chrome.
 const char kNotificationLaunchId[] = "notification-launch-id";
@@ -951,10 +943,6 @@ const char kUninstall[]                     = "uninstall";
 
 // Causes the process to run as a watcher process.
 const char kWatcherProcess[]                = "watcher";
-
-// Enables custom-drawing the titlebar and tabstrip background so that it's not
-// a garish #FFFFFF like it is by default on Windows 10.
-const char kWindows10CustomTitlebar[]       = "windows10-custom-titlebar";
 #endif  // defined(OS_WIN)
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW) && !defined(OFFICIAL_BUILD)
@@ -974,11 +962,6 @@ const char kAllowNaClFileHandleAPI[]        = "allow-nacl-file-handle-api";
 // Specifies comma-separated list of extension ids or hosts to grant
 // access to TCP/UDP socket APIs.
 const char kAllowNaClSocketAPI[]            = "allow-nacl-socket-api";
-#endif
-
-#if BUILDFLAG(ENABLE_WAYLAND_SERVER)
-// Enables Wayland display server support.
-const char kEnableWaylandServer[] = "enable-wayland-server";
 #endif
 
 #if defined(OS_WIN) || defined(OS_LINUX)

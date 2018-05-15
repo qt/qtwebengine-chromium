@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <tuple>
+
 #include "base/logging.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/color_space.h"
@@ -78,6 +80,36 @@ TEST(SimpleColorSpace, BT709toSRGB) {
   ColorSpace sRGB = ColorSpace::CreateSRGB();
   std::unique_ptr<ColorTransform> t(ColorTransform::NewColorTransform(
       bt709, sRGB, ColorTransform::Intent::INTENT_ABSOLUTE));
+
+  ColorTransform::TriStim tmp(16.0f / 255.0f, 0.5f, 0.5f);
+  t->Transform(&tmp, 1);
+  EXPECT_NEAR(tmp.x(), 0.0f, 0.001f);
+  EXPECT_NEAR(tmp.y(), 0.0f, 0.001f);
+  EXPECT_NEAR(tmp.z(), 0.0f, 0.001f);
+
+  tmp = ColorTransform::TriStim(235.0f / 255.0f, 0.5f, 0.5f);
+  t->Transform(&tmp, 1);
+  EXPECT_NEAR(tmp.x(), 1.0f, 0.001f);
+  EXPECT_NEAR(tmp.y(), 1.0f, 0.001f);
+  EXPECT_NEAR(tmp.z(), 1.0f, 0.001f);
+
+  // Test a blue color
+  tmp = ColorTransform::TriStim(128.0f / 255.0f, 240.0f / 255.0f, 0.5f);
+  t->Transform(&tmp, 1);
+  EXPECT_GT(tmp.z(), tmp.x());
+  EXPECT_GT(tmp.z(), tmp.y());
+}
+
+TEST(SimpleColorSpace, BT2020CLtoBT2020RGB) {
+  ColorSpace bt2020cl(
+      ColorSpace::PrimaryID::BT2020, ColorSpace::TransferID::BT2020_10,
+      ColorSpace::MatrixID::BT2020_CL, ColorSpace::RangeID::LIMITED);
+  ColorSpace bt2020rgb(ColorSpace::PrimaryID::BT2020,
+                       ColorSpace::TransferID::BT2020_10,
+                       ColorSpace::MatrixID::RGB, ColorSpace::RangeID::FULL);
+  ColorSpace sRGB = ColorSpace::CreateSRGB();
+  std::unique_ptr<ColorTransform> t(ColorTransform::NewColorTransform(
+      bt2020cl, bt2020rgb, ColorTransform::Intent::INTENT_ABSOLUTE));
 
   ColorTransform::TriStim tmp(16.0f / 255.0f, 0.5f, 0.5f);
   t->Transform(&tmp, 1);
@@ -380,55 +412,32 @@ TEST(SimpleColorSpace, DefaultToSRGB) {
   EXPECT_EQ(t2->NumberOfStepsForTesting(), 0u);
 }
 
-// This tests to make sure that we don't emit the "if" or "pow" parts of a
+// This tests to make sure that we don't emit "pow" parts of a
 // transfer function unless necessary.
 TEST(SimpleColorSpace, ShaderSourceTrFnOptimizations) {
   SkMatrix44 primaries;
   gfx::ColorSpace::CreateSRGB().GetPrimaryMatrix(&primaries);
 
-  SkColorSpaceTransferFn fn_no_pow_no_if = {
+  SkColorSpaceTransferFn fn_no_pow = {
       1.f, 2.f, 0.f, 1.f, 0.f, 0.f, 0.f,
   };
-  SkColorSpaceTransferFn fn_no_pow_yes_if = {
-      1.f, 2.f, 0.f, 1.f, 0.5f, 0.f, 0.f,
-  };
-  SkColorSpaceTransferFn fn_yes_pow_no_if = {
+  SkColorSpaceTransferFn fn_yes_pow = {
       2.f, 2.f, 0.f, 1.f, 0.f, 0.f, 0.f,
   };
-  SkColorSpaceTransferFn fn_yes_pow_yes_if = {
-      2.f, 2.f, 0.f, 1.f, 0.5f, 0.f, 0.f,
-  };
-
   gfx::ColorSpace src;
   gfx::ColorSpace dst = gfx::ColorSpace::CreateXYZD50();
   std::string shader_string;
 
-  src = gfx::ColorSpace::CreateCustom(primaries, fn_no_pow_no_if);
+  src = gfx::ColorSpace::CreateCustom(primaries, fn_no_pow);
   shader_string = ColorTransform::NewColorTransform(
                       src, dst, ColorTransform::Intent::INTENT_PERCEPTUAL)
                       ->GetShaderSource();
-  EXPECT_EQ(shader_string.find("if ("), std::string::npos);
   EXPECT_EQ(shader_string.find("pow("), std::string::npos);
 
-  src = gfx::ColorSpace::CreateCustom(primaries, fn_no_pow_yes_if);
+  src = gfx::ColorSpace::CreateCustom(primaries, fn_yes_pow);
   shader_string = ColorTransform::NewColorTransform(
                       src, dst, ColorTransform::Intent::INTENT_PERCEPTUAL)
                       ->GetShaderSource();
-  EXPECT_NE(shader_string.find("if ("), std::string::npos);
-  EXPECT_EQ(shader_string.find("pow("), std::string::npos);
-
-  src = gfx::ColorSpace::CreateCustom(primaries, fn_yes_pow_no_if);
-  shader_string = ColorTransform::NewColorTransform(
-                      src, dst, ColorTransform::Intent::INTENT_PERCEPTUAL)
-                      ->GetShaderSource();
-  EXPECT_EQ(shader_string.find("if ("), std::string::npos);
-  EXPECT_NE(shader_string.find("pow("), std::string::npos);
-
-  src = gfx::ColorSpace::CreateCustom(primaries, fn_yes_pow_yes_if);
-  shader_string = ColorTransform::NewColorTransform(
-                      src, dst, ColorTransform::Intent::INTENT_PERCEPTUAL)
-                      ->GetShaderSource();
-  EXPECT_NE(shader_string.find("if ("), std::string::npos);
   EXPECT_NE(shader_string.find("pow("), std::string::npos);
 }
 
@@ -456,6 +465,8 @@ TEST(SimpleColorSpace, MAYBE_SampleShaderSource) {
       "  return pow(9.47867334e-01 * v + 5.21326549e-02, 2.40000010e+00);\n"
       "}\n"
       "float TransferFn3(float v) {\n"
+      "  if (v < 0.00000000e+00)\n"
+      "    return v;\n"
       "  return pow(v, 3.57142866e-01);\n"
       "}\n"
       "vec3 DoColorConversion(vec3 color) {\n"
@@ -577,21 +588,21 @@ INSTANTIATE_TEST_CASE_P(ColorSpace,
                         ExtendedTransferTest,
                         testing::ValuesIn(extended_transfers));
 
-typedef std::tr1::tuple<ColorSpace::PrimaryID,
-                        ColorSpace::TransferID,
-                        ColorSpace::MatrixID,
-                        ColorSpace::RangeID,
-                        ColorTransform::Intent>
+typedef std::tuple<ColorSpace::PrimaryID,
+                   ColorSpace::TransferID,
+                   ColorSpace::MatrixID,
+                   ColorSpace::RangeID,
+                   ColorTransform::Intent>
     ColorSpaceTestData;
 
 class ColorSpaceTest : public testing::TestWithParam<ColorSpaceTestData> {
  public:
   ColorSpaceTest()
-      : color_space_(std::tr1::get<0>(GetParam()),
-                     std::tr1::get<1>(GetParam()),
-                     std::tr1::get<2>(GetParam()),
-                     std::tr1::get<3>(GetParam())),
-        intent_(std::tr1::get<4>(GetParam())) {}
+      : color_space_(std::get<0>(GetParam()),
+                     std::get<1>(GetParam()),
+                     std::get<2>(GetParam()),
+                     std::get<3>(GetParam())),
+        intent_(std::get<4>(GetParam())) {}
 
  protected:
   ColorSpace color_space_;

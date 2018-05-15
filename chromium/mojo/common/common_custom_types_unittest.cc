@@ -2,16 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/files/file_path.h"
-#include "base/files/scoped_temp_dir.h"
 #include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/numerics/safe_math.h"
-#include "base/process/process_handle.h"
 #include "base/run_loop.h"
 #include "base/values.h"
-#include "mojo/common/common_custom_types_struct_traits.h"
-#include "mojo/common/process_id.mojom.h"
 #include "mojo/common/test_common_custom_types.mojom.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -63,60 +58,6 @@ base::Callback<void(typename PassTraits<T>::Type)> ExpectResponse(
   return base::Bind(&DoExpectResponse<T>, expected_value, closure);
 }
 
-class TestFilePathImpl : public TestFilePath {
- public:
-  explicit TestFilePathImpl(TestFilePathRequest request)
-      : binding_(this, std::move(request)) {}
-
-  // TestFilePath implementation:
-  void BounceFilePath(const base::FilePath& in,
-                      BounceFilePathCallback callback) override {
-    std::move(callback).Run(in);
-  }
-
- private:
-  mojo::Binding<TestFilePath> binding_;
-};
-
-class TestUnguessableTokenImpl : public TestUnguessableToken {
- public:
-  explicit TestUnguessableTokenImpl(TestUnguessableTokenRequest request)
-      : binding_(this, std::move(request)) {}
-
-  // TestUnguessableToken implementation:
-  void BounceNonce(const base::UnguessableToken& in,
-                   BounceNonceCallback callback) override {
-    std::move(callback).Run(in);
-  }
-
- private:
-  mojo::Binding<TestUnguessableToken> binding_;
-};
-
-class TestTimeImpl : public TestTime {
- public:
-  explicit TestTimeImpl(TestTimeRequest request)
-      : binding_(this, std::move(request)) {}
-
-  // TestTime implementation:
-  void BounceTime(base::Time in, BounceTimeCallback callback) override {
-    std::move(callback).Run(in);
-  }
-
-  void BounceTimeDelta(base::TimeDelta in,
-                       BounceTimeDeltaCallback callback) override {
-    std::move(callback).Run(in);
-  }
-
-  void BounceTimeTicks(base::TimeTicks in,
-                       BounceTimeTicksCallback callback) override {
-    std::move(callback).Run(in);
-  }
-
- private:
-  mojo::Binding<TestTime> binding_;
-};
-
 class TestValueImpl : public TestValue {
  public:
   explicit TestValueImpl(TestValueRequest request)
@@ -142,35 +83,6 @@ class TestValueImpl : public TestValue {
   mojo::Binding<TestValue> binding_;
 };
 
-class TestFileImpl : public TestFile {
- public:
-  explicit TestFileImpl(TestFileRequest request)
-      : binding_(this, std::move(request)) {}
-
-  // TestFile implementation:
-  void BounceFile(base::File in, BounceFileCallback callback) override {
-    std::move(callback).Run(std::move(in));
-  }
-
- private:
-  mojo::Binding<TestFile> binding_;
-};
-
-class TestTextDirectionImpl : public TestTextDirection {
- public:
-  explicit TestTextDirectionImpl(TestTextDirectionRequest request)
-      : binding_(this, std::move(request)) {}
-
-  // TestTextDirection:
-  void BounceTextDirection(base::i18n::TextDirection in,
-                           BounceTextDirectionCallback callback) override {
-    std::move(callback).Run(in);
-  }
-
- private:
-  mojo::Binding<TestTextDirection> binding_;
-};
-
 class CommonCustomTypesTest : public testing::Test {
  protected:
   CommonCustomTypesTest() {}
@@ -183,81 +95,6 @@ class CommonCustomTypesTest : public testing::Test {
 };
 
 }  // namespace
-
-TEST_F(CommonCustomTypesTest, FilePath) {
-  base::RunLoop run_loop;
-
-  TestFilePathPtr ptr;
-  TestFilePathImpl impl(MakeRequest(&ptr));
-
-  base::FilePath dir(FILE_PATH_LITERAL("hello"));
-  base::FilePath file = dir.Append(FILE_PATH_LITERAL("world"));
-
-  ptr->BounceFilePath(file, ExpectResponse(&file, run_loop.QuitClosure()));
-
-  run_loop.Run();
-}
-
-TEST_F(CommonCustomTypesTest, UnguessableToken) {
-  base::RunLoop run_loop;
-
-  TestUnguessableTokenPtr ptr;
-  TestUnguessableTokenImpl impl(MakeRequest(&ptr));
-
-  base::UnguessableToken token = base::UnguessableToken::Create();
-
-  ptr->BounceNonce(token, ExpectResponse(&token, run_loop.QuitClosure()));
-
-  run_loop.Run();
-}
-
-TEST_F(CommonCustomTypesTest, ProcessId) {
-  base::ProcessId pid = base::GetCurrentProcId();
-  base::ProcessId out_pid = base::kNullProcessId;
-  ASSERT_NE(pid, out_pid);
-  EXPECT_TRUE(mojom::ProcessId::Deserialize(mojom::ProcessId::Serialize(&pid),
-                                            &out_pid));
-  EXPECT_EQ(pid, out_pid);
-}
-
-TEST_F(CommonCustomTypesTest, Time) {
-  base::RunLoop run_loop;
-
-  TestTimePtr ptr;
-  TestTimeImpl impl(MakeRequest(&ptr));
-
-  base::Time t = base::Time::Now();
-
-  ptr->BounceTime(t, ExpectResponse(&t, run_loop.QuitClosure()));
-
-  run_loop.Run();
-}
-
-TEST_F(CommonCustomTypesTest, TimeDelta) {
-  base::RunLoop run_loop;
-
-  TestTimePtr ptr;
-  TestTimeImpl impl(MakeRequest(&ptr));
-
-  base::TimeDelta t = base::TimeDelta::FromDays(123);
-
-  ptr->BounceTimeDelta(t, ExpectResponse(&t, run_loop.QuitClosure()));
-
-  run_loop.Run();
-}
-
-TEST_F(CommonCustomTypesTest, TimeTicks) {
-  base::RunLoop run_loop;
-
-  TestTimePtr ptr;
-  TestTimeImpl impl(MakeRequest(&ptr));
-
-  base::TimeTicks t = base::TimeTicks::Now();
-
-  ptr->BounceTimeTicks(t, ExpectResponse(&t, run_loop.QuitClosure()));
-
-  run_loop.Run();
-}
 
 TEST_F(CommonCustomTypesTest, Value) {
   TestValuePtr ptr;
@@ -335,64 +172,6 @@ TEST_F(CommonCustomTypesTest, Value) {
   input = std::move(list);
   ASSERT_TRUE(ptr->BounceValue(input->CreateDeepCopy(), &output));
   ASSERT_EQ(*input, *output);
-}
-
-TEST_F(CommonCustomTypesTest, File) {
-  base::ScopedTempDir temp_dir;
-  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-
-  TestFilePtr ptr;
-  TestFileImpl impl(MakeRequest(&ptr));
-
-  base::File file(
-      temp_dir.GetPath().AppendASCII("test_file.txt"),
-      base::File::FLAG_CREATE | base::File::FLAG_WRITE | base::File::FLAG_READ);
-  const base::StringPiece test_content =
-      "A test string to be stored in a test file";
-  file.WriteAtCurrentPos(
-      test_content.data(),
-      base::CheckedNumeric<int>(test_content.size()).ValueOrDie());
-
-  base::File file_out;
-  ASSERT_TRUE(ptr->BounceFile(std::move(file), &file_out));
-  std::vector<char> content(test_content.size());
-  ASSERT_TRUE(file_out.IsValid());
-  ASSERT_EQ(static_cast<int>(test_content.size()),
-            file_out.Read(
-                0, content.data(),
-                base::CheckedNumeric<int>(test_content.size()).ValueOrDie()));
-  EXPECT_EQ(test_content,
-            base::StringPiece(content.data(), test_content.size()));
-}
-
-TEST_F(CommonCustomTypesTest, InvalidFile) {
-  TestFilePtr ptr;
-  TestFileImpl impl(MakeRequest(&ptr));
-
-  base::ScopedTempDir temp_dir;
-  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  // Test that |file_out| is set to an invalid file.
-  base::File file_out(
-      temp_dir.GetPath().AppendASCII("test_file.txt"),
-      base::File::FLAG_CREATE | base::File::FLAG_WRITE | base::File::FLAG_READ);
-
-  ASSERT_TRUE(ptr->BounceFile(base::File(), &file_out));
-  EXPECT_FALSE(file_out.IsValid());
-}
-
-TEST_F(CommonCustomTypesTest, TextDirection) {
-  base::i18n::TextDirection kTestDirections[] = {base::i18n::LEFT_TO_RIGHT,
-                                                 base::i18n::RIGHT_TO_LEFT,
-                                                 base::i18n::UNKNOWN_DIRECTION};
-
-  TestTextDirectionPtr ptr;
-  TestTextDirectionImpl impl(MakeRequest(&ptr));
-
-  for (size_t i = 0; i < arraysize(kTestDirections); i++) {
-    base::i18n::TextDirection direction_out;
-    ASSERT_TRUE(ptr->BounceTextDirection(kTestDirections[i], &direction_out));
-    EXPECT_EQ(kTestDirections[i], direction_out);
-  }
 }
 
 }  // namespace test

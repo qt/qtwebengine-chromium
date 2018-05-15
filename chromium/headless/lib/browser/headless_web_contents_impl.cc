@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/json/json_writer.h"
 #include "base/memory/weak_ptr.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -35,8 +34,9 @@
 #include "headless/lib/browser/headless_browser_impl.h"
 #include "headless/lib/browser/headless_browser_main_parts.h"
 #include "headless/lib/browser/headless_tab_socket_impl.h"
+#include "headless/lib/browser/protocol/headless_handler.h"
 #include "headless/public/internal/headless_devtools_client_impl.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/compositor/compositor.h"
 #include "ui/gfx/switches.h"
@@ -113,7 +113,7 @@ class HeadlessWebContentsImpl::Delegate : public content::WebContentsDelegate {
     auto* const headless_contents =
         HeadlessWebContentsImpl::From(browser(), source);
     DCHECK(headless_contents);
-    headless_contents->Close();
+    headless_contents->DelegateRequestsClose();
   }
 
   void AddNewContents(content::WebContents* source,
@@ -232,7 +232,7 @@ struct HeadlessWebContentsImpl::PendingFrame {
   bool MaybeRunCallback() {
     if (wait_for_copy_result || !display_did_finish_frame)
       return false;
-    callback.Run(has_damage, std::move(bitmap));
+    std::move(callback).Run(has_damage, std::move(bitmap));
     return true;
   }
 
@@ -455,7 +455,27 @@ bool HeadlessWebContentsImpl::OpenURL(const GURL& url) {
 
 void HeadlessWebContentsImpl::Close() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  if (quit_closure_)
+    return;
+
+  if (!render_process_exited_) {
+    web_contents_->ClosePage();
+    base::RunLoop run_loop(base::RunLoop::Type::kNestableTasksAllowed);
+    quit_closure_ = run_loop.QuitClosure();
+    run_loop.Run();
+  }
+
   browser_context()->DestroyWebContents(this);
+}
+
+void HeadlessWebContentsImpl::DelegateRequestsClose() {
+  if (quit_closure_) {
+    quit_closure_.Run();
+    quit_closure_ = base::Closure();
+  } else {
+    browser_context()->DestroyWebContents(this);
+  }
 }
 
 std::string HeadlessWebContentsImpl::GetDevToolsAgentHostId() {
@@ -487,6 +507,7 @@ void HeadlessWebContentsImpl::RenderProcessExited(
     base::TerminationStatus status,
     int exit_code) {
   DCHECK_EQ(render_process_host_, host);
+  render_process_exited_ = true;
   for (auto& observer : observers_)
     observer.RenderProcessExited(status, exit_code);
 }
@@ -563,54 +584,11 @@ void HeadlessWebContentsImpl::OnDisplayDidFinishFrame(
 
 void HeadlessWebContentsImpl::OnNeedsExternalBeginFrames(
     bool needs_begin_frames) {
+  protocol::HeadlessHandler::OnNeedsBeginFrames(this, needs_begin_frames);
   TRACE_EVENT1("headless",
                "HeadlessWebContentsImpl::OnNeedsExternalBeginFrames",
                "needs_begin_frames", needs_begin_frames);
-
   needs_external_begin_frames_ = needs_begin_frames;
-  for (content::DevToolsAgentHostClient* client :
-       begin_frame_events_enabled_clients_) {
-    SendNeedsBeginFramesEvent(client);
-  }
-}
-
-void HeadlessWebContentsImpl::SetBeginFrameEventsEnabled(
-    content::DevToolsAgentHostClient* client,
-    bool enabled) {
-  TRACE_EVENT2("headless",
-               "HeadlessWebContentsImpl::SetBeginFrameEventsEnabled", "client",
-               client, "enabled", enabled);
-
-  if (enabled) {
-    if (!base::ContainsValue(begin_frame_events_enabled_clients_, client)) {
-      begin_frame_events_enabled_clients_.push_back(client);
-
-      // We only need to send an event if BeginFrames are needed, as clients
-      // assume that they are not needed by default.
-      if (needs_external_begin_frames_)
-        SendNeedsBeginFramesEvent(client);
-    }
-  } else {
-    begin_frame_events_enabled_clients_.remove(client);
-  }
-}
-
-void HeadlessWebContentsImpl::SendNeedsBeginFramesEvent(
-    content::DevToolsAgentHostClient* client) {
-  TRACE_EVENT2("headless", "HeadlessWebContentsImpl::SendNeedsBeginFramesEvent",
-               "client", client, "needs_begin_frames",
-               needs_external_begin_frames_);
-  DCHECK(agent_host_);
-  auto params = std::make_unique<base::DictionaryValue>();
-  params->SetBoolean("needsBeginFrames", needs_external_begin_frames_);
-
-  base::DictionaryValue event;
-  event.SetString("method", "HeadlessExperimental.needsBeginFramesChanged");
-  event.Set("params", std::move(params));
-
-  std::string json_result;
-  CHECK(base::JSONWriter::Write(event, &json_result));
-  client->DispatchProtocolMessage(agent_host_.get(), json_result);
 }
 
 void HeadlessWebContentsImpl::PendingFrameReadbackComplete(
@@ -643,7 +621,7 @@ void HeadlessWebContentsImpl::BeginFrame(
     const base::TimeDelta& interval,
     bool animate_only,
     bool capture_screenshot,
-    const FrameFinishedCallback& frame_finished_callback) {
+    FrameFinishedCallback frame_finished_callback) {
   DCHECK(begin_frame_control_enabled_);
   TRACE_EVENT2("headless", "HeadlessWebContentsImpl::BeginFrame", "frame_time",
                frame_timeticks, "capture_screenshot", capture_screenshot);
@@ -652,7 +630,7 @@ void HeadlessWebContentsImpl::BeginFrame(
 
   auto pending_frame = std::make_unique<PendingFrame>();
   pending_frame->sequence_number = sequence_number;
-  pending_frame->callback = frame_finished_callback;
+  pending_frame->callback = std::move(frame_finished_callback);
   // Note: It's important to move |pending_frame| into |pending_frames_| now
   // since the CopyFromSurface() call below can run its result callback
   // synchronously on certain platforms/environments.

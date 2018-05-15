@@ -7,7 +7,6 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "ui/base/cursor/ozone/bitmap_cursor_factory_ozone.h"
 #include "ui/display/manager/fake_display_delegate.h"
 #include "ui/events/ozone/layout/keyboard_layout_engine_manager.h"
@@ -31,7 +30,7 @@ namespace {
 // A headless implementation of PlatformEventSource that we can instantiate to
 // make
 // sure that the PlatformEventSource has an instance while in unit tests.
-class HeadlessPlatformEventSource : public ui::PlatformEventSource {
+class HeadlessPlatformEventSource : public PlatformEventSource {
  public:
   HeadlessPlatformEventSource() = default;
   ~HeadlessPlatformEventSource() override = default;

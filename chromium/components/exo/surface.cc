@@ -447,6 +447,21 @@ void Surface::SetFrameColors(SkColor active_color, SkColor inactive_color) {
     delegate_->OnSetFrameColors(active_color, inactive_color);
 }
 
+void Surface::SetStartupId(const char* startup_id) {
+  TRACE_EVENT1("exo", "Surface::SetStartupId", "startup_id", startup_id);
+
+  if (delegate_)
+    delegate_->OnSetStartupId(startup_id);
+}
+
+void Surface::SetApplicationId(const char* application_id) {
+  TRACE_EVENT1("exo", "Surface::SetApplicationId", "application_id",
+               application_id);
+
+  if (delegate_)
+    delegate_->OnSetApplicationId(application_id);
+}
+
 void Surface::SetParent(Surface* parent, const gfx::Point& position) {
   TRACE_EVENT2("exo", "Surface::SetParent", "parent", !!parent, "position",
                position.ToString());

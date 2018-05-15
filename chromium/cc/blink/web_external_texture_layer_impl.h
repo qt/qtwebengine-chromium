@@ -9,7 +9,7 @@
 
 #include "base/macros.h"
 #include "cc/blink/cc_blink_export.h"
-#include "third_party/WebKit/public/platform/WebExternalTextureLayer.h"
+#include "third_party/blink/public/platform/web_external_texture_layer.h"
 
 namespace cc {
 class TextureLayerClient;
@@ -31,6 +31,8 @@ class WebExternalTextureLayerImpl : public blink::WebExternalTextureLayer {
   void SetPremultipliedAlpha(bool premultiplied) override;
   void SetBlendBackgroundColor(bool blend) override;
   void SetNearestNeighbor(bool nearest_neighbor) override;
+  void SetUV(const blink::WebFloatPoint left_top,
+             const blink::WebFloatPoint right_bottom) override;
 
  private:
   std::unique_ptr<WebLayerImpl> layer_;

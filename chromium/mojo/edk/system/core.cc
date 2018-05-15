@@ -20,9 +20,8 @@
 #include "base/time/time.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "build/build_config.h"
-#include "mojo/edk/embedder/embedder.h"
-#include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/embedder/platform_shared_buffer.h"
+#include "mojo/edk/embedder/process_error_callback.h"
 #include "mojo/edk/system/channel.h"
 #include "mojo/edk/system/configuration.h"
 #include "mojo/edk/system/data_pipe_consumer_dispatcher.h"
@@ -186,21 +185,18 @@ void Core::SetDefaultProcessErrorCallback(
   default_process_error_callback_ = callback;
 }
 
-ScopedMessagePipeHandle Core::CreatePartialMessagePipe(ports::PortRef* peer) {
+MojoHandle Core::CreatePartialMessagePipe(ports::PortRef* peer) {
   RequestContext request_context;
   ports::PortRef local_port;
   GetNodeController()->node()->CreatePortPair(&local_port, peer);
-  MojoHandle handle = AddDispatcher(new MessagePipeDispatcher(
+  return AddDispatcher(new MessagePipeDispatcher(
       GetNodeController(), local_port, kUnknownPipeIdForDebug, 0));
-  return ScopedMessagePipeHandle(MessagePipeHandle(handle));
 }
 
-ScopedMessagePipeHandle Core::CreatePartialMessagePipe(
-    const ports::PortRef& port) {
+MojoHandle Core::CreatePartialMessagePipe(const ports::PortRef& port) {
   RequestContext request_context;
-  return ScopedMessagePipeHandle(
-      MessagePipeHandle(AddDispatcher(new MessagePipeDispatcher(
-          GetNodeController(), port, kUnknownPipeIdForDebug, 1))));
+  return AddDispatcher(new MessagePipeDispatcher(GetNodeController(), port,
+                                                 kUnknownPipeIdForDebug, 1));
 }
 
 void Core::SendBrokerClientInvitation(
@@ -382,15 +378,14 @@ void Core::RequestShutdown(const base::Closure& callback) {
   GetNodeController()->RequestShutdown(callback);
 }
 
-ScopedMessagePipeHandle Core::ExtractMessagePipeFromInvitation(
-    const std::string& name) {
+MojoHandle Core::ExtractMessagePipeFromInvitation(const std::string& name) {
   RequestContext request_context;
   ports::PortRef port0, port1;
   GetNodeController()->node()->CreatePortPair(&port0, &port1);
   MojoHandle handle = AddDispatcher(new MessagePipeDispatcher(
       GetNodeController(), port0, kUnknownPipeIdForDebug, 1));
   GetNodeController()->MergePortIntoInviter(name, port1);
-  return ScopedMessagePipeHandle(MessagePipeHandle(handle));
+  return handle;
 }
 
 MojoResult Core::SetProperty(MojoPropertyType type, const void* value) {
@@ -432,56 +427,78 @@ MojoResult Core::QueryHandleSignalsState(
   return MOJO_RESULT_OK;
 }
 
-MojoResult Core::CreateWatcher(MojoWatcherCallback callback,
-                               MojoHandle* watcher_handle) {
-  RequestContext request_context;
-  if (!watcher_handle)
+MojoResult Core::CreateTrap(MojoTrapEventHandler handler,
+                            const MojoCreateTrapOptions* options,
+                            MojoHandle* trap_handle) {
+  if (options && options->struct_size != sizeof(*options))
     return MOJO_RESULT_INVALID_ARGUMENT;
-  *watcher_handle = AddDispatcher(new WatcherDispatcher(callback));
-  if (*watcher_handle == MOJO_HANDLE_INVALID)
+
+  RequestContext request_context;
+  if (!trap_handle)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  *trap_handle = AddDispatcher(new WatcherDispatcher(handler));
+  if (*trap_handle == MOJO_HANDLE_INVALID)
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
   return MOJO_RESULT_OK;
 }
 
-MojoResult Core::Watch(MojoHandle watcher_handle,
-                       MojoHandle handle,
-                       MojoHandleSignals signals,
-                       MojoWatchCondition condition,
-                       uintptr_t context) {
+MojoResult Core::AddTrigger(MojoHandle trap_handle,
+                            MojoHandle handle,
+                            MojoHandleSignals signals,
+                            MojoTriggerCondition condition,
+                            uintptr_t context,
+                            const MojoAddTriggerOptions* options) {
+  if (options && options->struct_size != sizeof(*options))
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
   RequestContext request_context;
-  scoped_refptr<Dispatcher> watcher = GetDispatcher(watcher_handle);
+  scoped_refptr<Dispatcher> watcher = GetDispatcher(trap_handle);
   if (!watcher || watcher->GetType() != Dispatcher::Type::WATCHER)
     return MOJO_RESULT_INVALID_ARGUMENT;
+
   scoped_refptr<Dispatcher> dispatcher = GetDispatcher(handle);
   if (!dispatcher)
     return MOJO_RESULT_INVALID_ARGUMENT;
+
   return watcher->WatchDispatcher(std::move(dispatcher), signals, condition,
                                   context);
 }
 
-MojoResult Core::CancelWatch(MojoHandle watcher_handle, uintptr_t context) {
+MojoResult Core::RemoveTrigger(MojoHandle trap_handle,
+                               uintptr_t context,
+                               const MojoRemoveTriggerOptions* options) {
+  if (options && options->struct_size != sizeof(*options))
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
   RequestContext request_context;
-  scoped_refptr<Dispatcher> watcher = GetDispatcher(watcher_handle);
+  scoped_refptr<Dispatcher> watcher = GetDispatcher(trap_handle);
   if (!watcher || watcher->GetType() != Dispatcher::Type::WATCHER)
     return MOJO_RESULT_INVALID_ARGUMENT;
   return watcher->CancelWatch(context);
 }
 
-MojoResult Core::ArmWatcher(MojoHandle watcher_handle,
-                            uint32_t* num_ready_contexts,
-                            uintptr_t* ready_contexts,
-                            MojoResult* ready_results,
-                            MojoHandleSignalsState* ready_signals_states) {
+MojoResult Core::ArmTrap(MojoHandle trap_handle,
+                         const MojoArmTrapOptions* options,
+                         uint32_t* num_ready_triggers,
+                         uintptr_t* ready_triggers,
+                         MojoResult* ready_results,
+                         MojoHandleSignalsState* ready_signals_states) {
+  if (options && options->struct_size != sizeof(*options))
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
   RequestContext request_context;
-  scoped_refptr<Dispatcher> watcher = GetDispatcher(watcher_handle);
+  scoped_refptr<Dispatcher> watcher = GetDispatcher(trap_handle);
   if (!watcher || watcher->GetType() != Dispatcher::Type::WATCHER)
     return MOJO_RESULT_INVALID_ARGUMENT;
-  return watcher->Arm(num_ready_contexts, ready_contexts, ready_results,
+  return watcher->Arm(num_ready_triggers, ready_triggers, ready_results,
                       ready_signals_states);
 }
 
-MojoResult Core::CreateMessage(MojoMessageHandle* message_handle) {
+MojoResult Core::CreateMessage(const MojoCreateMessageOptions* options,
+                               MojoMessageHandle* message_handle) {
   if (!message_handle)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  if (options && options->struct_size != sizeof(*options))
     return MOJO_RESULT_INVALID_ARGUMENT;
   *message_handle = reinterpret_cast<MojoMessageHandle>(
       UserMessageImpl::CreateEventForNewMessage().release());
@@ -497,8 +514,11 @@ MojoResult Core::DestroyMessage(MojoMessageHandle message_handle) {
   return MOJO_RESULT_OK;
 }
 
-MojoResult Core::SerializeMessage(MojoMessageHandle message_handle) {
+MojoResult Core::SerializeMessage(MojoMessageHandle message_handle,
+                                  const MojoSerializeMessageOptions* options) {
   if (!message_handle)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  if (options && options->struct_size != sizeof(*options))
     return MOJO_RESULT_INVALID_ARGUMENT;
   RequestContext request_context;
   return reinterpret_cast<ports::UserMessageEvent*>(message_handle)
@@ -506,64 +526,30 @@ MojoResult Core::SerializeMessage(MojoMessageHandle message_handle) {
       ->SerializeIfNecessary();
 }
 
-MojoResult Core::AttachSerializedMessageBuffer(MojoMessageHandle message_handle,
-                                               uint32_t payload_size,
-                                               const MojoHandle* handles,
-                                               uint32_t num_handles,
-                                               void** buffer,
-                                               uint32_t* buffer_size) {
-  if (!message_handle || (num_handles && !handles) || !buffer || !buffer_size)
+MojoResult Core::AppendMessageData(MojoMessageHandle message_handle,
+                                   uint32_t additional_payload_size,
+                                   const MojoHandle* handles,
+                                   uint32_t num_handles,
+                                   const MojoAppendMessageDataOptions* options,
+                                   void** buffer,
+                                   uint32_t* buffer_size) {
+  if (!message_handle || (num_handles && !handles))
     return MOJO_RESULT_INVALID_ARGUMENT;
+  if (options && options->struct_size != sizeof(*options))
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
   RequestContext request_context;
   auto* message = reinterpret_cast<ports::UserMessageEvent*>(message_handle)
                       ->GetMessage<UserMessageImpl>();
-  MojoResult rv = message->AttachSerializedMessageBuffer(payload_size, handles,
-                                                         num_handles);
+  MojoResult rv =
+      message->AppendData(additional_payload_size, handles, num_handles);
   if (rv != MOJO_RESULT_OK)
     return rv;
 
-  *buffer = message->user_payload();
-  *buffer_size = base::checked_cast<uint32_t>(message->user_payload_capacity());
-  return MOJO_RESULT_OK;
-}
-
-MojoResult Core::ExtendSerializedMessagePayload(
-    MojoMessageHandle message_handle,
-    uint32_t new_payload_size,
-    const MojoHandle* handles,
-    uint32_t num_handles,
-    void** new_buffer,
-    uint32_t* new_buffer_size) {
-  if (!message_handle || !new_buffer || !new_buffer_size)
-    return MOJO_RESULT_INVALID_ARGUMENT;
-  if (!handles && num_handles)
-    return MOJO_RESULT_INVALID_ARGUMENT;
-  auto* message = reinterpret_cast<ports::UserMessageEvent*>(message_handle)
-                      ->GetMessage<UserMessageImpl>();
-  MojoResult rv = message->ExtendSerializedMessagePayload(new_payload_size,
-                                                          handles, num_handles);
-  if (rv != MOJO_RESULT_OK)
-    return rv;
-
-  *new_buffer = message->user_payload();
-  *new_buffer_size =
-      base::checked_cast<uint32_t>(message->user_payload_capacity());
-  return MOJO_RESULT_OK;
-}
-
-MojoResult Core::CommitSerializedMessageContents(
-    MojoMessageHandle message_handle,
-    uint32_t final_payload_size,
-    void** buffer,
-    uint32_t* buffer_size) {
-  if (!message_handle)
-    return MOJO_RESULT_INVALID_ARGUMENT;
-  RequestContext request_context;
-  auto* message = reinterpret_cast<ports::UserMessageEvent*>(message_handle)
-                      ->GetMessage<UserMessageImpl>();
-  MojoResult rv = message->CommitSerializedContents(final_payload_size);
-  if (rv != MOJO_RESULT_OK)
-    return rv;
+  if (options && (options->flags & MOJO_APPEND_MESSAGE_DATA_FLAG_COMMIT_SIZE)) {
+    RequestContext request_context;
+    message->CommitSize();
+  }
 
   if (buffer)
     *buffer = message->user_payload();
@@ -574,14 +560,15 @@ MojoResult Core::CommitSerializedMessageContents(
   return MOJO_RESULT_OK;
 }
 
-MojoResult Core::GetSerializedMessageContents(
-    MojoMessageHandle message_handle,
-    void** buffer,
-    uint32_t* num_bytes,
-    MojoHandle* handles,
-    uint32_t* num_handles,
-    MojoGetSerializedMessageContentsFlags flags) {
+MojoResult Core::GetMessageData(MojoMessageHandle message_handle,
+                                const MojoGetMessageDataOptions* options,
+                                void** buffer,
+                                uint32_t* num_bytes,
+                                MojoHandle* handles,
+                                uint32_t* num_handles) {
   if (!message_handle || (num_handles && *num_handles && !handles))
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  if (options && options->struct_size != sizeof(*options))
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   auto* message = reinterpret_cast<ports::UserMessageEvent*>(message_handle)
@@ -603,6 +590,9 @@ MojoResult Core::GetSerializedMessageContents(
     *buffer = nullptr;
   }
 
+  if (options && (options->flags & MOJO_GET_MESSAGE_DATA_FLAG_IGNORE_HANDLES))
+    return MOJO_RESULT_OK;
+
   uint32_t max_num_handles = 0;
   if (num_handles) {
     max_num_handles = *num_handles;
@@ -619,21 +609,27 @@ MojoResult Core::GetSerializedMessageContents(
       UserMessageImpl::ExtractBadHandlePolicy::kAbort, handles);
 }
 
-MojoResult Core::AttachMessageContext(MojoMessageHandle message_handle,
-                                      uintptr_t context,
-                                      MojoMessageContextSerializer serializer,
-                                      MojoMessageContextDestructor destructor) {
-  if (!message_handle || !context)
+MojoResult Core::SetMessageContext(
+    MojoMessageHandle message_handle,
+    uintptr_t context,
+    MojoMessageContextSerializer serializer,
+    MojoMessageContextDestructor destructor,
+    const MojoSetMessageContextOptions* options) {
+  if (!message_handle)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  if (options && options->struct_size != sizeof(*options))
     return MOJO_RESULT_INVALID_ARGUMENT;
   auto* message = reinterpret_cast<ports::UserMessageEvent*>(message_handle)
                       ->GetMessage<UserMessageImpl>();
-  return message->AttachContext(context, serializer, destructor);
+  return message->SetContext(context, serializer, destructor);
 }
 
 MojoResult Core::GetMessageContext(MojoMessageHandle message_handle,
-                                   uintptr_t* context,
-                                   MojoGetMessageContextFlags flags) {
+                                   const MojoGetMessageContextOptions* options,
+                                   uintptr_t* context) {
   if (!message_handle)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  if (options && options->struct_size != sizeof(*options))
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   auto* message = reinterpret_cast<ports::UserMessageEvent*>(message_handle)
@@ -641,10 +637,7 @@ MojoResult Core::GetMessageContext(MojoMessageHandle message_handle,
   if (!message->HasContext())
     return MOJO_RESULT_NOT_FOUND;
 
-  if (flags & MOJO_GET_MESSAGE_CONTEXT_FLAG_RELEASE)
-    *context = message->ReleaseContext();
-  else
-    *context = message->context();
+  *context = message->context();
   return MOJO_RESULT_OK;
 }
 
@@ -1013,6 +1006,21 @@ MojoResult Core::UnmapBuffer(void* buffer) {
     result = mapping_table_.RemoveMapping(buffer, &mapping);
   }
   return result;
+}
+
+MojoResult Core::GetBufferInfo(MojoHandle buffer_handle,
+                               const MojoSharedBufferOptions* options,
+                               MojoSharedBufferInfo* info) {
+  if (options && options->struct_size != sizeof(MojoSharedBufferOptions))
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  if (!info || info->struct_size != sizeof(MojoSharedBufferInfo))
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  scoped_refptr<Dispatcher> dispatcher(GetDispatcher(buffer_handle));
+  if (!dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return dispatcher->GetBufferInfo(info);
 }
 
 MojoResult Core::WrapPlatformHandle(const MojoPlatformHandle* platform_handle,

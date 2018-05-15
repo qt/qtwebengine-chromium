@@ -7,7 +7,6 @@
 #include "base/memory/memory_coordinator_client_registry.h"
 #include "base/memory/memory_coordinator_proxy.h"
 #include "base/memory/memory_pressure_monitor.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/test/multiprocess_test.h"
@@ -18,6 +17,7 @@
 #include "content/public/common/content_features.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -158,9 +158,7 @@ class TestMemoryCoordinatorImpl : public MemoryCoordinatorImpl {
                               std::make_unique<MockMemoryMonitor>()) {
     SetDelegateForTesting(std::make_unique<TestMemoryCoordinatorDelegate>());
     SetPolicyForTesting(std::make_unique<MockMemoryCoordinatorPolicy>(this));
-
-    clock_ = task_runner->GetMockTickClock();
-    SetTickClockForTesting(clock_.get());
+    SetTickClockForTesting(task_runner->GetMockTickClock());
   }
 
   ~TestMemoryCoordinatorImpl() override {}
@@ -206,10 +204,6 @@ class TestMemoryCoordinatorImpl : public MemoryCoordinatorImpl {
     return result;
   }
 
-  // TODO(tzik): Remove |clock_| after updating GetMockTickClock to own the
-  // instance.
-  std::unique_ptr<base::TickClock> clock_;
-
   TestBrowserContext browser_context_;
   std::vector<std::unique_ptr<Child>> children_;
   std::map<int, std::unique_ptr<MockRenderProcessHost>> render_process_hosts_;
@@ -226,7 +220,8 @@ class MemoryCoordinatorImplTest : public base::MultiProcessTest {
     scoped_feature_list_.InitAndEnableFeature(features::kMemoryCoordinator);
 
     task_runner_ = new base::TestMockTimeTaskRunner();
-    coordinator_.reset(new TestMemoryCoordinatorImpl(task_runner_));
+    thread_bundle_ = std::make_unique<TestBrowserThreadBundle>();
+    coordinator_ = std::make_unique<TestMemoryCoordinatorImpl>(task_runner_);
   }
 
   MockMemoryMonitor* GetMockMemoryMonitor() {
@@ -234,10 +229,10 @@ class MemoryCoordinatorImplTest : public base::MultiProcessTest {
   }
 
  protected:
-  std::unique_ptr<TestMemoryCoordinatorImpl> coordinator_;
-  scoped_refptr<base::TestMockTimeTaskRunner> task_runner_;
-  base::MessageLoop message_loop_;
   base::test::ScopedFeatureList scoped_feature_list_;
+  scoped_refptr<base::TestMockTimeTaskRunner> task_runner_;
+  std::unique_ptr<content::TestBrowserThreadBundle> thread_bundle_;
+  std::unique_ptr<TestMemoryCoordinatorImpl> coordinator_;
 };
 
 TEST_F(MemoryCoordinatorImplTest, ChildRemovedOnConnectionError) {

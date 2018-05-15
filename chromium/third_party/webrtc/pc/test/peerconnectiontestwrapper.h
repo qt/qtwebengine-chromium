@@ -64,7 +64,7 @@ class PeerConnectionTestWrapper
 
   // Implements CreateSessionDescriptionObserver.
   void OnSuccess(webrtc::SessionDescriptionInterface* desc) override;
-  void OnFailure(const std::string& error) override {}
+  void OnFailure(webrtc::RTCError) override {}
 
   void CreateOffer(const webrtc::MediaConstraintsInterface* constraints);
   void CreateAnswer(const webrtc::MediaConstraintsInterface* constraints);
@@ -107,6 +107,7 @@ class PeerConnectionTestWrapper
       peer_connection_factory_;
   rtc::scoped_refptr<FakeAudioCaptureModule> fake_audio_capture_module_;
   std::unique_ptr<webrtc::FakeVideoTrackRenderer> renderer_;
+  int num_get_user_media_calls_ = 0;
 };
 
 #endif  // PC_TEST_PEERCONNECTIONTESTWRAPPER_H_

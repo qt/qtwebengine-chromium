@@ -12,6 +12,7 @@
 #include <memory>
 
 #include "core/fxcrt/fx_string.h"
+#include "third_party/icu/source/common/unicode/uchar.h"
 
 #define FX_INVALID_OFFSET static_cast<uint32_t>(-1)
 
@@ -25,32 +26,32 @@ float FXSYS_wcstof(const wchar_t* pwsStr,
 wchar_t* FXSYS_wcsncpy(wchar_t* dstStr, const wchar_t* srcStr, size_t count);
 int32_t FXSYS_wcsnicmp(const wchar_t* s1, const wchar_t* s2, size_t count);
 
-inline bool FXSYS_islower(int32_t ch) {
-  return ch >= 'a' && ch <= 'z';
+inline bool FXSYS_iswlower(int32_t c) {
+  return u_islower(c);
 }
 
-inline bool FXSYS_isupper(int32_t ch) {
-  return ch >= 'A' && ch <= 'Z';
+inline bool FXSYS_iswupper(int32_t c) {
+  return u_isupper(c);
 }
 
-inline int32_t FXSYS_tolower(int32_t ch) {
-  return ch < 'A' || ch > 'Z' ? ch : (ch + 0x20);
+inline int32_t FXSYS_towlower(wchar_t c) {
+  return u_tolower(c);
 }
 
-inline int32_t FXSYS_toupper(int32_t ch) {
-  return ch < 'a' || ch > 'z' ? ch : (ch - 0x20);
+inline int32_t FXSYS_towupper(wchar_t c) {
+  return u_toupper(c);
 }
 
-inline bool FXSYS_iswalpha(wchar_t wch) {
-  return FXSYS_isupper(wch) || FXSYS_islower(wch);
+inline bool FXSYS_iswalpha(wchar_t c) {
+  return u_isalpha(c);
 }
 
-inline bool FXSYS_iswalnum(wchar_t wch) {
-  return FXSYS_iswalpha(wch) || std::iswdigit(wch);
+inline bool FXSYS_iswalnum(wchar_t c) {
+  return u_isalnum(c);
 }
 
 inline bool FXSYS_iswspace(wchar_t c) {
-  return (c == 0x20) || (c == 0x0d) || (c == 0x0a) || (c == 0x09);
+  return u_isspace(c);
 }
 
 inline bool FXSYS_isHexDigit(const char c) {

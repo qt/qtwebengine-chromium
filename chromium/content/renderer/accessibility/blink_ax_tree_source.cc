@@ -21,22 +21,22 @@
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/public/platform/WebFloatRect.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/public/platform/WebSize.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/web/WebAXEnums.h"
-#include "third_party/WebKit/public/web/WebAXObject.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebFormControlElement.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebNode.h"
-#include "third_party/WebKit/public/web/WebPlugin.h"
-#include "third_party/WebKit/public/web/WebPluginContainer.h"
-#include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/blink/public/platform/web_float_rect.h"
+#include "third_party/blink/public/platform/web_rect.h"
+#include "third_party/blink/public/platform/web_size.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_vector.h"
+#include "third_party/blink/public/web/web_ax_enums.h"
+#include "third_party/blink/public/web/web_ax_object.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_element.h"
+#include "third_party/blink/public/web/web_form_control_element.h"
+#include "third_party/blink/public/web/web_frame.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_node.h"
+#include "third_party/blink/public/web/web_plugin.h"
+#include "third_party/blink/public/web/web_plugin_container.h"
+#include "third_party/blink/public/web/web_view.h"
 #include "ui/accessibility/ax_enum_util.h"
 
 using base::ASCIIToUTF16;
@@ -911,20 +911,6 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
         dst->AddIntAttribute(ax::mojom::IntAttribute::kTextSelEnd,
                              src.SelectionEnd());
       }
-
-#if defined(OS_CHROMEOS)
-      // This attribute will soon be deprecated; see crbug.com/669134.
-      WebVector<int> src_line_breaks;
-      src.LineBreaks(src_line_breaks);
-      if (src_line_breaks.size()) {
-        std::vector<int32_t> line_breaks;
-        line_breaks.reserve(src_line_breaks.size());
-        for (size_t i = 0; i < src_line_breaks.size(); ++i)
-          line_breaks.push_back(src_line_breaks[i]);
-        dst->AddIntListAttribute(ax::mojom::IntListAttribute::kLineBreaks,
-                                 line_breaks);
-      }
-#endif  // defined OS_CHROMEOS
     }
 
     // ARIA role.

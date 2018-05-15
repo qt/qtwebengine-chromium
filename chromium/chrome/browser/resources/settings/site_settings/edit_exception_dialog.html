@@ -9,7 +9,7 @@
 <dom-module id="settings-edit-exception-dialog">
   <template>
     <style include="settings-shared"></style>
-    <dialog is="cr-dialog" id="dialog">
+    <cr-dialog id="dialog">
       <div slot="title">$i18n{editSiteTitle}</div>
       <div slot="body">
         <paper-input always-float-label label="$i18n{addSite}"
@@ -23,10 +23,10 @@
             id="cancel">$i18n{cancel}</paper-button>
         <paper-button id="actionButton" class="action-button"
             on-click="onActionButtonTap_" disabled="[[invalid_]]">
-          $i18n{edit}
+          $i18n{save}
         </paper-button>
       </div>
-    </dialog>
+    </cr-dialog>
   </template>
   <script src="edit_exception_dialog.js"></script>
 </dom-module>

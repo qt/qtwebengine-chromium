@@ -32,10 +32,12 @@ class CallOperationEndToEndTest
   test::ScopedFieldTrials field_trial_;
 };
 
-INSTANTIATE_TEST_CASE_P(RoundRobin,
-                        CallOperationEndToEndTest,
-                        ::testing::Values("WebRTC-RoundRobinPacing/Disabled/",
-                                          "WebRTC-RoundRobinPacing/Enabled/"));
+INSTANTIATE_TEST_CASE_P(
+    FieldTrials,
+    CallOperationEndToEndTest,
+    ::testing::Values("WebRTC-RoundRobinPacing/Disabled/",
+                      "WebRTC-RoundRobinPacing/Enabled/",
+                      "WebRTC-TaskQueueCongestionControl/Enabled/"));
 
 TEST_P(CallOperationEndToEndTest, ReceiverCanBeStartedTwice) {
   CreateCalls(Call::Config(event_log_.get()), Call::Config(event_log_.get()));
@@ -131,7 +133,8 @@ TEST_P(CallOperationEndToEndTest, RendersSingleDelayedFrame) {
     // Create frames that are smaller than the send width/height, this is done
     // to check that the callbacks are done after processing video.
     std::unique_ptr<test::FrameGenerator> frame_generator(
-        test::FrameGenerator::CreateSquareGenerator(kWidth, kHeight));
+        test::FrameGenerator::CreateSquareGenerator(
+            kWidth, kHeight, rtc::nullopt, rtc::nullopt));
     video_send_stream_->SetSource(
         &frame_forwarder,
         VideoSendStream::DegradationPreference::kMaintainFramerate);
@@ -151,7 +154,16 @@ TEST_P(CallOperationEndToEndTest, RendersSingleDelayedFrame) {
   });
 }
 
-TEST_P(CallOperationEndToEndTest, TransmitsFirstFrame) {
+// TODO(bugs.webrtc.org/9060): Re-enable this test with the TaskQueue when it
+// is no longer flaky.
+class CallOperationEndToEndTestNoTaskQueueCongestionControl
+    : public CallOperationEndToEndTest {};
+INSTANTIATE_TEST_CASE_P(FieldTrials,
+                        CallOperationEndToEndTestNoTaskQueueCongestionControl,
+                        ::testing::Values("WebRTC-RoundRobinPacing/Disabled/",
+                                          "WebRTC-RoundRobinPacing/Enabled/"));
+TEST_P(CallOperationEndToEndTestNoTaskQueueCongestionControl,
+       TransmitsFirstFrame) {
   class Renderer : public rtc::VideoSinkInterface<VideoFrame> {
    public:
     Renderer() : event_(false, false) {}
@@ -188,7 +200,7 @@ TEST_P(CallOperationEndToEndTest, TransmitsFirstFrame) {
     Start();
 
     frame_generator = test::FrameGenerator::CreateSquareGenerator(
-        kDefaultWidth, kDefaultHeight);
+        kDefaultWidth, kDefaultHeight, rtc::nullopt, rtc::nullopt);
     video_send_stream_->SetSource(
         &frame_forwarder,
         VideoSendStream::DegradationPreference::kMaintainFramerate);
@@ -207,7 +219,10 @@ TEST_P(CallOperationEndToEndTest, TransmitsFirstFrame) {
   });
 }
 
-TEST_P(CallOperationEndToEndTest, ObserversEncodedFrames) {
+// TODO(bugs.webrtc.org/9060): Re-enable this test with the TaskQueue when it
+// is no longer flaky.
+TEST_P(CallOperationEndToEndTestNoTaskQueueCongestionControl,
+       ObserversEncodedFrames) {
   class EncodedFrameTestObserver : public EncodedFrameObserver {
    public:
     EncodedFrameTestObserver()
@@ -267,7 +282,7 @@ TEST_P(CallOperationEndToEndTest, ObserversEncodedFrames) {
     Start();
 
     frame_generator = test::FrameGenerator::CreateSquareGenerator(
-        kDefaultWidth, kDefaultHeight);
+        kDefaultWidth, kDefaultHeight, rtc::nullopt, rtc::nullopt);
     video_send_stream_->SetSource(
         &forwarder, VideoSendStream::DegradationPreference::kMaintainFramerate);
     forwarder.IncomingCapturedFrame(*frame_generator->NextFrame());

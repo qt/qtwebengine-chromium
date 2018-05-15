@@ -60,13 +60,22 @@
         }
       }
 
-      .separator + button[is='paper-icon-button-light'] {
+      .separator + paper-icon-button-light {
         -webkit-margin-start: var(--cr-icon-ripple-margin);
       }
 
       neon-animatable {
         display: flex;
         flex-direction: column;
+      }
+
+      /* Customize the disabled state of paper buttons within a settings box. */
+      .settings-box paper-button {
+        --paper-button-disabled: {
+          background: none;
+          color: black;
+          opacity: 0.26;
+        };
       }
 
       /* For "Advanced" toggle button. */

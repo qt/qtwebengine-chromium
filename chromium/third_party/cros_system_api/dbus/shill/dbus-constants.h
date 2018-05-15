@@ -101,6 +101,7 @@ const char kWifiAuthMode[] = "WiFi.AuthMode";
 const char kWifiChannelProperty[] = "WiFi.Channel";
 const char kWifiPreferredDeviceProperty[] = "WiFi.PreferredDevice";
 const char kWifiRoamThresholdProperty[] = "WiFi.RoamThreshold";
+const char kWifiFTEnabled[] = "WiFi.FTEnabled";
 
 // Flimflam EAP property names.
 const char kEapIdentityProperty[] = "EAP.Identity";
@@ -251,6 +252,11 @@ const char kApnPasswordProperty[] = "password";
 const char kApnNameProperty[] = "name";
 const char kApnLocalizedNameProperty[] = "localized_name";
 const char kApnLanguageProperty[] = "language";
+const char kApnAuthenticationProperty[] = "authentication";
+
+// APN authentication property values (as expected by ModemManager).
+const char kApnAuthenticationPap[] = "pap";
+const char kApnAuthenticationChap[] = "chap";
 
 // Payment Portal property names.
 const char kPaymentPortalURL[] = "url";

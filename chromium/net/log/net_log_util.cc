@@ -34,8 +34,8 @@
 #include "net/log/net_log_parameters_callback.h"
 #include "net/log/net_log_with_source.h"
 #include "net/proxy_resolution/proxy_config.h"
+#include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/proxy_resolution/proxy_retry_info.h"
-#include "net/proxy_resolution/proxy_service.h"
 #include "net/quic/core/quic_error_codes.h"
 #include "net/quic/core/quic_packets.h"
 #include "net/socket/ssl_client_socket.h"
@@ -322,9 +322,10 @@ NET_EXPORT std::unique_ptr<base::DictionaryValue> GetNetInfo(
     std::unique_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
     if (proxy_resolution_service->fetched_config())
       dict->Set("original",
-                proxy_resolution_service->fetched_config()->ToValue());
+                proxy_resolution_service->fetched_config()->value().ToValue());
     if (proxy_resolution_service->config())
-      dict->Set("effective", proxy_resolution_service->config()->ToValue());
+      dict->Set("effective",
+                proxy_resolution_service->config()->value().ToValue());
 
     net_info_dict->Set(NetInfoSourceToString(NET_INFO_PROXY_SETTINGS),
                        std::move(dict));

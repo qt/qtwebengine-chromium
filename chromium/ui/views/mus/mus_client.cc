@@ -104,15 +104,12 @@ MusClient::MusClient(service_manager::Connector* connector,
 
   if (testing_state == MusClientTestingState::CREATE_TESTING_STATE) {
     connector->BindInterface(ui::mojom::kServiceName, &server_test_ptr_);
-    connector->BindInterface(ui::mojom::kServiceName,
-                             &remote_event_dispatcher_ptr_);
+    connector->BindInterface(ui::mojom::kServiceName, &event_injector_);
   }
 
-  window_tree_client_ = std::make_unique<aura::WindowTreeClient>(
-      connector, this, nullptr /* window_manager_delegate */,
-      nullptr /* window_tree_client_request */, std::move(io_task_runner));
+  window_tree_client_ = aura::WindowTreeClient::CreateForWindowTreeFactory(
+      connector, this, true, std::move(io_task_runner));
   aura::Env::GetInstance()->SetWindowTreeClient(window_tree_client_.get());
-  window_tree_client_->ConnectViaWindowTreeFactory();
 
   pointer_watcher_event_router_ =
       std::make_unique<PointerWatcherEventRouter>(window_tree_client_.get());
@@ -291,9 +288,9 @@ ui::mojom::WindowServerTest* MusClient::GetTestingInterface() const {
   return server_test_ptr_.get();
 }
 
-ui::mojom::RemoteEventDispatcher* MusClient::GetTestingEventDispater() const {
-  CHECK(remote_event_dispatcher_ptr_);
-  return remote_event_dispatcher_ptr_.get();
+ui::mojom::EventInjector* MusClient::GetTestingEventInjector() const {
+  CHECK(event_injector_);
+  return event_injector_.get();
 }
 
 std::unique_ptr<DesktopWindowTreeHost> MusClient::CreateDesktopWindowTreeHost(

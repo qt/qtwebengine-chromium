@@ -19,9 +19,11 @@
 #include "base/observer_list.h"
 #include "base/optional.h"
 #include "base/strings/string16.h"
+#include "components/viz/common/surfaces/scoped_surface_id_allocator.h"
 #include "ui/aura/aura_export.h"
 #include "ui/aura/client/window_types.h"
 #include "ui/aura/window_observer.h"
+#include "ui/aura/window_port.h"
 #include "ui/base/class_property.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/layer_delegate.h"
@@ -58,7 +60,6 @@ class LayoutManager;
 class ScopedKeyboardHook;
 class WindowDelegate;
 class WindowObserver;
-class WindowPort;
 class WindowPortForShutdown;
 class WindowTreeHost;
 
@@ -215,6 +216,11 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Changes the bounds of the window. If present, the window's parent's
   // LayoutManager may adjust the bounds.
   void SetBounds(const gfx::Rect& new_bounds);
+
+  // Explicitly set a device scale factor for the window. Note that the
+  // window's device scale factor is also set when adding its ui::Layer to the
+  // layer tree of a ui::Compositor.
+  void SetDeviceScaleFactor(float device_scale_factor);
 
   // Changes the bounds of the window in the screen coordinates.
   // If present, the window's parent's LayoutManager may adjust the bounds.
@@ -386,6 +392,13 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // that does not involve a resize or a device scale factor change.
   void AllocateLocalSurfaceId();
 
+  // When a child-allocated viz::LocalSurfaceId is being processed, this returns
+  // true.
+  bool IsLocalSurfaceIdAllocationSuppressed() const;
+
+  viz::ScopedSurfaceIdAllocator GetSurfaceIdAllocator(
+      base::OnceCallback<void()> allocation_task);
+
   // Gets the current viz::LocalSurfaceId.
   const viz::LocalSurfaceId& GetLocalSurfaceId() const;
 
@@ -518,7 +531,8 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   void OnPaintLayer(const ui::PaintContext& context) override;
   void OnLayerBoundsChanged(const gfx::Rect& old_bounds,
                             ui::PropertyChangeReason reason) override;
-  void OnLayerTransformed(ui::PropertyChangeReason reason) override;
+  void OnLayerTransformed(const gfx::Transform& old_transform,
+                          ui::PropertyChangeReason reason) override;
   void OnLayerOpacityChanged(ui::PropertyChangeReason reason) override;
 
   // Overridden from ui::EventTarget:

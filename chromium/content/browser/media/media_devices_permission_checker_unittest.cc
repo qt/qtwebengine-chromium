@@ -15,7 +15,7 @@
 #include "content/public/test/test_renderer_host.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
-#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
+#include "third_party/blink/public/common/feature_policy/feature_policy.h"
 #include "url/origin.h"
 
 namespace content {
@@ -26,7 +26,7 @@ class TestWebContentsDelegate : public content::WebContentsDelegate {
  public:
   ~TestWebContentsDelegate() override {}
 
-  bool CheckMediaAccessPermission(WebContents* web_contents,
+  bool CheckMediaAccessPermission(RenderFrameHost* render_Frame_host,
                                   const GURL& security_origin,
                                   MediaStreamType type) override {
     return true;

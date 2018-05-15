@@ -36,7 +36,7 @@ struct FrameStatistics {
   bool encoding_successful = false;
   size_t encode_time_us = 0;
   size_t target_bitrate_kbps = 0;
-  size_t encoded_frame_size_bytes = 0;
+  size_t length_bytes = 0;
   webrtc::FrameType frame_type = kVideoFrameDelta;
 
   // Layering.
@@ -59,8 +59,11 @@ struct FrameStatistics {
   int qp = -1;
 
   // Quality.
-  float psnr = 0.0;
-  float ssim = 0.0;
+  float psnr_y = 0.0f;
+  float psnr_u = 0.0f;
+  float psnr_v = 0.0f;
+  float psnr = 0.0f;  // 10 * log10(255^2 / (mse_y + mse_u + mse_v)).
+  float ssim = 0.0f;  // 0.8 * ssim_y + 0.1 * (ssim_u + ssim_v).
 };
 
 struct VideoStatistics {
@@ -91,6 +94,9 @@ struct VideoStatistics {
   float avg_delta_frame_size_bytes = 0.0f;
   float avg_qp = 0.0f;
 
+  float avg_psnr_y = 0.0f;
+  float avg_psnr_u = 0.0f;
+  float avg_psnr_v = 0.0f;
   float avg_psnr = 0.0f;
   float min_psnr = 0.0f;
   float avg_ssim = 0.0f;
@@ -125,6 +131,8 @@ class Stats {
   VideoStatistics SliceAndCalcAggregatedVideoStatistic(size_t first_frame_num,
                                                        size_t last_frame_num);
 
+  void PrintFrameStatistics();
+
   size_t Size(size_t spatial_layer_idx);
 
   void Clear();
@@ -151,7 +159,9 @@ class Stats {
                                 size_t* num_encoded_spatial_layers,
                                 size_t* num_encoded_temporal_layers);
 
-  std::map<size_t, std::vector<FrameStatistics>> layer_idx_to_stats_;
+  // layer_idx -> stats.
+  std::map<size_t, std::vector<FrameStatistics>> layer_stats_;
+  // layer_idx -> rtp_timestamp -> frame_num.
   std::map<size_t, std::map<size_t, size_t>> rtp_timestamp_to_frame_num_;
 };
 

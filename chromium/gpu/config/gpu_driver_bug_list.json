@@ -1006,7 +1006,8 @@
         "disable_timestamp_queries"
       ],
       "disabled_extensions": [
-        "GL_EXT_disjoint_timer_query"
+        "GL_EXT_disjoint_timer_query",
+        "GL_EXT_disjoint_timer_query_webgl2"
       ]
     },
     {
@@ -1018,7 +1019,8 @@
       },
       "gl_renderer": "Adreno \\(TM\\) 4.*",
       "disabled_extensions": [
-        "GL_EXT_disjoint_timer_query"
+        "GL_EXT_disjoint_timer_query",
+        "GL_EXT_disjoint_timer_query_webgl2"
       ]
     },
     {
@@ -2549,10 +2551,10 @@
         "type": "android",
         "version": {
           "op": "<",
-          "value": "9.0"
+          "value": "8.1"
         }
       },
-      "gl_renderer": "Adreno \\(TM\\) (3.*|5[34]0)",
+      "gl_renderer": "Adreno \\(TM\\) [345].*",
       "disabled_extensions": [
         "GL_EXT_disjoint_timer_query",
         "GL_EXT_disjoint_timer_query_webgl2"
@@ -2808,6 +2810,62 @@
     },
     {
       "id": 261,
+      "cr_bugs": [817286],
+      "description": "Fallback to D3D9 if basic info collection fails on Win7",
+      "os": {
+        "type": "win",
+        "version": {
+          "op": "=",
+          "value": "6.1"
+        }
+      },
+      "vendor_id": "0xffff",
+      "device_id": ["0xfffe"],
+      "features": [
+        "disable_d3d11"
+      ]
+    },
+    {
+      "id": 262,
+      "description": "Program fails in PowerVR*GX6250 drivers if gl_Position is not set",
+      "cr_bugs": [286468, 416670],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "gl_renderer": "PowerVR.*GX6250",
+      "features": [
+        "init_gl_position_in_vertex_shader"
+      ]
+    },
+    {
+      "id": 263,
+      "description": "Program fails in PowerVR SGX54x drivers if gl_Position is not set",
+      "cr_bugs": [286468, 416670],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "gl_renderer": "PowerVR SGX 54.*",
+      "features": [
+        "init_gl_position_in_vertex_shader"
+      ]
+    },
+    {
+      "id": 264,
+      "description": "Program fails in PowerVR G6200 drivers if gl_Position is not set",
+      "cr_bugs": [286468, 416670],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "gl_renderer": "PowerVR.*G6200.*",
+      "features": [
+        "init_gl_position_in_vertex_shader"
+      ]
+    },
+    {
+      "id": 265,
       "cr_bugs": [811661],
       "description": "Crash in glQueryCounter() in VMware driver",
       "os": {
@@ -2821,6 +2879,39 @@
       "disabled_extensions": [
         "GL_EXT_disjoint_timer_query",
         "GL_EXT_disjoint_timer_query_webgl2"
+      ]
+    },
+    {
+      "id": 266,
+      "cr_bugs": [828721],
+      "description": "Crash in gl::GLApiBase::glGetQueryObjectui64vFn with NetEase devices ",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "NetEase",
+      "gl_renderer": "MuMu GL.*",
+      "features": [
+        "disable_timestamp_queries"
+      ],
+      "disabled_extensions": [
+        "GL_EXT_disjoint_timer_query",
+        "GL_EXT_disjoint_timer_query_webgl2"
+      ]
+    },
+    {
+      "id": 267,
+      "cr_bugs": [831781],
+      "description": "WebGL with multisampling produces errors on Mali",
+      "os": {
+        "type": "linux"
+      },
+      "gl_vendor": "ARM",
+      "gl_renderer": "Mali-TDVX",
+      "disabled_extensions": [
+        "GL_EXT_multisampled_render_to_texture"
+      ],
+      "features": [
+        "disable_chromium_framebuffer_multisample"
       ]
     }
   ]

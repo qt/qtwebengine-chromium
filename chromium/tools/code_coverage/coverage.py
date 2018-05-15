@@ -11,10 +11,9 @@
   "use_clang_coverage=true" and "is_component_build=false" GN flags to args.gn
   file in your build output directory (e.g. out/coverage).
 
-  Clang Source-based Code Coverage requires "is_component_build=false" flag
-  because: There will be no coverage info for libraries in component builds and
-  "is_component_build" is set to true by "is_debug" unless it is explicitly set
-  to false.
+  Existing implementation requires "is_component_build=false" flag because
+  coverage info for dynamic libraries may be missing and "is_component_build"
+  is set to true by "is_debug" unless it is explicitly set to false.
 
   Example usage:
 
@@ -64,6 +63,8 @@ import argparse
 import json
 import logging
 import os
+import re
+import shlex
 import subprocess
 import urllib2
 
@@ -120,6 +121,10 @@ FILE_VIEW_INDEX_FILE = os.extsep.join(['file_view_index', 'html'])
 
 # Used to extract a mapping between directories and components.
 COMPONENT_MAPPING_URL = 'https://storage.googleapis.com/chromium-owners/component_map.json'
+
+# Caches the results returned by _GetBuildArgs, don't use this variable
+# directly, call _GetBuildArgs instead.
+_BUILD_ARGS = None
 
 
 class _CoverageSummary(object):
@@ -305,8 +310,11 @@ class _CoverageReportHtmlGenerator(object):
       html_file.write(html_header + html_table + html_footer)
 
 
-def _GetPlatform():
-  """Returns current running platform."""
+def _GetHostPlatform():
+  """Returns the host platform.
+
+  This is separate from the target platform/os that coverage is running for.
+  """
   if sys.platform == 'win32' or sys.platform == 'cygwin':
     return 'win'
   if sys.platform.startswith('linux'):
@@ -316,10 +324,18 @@ def _GetPlatform():
     return 'mac'
 
 
-def _IsTargetOsIos():
+def _GetTargetOS():
+  """Returns the target os specified in args.gn file.
+
+  Returns an empty string is target_os is not specified.
+  """
+  build_args = _GetBuildArgs()
+  return build_args['target_os'] if 'target_os' in build_args else ''
+
+
+def _IsIOS():
   """Returns true if the target_os specified in args.gn file is ios"""
-  build_args = _ParseArgsGnFile()
-  return 'target_os' in build_args and build_args['target_os'] == '"ios"'
+  return _GetTargetOS() == 'ios'
 
 
 # TODO(crbug.com/759794): remove this function once tools get included to
@@ -328,7 +344,7 @@ def _IsTargetOsIos():
 def DownloadCoverageToolsIfNeeded():
   """Temporary solution to download llvm-profdata and llvm-cov tools."""
 
-  def _GetRevisionFromStampFile(stamp_file_path, platform):
+  def _GetRevisionFromStampFile(stamp_file_path):
     """Returns a pair of revision number by reading the build stamp file.
 
     Args:
@@ -341,29 +357,23 @@ def DownloadCoverageToolsIfNeeded():
       return 0, 0
 
     with open(stamp_file_path) as stamp_file:
-      for stamp_file_line in stamp_file.readlines():
-        if ',' in stamp_file_line:
-          package_version, target_os = stamp_file_line.rstrip().split(',')
-        else:
-          package_version = stamp_file_line.rstrip()
-          target_os = ''
+      stamp_file_line = stamp_file.readline()
+      if ',' in stamp_file_line:
+        package_version = stamp_file_line.rstrip().split(',')[0]
+      else:
+        package_version = stamp_file_line.rstrip()
 
-        if target_os and target_os != 'ios' and platform != target_os:
-          continue
+      clang_revision_str, clang_sub_revision_str = package_version.split('-')
+      return int(clang_revision_str), int(clang_sub_revision_str)
 
-        clang_revision_str, clang_sub_revision_str = package_version.split('-')
-        return int(clang_revision_str), int(clang_sub_revision_str)
-
-    assert False, 'Coverage is only supported on target_os - linux, mac and ios'
-
-  platform = _GetPlatform()
+  host_platform = _GetHostPlatform()
   clang_revision, clang_sub_revision = _GetRevisionFromStampFile(
-      clang_update.STAMP_FILE, platform)
+      clang_update.STAMP_FILE)
 
   coverage_revision_stamp_file = os.path.join(
       os.path.dirname(clang_update.STAMP_FILE), 'cr_coverage_revision')
   coverage_revision, coverage_sub_revision = _GetRevisionFromStampFile(
-      coverage_revision_stamp_file, platform)
+      coverage_revision_stamp_file)
 
   has_coverage_tools = (
       os.path.exists(LLVM_COV_PATH) and os.path.exists(LLVM_PROFDATA_PATH))
@@ -371,25 +381,27 @@ def DownloadCoverageToolsIfNeeded():
   if (has_coverage_tools and coverage_revision == clang_revision and
       coverage_sub_revision == clang_sub_revision):
     # LLVM coverage tools are up to date, bail out.
-    return clang_revision
+    return
 
   package_version = '%d-%d' % (clang_revision, clang_sub_revision)
   coverage_tools_file = 'llvm-code-coverage-%s.tgz' % package_version
 
   # The code bellow follows the code from tools/clang/scripts/update.py.
-  if platform == 'mac':
+  if host_platform == 'mac':
     coverage_tools_url = clang_update.CDS_URL + '/Mac/' + coverage_tools_file
-  else:
-    assert platform == 'linux'
+  elif host_platform == 'linux':
     coverage_tools_url = (
         clang_update.CDS_URL + '/Linux_x64/' + coverage_tools_file)
+  else:
+    assert host_platform == 'win'
+    coverage_tools_url = (clang_update.CDS_URL + '/Win/' + coverage_tools_file)
 
   try:
     clang_update.DownloadAndUnpack(coverage_tools_url,
                                    clang_update.LLVM_BUILD_DIR)
     logging.info('Coverage tools %s unpacked', package_version)
     with open(coverage_revision_stamp_file, 'w') as file_handle:
-      file_handle.write('%s,%s' % (package_version, platform))
+      file_handle.write('%s,%s' % (package_version, host_platform))
       file_handle.write('\n')
   except urllib2.URLError:
     raise Exception(
@@ -422,11 +434,7 @@ def _GeneratePerFileLineByLineCoverageInHtml(binary_paths, profdata_file_path,
   ]
   subprocess_cmd.extend(
       ['-object=' + binary_path for binary_path in binary_paths[1:]])
-  if _IsTargetOsIos():
-    # iOS binaries are universal binaries, and it requires specifying the
-    # architecture to use.
-    subprocess_cmd.append('-arch=x86_64')
-
+  _AddArchArgumentForIOSIfNeeded(subprocess_cmd, len(binary_paths))
   subprocess_cmd.extend(filters)
   subprocess.check_call(subprocess_cmd)
   logging.debug('Finished running "llvm-cov show" command')
@@ -729,7 +737,7 @@ def _BuildTargets(targets, jobs_count):
     Returns:
       A boolean indicates whether goma is configured for building or not.
     """
-    build_args = _ParseArgsGnFile()
+    build_args = _GetBuildArgs()
     return 'use_goma' in build_args and build_args['use_goma'] == 'true'
 
   logging.info('Building %s', str(targets))
@@ -771,11 +779,11 @@ def _GetProfileRawDataPathsByExecutingCommands(targets, commands):
     logging.info('Running command: "%s", the output is redirected to "%s"',
                  command, output_file_path)
 
-    if _IsIosCommand(command):
+    if _IsIOSCommand(command):
       # On iOS platform, due to lack of write permissions, profraw files are
       # generated outside of the OUTPUT_DIR, and the exact paths are contained
       # in the output of the command execution.
-      output = _ExecuteIosCommand(target, command)
+      output = _ExecuteIOSCommand(target, command)
       profraw_file_paths.append(_GetProfrawDataFileByParsingOutput(output))
     else:
       # On other platforms, profraw files are generated inside the OUTPUT_DIR.
@@ -786,7 +794,7 @@ def _GetProfileRawDataPathsByExecutingCommands(targets, commands):
 
   logging.debug('Finished executing the test commands')
 
-  if _IsTargetOsIos():
+  if _IsIOS():
     return profraw_file_paths
 
   for file_or_dir in os.listdir(OUTPUT_DIR):
@@ -808,6 +816,9 @@ def _GetProfileRawDataPathsByExecutingCommands(targets, commands):
 def _ExecuteCommand(target, command):
   """Runs a single command and generates a profraw data file."""
   # Per Clang "Source-based Code Coverage" doc:
+  #
+  # "%p" expands out to the process ID.
+  #
   # "%Nm" expands out to the instrumented binary's signature. When this pattern
   # is specified, the runtime creates a pool of N raw profiles which are used
   # for on-line profile merging. The runtime takes care of selecting a raw
@@ -816,16 +827,22 @@ def _ExecuteCommand(target, command):
   # N must be between 1 and 9. The merge pool specifier can only occur once per
   # filename pattern.
   #
-  # 4 is chosen because it creates some level of parallelism, but it's not too
-  # big to consume too much computing resource or disk space.
+  # "%p" is used when tests run in single process, however, it can't be used for
+  # multi-process because each process produces an intermediate dump, which may
+  # consume hundreds of gigabytes of disk space.
+  #
+  # For "%Nm", 4 is chosen because it creates some level of parallelism, but
+  # it's not too big to consume too much computing resource or disk space.
+  profile_pattern_string = '%p' if _IsFuzzerTarget(target) else '%4m'
   expected_profraw_file_name = os.extsep.join(
-      [target, '%4m', PROFRAW_FILE_EXTENSION])
+      [target, profile_pattern_string, PROFRAW_FILE_EXTENSION])
   expected_profraw_file_path = os.path.join(OUTPUT_DIR,
                                             expected_profraw_file_name)
 
   try:
     output = subprocess.check_output(
-        command.split(), env={'LLVM_PROFILE_FILE': expected_profraw_file_path})
+        shlex.split(command),
+        env={'LLVM_PROFILE_FILE': expected_profraw_file_path})
   except subprocess.CalledProcessError as e:
     output = e.output
     logging.warning('Command: "%s" exited with non-zero return code', command)
@@ -833,7 +850,15 @@ def _ExecuteCommand(target, command):
   return output
 
 
-def _ExecuteIosCommand(target, command):
+def _IsFuzzerTarget(target):
+  """Returns true if the target is a fuzzer target."""
+  build_args = _GetBuildArgs()
+  use_libfuzzer = ('use_libfuzzer' in build_args and
+                   build_args['use_libfuzzer'] == 'true')
+  return use_libfuzzer and target.endswith('_fuzzer')
+
+
+def _ExecuteIOSCommand(target, command):
   """Runs a single iOS command and generates a profraw data file.
 
   iOS application doesn't have write access to folders outside of the app, so
@@ -842,10 +867,18 @@ def _ExecuteIosCommand(target, command):
   application's Documents folder, and the full path can be obtained by parsing
   the output.
   """
-  assert _IsIosCommand(command)
+  assert _IsIOSCommand(command)
+
+  # After running tests, iossim generates a profraw data file, it won't be
+  # needed anyway, so dump it into the OUTPUT_DIR to avoid polluting the
+  # checkout.
+  iossim_profraw_file_path = os.path.join(
+      OUTPUT_DIR, os.extsep.join(['iossim', PROFRAW_FILE_EXTENSION]))
 
   try:
-    output = subprocess.check_output(command.split())
+    output = subprocess.check_output(
+        shlex.split(command),
+        env={'LLVM_PROFILE_FILE': iossim_profraw_file_path})
   except subprocess.CalledProcessError as e:
     # iossim emits non-zero return code even if tests run successfully, so
     # ignore the return code.
@@ -861,15 +894,15 @@ def _GetProfrawDataFileByParsingOutput(output):
   have a single line containing the path to the generated profraw data file.
   NOTE: This should only be called when target os is iOS.
   """
-  assert _IsTargetOsIos()
+  assert _IsIOS()
 
-  output_by_lines = ''.join(output).split('\n')
-  profraw_file_identifier = 'Coverage data at '
+  output_by_lines = ''.join(output).splitlines()
+  profraw_file_pattern = re.compile('.*Coverage data at (.*coverage\.profraw).')
 
   for line in output_by_lines:
-    if profraw_file_identifier in line:
-      profraw_file_path = line.split(profraw_file_identifier)[1][:-1]
-      return profraw_file_path
+    result = profraw_file_pattern.match(line)
+    if result:
+      return result.group(1)
 
   assert False, ('No profraw data file was generated, did you call '
                  'coverage_util::ConfigureCoverageReportPath() in test setup? '
@@ -922,11 +955,7 @@ def _GeneratePerFileCoverageSummary(binary_paths, profdata_file_path, filters):
   ]
   subprocess_cmd.extend(
       ['-object=' + binary_path for binary_path in binary_paths[1:]])
-  if _IsTargetOsIos():
-    # iOS binaries are universal binaries, and it requires specifying the
-    # architecture to use.
-    subprocess_cmd.append('-arch=x86_64')
-
+  _AddArchArgumentForIOSIfNeeded(subprocess_cmd, len(binary_paths))
   subprocess_cmd.extend(filters)
 
   json_output = json.loads(subprocess.check_output(subprocess_cmd))
@@ -953,6 +982,16 @@ def _GeneratePerFileCoverageSummary(binary_paths, profdata_file_path, filters):
   return per_file_coverage_summary
 
 
+def _AddArchArgumentForIOSIfNeeded(cmd_list, num_archs):
+  """Appends -arch arguments to the command list if it's ios platform.
+
+  iOS binaries are universal binaries, and require specifying the architecture
+  to use, and one architecture needs to be specified for each binary.
+  """
+  if _IsIOS():
+    cmd_list.extend(['-arch=x86_64'] * num_archs)
+
+
 def _GetBinaryPath(command):
   """Returns a relative path to the binary to be run by the command.
 
@@ -961,9 +1000,12 @@ def _GetBinaryPath(command):
   2. Use xvfb.
     2.1. "python testing/xvfb.py out/coverage/url_unittests <arguments>"
     2.2. "testing/xvfb.py out/coverage/url_unittests <arguments>"
-  3. Use iossim to run tests on iOS platform.
+  3. Use iossim to run tests on iOS platform, please refer to testing/iossim.mm
+    for its usage.
     3.1. "out/Coverage-iphonesimulator/iossim
-          out/Coverage-iphonesimulator/url_unittests.app <arguments>"
+          <iossim_arguments> -c <app_arguments>
+          out/Coverage-iphonesimulator/url_unittests.app"
+
 
   Args:
     command: A command used to run a target.
@@ -973,7 +1015,7 @@ def _GetBinaryPath(command):
   """
   xvfb_script_name = os.extsep.join(['xvfb', 'py'])
 
-  command_parts = command.split()
+  command_parts = shlex.split(command)
   if os.path.basename(command_parts[0]) == 'python':
     assert os.path.basename(command_parts[1]) == xvfb_script_name, (
         'This tool doesn\'t understand the command: "%s"' % command)
@@ -982,19 +1024,19 @@ def _GetBinaryPath(command):
   if os.path.basename(command_parts[0]) == xvfb_script_name:
     return command_parts[1]
 
-  if _IsIosCommand(command):
+  if _IsIOSCommand(command):
     # For a given application bundle, the binary resides in the bundle and has
     # the same name with the application without the .app extension.
-    app_path = command_parts[1]
+    app_path = command_parts[-1].rstrip(os.path.sep)
     app_name = os.path.splitext(os.path.basename(app_path))[0]
     return os.path.join(app_path, app_name)
 
-  return command.split()[0]
+  return command_parts[0]
 
 
-def _IsIosCommand(command):
+def _IsIOSCommand(command):
   """Returns true if command is used to run tests on iOS platform."""
-  return os.path.basename(command.split()[0]) == 'iossim'
+  return os.path.basename(shlex.split(command)[0]) == 'iossim'
 
 
 def _VerifyTargetExecutablesAreInBuildDirectory(commands):
@@ -1010,7 +1052,7 @@ def _VerifyTargetExecutablesAreInBuildDirectory(commands):
 
 def _ValidateBuildingWithClangCoverage():
   """Asserts that targets are built with Clang coverage enabled."""
-  build_args = _ParseArgsGnFile()
+  build_args = _GetBuildArgs()
 
   if (CLANG_COVERAGE_BUILD_ARG not in build_args or
       build_args[CLANG_COVERAGE_BUILD_ARG] != 'true'):
@@ -1018,19 +1060,36 @@ def _ValidateBuildingWithClangCoverage():
                   ).format(CLANG_COVERAGE_BUILD_ARG)
 
 
-def _ParseArgsGnFile():
+def _ValidateCurrentPlatformIsSupported():
+  """Asserts that this script suports running on the current platform"""
+  target_os = _GetTargetOS()
+  if target_os:
+    current_platform = target_os
+  else:
+    current_platform = _GetHostPlatform()
+
+  assert current_platform in [
+      'linux', 'mac', 'chromeos', 'ios'
+  ], ('Coverage is only supported on linux, mac, chromeos and ios.')
+
+
+def _GetBuildArgs():
   """Parses args.gn file and returns results as a dictionary.
 
   Returns:
     A dictionary representing the build args.
   """
+  global _BUILD_ARGS
+  if _BUILD_ARGS is not None:
+    return _BUILD_ARGS
+
+  _BUILD_ARGS = {}
   build_args_path = os.path.join(BUILD_DIR, 'args.gn')
   assert os.path.exists(build_args_path), ('"%s" is not a build directory, '
                                            'missing args.gn file.' % BUILD_DIR)
   with open(build_args_path) as build_args_file:
     build_args_lines = build_args_file.readlines()
 
-  build_args = {}
   for build_arg_line in build_args_lines:
     build_arg_without_comments = build_arg_line.split('#')[0]
     key_value_pair = build_arg_without_comments.split('=')
@@ -1038,10 +1097,13 @@ def _ParseArgsGnFile():
       continue
 
     key = key_value_pair[0].strip()
-    value = key_value_pair[1].strip()
-    build_args[key] = value
 
-  return build_args
+    # Values are wrapped within a pair of double-quotes, so remove the leading
+    # and trailing double-quotes.
+    value = key_value_pair[1].strip().strip('"')
+    _BUILD_ARGS[key] = value
+
+  return _BUILD_ARGS
 
 
 def _VerifyPathsAndReturnAbsolutes(paths):
@@ -1142,33 +1204,33 @@ def _ParseCommandArguments():
 
 def Main():
   """Execute tool commands."""
-  assert _GetPlatform() in [
-      'linux', 'mac'
-  ], ('Coverage is only supported on linux and mac platforms.')
   assert os.path.abspath(os.getcwd()) == SRC_ROOT_PATH, ('This script must be '
                                                          'called from the root '
                                                          'of checkout.')
-  DownloadCoverageToolsIfNeeded()
-
   args = _ParseCommandArguments()
   global BUILD_DIR
   BUILD_DIR = args.build_dir
   global OUTPUT_DIR
   OUTPUT_DIR = args.output_dir
 
-  log_level = logging.DEBUG if args.verbose else logging.INFO
-  log_format = '[%(asctime)s] %(message)s'
-  log_file = args.log_file if args.log_file else None
-  logging.basicConfig(filename=log_file, level=log_level, format=log_format)
-
   assert len(args.targets) == len(args.command), ('Number of targets must be '
                                                   'equal to the number of test '
                                                   'commands.')
+
+  # logging should be configured before it is used.
+  log_level = logging.DEBUG if args.verbose else logging.INFO
+  log_format = '[%(asctime)s %(levelname)s] %(message)s'
+  log_file = args.log_file if args.log_file else None
+  logging.basicConfig(filename=log_file, level=log_level, format=log_format)
+
   assert os.path.exists(BUILD_DIR), (
       'Build directory: {} doesn\'t exist. '
       'Please run "gn gen" to generate.').format(BUILD_DIR)
+  _ValidateCurrentPlatformIsSupported()
   _ValidateBuildingWithClangCoverage()
   _VerifyTargetExecutablesAreInBuildDirectory(args.command)
+
+  DownloadCoverageToolsIfNeeded()
 
   absolute_filter_paths = []
   if args.filters:

@@ -7,11 +7,8 @@
           "chrome::mojom::DialDeviceDescriptionParser",
           "chrome::mojom::ProfileImport",
           "chrome::mojom::ShellHandler",
-          "extensions::mojom::ExtensionUnpacker",
-          "extensions::mojom::ManifestParser",
-          "extensions::mojom::MediaParser",
           "payments::mojom::PaymentManifestParser",
-          "profiling::mojom::ProfilingClient",
+          "heap_profiling::mojom::ProfilingClient",
           "proxy_resolver::mojom::ProxyResolverFactory",
           "safe_json::mojom::SafeJsonParser"
         ]

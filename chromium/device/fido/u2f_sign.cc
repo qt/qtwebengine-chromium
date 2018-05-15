@@ -6,6 +6,8 @@
 
 #include <utility>
 
+#include "components/apdu/apdu_command.h"
+#include "components/apdu/apdu_response.h"
 #include "services/service_manager/public/cpp/connector.h"
 
 namespace device {
@@ -13,14 +15,14 @@ namespace device {
 // static
 std::unique_ptr<U2fRequest> U2fSign::TrySign(
     service_manager::Connector* connector,
-    const base::flat_set<U2fTransportProtocol>& protocols,
+    const base::flat_set<FidoTransportProtocol>& transports,
     std::vector<std::vector<uint8_t>> registered_keys,
     std::vector<uint8_t> challenge_digest,
     std::vector<uint8_t> application_parameter,
     base::Optional<std::vector<uint8_t>> alt_application_parameter,
     SignResponseCallback completion_callback) {
   std::unique_ptr<U2fRequest> request = std::make_unique<U2fSign>(
-      connector, protocols, registered_keys, challenge_digest,
+      connector, transports, registered_keys, challenge_digest,
       application_parameter, std::move(alt_application_parameter),
       std::move(completion_callback));
   request->Start();
@@ -29,112 +31,122 @@ std::unique_ptr<U2fRequest> U2fSign::TrySign(
 }
 
 U2fSign::U2fSign(service_manager::Connector* connector,
-                 const base::flat_set<U2fTransportProtocol>& protocols,
+                 const base::flat_set<FidoTransportProtocol>& transports,
                  std::vector<std::vector<uint8_t>> registered_keys,
                  std::vector<uint8_t> challenge_digest,
                  std::vector<uint8_t> application_parameter,
                  base::Optional<std::vector<uint8_t>> alt_application_parameter,
                  SignResponseCallback completion_callback)
     : U2fRequest(connector,
-                 protocols,
+                 transports,
                  std::move(application_parameter),
                  std::move(challenge_digest),
                  std::move(registered_keys)),
       alt_application_parameter_(std::move(alt_application_parameter)),
       completion_callback_(std::move(completion_callback)),
-      weak_factory_(this) {}
+      weak_factory_(this) {
+  // U2F devices require at least one key handle.
+  // TODO(crbug.com/831712): When CTAP2 authenticators are supported, this check
+  // should be enforced by handlers in fido/device on a per-device basis.
+  CHECK(!registered_keys_.empty());
+}
 
 U2fSign::~U2fSign() = default;
 
 void U2fSign::TryDevice() {
   DCHECK(current_device_);
 
-  if (registered_keys_.size() == 0) {
-    // Send registration (Fake enroll) if no keys were provided
-    current_device_->Register(
-        U2fRequest::GetBogusApplicationParameter(),
-        U2fRequest::GetBogusChallenge(), false /* no individual attestation */,
-        base::Bind(&U2fSign::OnTryDevice, weak_factory_.GetWeakPtr(),
-                   registered_keys_.cend(),
-                   ApplicationParameterType::kPrimary));
-    return;
-  }
-  // Try signing current device with the first registered key
+  // Try signing current device with the first registered key.
   auto it = registered_keys_.cbegin();
-  current_device_->Sign(
-      application_parameter_, challenge_digest_, *it,
-      base::Bind(&U2fSign::OnTryDevice, weak_factory_.GetWeakPtr(), it,
-                 ApplicationParameterType::kPrimary));
+  InitiateDeviceTransaction(
+      GetU2fSignApduCommand(application_parameter_, *it),
+      base::BindOnce(&U2fSign::OnTryDevice, weak_factory_.GetWeakPtr(), it,
+                     ApplicationParameterType::kPrimary));
 }
 
 void U2fSign::OnTryDevice(std::vector<std::vector<uint8_t>>::const_iterator it,
                           ApplicationParameterType application_parameter_type,
-                          U2fReturnCode return_code,
-                          const std::vector<uint8_t>& response_data) {
+                          base::Optional<std::vector<uint8_t>> response) {
+  const auto apdu_response =
+      response ? apdu::ApduResponse::CreateFromMessage(std::move(*response))
+               : base::nullopt;
+  auto return_code = apdu_response ? apdu_response->status()
+                                   : apdu::ApduResponse::Status::SW_WRONG_DATA;
+  auto response_data = return_code == apdu::ApduResponse::Status::SW_WRONG_DATA
+                           ? std::vector<uint8_t>()
+                           : apdu_response->data();
+
   switch (return_code) {
-    case U2fReturnCode::SUCCESS: {
+    case apdu::ApduResponse::Status::SW_NO_ERROR: {
       state_ = State::COMPLETE;
       if (it == registered_keys_.cend()) {
         // This was a response to a fake enrollment. Return an empty key handle.
         std::move(completion_callback_)
-            .Run(U2fReturnCode::CONDITIONS_NOT_SATISFIED, base::nullopt);
+            .Run(FidoReturnCode::kUserConsentButCredentialNotRecognized,
+                 base::nullopt);
       } else {
         const std::vector<uint8_t>* const application_parameter_used =
             application_parameter_type == ApplicationParameterType::kPrimary
                 ? &application_parameter_
                 : &alt_application_parameter_.value();
-        auto sign_response = SignResponseData::CreateFromU2fSignResponse(
-            *application_parameter_used, std::move(response_data), *it);
+        auto sign_response =
+            AuthenticatorGetAssertionResponse::CreateFromU2fSignResponse(
+                *application_parameter_used, std::move(response_data), *it);
         if (!sign_response) {
           std::move(completion_callback_)
-              .Run(U2fReturnCode::FAILURE, base::nullopt);
+              .Run(FidoReturnCode::kAuthenticatorResponseInvalid,
+                   base::nullopt);
         } else {
           std::move(completion_callback_)
-              .Run(U2fReturnCode::SUCCESS, std::move(sign_response));
+              .Run(FidoReturnCode::kSuccess, std::move(sign_response));
         }
       }
       break;
     }
-    case U2fReturnCode::CONDITIONS_NOT_SATISFIED: {
+    case apdu::ApduResponse::Status::SW_CONDITIONS_NOT_SATISFIED: {
       // Key handle is accepted by this device, but waiting on user touch. Move
       // on and try this device again later.
       state_ = State::IDLE;
       Transition();
       break;
     }
-    case U2fReturnCode::INVALID_PARAMS: {
+    case apdu::ApduResponse::Status::SW_WRONG_DATA:
+    case apdu::ApduResponse::Status::SW_WRONG_LENGTH: {
       if (application_parameter_type == ApplicationParameterType::kPrimary &&
-          alt_application_parameter_) {
+          alt_application_parameter_ && it != registered_keys_.cend()) {
         // |application_parameter_| failed, but there is also
         // |alt_application_parameter_| to try.
-        current_device_->Sign(
-            *alt_application_parameter_, challenge_digest_, *it,
+        InitiateDeviceTransaction(
+            GetU2fSignApduCommand(*alt_application_parameter_, *it),
             base::Bind(&U2fSign::OnTryDevice, weak_factory_.GetWeakPtr(), it,
                        ApplicationParameterType::kAlternative));
+      } else if (it == registered_keys_.cend()) {
+        // The fake enrollment errored out. Move on to the next device.
+        AbandonCurrentDeviceAndTransition();
       } else if (++it != registered_keys_.end()) {
         // Key is not for this device. Try signing with the next key.
-        current_device_->Sign(
-            application_parameter_, challenge_digest_, *it,
-            base::Bind(&U2fSign::OnTryDevice, weak_factory_.GetWeakPtr(), it,
-                       ApplicationParameterType::kPrimary));
+        InitiateDeviceTransaction(
+            GetU2fSignApduCommand(application_parameter_, *it),
+            base::BindOnce(&U2fSign::OnTryDevice, weak_factory_.GetWeakPtr(),
+                           it, ApplicationParameterType::kPrimary));
       } else {
         // No provided key was accepted by this device. Send registration
         // (Fake enroll) request to device.
-        current_device_->Register(
-            U2fRequest::GetBogusApplicationParameter(),
-            U2fRequest::GetBogusChallenge(),
-            false /* no individual attestation */,
-            base::Bind(&U2fSign::OnTryDevice, weak_factory_.GetWeakPtr(),
-                       registered_keys_.cend(),
-                       ApplicationParameterType::kPrimary));
+        // We do this to prevent user confusion. Otherwise, if the device
+        // doesn't blink, the user might think it's broken rather than that
+        // it's not registered. Once the user consents to use the device,
+        // the relying party can inform them that it hasn't been registered.
+        InitiateDeviceTransaction(
+            U2fRequest::GetBogusRegisterCommand(),
+            base::BindOnce(&U2fSign::OnTryDevice, weak_factory_.GetWeakPtr(),
+                           registered_keys_.cend(),
+                           ApplicationParameterType::kPrimary));
       }
       break;
     }
     default:
       // Some sort of failure occured. Abandon this device and move on.
-      state_ = State::IDLE;
-      current_device_ = nullptr;
-      Transition();
+      AbandonCurrentDeviceAndTransition();
       break;
   }
 }

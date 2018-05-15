@@ -7,10 +7,13 @@
 
 #include <memory>
 
+#include "base/containers/flat_set.h"
 #include "base/macros.h"
+#include "base/optional.h"
 #include "content/browser/renderer_host/input/mouse_wheel_phase_handler.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/native_web_keyboard_event.h"
+#include "ui/aura/scoped_keyboard_hook.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/events/event_handler.h"
 #include "ui/events/gestures/motion_event_aura.h"
@@ -140,6 +143,11 @@ class CONTENT_EXPORT RenderWidgetHostViewEventHandler
   bool LockMouse();
   void UnlockMouse();
 
+  // Start/Stop processing of future system keyboard events.
+  bool LockKeyboard(base::Optional<base::flat_set<int>> keys);
+  void UnlockKeyboard();
+  bool IsKeyboardLocked() const;
+
   // ui::EventHandler:
   void OnKeyEvent(ui::KeyEvent* event) override;
   void OnMouseEvent(ui::MouseEvent* event) override;
@@ -158,6 +166,18 @@ class CONTENT_EXPORT RenderWidgetHostViewEventHandler
  private:
   FRIEND_TEST_ALL_PREFIXES(InputMethodResultAuraTest,
                            FinishImeCompositionSession);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           KeyEventRoutingWithKeyboardLockActiveForOneKey);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           KeyEventRoutingWithKeyboardLockActiveForEscKey);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           KeyEventRoutingWithKeyboardLockActiveForAllKeys);
+  FRIEND_TEST_ALL_PREFIXES(
+      RenderWidgetHostViewAuraTest,
+      KeyEventRoutingKeyboardLockAndChildPopupWithInputGrab);
+  FRIEND_TEST_ALL_PREFIXES(
+      RenderWidgetHostViewAuraTest,
+      KeyEventRoutingKeyboardLockAndChildPopupWithoutInputGrab);
   // Returns true if the |event| passed in can be forwarded to the renderer.
   bool CanRendererHandleEvent(const ui::MouseEvent* event,
                               bool mouse_locked,
@@ -205,6 +225,9 @@ class CONTENT_EXPORT RenderWidgetHostViewEventHandler
   void ProcessTouchEvent(const blink::WebTouchEvent& event,
                          const ui::LatencyInfo& latency);
 
+  // Returns true if event is a reserved key for an active KeyboardLock request.
+  bool IsKeyLocked(const ui::KeyEvent& event);
+
   // Whether return characters should be passed on to the RenderWidgetHostImpl.
   bool accept_return_character_;
 
@@ -212,6 +235,9 @@ class CONTENT_EXPORT RenderWidgetHostViewEventHandler
   // corresponding touch sequence, as would be required by
   // RenderWidgetHostInputEventRouter.
   bool disable_input_event_router_for_testing_;
+
+  // Deactivates keyboard lock when destroyed.
+  std::unique_ptr<aura::ScopedKeyboardHook> scoped_keyboard_hook_;
 
   // While the mouse is locked, the cursor is hidden from the user. Mouse events
   // are still generated. However, the position they report is the last known
@@ -249,12 +275,6 @@ class CONTENT_EXPORT RenderWidgetHostViewEventHandler
   // Stores the current state of the active pointers targeting this
   // object.
   ui::MotionEventAura pointer_state_;
-
-#if defined(OS_WIN)
-  // Contains a copy of the last context menu request parameters. Only set when
-  // we receive a request to show the context menu on a long press.
-  std::unique_ptr<ContextMenuParams> last_context_menu_params_;
-#endif  // defined(OS_WIN)
 
   // The following are not owned. They should outlive |this|
   RenderWidgetHostImpl* const host_;

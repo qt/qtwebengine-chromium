@@ -18,13 +18,12 @@
 #include "components/sync/model/metadata_change_list.h"
 #include "components/sync/model/model_type_change_processor.h"
 #include "components/sync/model/mutable_data_batch.h"
-#include "components/sync/model_impl/accumulating_metadata_change_list.h"
 #include "components/sync/protocol/model_type_state.pb.h"
 
 ReadingListStore::ReadingListStore(
     syncer::OnceModelTypeStoreFactory create_store_callback,
-    const ChangeProcessorFactory& change_processor_factory)
-    : ReadingListModelStorage(change_processor_factory, syncer::READING_LIST),
+    std::unique_ptr<syncer::ModelTypeChangeProcessor> change_processor)
+    : ReadingListModelStorage(std::move(change_processor)),
       create_store_callback_(std::move(create_store_callback)),
       pending_transaction_count_(0) {}
 
@@ -95,16 +94,12 @@ void ReadingListStore::SaveEntry(const ReadingListEntry& entry) {
   std::unique_ptr<sync_pb::ReadingListSpecifics> pb_entry_sync =
       entry.AsReadingListSpecifics();
 
-  std::unique_ptr<syncer::MetadataChangeList> metadata_change_list =
-      CreateMetadataChangeList();
-
   std::unique_ptr<syncer::EntityData> entity_data(new syncer::EntityData());
   *entity_data->specifics.mutable_reading_list() = *pb_entry_sync;
   entity_data->non_unique_name = pb_entry_sync->entry_id();
 
   change_processor()->Put(entry.URL().spec(), std::move(entity_data),
-                          metadata_change_list.get());
-  batch_->TransferMetadataChanges(std::move(metadata_change_list));
+                          batch_->GetMetadataChangeList());
 }
 
 void ReadingListStore::RemoveEntry(const ReadingListEntry& entry) {
@@ -115,11 +110,8 @@ void ReadingListStore::RemoveEntry(const ReadingListEntry& entry) {
   if (!change_processor()->IsTrackingMetadata()) {
     return;
   }
-  std::unique_ptr<syncer::MetadataChangeList> metadata_change_list =
-      CreateMetadataChangeList();
-
-  change_processor()->Delete(entry.URL().spec(), metadata_change_list.get());
-  batch_->TransferMetadataChanges(std::move(metadata_change_list));
+  change_processor()->Delete(entry.URL().spec(),
+                             batch_->GetMetadataChangeList());
 }
 
 void ReadingListStore::OnDatabaseLoad(
@@ -164,7 +156,7 @@ void ReadingListStore::OnReadAllMetadata(
   if (error) {
     change_processor()->ReportError({FROM_HERE, "Failed to read metadata."});
   } else {
-    change_processor()->ModelReadyToSync(std::move(metadata_batch));
+    change_processor()->ModelReadyToSync(this, std::move(metadata_batch));
   }
 }
 
@@ -282,7 +274,7 @@ base::Optional<syncer::ModelError> ReadingListStore::MergeSyncData(
     change_processor()->Put(entry_pb->entry_id(), std::move(entity_data),
                             metadata_change_list.get());
   }
-  batch_->TransferMetadataChanges(std::move(metadata_change_list));
+  batch_->TakeMetadataChangesFrom(std::move(metadata_change_list));
 
   return {};
 }
@@ -352,7 +344,7 @@ base::Optional<syncer::ModelError> ReadingListStore::ApplySyncChanges(
     }
   }
 
-  batch_->TransferMetadataChanges(std::move(metadata_change_list));
+  batch_->TakeMetadataChangesFrom(std::move(metadata_change_list));
   return {};
 }
 
@@ -367,7 +359,7 @@ void ReadingListStore::GetData(StorageKeyList storage_keys,
     }
   }
 
-  callback.Run(std::move(batch));
+  std::move(callback).Run(std::move(batch));
 }
 
 void ReadingListStore::GetAllData(DataCallback callback) {
@@ -379,7 +371,7 @@ void ReadingListStore::GetAllData(DataCallback callback) {
     AddEntryToBatch(batch.get(), *entry);
   }
 
-  callback.Run(std::move(batch));
+  std::move(callback).Run(std::move(batch));
 }
 
 void ReadingListStore::AddEntryToBatch(syncer::MutableDataBatch* batch,

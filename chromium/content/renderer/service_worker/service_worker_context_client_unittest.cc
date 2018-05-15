@@ -19,24 +19,23 @@
 #include "content/renderer/service_worker/service_worker_dispatcher.h"
 #include "content/renderer/service_worker/service_worker_timeout_timer.h"
 #include "content/renderer/worker_thread_registry.h"
-#include "ipc/ipc_sync_message_filter.h"
-#include "ipc/ipc_test_sink.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/common/message_port/message_port_channel.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
-#include "third_party/WebKit/public/platform/WebDataConsumerHandle.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebURLResponse.h"
-#include "third_party/WebKit/public/platform/modules/background_fetch/WebBackgroundFetchSettledFetch.h"
-#include "third_party/WebKit/public/platform/modules/notifications/WebNotificationData.h"
-#include "third_party/WebKit/public/platform/modules/payments/WebPaymentRequestEventData.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerClientsInfo.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerError.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerRequest.h"
-#include "third_party/WebKit/public/web/modules/serviceworker/WebServiceWorkerContextProxy.h"
+#include "third_party/blink/public/common/message_port/message_port_channel.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/platform/modules/background_fetch/web_background_fetch_settled_fetch.h"
+#include "third_party/blink/public/platform/modules/notifications/web_notification_data.h"
+#include "third_party/blink/public/platform/modules/payments/web_payment_request_event_data.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_clients_info.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_error.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_request.h"
+#include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/web_data_consumer_handle.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_url_response.h"
+#include "third_party/blink/public/web/modules/serviceworker/web_service_worker_context_proxy.h"
 
 namespace content {
 
@@ -55,21 +54,6 @@ struct ContextClientPipes {
       embedded_worker_host_request;
   blink::mojom::ServiceWorkerRegistrationObjectHostAssociatedRequest
       registration_host_request;
-};
-
-class TestSender : public ThreadSafeSender {
- public:
-  explicit TestSender(IPC::TestSink* ipc_sink)
-      : ThreadSafeSender(nullptr, nullptr), ipc_sink_(ipc_sink) {}
-
-  bool Send(IPC::Message* message) override { return ipc_sink_->Send(message); }
-
- private:
-  ~TestSender() override = default;
-
-  IPC::TestSink* ipc_sink_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestSender);
 };
 
 class MockWebServiceWorkerContextProxy
@@ -209,14 +193,13 @@ class ServiceWorkerContextClientTest : public testing::Test {
   void SetUp() override {
     task_runner_ = base::MakeRefCounted<base::TestMockTimeTaskRunner>();
     message_loop_.SetTaskRunner(task_runner_);
-    sender_ = base::MakeRefCounted<TestSender>(&ipc_sink_);
     // Use this thread as the worker thread.
     WorkerThreadRegistry::Instance()->DidStartCurrentWorkerThread();
   }
 
   void TearDown() override {
     ServiceWorkerContextClient::ResetThreadSpecificInstanceForTesting();
-    ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance(sender_)
+    ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance()
         ->AllowReinstantiationForTesting();
     // Unregister this thread from worker threads.
     WorkerThreadRegistry::Instance()->WillStopCurrentWorkerThread();
@@ -256,7 +239,6 @@ class ServiceWorkerContextClientTest : public testing::Test {
     mojom::EmbeddedWorkerInstanceHostAssociatedPtr embedded_worker_host_ptr;
     out_pipes->embedded_worker_host_request =
         mojo::MakeRequestAssociatedWithDedicatedPipe(&embedded_worker_host_ptr);
-    EXPECT_TRUE(sender_);
     return std::make_unique<ServiceWorkerContextClient>(
         1 /* embeded_worker_id */, 1 /* service_worker_version_id */,
         GURL("https://example.com") /* scope */,
@@ -266,7 +248,9 @@ class ServiceWorkerContextClientTest : public testing::Test {
         embedded_worker_host_ptr.PassInterface(),
         CreateProviderInfo(&out_pipes->registration_host_request,
                            &out_pipes->registration),
-        nullptr /* embedded_worker_client */, sender_, io_task_runner());
+        nullptr /* embedded_worker_client */,
+        blink::scheduler::GetSingleThreadTaskRunnerForTesting(),
+        io_task_runner());
   }
 
   scoped_refptr<base::TestMockTimeTaskRunner> task_runner() const {
@@ -282,8 +266,6 @@ class ServiceWorkerContextClientTest : public testing::Test {
   base::MessageLoop message_loop_;
   scoped_refptr<base::TestMockTimeTaskRunner> task_runner_;
   base::test::ScopedFeatureList feature_list_;
-  IPC::TestSink ipc_sink_;
-  scoped_refptr<TestSender> sender_;
 };
 
 TEST_F(ServiceWorkerContextClientTest, Ping) {
@@ -305,7 +287,7 @@ TEST_F(ServiceWorkerContextClientTest, DispatchFetchEvent) {
   std::unique_ptr<ServiceWorkerContextClient> context_client;
   context_client = CreateContextClient(&pipes);
   context_client->WorkerContextStarted(&mock_proxy);
-  context_client->DidEvaluateWorkerScript(true /* success */);
+  context_client->DidEvaluateClassicScript(true /* success */);
   task_runner()->RunUntilIdle();
   EXPECT_TRUE(mock_proxy.fetch_events().empty());
 
@@ -336,7 +318,7 @@ TEST_F(ServiceWorkerContextClientTest,
       CreateContextClient(&pipes);
   MockWebServiceWorkerContextProxy mock_proxy;
   context_client->WorkerContextStarted(&mock_proxy);
-  context_client->DidEvaluateWorkerScript(true /* success */);
+  context_client->DidEvaluateClassicScript(true /* success */);
   task_runner()->RunUntilIdle();
   EXPECT_TRUE(mock_proxy.fetch_events().empty());
 
@@ -375,7 +357,7 @@ TEST_F(ServiceWorkerContextClientTest,
       CreateContextClient(&pipes);
   MockWebServiceWorkerContextProxy mock_proxy;
   context_client->WorkerContextStarted(&mock_proxy);
-  context_client->DidEvaluateWorkerScript(true /* success */);
+  context_client->DidEvaluateClassicScript(true /* success */);
   task_runner()->RunUntilIdle();
   EXPECT_TRUE(mock_proxy.fetch_events().empty());
 
@@ -424,7 +406,7 @@ TEST_F(ServiceWorkerContextClientTest,
       CreateContextClient(&pipes);
   MockWebServiceWorkerContextProxy mock_proxy;
   context_client->WorkerContextStarted(&mock_proxy);
-  context_client->DidEvaluateWorkerScript(true /* success */);
+  context_client->DidEvaluateClassicScript(true /* success */);
   task_runner()->RunUntilIdle();
   EXPECT_TRUE(mock_proxy.fetch_events().empty());
   bool is_idle = false;

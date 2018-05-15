@@ -7,7 +7,6 @@
 
 #include "base/bind.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
@@ -316,6 +315,11 @@ class TestWindowTreeClient : public mojom::WindowTreeClient,
     if (embed_run_loop_)
       embed_run_loop_->Quit();
   }
+  void OnEmbedFromToken(
+      const base::UnguessableToken& token,
+      mojom::WindowDataPtr root,
+      int64_t display_id,
+      const base::Optional<viz::LocalSurfaceId>& local_surface_id) override {}
   void OnEmbeddedAppDisconnected(Id window_id) override {
     tracker()->OnEmbeddedAppDisconnected(window_id);
   }
@@ -433,14 +437,14 @@ class TestWindowTreeClient : public mojom::WindowTreeClient,
                    uint32_t key_state,
                    const gfx::Point& position,
                    uint32_t effect_bitmask,
-                   const OnDragEnterCallback& callback) override {
+                   OnDragEnterCallback callback) override {
     NOTIMPLEMENTED();
   }
   void OnDragOver(Id window,
                   uint32_t key_state,
                   const gfx::Point& position,
                   uint32_t effect_bitmask,
-                  const OnDragOverCallback& callback) override {
+                  OnDragOverCallback callback) override {
     NOTIMPLEMENTED();
   }
   void OnDragLeave(Id window) override { NOTIMPLEMENTED(); }
@@ -448,7 +452,7 @@ class TestWindowTreeClient : public mojom::WindowTreeClient,
                       uint32_t key_state,
                       const gfx::Point& position,
                       uint32_t effect_bitmask,
-                      const OnCompleteDropCallback& callback) override {
+                      OnCompleteDropCallback callback) override {
     NOTIMPLEMENTED();
   }
 
@@ -521,8 +525,8 @@ class TestWindowTreeClient : public mojom::WindowTreeClient,
                         const gfx::Vector2d& drag_image_offset,
                         ui::mojom::PointerKind source) override {}
   void WmMoveDragImage(const gfx::Point& screen_location,
-                       const WmMoveDragImageCallback& callback) override {
-    callback.Run();
+                       WmMoveDragImageCallback callback) override {
+    std::move(callback).Run();
   }
   void WmDestroyDragImage() override {}
   void WmPerformMoveLoop(uint32_t change_id,

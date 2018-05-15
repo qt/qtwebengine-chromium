@@ -11,6 +11,10 @@
 #include "ui/views/controls/button/button.h"
 #include "ui/views/views_export.h"
 
+namespace gfx {
+class Range;
+}  // namespace gfx
+
 namespace views {
 
 class Border;
@@ -66,6 +70,10 @@ class VIEWS_EXPORT PlatformStyle {
   // dragging but available to do so.
   static const bool kTextfieldUsesDragCursorWhenDraggable;
 
+  // Whether bookmarks in the bookmarks bar are elided [and show elipses at the
+  // tail] or fade out.
+  static const bool kShouldElideBookmarksInBookmarksBar;
+
   // Creates the default scrollbar for the given orientation.
   static std::unique_ptr<ScrollBar> CreateScrollBar(bool is_horizontal);
 
@@ -82,6 +90,14 @@ class VIEWS_EXPORT PlatformStyle {
   // Called whenever a textfield edit fails. Gives visual/audio feedback about
   // the failed edit if platform-appropriate.
   static void OnTextfieldEditFailed();
+
+  // When deleting backwards in |string| with the cursor at index
+  // |cursor_position|, return the range of UTF-16 words to be deleted.
+  // This is to support deleting entire graphemes instead of individual
+  // characters when necessary on Mac, and code points made from surrogate
+  // pairs on other platforms.
+  static gfx::Range RangeToDeleteBackwards(const base::string16& text,
+                                           size_t cursor_position);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(PlatformStyle);

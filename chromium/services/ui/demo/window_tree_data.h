@@ -5,7 +5,6 @@
 #ifndef SERVICES_UI_DEMO_WINDOW_TREE_DATA_H_
 #define SERVICES_UI_DEMO_WINDOW_TREE_DATA_H_
 
-#include "base/memory/ptr_util.h"
 #include "base/timer/timer.h"
 
 namespace aura {
@@ -27,10 +26,16 @@ class WindowTreeData {
 
   // Initializes the window tree host and start drawing frames.
   void Init(std::unique_ptr<aura::WindowTreeHostMus> window_tree_host);
-  bool IsInitialized() const { return !!window_tree_host_; }
+  bool IsInitialized() const { return !!window_delegate_; }
 
   const aura::WindowTreeHostMus* WindowTreeHost() const {
     return window_tree_host_.get();
+  }
+
+ protected:
+  void SetWindowTreeHost(
+      std::unique_ptr<aura::WindowTreeHostMus> window_tree_host) {
+    window_tree_host_ = std::move(window_tree_host);
   }
 
  private:

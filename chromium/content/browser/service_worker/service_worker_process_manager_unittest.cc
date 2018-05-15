@@ -5,7 +5,6 @@
 #include "content/browser/service_worker/service_worker_process_manager.h"
 
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/test/scoped_feature_list.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/site_instance_impl.h"
@@ -36,7 +35,11 @@ class SiteInstanceRenderProcessHostFactory : public RenderProcessHostFactory {
       SiteInstance* site_instance) const override {
     processes_.push_back(
         std::make_unique<MockRenderProcessHost>(browser_context));
-    last_site_instance_used_ = site_instance;
+
+    // A spare RenderProcessHost is created with a null SiteInstance.
+    if (site_instance)
+      last_site_instance_used_ = site_instance;
+
     return processes_.back().get();
   }
 

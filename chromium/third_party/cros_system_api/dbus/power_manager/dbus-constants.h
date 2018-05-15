@@ -41,7 +41,7 @@ const char kIgnoreNextPowerButtonPressMethod[] = "IgnoreNextPowerButtonPress";
 const char kRecordDarkResumeWakeReasonMethod[] = "RecordDarkResumeWakeReason";
 const char kGetInactivityDelaysMethod[] = "GetInactivityDelays";
 // Signals emitted by powerd.
-const char kBrightnessChangedSignal[] = "BrightnessChanged";
+const char kScreenBrightnessChangedSignal[] = "ScreenBrightnessChanged";
 const char kKeyboardBrightnessChangedSignal[] = "KeyboardBrightnessChanged";
 const char kPeripheralBatteryStatusSignal[] = "PeripheralBatteryStatus";
 const char kPowerSupplyPollSignal[] = "PowerSupplyPoll";

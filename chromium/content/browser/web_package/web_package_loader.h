@@ -17,11 +17,15 @@
 
 namespace net {
 class SourceStream;
+class URLRequestContextGetter;
 }  // namespace net
+
+namespace network {
+class SharedURLLoaderFactory;
+}  // namespace network
 
 namespace content {
 
-class SharedURLLoaderFactory;
 class SignedExchangeHandler;
 class SignedExchangeHandlerFactory;
 class URLLoaderThrottle;
@@ -38,20 +42,22 @@ class WebPackageLoader final : public network::mojom::URLLoaderClient,
   using URLLoaderThrottlesGetter = base::RepeatingCallback<
       std::vector<std::unique_ptr<content::URLLoaderThrottle>>()>;
 
-  WebPackageLoader(const network::ResourceResponseHead& original_response,
-                   network::mojom::URLLoaderClientPtr forwarding_client,
-                   network::mojom::URLLoaderClientEndpointsPtr endpoints,
-                   url::Origin request_initiator,
-                   uint32_t url_loader_options,
-                   scoped_refptr<SharedURLLoaderFactory> url_loader_factory,
-                   URLLoaderThrottlesGetter url_loader_throttles_getter);
+  WebPackageLoader(
+      const network::ResourceResponseHead& original_response,
+      network::mojom::URLLoaderClientPtr forwarding_client,
+      network::mojom::URLLoaderClientEndpointsPtr endpoints,
+      url::Origin request_initiator,
+      uint32_t url_loader_options,
+      int frame_tree_node_id,
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      URLLoaderThrottlesGetter url_loader_throttles_getter,
+      scoped_refptr<net::URLRequestContextGetter> request_context_getter);
   ~WebPackageLoader() override;
 
   // network::mojom::URLLoaderClient implementation
   // Only OnStartLoadingResponseBody() and OnComplete() are called.
   void OnReceiveResponse(
       const network::ResourceResponseHead& response_head,
-      const base::Optional<net::SSLInfo>& ssl_info,
       network::mojom::DownloadedTempFilePtr downloaded_file) override;
   void OnReceiveRedirect(
       const net::RedirectInfo& redirect_info,
@@ -90,8 +96,7 @@ class WebPackageLoader final : public network::mojom::URLLoaderClient,
       const GURL& request_url,
       const std::string& request_method,
       const network::ResourceResponseHead& resource_response,
-      std::unique_ptr<net::SourceStream> payload_stream,
-      base::Optional<net::SSLInfo> ssl_info);
+      std::unique_ptr<net::SourceStream> payload_stream);
 
   void FinishReadingBody(int result);
 
@@ -121,10 +126,14 @@ class WebPackageLoader final : public network::mojom::URLLoaderClient,
 
   url::Origin request_initiator_;
   const uint32_t url_loader_options_;
-  scoped_refptr<SharedURLLoaderFactory> url_loader_factory_;
+  const int frame_tree_node_id_;
+  scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
   URLLoaderThrottlesGetter url_loader_throttles_getter_;
+  scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
 
   base::Optional<net::SSLInfo> ssl_info_;
+
+  std::string content_type_;
 
   base::WeakPtrFactory<WebPackageLoader> weak_factory_;
 

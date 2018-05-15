@@ -6,8 +6,8 @@
 
 #include <memory>
 
-#include "chrome/browser/signin/easy_unlock_service.h"
-#include "chrome/browser/signin/easy_unlock_service_factory.h"
+#include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_service.h"
+#include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_service_factory.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -56,10 +56,6 @@ class FakeEasyUnlockService : public EasyUnlockService {
   Type GetType() const override { return TYPE_REGULAR; }
   AccountId GetAccountId() const override { return EmptyAccountId(); }
   void LaunchSetup() override {}
-  const base::DictionaryValue* GetPermitAccess() const override {
-    return nullptr;
-  }
-  void SetPermitAccess(const base::DictionaryValue& permit) override {}
   void ClearPermitAccess() override {}
 
   const base::ListValue* GetRemoteDevices() const override { return nullptr; }
@@ -71,8 +67,6 @@ class FakeEasyUnlockService : public EasyUnlockService {
   void RecordEasySignInOutcome(const AccountId& account_id,
                                bool success) const override {}
   void RecordPasswordLoginEvent(const AccountId& account_id) const override {}
-  void StartAutoPairing(const AutoPairingResultCallback& callback) override {}
-  void SetAutoPairingResult(bool success, const std::string& error) override {}
 
   void InitializeInternal() override {}
   void ShutdownInternal() override {}

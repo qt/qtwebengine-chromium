@@ -4,6 +4,7 @@
 
 #include "media/gpu/windows/dxva_video_decode_accelerator_win.h"
 
+#include <algorithm>
 #include <memory>
 
 #if !defined(OS_WIN)
@@ -33,6 +34,7 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/shared_memory.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/path_service.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
@@ -143,46 +145,50 @@ static const GUID DXVA2_Intel_ModeH264_E = {
 
 // R600, R700, Evergreen and Cayman AMD cards. These support DXVA via UVD3
 // or earlier, and don't handle resolutions higher than 1920 x 1088 well.
-static const DWORD g_AMDUVD3GPUList[] = {
-    0x9400, 0x9401, 0x9402, 0x9403, 0x9405, 0x940a, 0x940b, 0x940f, 0x94c0,
-    0x94c1, 0x94c3, 0x94c4, 0x94c5, 0x94c6, 0x94c7, 0x94c8, 0x94c9, 0x94cb,
-    0x94cc, 0x94cd, 0x9580, 0x9581, 0x9583, 0x9586, 0x9587, 0x9588, 0x9589,
-    0x958a, 0x958b, 0x958c, 0x958d, 0x958e, 0x958f, 0x9500, 0x9501, 0x9504,
-    0x9505, 0x9506, 0x9507, 0x9508, 0x9509, 0x950f, 0x9511, 0x9515, 0x9517,
-    0x9519, 0x95c0, 0x95c2, 0x95c4, 0x95c5, 0x95c6, 0x95c7, 0x95c9, 0x95cc,
-    0x95cd, 0x95ce, 0x95cf, 0x9590, 0x9591, 0x9593, 0x9595, 0x9596, 0x9597,
-    0x9598, 0x9599, 0x959b, 0x9610, 0x9611, 0x9612, 0x9613, 0x9614, 0x9615,
-    0x9616, 0x9710, 0x9711, 0x9712, 0x9713, 0x9714, 0x9715, 0x9440, 0x9441,
-    0x9442, 0x9443, 0x9444, 0x9446, 0x944a, 0x944b, 0x944c, 0x944e, 0x9450,
-    0x9452, 0x9456, 0x945a, 0x945b, 0x945e, 0x9460, 0x9462, 0x946a, 0x946b,
-    0x947a, 0x947b, 0x9480, 0x9487, 0x9488, 0x9489, 0x948a, 0x948f, 0x9490,
-    0x9491, 0x9495, 0x9498, 0x949c, 0x949e, 0x949f, 0x9540, 0x9541, 0x9542,
-    0x954e, 0x954f, 0x9552, 0x9553, 0x9555, 0x9557, 0x955f, 0x94a0, 0x94a1,
-    0x94a3, 0x94b1, 0x94b3, 0x94b4, 0x94b5, 0x94b9, 0x68e0, 0x68e1, 0x68e4,
+//
+// NOTE: This list must be kept in sorted order.
+static const uint16_t kLegacyAmdGpuList[] = {
+    0x130f, 0x6700, 0x6701, 0x6702, 0x6703, 0x6704, 0x6705, 0x6706, 0x6707,
+    0x6708, 0x6709, 0x6718, 0x6719, 0x671c, 0x671d, 0x671f, 0x6720, 0x6721,
+    0x6722, 0x6723, 0x6724, 0x6725, 0x6726, 0x6727, 0x6728, 0x6729, 0x6738,
+    0x6739, 0x673e, 0x6740, 0x6741, 0x6742, 0x6743, 0x6744, 0x6745, 0x6746,
+    0x6747, 0x6748, 0x6749, 0x674a, 0x6750, 0x6751, 0x6758, 0x6759, 0x675b,
+    0x675d, 0x675f, 0x6760, 0x6761, 0x6762, 0x6763, 0x6764, 0x6765, 0x6766,
+    0x6767, 0x6768, 0x6770, 0x6771, 0x6772, 0x6778, 0x6779, 0x677b, 0x6798,
+    0x67b1, 0x6821, 0x683d, 0x6840, 0x6841, 0x6842, 0x6843, 0x6849, 0x6850,
+    0x6858, 0x6859, 0x6880, 0x6888, 0x6889, 0x688a, 0x688c, 0x688d, 0x6898,
+    0x6899, 0x689b, 0x689c, 0x689d, 0x689e, 0x68a0, 0x68a1, 0x68a8, 0x68a9,
+    0x68b0, 0x68b8, 0x68b9, 0x68ba, 0x68be, 0x68bf, 0x68c0, 0x68c1, 0x68c7,
+    0x68c8, 0x68c9, 0x68d8, 0x68d9, 0x68da, 0x68de, 0x68e0, 0x68e1, 0x68e4,
     0x68e5, 0x68e8, 0x68e9, 0x68f1, 0x68f2, 0x68f8, 0x68f9, 0x68fa, 0x68fe,
-    0x68c0, 0x68c1, 0x68c7, 0x68c8, 0x68c9, 0x68d8, 0x68d9, 0x68da, 0x68de,
-    0x68a0, 0x68a1, 0x68a8, 0x68a9, 0x68b0, 0x68b8, 0x68b9, 0x68ba, 0x68be,
-    0x68bf, 0x6880, 0x6888, 0x6889, 0x688a, 0x688c, 0x688d, 0x6898, 0x6899,
-    0x689b, 0x689e, 0x689c, 0x689d, 0x9802, 0x9803, 0x9804, 0x9805, 0x9806,
-    0x9807, 0x9808, 0x9809, 0x980a, 0x9640, 0x9641, 0x9647, 0x9648, 0x964a,
-    0x964b, 0x964c, 0x964e, 0x964f, 0x9642, 0x9643, 0x9644, 0x9645, 0x9649,
-    0x6720, 0x6721, 0x6722, 0x6723, 0x6724, 0x6725, 0x6726, 0x6727, 0x6728,
-    0x6729, 0x6738, 0x6739, 0x673e, 0x6740, 0x6741, 0x6742, 0x6743, 0x6744,
-    0x6745, 0x6746, 0x6747, 0x6748, 0x6749, 0x674a, 0x6750, 0x6751, 0x6758,
-    0x6759, 0x675b, 0x675d, 0x675f, 0x6840, 0x6841, 0x6842, 0x6843, 0x6849,
-    0x6850, 0x6858, 0x6859, 0x6760, 0x6761, 0x6762, 0x6763, 0x6764, 0x6765,
-    0x6766, 0x6767, 0x6768, 0x6770, 0x6771, 0x6772, 0x6778, 0x6779, 0x677b,
-    0x6700, 0x6701, 0x6702, 0x6703, 0x6704, 0x6705, 0x6706, 0x6707, 0x6708,
-    0x6709, 0x6718, 0x6719, 0x671c, 0x671d, 0x671f, 0x683D, 0x9900, 0x9901,
+    0x9400, 0x9401, 0x9402, 0x9403, 0x9405, 0x940a, 0x940b, 0x940f, 0x9440,
+    0x9441, 0x9442, 0x9443, 0x9444, 0x9446, 0x944a, 0x944b, 0x944c, 0x944e,
+    0x9450, 0x9452, 0x9456, 0x945a, 0x945b, 0x945e, 0x9460, 0x9462, 0x946a,
+    0x946b, 0x947a, 0x947b, 0x9480, 0x9487, 0x9488, 0x9489, 0x948a, 0x948f,
+    0x9490, 0x9491, 0x9495, 0x9498, 0x949c, 0x949e, 0x949f, 0x94a0, 0x94a1,
+    0x94a3, 0x94b1, 0x94b3, 0x94b4, 0x94b5, 0x94b9, 0x94c0, 0x94c1, 0x94c3,
+    0x94c4, 0x94c5, 0x94c6, 0x94c7, 0x94c8, 0x94c9, 0x94cb, 0x94cc, 0x94cd,
+    0x9500, 0x9501, 0x9504, 0x9505, 0x9506, 0x9507, 0x9508, 0x9509, 0x950f,
+    0x9511, 0x9515, 0x9517, 0x9519, 0x9540, 0x9541, 0x9542, 0x954e, 0x954f,
+    0x9552, 0x9553, 0x9555, 0x9557, 0x955f, 0x9580, 0x9581, 0x9583, 0x9586,
+    0x9587, 0x9588, 0x9589, 0x958a, 0x958b, 0x958c, 0x958d, 0x958e, 0x958f,
+    0x9590, 0x9591, 0x9593, 0x9595, 0x9596, 0x9597, 0x9598, 0x9599, 0x959b,
+    0x95c0, 0x95c2, 0x95c4, 0x95c5, 0x95c6, 0x95c7, 0x95c9, 0x95cc, 0x95cd,
+    0x95ce, 0x95cf, 0x9610, 0x9611, 0x9612, 0x9613, 0x9614, 0x9615, 0x9616,
+    0x9640, 0x9641, 0x9642, 0x9643, 0x9644, 0x9645, 0x9647, 0x9648, 0x9649,
+    0x964a, 0x964b, 0x964c, 0x964e, 0x964f, 0x9710, 0x9711, 0x9712, 0x9713,
+    0x9714, 0x9715, 0x9802, 0x9803, 0x9804, 0x9805, 0x9806, 0x9807, 0x9808,
+    0x9809, 0x980a, 0x9830, 0x983d, 0x9850, 0x9851, 0x9874, 0x9900, 0x9901,
     0x9903, 0x9904, 0x9905, 0x9906, 0x9907, 0x9908, 0x9909, 0x990a, 0x990b,
     0x990c, 0x990d, 0x990e, 0x990f, 0x9910, 0x9913, 0x9917, 0x9918, 0x9919,
     0x9990, 0x9991, 0x9992, 0x9993, 0x9994, 0x9995, 0x9996, 0x9997, 0x9998,
-    0x9999, 0x999a, 0x999b, 0x999c, 0x999d, 0x99a0, 0x99a2, 0x99a4,
-};
+    0x9999, 0x999a, 0x999b, 0x999c, 0x999d, 0x99a0, 0x99a2, 0x99a4};
 
 // Legacy Intel GPUs (Second generation) which have trouble with resolutions
 // higher than 1920 x 1088
-static const DWORD g_IntelLegacyGPUList[] = {
+//
+// NOTE: This list must be kept in sorted order.
+static const uint16_t kLegacyIntelGpuList[] = {
     0x102, 0x106, 0x116, 0x126,
 };
 
@@ -206,6 +212,11 @@ HRESULT g_last_device_removed_reason;
 // resolution higher then 1920 x 1088. This function checks if the GPU is in
 // this list and if yes returns true.
 bool IsLegacyGPU(ID3D11Device* device) {
+  DCHECK(std::is_sorted(std::begin(kLegacyAmdGpuList),
+                        std::end(kLegacyAmdGpuList)));
+  DCHECK(std::is_sorted(std::begin(kLegacyIntelGpuList),
+                        std::end(kLegacyIntelGpuList)));
+
   constexpr int kAMDGPUId1 = 0x1002;
   constexpr int kAMDGPUId2 = 0x1022;
   constexpr int kIntelGPU = 0x8086;
@@ -225,19 +236,25 @@ bool IsLegacyGPU(ID3D11Device* device) {
   if (FAILED(hr))
     return true;
 
+  // All the values in the legacy gpu list are uint16_t.
+  if (adapter_desc.DeviceId > std::numeric_limits<uint16_t>::max())
+    return false;
+
+  const uint16_t device_id = adapter_desc.DeviceId;
+
   // We check if the device is an Intel or an AMD device and whether it is in
-  // the global list defined by the g_AMDUVD3GPUList and g_IntelLegacyGPUList
+  // the global list defined by the kLegacyAmdGpuList and kLegacyIntelGpuList
   // arrays above. If yes then the device is treated as a legacy device.
   if (adapter_desc.VendorId == kAMDGPUId1 ||
       adapter_desc.VendorId == kAMDGPUId2) {
-    for (size_t i = 0; i < arraysize(g_AMDUVD3GPUList); i++) {
-      if (adapter_desc.DeviceId == g_AMDUVD3GPUList[i])
-        return true;
+    if (std::binary_search(std::begin(kLegacyAmdGpuList),
+                           std::end(kLegacyAmdGpuList), device_id)) {
+      return true;
     }
   } else if (adapter_desc.VendorId == kIntelGPU) {
-    for (size_t i = 0; i < arraysize(g_IntelLegacyGPUList); i++) {
-      if (adapter_desc.DeviceId == g_IntelLegacyGPUList[i])
-        return true;
+    if (std::binary_search(std::begin(kLegacyIntelGpuList),
+                           std::end(kLegacyIntelGpuList), device_id)) {
+      return true;
     }
   }
 
@@ -345,6 +362,10 @@ enum {
   // the decoded samples. These buffers are then reused when the client tells
   // us that it is done with the buffer.
   kNumPictureBuffers = 5,
+  // When GetTextureTarget() returns GL_TEXTURE_EXTERNAL_OES, allocated
+  // PictureBuffers do not consume significant resources, so we can optimize for
+  // latency more aggressively.
+  kNumPictureBuffersForZeroCopy = 10,
   // The keyed mutex should always be released before the other thread
   // attempts to acquire it, so AcquireSync should always return immediately.
   kAcquireSyncWaitMs = 0,
@@ -698,6 +719,9 @@ DXVAVideoDecodeAccelerator::DXVAVideoDecodeAccelerator(
       support_share_nv12_textures_(
           gpu_preferences.enable_zero_copy_dxgi_video &&
           !workarounds.disable_dxgi_zero_copy_video),
+      num_picture_buffers_requested_(support_share_nv12_textures_
+                                         ? kNumPictureBuffersForZeroCopy
+                                         : kNumPictureBuffers),
       support_copy_nv12_textures_(gpu_preferences.enable_nv12_dxgi_video &&
                                   !workarounds.disable_nv12_dxgi_video),
       support_delayed_copy_nv12_textures_(
@@ -747,7 +771,7 @@ bool DXVAVideoDecodeAccelerator::Initialize(const Config& config,
   if (!config.supported_output_formats.empty() &&
       !base::ContainsValue(config.supported_output_formats,
                            PIXEL_FORMAT_NV12)) {
-    support_share_nv12_textures_ = false;
+    DisableSharedTextureSupport();
     support_copy_nv12_textures_ = false;
   }
 
@@ -807,6 +831,10 @@ bool DXVAVideoDecodeAccelerator::Initialize(const Config& config,
         ::GetProcAddress(dxgi_manager_dll, "MFCreateDXGIDeviceManager"));
   }
 
+  RETURN_AND_NOTIFY_ON_FAILURE(make_context_current_cb_.Run(),
+                               "Failed to make context current",
+                               PLATFORM_FAILURE, false);
+
   RETURN_AND_NOTIFY_ON_FAILURE(
       gl::g_driver_egl.ext.b_EGL_ANGLE_surface_d3d_texture_2d_share_handle,
       "EGL_ANGLE_surface_d3d_texture_2d_share_handle unavailable",
@@ -851,6 +879,9 @@ bool DXVAVideoDecodeAccelerator::Initialize(const Config& config,
     config_change_detector_.reset(new VP9ConfigChangeDetector);
 
   SetState(kNormal);
+
+  UMA_HISTOGRAM_ENUMERATION("Media.DXVAVDA.PictureBufferMechanism",
+                            GetPictureBufferMechanism());
 
   return StartDecoderThread();
 }
@@ -1168,9 +1199,10 @@ void DXVAVideoDecodeAccelerator::AssignPictureBuffers(
   RETURN_AND_NOTIFY_ON_FAILURE((state != kUninitialized),
                                "Invalid state: " << state, ILLEGAL_STATE, );
   RETURN_AND_NOTIFY_ON_FAILURE(
-      (kNumPictureBuffers <= buffers.size()),
+      (num_picture_buffers_requested_ <= static_cast<int>(buffers.size())),
       "Failed to provide requested picture buffers. (Got "
-          << buffers.size() << ", requested " << kNumPictureBuffers << ")",
+          << buffers.size() << ", requested " << num_picture_buffers_requested_
+          << ")",
       INVALID_ARGUMENT, );
 
   RETURN_AND_NOTIFY_ON_FAILURE(make_context_current_cb_.Run(),
@@ -1677,7 +1709,7 @@ bool DXVAVideoDecodeAccelerator::InitDecoder(VideoCodecProfile profile) {
 
   if (use_fp16_) {
     // TODO(hubbe): Share/copy P010/P016 textures.
-    support_share_nv12_textures_ = false;
+    DisableSharedTextureSupport();
     support_copy_nv12_textures_ = false;
   }
 
@@ -1711,7 +1743,7 @@ bool DXVAVideoDecodeAccelerator::CheckDecoderDxvaSupport() {
   // pending_output_samples_. The decoder adds this number to the number of
   // reference pictures it expects to need and uses that to determine the
   // array size of the output texture.
-  const int kMaxOutputSamples = kNumPictureBuffers + 1;
+  const int kMaxOutputSamples = num_picture_buffers_requested_ + 1;
   attributes->SetUINT32(MF_SA_MINIMUM_OUTPUT_SAMPLE_COUNT_PROGRESSIVE,
                         kMaxOutputSamples);
   attributes->SetUINT32(MF_SA_MINIMUM_OUTPUT_SAMPLE_COUNT, kMaxOutputSamples);
@@ -1739,7 +1771,7 @@ bool DXVAVideoDecodeAccelerator::CheckDecoderDxvaSupport() {
       !gl::g_driver_egl.ext.b_EGL_KHR_stream ||
       !gl::g_driver_egl.ext.b_EGL_KHR_stream_consumer_gltexture ||
       !gl::g_driver_egl.ext.b_EGL_NV_stream_consumer_gltexture_yuv) {
-    support_share_nv12_textures_ = false;
+    DisableSharedTextureSupport();
     support_copy_nv12_textures_ = false;
   }
 
@@ -1916,6 +1948,11 @@ void DXVAVideoDecodeAccelerator::DoDecode(const gfx::ColorSpace& color_space) {
       } else if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) {
         // No more output from the decoder. Stop playback.
         SetState(kStopped);
+        return;
+      } else if (hr == E_FAIL) {
+        // This shouldn't happen, but does, log it and ignore it.
+        // https://crbug.com/839057
+        LOG(ERROR) << "Received E_FAIL in DoDecode()";
         return;
       } else {
         // Unknown error, stop playback and log error.
@@ -2201,7 +2238,7 @@ void DXVAVideoDecodeAccelerator::RequestPictureBuffers(int width, int height) {
     bool provide_nv12_textures =
         GetPictureBufferMechanism() != PictureBufferMechanism::COPY_TO_RGB;
     client_->ProvidePictureBuffers(
-        kNumPictureBuffers,
+        num_picture_buffers_requested_,
         provide_nv12_textures ? PIXEL_FORMAT_NV12 : PIXEL_FORMAT_UNKNOWN,
         provide_nv12_textures ? 2 : 1, gfx::Size(width, height),
         GetTextureTarget());
@@ -3135,6 +3172,11 @@ uint32_t DXVAVideoDecodeAccelerator::GetTextureTarget() const {
   }
   NOTREACHED();
   return 0;
+}
+
+void DXVAVideoDecodeAccelerator::DisableSharedTextureSupport() {
+  support_share_nv12_textures_ = false;
+  num_picture_buffers_requested_ = kNumPictureBuffers;
 }
 
 DXVAVideoDecodeAccelerator::PictureBufferMechanism

@@ -11,6 +11,7 @@
 
 #include "core/fpdfapi/font/cpdf_cidfont.h"
 #include "core/fxcrt/retain_ptr.h"
+#include "third_party/base/span.h"
 
 class CPDF_CMapManager;
 struct FXCMAP_CMap;
@@ -53,7 +54,7 @@ class CPDF_CMap : public Retainable {
   void LoadPredefined(CPDF_CMapManager* pMgr,
                       const ByteString& name,
                       bool bPromptCJK);
-  void LoadEmbedded(const uint8_t* pData, uint32_t dwSize);
+  void LoadEmbedded(pdfium::span<const uint8_t> data);
 
   bool IsLoaded() const { return m_bLoaded; }
   bool IsVertWriting() const { return m_bVertical; }
@@ -61,8 +62,8 @@ class CPDF_CMap : public Retainable {
   uint16_t CIDFromCharCode(uint32_t charcode) const;
 
   int GetCharSize(uint32_t charcode) const;
-  uint32_t GetNextChar(const char* pString, int nStrLen, int& offset) const;
-  int CountChar(const char* pString, int size) const;
+  uint32_t GetNextChar(const ByteStringView& pString, size_t& offset) const;
+  size_t CountChar(const ByteStringView& pString) const;
   int AppendChar(char* str, uint32_t charcode) const;
 
   void SetVertical(bool vert) { m_bVertical = vert; }

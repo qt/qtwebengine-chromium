@@ -14,6 +14,7 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "build/build_config.h"
+#include "content/public/browser/browser_thread.h"
 #include "extensions/browser/api/api_resource_manager.h"
 #include "extensions/browser/api/async_api_function.h"
 #include "extensions/browser/extension_function.h"
@@ -441,13 +442,15 @@ class SocketGetInfoFunction : public SocketAsyncApiFunction {
   std::unique_ptr<api::socket::GetInfo::Params> params_;
 };
 
-class SocketGetNetworkListFunction : public AsyncExtensionFunction {
+class SocketGetNetworkListFunction : public UIThreadExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("socket.getNetworkList", SOCKET_GETNETWORKLIST)
 
  protected:
   ~SocketGetNetworkListFunction() override {}
-  bool RunAsync() override;
+
+  // UIThreadExtensionFunction:
+  ResponseAction Run() override;
 
  private:
   void GetNetworkListOnFileThread();

@@ -17,6 +17,7 @@
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/context_factory.h"
 #include "content/public/browser/devtools_agent_host.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "content/shell/browser/shell_devtools_manager_delegate.h"
 #include "extensions/browser/browser_context_keyed_service_factories.h"
@@ -75,7 +76,7 @@
 #endif
 
 #if defined(USE_AURA) && defined(USE_X11)
-#include "ui/events/devices/x11/touch_factory_x11.h"
+#include "ui/events/devices/x11/touch_factory_x11.h"  // nogncheck
 #endif
 
 using base::CommandLine;
@@ -86,6 +87,16 @@ using content::BrowserThread;
 #endif
 
 namespace extensions {
+
+namespace {
+
+// Intentionally dereferences a null pointer to test the crash reporter.
+void CrashForTest() {
+  int* bad_pointer = nullptr;
+  *bad_pointer = 0;
+}
+
+}  // namespace
 
 ShellBrowserMainParts::ShellBrowserMainParts(
     const content::MainFunctionParams& parameters,
@@ -232,6 +243,10 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
 
   content::ShellDevToolsManagerDelegate::StartHttpHandler(
       browser_context_.get());
+
+  if (cmd->HasSwitch(::switches::kBrowserCrashTest))
+    CrashForTest();
+
   if (parameters_.ui_task) {
     // For running browser tests.
     parameters_.ui_task->Run();

@@ -8,7 +8,6 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/threading/platform_thread.h"
 #include "base/trace_event/trace_event.h"
@@ -30,8 +29,8 @@
 #include "services/ui/ws/display_binding.h"
 #include "services/ui/ws/display_creation_config.h"
 #include "services/ui/ws/display_manager.h"
+#include "services/ui/ws/event_injector.h"
 #include "services/ui/ws/gpu_host.h"
-#include "services/ui/ws/remote_event_dispatcher.h"
 #include "services/ui/ws/threaded_image_cursors.h"
 #include "services/ui/ws/threaded_image_cursors_factory.h"
 #include "services/ui/ws/user_activity_monitor.h"
@@ -59,8 +58,6 @@
 #include "services/ui/display/screen_manager_forwarding.h"
 #include "ui/events/ozone/layout/keyboard_layout_engine.h"
 #include "ui/events/ozone/layout/keyboard_layout_engine_manager.h"
-#include "ui/gfx/client_native_pixmap_factory.h"
-#include "ui/ozone/public/client_native_pixmap_factory_ozone.h"
 #include "ui/ozone/public/ozone_platform.h"
 #include "ui/ozone/public/ozone_switches.h"
 #endif
@@ -237,9 +234,6 @@ void Service::OnStart() {
   // Assume a client will change the layout to an appropriate configuration.
   ui::KeyboardLayoutEngineManager::GetKeyboardLayoutEngine()
       ->SetCurrentLayoutByName("us");
-
-  ui::CreateClientNativePixmapFactoryOzone();
-  DCHECK(gfx::ClientNativePixmapFactory::GetInstance());
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -272,49 +266,53 @@ void Service::OnStart() {
     window_server_->SetGpuHost(std::move(gpu_host));
 
     registry_.AddInterface<mojom::Gpu>(
-        base::Bind(&Service::BindGpuRequest, base::Unretained(this)));
+        base::BindRepeating(&Service::BindGpuRequest, base::Unretained(this)));
 #if defined(OS_CHROMEOS)
     registry_.AddInterface<mojom::Arc>(
-        base::Bind(&Service::BindArcRequest, base::Unretained(this)));
+        base::BindRepeating(&Service::BindArcRequest, base::Unretained(this)));
 #endif  // defined(OS_CHROMEOS)
   }
-  registry_.AddInterface<mojom::VideoDetector>(
-      base::Bind(&Service::BindVideoDetectorRequest, base::Unretained(this)));
+  registry_.AddInterface<mojom::VideoDetector>(base::BindRepeating(
+      &Service::BindVideoDetectorRequest, base::Unretained(this)));
 
   ime_driver_.Init(context()->connector(), test_config_);
 
   registry_with_source_info_.AddInterface<mojom::AccessibilityManager>(
-      base::Bind(&Service::BindAccessibilityManagerRequest,
-                 base::Unretained(this)));
-  registry_with_source_info_.AddInterface<mojom::Clipboard>(
-      base::Bind(&Service::BindClipboardRequest, base::Unretained(this)));
+      base::BindRepeating(&Service::BindAccessibilityManagerRequest,
+                          base::Unretained(this)));
+  registry_with_source_info_.AddInterface<mojom::Clipboard>(base::BindRepeating(
+      &Service::BindClipboardRequest, base::Unretained(this)));
   registry_with_source_info_.AddInterface<mojom::DisplayManager>(
-      base::Bind(&Service::BindDisplayManagerRequest, base::Unretained(this)));
-  registry_.AddInterface<mojom::IMERegistrar>(
-      base::Bind(&Service::BindIMERegistrarRequest, base::Unretained(this)));
-  registry_.AddInterface<mojom::IMEDriver>(
-      base::Bind(&Service::BindIMEDriverRequest, base::Unretained(this)));
+      base::BindRepeating(&Service::BindDisplayManagerRequest,
+                          base::Unretained(this)));
+  registry_.AddInterface<mojom::IMERegistrar>(base::BindRepeating(
+      &Service::BindIMERegistrarRequest, base::Unretained(this)));
+  registry_.AddInterface<mojom::IMEDriver>(base::BindRepeating(
+      &Service::BindIMEDriverRequest, base::Unretained(this)));
   registry_with_source_info_.AddInterface<mojom::UserActivityMonitor>(
-      base::Bind(&Service::BindUserActivityMonitorRequest,
-                 base::Unretained(this)));
-  registry_with_source_info_.AddInterface<WindowTreeHostFactory>(base::Bind(
-      &Service::BindWindowTreeHostFactoryRequest, base::Unretained(this)));
+      base::BindRepeating(&Service::BindUserActivityMonitorRequest,
+                          base::Unretained(this)));
+  registry_with_source_info_.AddInterface<WindowTreeHostFactory>(
+      base::BindRepeating(&Service::BindWindowTreeHostFactoryRequest,
+                          base::Unretained(this)));
   registry_with_source_info_
-      .AddInterface<mojom::WindowManagerWindowTreeFactory>(
-          base::Bind(&Service::BindWindowManagerWindowTreeFactoryRequest,
-                     base::Unretained(this)));
-  registry_with_source_info_.AddInterface<mojom::WindowTreeFactory>(base::Bind(
-      &Service::BindWindowTreeFactoryRequest, base::Unretained(this)));
+      .AddInterface<mojom::WindowManagerWindowTreeFactory>(base::BindRepeating(
+          &Service::BindWindowManagerWindowTreeFactoryRequest,
+          base::Unretained(this)));
+  registry_with_source_info_.AddInterface<mojom::WindowTreeFactory>(
+      base::BindRepeating(&Service::BindWindowTreeFactoryRequest,
+                          base::Unretained(this)));
   registry_with_source_info_
       .AddInterface<discardable_memory::mojom::DiscardableSharedMemoryManager>(
-          base::Bind(&Service::BindDiscardableSharedMemoryManagerRequest,
-                     base::Unretained(this)));
+          base::BindRepeating(
+              &Service::BindDiscardableSharedMemoryManagerRequest,
+              base::Unretained(this)));
   if (test_config_) {
-    registry_.AddInterface<WindowServerTest>(base::Bind(
+    registry_.AddInterface<WindowServerTest>(base::BindRepeating(
         &Service::BindWindowServerTestRequest, base::Unretained(this)));
   }
-  registry_.AddInterface<mojom::RemoteEventDispatcher>(base::Bind(
-      &Service::BindRemoteEventDispatcherRequest, base::Unretained(this)));
+  registry_.AddInterface<mojom::EventInjector>(base::BindRepeating(
+      &Service::BindEventInjectorRequest, base::Unretained(this)));
 
   // On non-Linux platforms there will be no DeviceDataManager instance and no
   // purpose in adding the Mojo interface to connect to.
@@ -509,10 +507,9 @@ void Service::BindWindowServerTestRequest(
       std::move(request));
 }
 
-void Service::BindRemoteEventDispatcherRequest(
-    mojom::RemoteEventDispatcherRequest request) {
+void Service::BindEventInjectorRequest(mojom::EventInjectorRequest request) {
   mojo::MakeStrongBinding(
-      std::make_unique<ws::RemoteEventDispatcherImpl>(window_server_.get()),
+      std::make_unique<ws::EventInjector>(window_server_.get()),
       std::move(request));
 }
 

@@ -10,6 +10,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/optional.h"
+#include "base/time/time.h"
 #include "ui/message_center/message_center_export.h"
 #include "ui/message_center/views/message_view.h"
 #include "ui/views/animation/ink_drop_observer.h"
@@ -18,7 +19,6 @@
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
-#include "ui/views/view_targeter_delegate.h"
 
 namespace views {
 class ImageButton;
@@ -218,9 +218,10 @@ class MESSAGE_CENTER_EXPORT NotificationViewMD
     : public MessageView,
       public views::InkDropObserver,
       public NotificationInputDelegate,
-      public views::ButtonListener,
-      public views::ViewTargeterDelegate {
+      public views::ButtonListener {
  public:
+  static const char kMessageViewSubClassName[];
+
   explicit NotificationViewMD(const Notification& notification);
   ~NotificationViewMD() override;
 
@@ -233,9 +234,11 @@ class MESSAGE_CENTER_EXPORT NotificationViewMD
   void Layout() override;
   void OnFocus() override;
   void ScrollRectToVisible(const gfx::Rect& rect) override;
-  gfx::NativeCursor GetCursor(const ui::MouseEvent& event) override;
   bool OnMousePressed(const ui::MouseEvent& event) override;
+  bool OnMouseDragged(const ui::MouseEvent& event) override;
+  void OnMouseReleased(const ui::MouseEvent& event) override;
   void OnMouseEvent(ui::MouseEvent* event) override;
+  void OnGestureEvent(ui::GestureEvent* event) override;
 
   // Overridden from views::InkDropHostView:
   void AddInkDropLayer(ui::Layer* ink_drop_layer) override;
@@ -246,16 +249,14 @@ class MESSAGE_CENTER_EXPORT NotificationViewMD
   // Overridden from MessageView:
   void UpdateWithNotification(const Notification& notification) override;
   void ButtonPressed(views::Button* sender, const ui::Event& event) override;
-  bool IsCloseButtonFocused() const override;
-  void RequestFocusOnCloseButton() override;
   void UpdateControlButtonsVisibility() override;
   NotificationControlButtonsView* GetControlButtonsView() const override;
   bool IsExpanded() const override;
   void SetExpanded(bool expanded) override;
   bool IsManuallyExpandedOrCollapsed() const override;
   void SetManuallyExpandedOrCollapsed(bool value) override;
-
   void OnSettingsButtonPressed(const ui::Event& event) override;
+  const char* GetMessageViewSubClassName() const final;
 
   // views::InkDropObserver:
   void InkDropAnimationStarted() override;
@@ -264,9 +265,6 @@ class MESSAGE_CENTER_EXPORT NotificationViewMD
   // Overridden from NotificationInputDelegate:
   void OnNotificationInputSubmit(size_t index,
                                  const base::string16& text) override;
-
-  // views::ViewTargeterDelegate:
-  views::View* TargetForRect(views::View* root, const gfx::Rect& rect) override;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(NotificationViewMDTest, CreateOrUpdateTest);
@@ -356,6 +354,8 @@ class MESSAGE_CENTER_EXPORT NotificationViewMD
   views::LabelButton* settings_done_button_ = nullptr;
 
   std::unique_ptr<ui::EventHandler> click_activator_;
+
+  base::TimeTicks last_mouse_pressed_timestamp_;
 
   DISALLOW_COPY_AND_ASSIGN(NotificationViewMD);
 };

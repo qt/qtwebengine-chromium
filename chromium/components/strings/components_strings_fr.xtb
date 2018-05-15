@@ -1,6 +1,7 @@
 <?xml version="1.0" ?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="fr">
+<translation id="1005145902654145231">Échec du changement de nom de la session.</translation>
 <translation id="1008557486741366299">Pas maintenant</translation>
 <translation id="1015730422737071372">Fournir des informations supplémentaires</translation>
 <translation id="1021110881106174305">Cartes acceptées</translation>
@@ -21,13 +22,13 @@
 <translation id="1113869188872983271">&amp;Annuler la réorganisation</translation>
 <translation id="1126551341858583091">La taille sur l'espace de stockage local est de <ph name="CRASH_SIZE" />.</translation>
 <translation id="112840717907525620">Cache de la règle valide.</translation>
-<translation id="1132774398110320017">Paramètres de saisie automatique de Chrome…</translation>
 <translation id="1150979032973867961">Impossible de vérifier sur le serveur qu'il s'agit bien du domaine <ph name="DOMAIN" />, car son certificat de sécurité n'est pas considéré comme fiable par le système d'exploitation de votre ordinateur. Cela peut être dû à une mauvaise configuration ou bien à l'interception de votre connexion par un pirate informatique.</translation>
 <translation id="1151972924205500581">Veuillez saisir un mot de passe</translation>
 <translation id="1152921474424827756">Accédez à une <ph name="BEGIN_LINK" />copie mise en cache<ph name="END_LINK" /> de <ph name="URL" />.</translation>
 <translation id="1158211211994409885"><ph name="HOST_NAME" /> a mis fin à la connexion de manière inattendue.</translation>
 <translation id="1161325031994447685">Reconnectez-vous au réseau Wi-Fi</translation>
 <translation id="1165039591588034296">Erreur</translation>
+<translation id="1173894706177603556">Renommer</translation>
 <translation id="1175364870820465910">Im&amp;primer...</translation>
 <translation id="1181037720776840403">Supprimer</translation>
 <translation id="1184214524891303587"><ph name="BEGIN_WHITEPAPER_LINK" />Signaler automatiquement<ph name="END_WHITEPAPER_LINK" /> les incidents de sécurité potentiels à Google. <ph name="PRIVACY_PAGE_LINK" /></translation>
@@ -42,13 +43,22 @@
 <translation id="1228893227497259893">Identifiant d'entité incorrect.</translation>
 <translation id="1232569758102978740">Sans titre</translation>
 <translation id="1253921432148366685"><ph name="TYPE_1" />, <ph name="TYPE_2" /> (synchronisés)</translation>
+<translation id="1256368399071562588">&lt;p&gt;Si vous ne parvenez pas à ouvrir un site Web dans Chrome, essayez d'abord de corriger le problème en suivant ces étapes :&lt;/p&gt;
+    &lt;ol&gt;
+    &lt;li&gt;Vérifiez que l'adresse ne contient pas de faute de frappe.&lt;/li&gt;
+    &lt;li&gt;Assurez-vous que votre connexion Internet fonctionne normalement.&lt;/li&gt;
+    &lt;li&gt;Contactez le propriétaire du site.&lt;/li&gt;
+    &lt;/ol&gt;</translation>
 <translation id="1263231323834454256">Liste de lecture</translation>
 <translation id="1264126396475825575">Rapport d'erreur enregistré le <ph name="CRASH_TIME" /> (pas encore importé ou ignoré)</translation>
 <translation id="1270502636509132238">Mode d'enlèvement</translation>
 <translation id="1285320974508926690">Ne jamais traduire ce site</translation>
+<translation id="1292701964462482250">Un logiciel installé sur votre ordinateur empêche Chrome de se connecter au Web de manière sécurisée (sous Windows uniquement)</translation>
 <translation id="1294154142200295408">Variations de ligne de commande</translation>
 <translation id="129553762522093515">Récemment fermés</translation>
 <translation id="129863573139666797"><ph name="BEGIN_LINK" />Essayez de supprimer les cookies.<ph name="END_LINK" /></translation>
+<translation id="1314614906530272393">La session sélectionnée n'existe pas.</translation>
+<translation id="1323433172918577554">Afficher plus</translation>
 <translation id="1333989956347591814">Votre activité <ph name="BEGIN_EMPHASIS" />peut rester visible<ph name="END_EMPHASIS" /> par :
         <ph name="BEGIN_LIST" />
           <ph name="LIST_ITEM" />Les sites Web que vous consultez
@@ -57,10 +67,10 @@
         <ph name="END_LIST" /></translation>
 <translation id="1339601241726513588">Domaine d'enregistrement :</translation>
 <translation id="1340482604681802745">Adresse d'enlèvement</translation>
-<translation id="1344588688991793829">Paramètres de saisie automatique de Chromium…</translation>
 <translation id="1348198688976932919">Ce site contient des applications dangereuses</translation>
 <translation id="1374468813861204354">suggestions</translation>
 <translation id="1375198122581997741">À propos de la version</translation>
+<translation id="1376836354785490390">Afficher moins</translation>
 <translation id="1377321085342047638">Numéro de carte</translation>
 <translation id="139305205187523129"><ph name="HOST_NAME" /> n'a envoyé aucune donnée.</translation>
 <translation id="1407135791313364759">Tout ouvrir</translation>
@@ -70,6 +80,8 @@
 <translation id="1430915738399379752">Imprimer</translation>
 <translation id="1484290072879560759">Sélectionner l'adresse de livraison</translation>
 <translation id="1506687042165942984">Afficher une copie enregistrée (non actualisée) de cette page</translation>
+<translation id="1507202001669085618">&lt;p&gt;Ce message s'affiche si vous utilisez un portail Wi-Fi auquel vous devez vous connecter pour accéder à Internet.&lt;/p&gt;
+    &lt;p&gt;Pour corriger cette erreur, cliquez sur &lt;strong&gt;Se connecter&lt;/strong&gt; sur la page que vous essayez d'ouvrir.&lt;/p&gt;</translation>
 <translation id="1517433312004943670">Veuillez saisir le numéro de téléphone.</translation>
 <translation id="1517500485252541695">Cartes de crédit et de débit acceptées</translation>
 <translation id="1519264250979466059">Date de création</translation>
@@ -133,15 +145,18 @@
 <translation id="1898423065542865115">Filtrage</translation>
 <translation id="1916770123977586577">Pour appliquer vos paramètres mis à jour à ce site, actualisez la page</translation>
 <translation id="1919345977826869612">Annonces</translation>
+<translation id="1919367280705858090">Obtenir de l'aide pour un message d'erreur spécifique</translation>
 <translation id="192020519938775529">{COUNT,plural, =0{Aucun}=1{1 site}one{# site}other{# sites}}</translation>
 <translation id="1927235823738766038">Cartes de crédit et de débit acceptées</translation>
 <translation id="194030505837763158">Accédez à <ph name="LINK" /></translation>
+<translation id="1945968466830820669">Vous risquez de perdre l'accès au compte de votre organisation ou d'être victime d'usurpation d'identité. L'équipe Chromium vous recommande de modifier votre mot de passe maintenant.</translation>
 <translation id="1948773908305951926">Cartes prépayées acceptées</translation>
 <translation id="1962204205936693436">Favoris du domaine <ph name="DOMAIN" /></translation>
 <translation id="1973335181906896915">Erreur de sérialisation.</translation>
 <translation id="1974060860693918893">Paramètres avancés</translation>
 <translation id="1978555033938440688">Version du micrologiciel</translation>
 <translation id="2001146170449793414">{COUNT,plural, =1{et 1 autre}one{et # autre}other{et # autres}}</translation>
+<translation id="2003709556000175978">Réinitialiser votre mot de passe maintenant</translation>
 <translation id="2025186561304664664">Le proxy est défini sur la configuration automatique.</translation>
 <translation id="2030481566774242610">Essayez avec <ph name="LINK" /></translation>
 <translation id="2032962459168915086"><ph name="BEGIN_LINK" />Vérifier le proxy et le pare-feu<ph name="END_LINK" /></translation>
@@ -149,6 +164,7 @@
 <translation id="2064691555167957331">{COUNT,plural, =1{1 suggestion}one{# suggestion}other{# suggestions}}</translation>
 <translation id="2079545284768500474">Annuler</translation>
 <translation id="20817612488360358">Les paramètres de proxy du système sont configurés pour être utilisés, mais une configuration de proxy explicite est également spécifiée.</translation>
+<translation id="2084558088529668945">Vous avez saisi votre mot de passe sur un site qui n'est pas géré par <ph name="ORG_NAME" />. Pour protéger votre compte, ne réutilisez pas ce mot de passe dans d'autres applications ni sur d'autres sites.</translation>
 <translation id="2091887806945687916">Son</translation>
 <translation id="2094505752054353250">Le domaine ne correspond pas</translation>
 <translation id="2096368010154057602">Département</translation>
@@ -283,7 +299,6 @@
 <translation id="301521992641321250">Bloquée automatiquement</translation>
 <translation id="3024663005179499861">Type de règle incorrect.</translation>
 <translation id="3037605927509011580">Aie aie aie</translation>
-<translation id="3039538478787849737">Enregistrer la carte dans Google ?</translation>
 <translation id="3041612393474885105">Informations relatives au certificat</translation>
 <translation id="3063697135517575841">Impossible de valider votre carte dans Chrome pour le moment. Veuillez réessayer plus tard.</translation>
 <translation id="3064966200440839136">En payant via une application externe, vous allez quitter le mode navigation privée. Voulez-vous continuer ?</translation>
@@ -370,51 +385,6 @@
 <translation id="3583757800736429874">&amp;Rétablir le déplacement</translation>
 <translation id="3586931643579894722">Masquer les détails</translation>
 <translation id="3600246354004376029">"<ph name="TITLE" />", <ph name="DOMAIN" />, <ph name="TIME" /></translation>
-<translation id="3602137825010714926">&lt;h1&gt;Corriger les erreurs de connexion&lt;/h1&gt;
-    &lt;p&gt;Si un message d'erreur s'affiche lorsque vous tentez de consulter un site Web, essayez les solutions proposées ci-dessous.&lt;/p&gt;
-    &lt;h2&gt;Résoudre la plupart des erreurs de connexion&lt;/h2&gt;
-    &lt;p&gt;Si vous ne parvenez pas à ouvrir un site Web dans Chrome, essayez d'abord de corriger le problème en suivant ces étapes :&lt;/p&gt;
-    &lt;ol&gt;
-    &lt;li&gt;Assurez-vous que l'adresse Web ne contient pas de fautes de frappe.&lt;/li&gt;
-    &lt;li&gt;Vérifiez si votre connexion Internet fonctionne correctement.&lt;/li&gt;
-    &lt;li&gt;Contactez le propriétaire du site Web.&lt;/li&gt;
-    &lt;/ol&gt;
-    &lt;h2&gt;Obtenir de l'aide pour un message d'erreur spécifique&lt;/h2&gt;
-    &lt;h3&gt;"Votre connexion n'est pas privée", "NET::ERR_CERT_AUTHORITY_INVALID", "ERR_CERT_COMMON_NAME_INVALID", "NET::ERR_CERT_WEAK_SIGNATURE_ALGORITHM" ou "Erreur de certificat SSL"&lt;/h3&gt;
-    &lt;h4&gt;Étape 1 : Connectez-vous au portail&lt;/h4&gt;
-    &lt;p&gt;Pour utiliser les réseaux Wi-Fi de lieux publics tels que les cafés ou les aéroports, vous devez vous connecter. Pour afficher la page de connexion, accédez à une page dont l'URL contient &lt;code&gt;http://&lt;/code&gt;.&lt;/p&gt;
-    &lt;ol&gt;
-    &lt;li&gt;Accédez à n'importe quel site Web dont l'adresse commence par &lt;code&gt;http://&lt;/code&gt;, telle que &lt;a href="http://example.com" target="_blank"&gt;http://example.com&lt;/a&gt;.&lt;/li&gt;
-    &lt;li&gt;Sur la page de connexion qui s'affiche, connectez-vous pour utiliser Internet.&lt;/li&gt;
-    &lt;/ol&gt;
-    &lt;h4&gt;Étape 2 : Ouvrez la page en mode navigation privée (ordinateur uniquement)&lt;/h4&gt;
-    &lt;p&gt;Ouvrez la page que vous consultiez dans une fenêtre de navigation privée.&lt;/p&gt;
-    &lt;p&gt;Si la page s'affiche, cela signifie qu'une extension Chrome ne fonctionne pas correctement. Pour corriger cette erreur, désactivez l'extension en question.&lt;/p&gt;
-    &lt;h4&gt;Étape 3 : Mettez à jour votre système d'exploitation&lt;/h4&gt;
-    &lt;p&gt;Assurez-vous que votre appareil est à jour.&lt;/p&gt;
-    &lt;h4&gt;Étape 4 : Désactivez temporairement votre logiciel antivirus&lt;/h4&gt;
-    &lt;p&gt;Ce message s'affiche si vous avez un logiciel antivirus qui propose une "protection HTTPS" ou une "analyse HTTPS" bloquant la fonctionnalité de sécurité de Chrome.&lt;/p&gt;
-    &lt;p&gt;Pour corriger cette erreur, désactivez votre logiciel antivirus. Si la page fonctionne à la suite de cette opération, désactivez ce logiciel lorsque vous utilisez des sites sécurisés.&lt;/p&gt;
-    &lt;p&gt;N'oubliez pas de le réactiver par la suite.&lt;/p&gt;
-    &lt;h4&gt;Étape 5 : Obtenez de l'aide supplémentaire&lt;/h4&gt;
-    &lt;p&gt;Si le message d'erreur s'affiche toujours, contactez le propriétaire du site.&lt;/p&gt;
-    &lt;h3&gt;"Se connecter au réseau"&lt;/h3&gt;
-    &lt;p&gt;Ce message s'affiche si vous utilisez un portail Wi-Fi auquel vous devez vous connecter pour accéder à Internet.&lt;/p&gt;
-    &lt;p&gt;Pour corriger cette erreur, cliquez sur &lt;strong&gt;Connexion&lt;/strong&gt; sur la page que vous essayez d'ouvrir.&lt;/p&gt;
-    &lt;h3&gt;"Votre horloge est en retard", "Votre horloge est en avance" ou "NET::ERR_CERT_DATE_INVALID"&lt;/h3&gt;
-    &lt;p&gt;Ce message s'affiche si la date et l'heure de votre ordinateur ou de votre appareil mobile sont incorrectes.&lt;/p&gt;
-    &lt;p&gt;Pour corriger cette erreur, ouvrez l'horloge de votre appareil et assurez-vous que l'heure et la date sont correctes.&lt;/p&gt;
-    &lt;h3&gt;"Un logiciel installé sur votre ordinateur empêche Chrome de se connecter au Web de manière sécurisée" (sous Windows uniquement)&lt;/h3&gt;
-    &lt;p&gt;Ce message d'erreur s'affiche si le logiciel Superfish est installé sur votre ordinateur Windows.&lt;/p&gt;
-    &lt;p&gt;Suivez ces étapes pour désactiver temporairement le logiciel afin d'accéder au Web. Vous devez disposer des droits d'administrateur.&lt;/p&gt;
-    &lt;ol&gt;
-    &lt;li&gt;Cliquez sur &lt;strong&gt;Démarrer&lt;/strong&gt;, puis recherchez et sélectionnez l'option &lt;strong&gt;Afficher les services locaux&lt;/strong&gt;.
-    &lt;li&gt;Sélectionnez &lt;strong&gt;VisualDiscovery&lt;/strong&gt;.
-    &lt;li&gt;Sous &lt;strong&gt;Type de démarrage&lt;/strong&gt;, sélectionnez &lt;strong&gt;Désactivé&lt;/strong&gt;.
-    &lt;li&gt;Sous &lt;strong&gt;État du service&lt;/strong&gt;, cliquez sur &lt;strong&gt;Arrêter&lt;/strong&gt;.
-    &lt;li&gt;Cliquez sur &lt;strong&gt;Appliquer&lt;/strong&gt;, puis sur &lt;strong&gt;OK&lt;/strong&gt;.
-    &lt;li&gt;Accédez au &lt;a href="https://support.google.com/chrome/answer/6098869"&gt;Centre d'aide Chrome&lt;/a&gt; pour découvrir comment supprimer définitivement le logiciel de votre ordinateur.
-    &lt;/ol&gt;</translation>
 <translation id="3615877443314183785">Saisissez une date d'expiration valide</translation>
 <translation id="36224234498066874">Effacer les données de navigation...</translation>
 <translation id="362276910939193118">Afficher l'historique complet</translation>
@@ -458,6 +428,7 @@
 <translation id="3901925938762663762">La carte a expiré.</translation>
 <translation id="3909695131102177774"><ph name="LABEL" /> <ph name="ERROR" /></translation>
 <translation id="3945915738023014686">ID du rapport d'erreur importé : <ph name="CRASH_ID" /> (ID de plantage local : <ph name="CRASH_LOCAL_ID" />)</translation>
+<translation id="3946209740501886391">Toujours demander sur ce site</translation>
 <translation id="3949571496842715403">Impossible de vérifier que ce serveur est bien <ph name="DOMAIN" />, car son certificat de sécurité ne contient pas l'extension "Subject Alternative Names" (Autres noms de l'objet). Cela peut être dû à une mauvaise configuration ou à l'interception de votre connexion par un pirate informatique.</translation>
 <translation id="3949601375789751990">Votre historique de navigation s'affiche ici</translation>
 <translation id="3950820424414687140">Ouvrir une session</translation>
@@ -465,6 +436,7 @@
 <translation id="3964661563329879394">{COUNT,plural, =0{Aucun}=1{De 1 site }one{De # site }other{De # sites }}</translation>
 <translation id="397105322502079400">Calcul en cours…</translation>
 <translation id="3973234410852337861"><ph name="HOST_NAME" /> est bloqué</translation>
+<translation id="3984550557525787191">Ce nom de session existe déjà.</translation>
 <translation id="3987940399970879459">Moins de 1 Mo</translation>
 <translation id="40103911065039147">{URL_count,plural, =1{1 page Web à proximité}one{# page Web à proximité}other{# pages Web à proximité}}</translation>
 <translation id="4030383055268325496">&amp;Annuler l'ajout</translation>
@@ -490,10 +462,28 @@
 <translation id="4171400957073367226">Signature de validation non valide.</translation>
 <translation id="4173827307318847180">{MORE_ITEMS,plural, =1{<ph name="ITEM_COUNT" /> élément supplémentaire}one{<ph name="ITEM_COUNT" /> élément supplémentaire}other{<ph name="ITEM_COUNT" /> éléments supplémentaires}}</translation>
 <translation id="4179515394835346607"><ph name="ROW_NAME" /> <ph name="ROW_CONTENT" /></translation>
+<translation id="4192549185358213268">L'équipe Chrome vous recommande de réinitialiser votre mot de passe <ph name="ORG_NAME" /> si vous l'avez réutilisé sur d'autres sites.</translation>
 <translation id="4196861286325780578">&amp;Rétablir le déplacement</translation>
 <translation id="4203896806696719780"><ph name="BEGIN_LINK" />Vérifier les configurations du pare-feu et de l'antivirus<ph name="END_LINK" /></translation>
 <translation id="4220128509585149162">Plantages</translation>
 <translation id="422022731706691852">Des individus malveillants à l'œuvre sur le site <ph name="BEGIN_BOLD" /><ph name="SITE" /><ph name="END_BOLD" /> pourraient vous inciter à installer des programmes qui nuisent à votre confort de navigation (par exemple, en changeant votre page d'accueil ou en affichant des annonces supplémentaires sur les sites que vous consultez). <ph name="BEGIN_LEARN_MORE_LINK" />En savoir plus<ph name="END_LEARN_MORE_LINK" /></translation>
+<translation id="4221630205957821124">&lt;h4&gt;Étape 1 : Connectez-vous au portail&lt;/h4&gt;
+    &lt;p&gt;Pour utiliser les réseaux Wi-Fi de lieux publics tels que les cafés ou les aéroports, vous devez vous connecter. Pour afficher la page de connexion, accédez à une page dont l'URL contient &lt;code&gt;http://&lt;/code&gt;.&lt;/p&gt;
+    &lt;ol&gt;
+    &lt;li&gt;Accédez à n'importe quel site Web dont l'adresse commence par &lt;code&gt;http://&lt;/code&gt;, telle que &lt;a href="http://example.com" target="_blank"&gt;http://example.com&lt;/a&gt;.&lt;/li&gt;
+    &lt;li&gt;Sur la page de connexion qui s'affiche, connectez-vous pour utiliser Internet.&lt;/li&gt;
+    &lt;/ol&gt;
+    &lt;h4&gt;Étape 2 : Ouvrez la page en mode navigation privée (ordinateur uniquement)&lt;/h4&gt;
+    &lt;p&gt;Ouvrez la page que vous consultiez dans une fenêtre de navigation privée.&lt;/p&gt;
+    &lt;p&gt;Si la page s'affiche, cela signifie qu'une extension Chrome ne fonctionne pas correctement. Pour corriger cette erreur, désactivez l'extension en question.&lt;/p&gt;
+    &lt;h4&gt;Étape 3 : Mettez à jour votre système d'exploitation&lt;/h4&gt;
+    &lt;p&gt;Assurez-vous que votre appareil est à jour.&lt;/p&gt;
+    &lt;h4&gt;Étape 4 : Désactivez temporairement votre logiciel antivirus&lt;/h4&gt;
+    &lt;p&gt;Ce message s'affiche si vous avez un logiciel antivirus qui propose une "protection HTTPS" ou une "analyse HTTPS" bloquant la fonctionnalité de sécurité de Chrome.&lt;/p&gt;
+    &lt;p&gt;Pour corriger cette erreur, désactivez votre logiciel antivirus. Si la page fonctionne à la suite de cette opération, désactivez ce logiciel lorsque vous utilisez des sites sécurisés.&lt;/p&gt;
+    &lt;p&gt;N'oubliez pas de le réactiver par la suite.&lt;/p&gt;
+    &lt;h4&gt;Étape 5 : Obtenez de l'aide supplémentaire&lt;/h4&gt;
+    &lt;p&gt;Si le message d'erreur s'affiche toujours, contactez le propriétaire du site.&lt;/p&gt;</translation>
 <translation id="4226937834893929579"><ph name="BEGIN_LINK" />Essayez d'exécuter les diagnostics réseau<ph name="END_LINK" />.</translation>
 <translation id="4235360514405112390">Valide</translation>
 <translation id="4250431568374086873">Votre connexion à ce site n'est pas totalement sécurisée.</translation>
@@ -503,11 +493,13 @@
 <translation id="4265872034478892965">Autorisé par votre administrateur</translation>
 <translation id="4269787794583293679">(aucun nom d'utilisateur)</translation>
 <translation id="4275830172053184480">Redémarrer l'appareil</translation>
+<translation id="4277028893293644418">Réinitialiser le mot de passe</translation>
 <translation id="4280429058323657511">, expiration le <ph name="EXPIRATION_DATE_ABBR" /></translation>
 <translation id="4312866146174492540">Bloquer (par défaut)</translation>
 <translation id="4325863107915753736">Échec de la recherche de l'article.</translation>
 <translation id="4326324639298822553">Veuillez vérifier la date d'expiration, puis réessayer</translation>
 <translation id="4331708818696583467">Non sécurisé</translation>
+<translation id="4340982228985273705">Cet ordinateur n'est pas détecté comme étant géré par une entreprise. Selon la règle définie, seules les extensions hébergées par le Chrome Web Store peuvent y être installées. L'URL de mise à jour du Chrome Web Store est "<ph name="CWS_UPDATE_URL" />".</translation>
 <translation id="4346197816712207223">Cartes de crédit acceptées</translation>
 <translation id="4356973930735388585">Des individus malveillants à l'œuvre sur ce site pourraient tenter d'installer des applications dangereuses sur votre ordinateur afin de récupérer ou de supprimer certaines informations : photos, mots de passe, messages, numéros de carte de paiement, etc.</translation>
 <translation id="4372948949327679948">Valeur attendue : <ph name="VALUE_TYPE" />.</translation>
@@ -600,6 +592,7 @@
 <translation id="5141240743006678641">Chiffrer les mots de passe synchronisés avec vos informations de connexion Google</translation>
 <translation id="5145883236150621069">Code d'erreur présent dans la réponse de la règle.</translation>
 <translation id="5159010409087891077">Ouvrir la page dans une nouvelle fenêtre de navigation privée (⇧⌘N)</translation>
+<translation id="5169827969064885044">Vous risquez de perdre l'accès au compte de votre organisation ou d'être victime d'usurpation d'identité. L'équipe Chrome vous recommande de modifier votre mot de passe maintenant.</translation>
 <translation id="5171045022955879922">Rechercher ou saisir une URL</translation>
 <translation id="5172758083709347301">Ordinateur</translation>
 <translation id="5179510805599951267">Cette page n'est pas rédigée en <ph name="ORIGINAL_LANGUAGE" /> ? Signaler l'erreur</translation>
@@ -609,6 +602,7 @@
 <translation id="5222812217790122047">Veuillez saisir une adresse e-mail</translation>
 <translation id="522700295135997067">Ce site vient peut-être de dérober votre mot de passe</translation>
 <translation id="5230733896359313003">Adresse de livraison</translation>
+<translation id="5250209940322997802">"Se connecter au réseau"</translation>
 <translation id="5251803541071282808">Cloud</translation>
 <translation id="5281113152797308730"><ph name="BEGIN_PARAGRAPH" />Suivez ces étapes pour désactiver temporairement le logiciel afin d'accéder au Web. Vous devez disposer des droits d'administrateur.<ph name="END_PARAGRAPH" />
 
@@ -632,6 +626,7 @@
 <translation id="5332219387342487447">Mode de livraison</translation>
 <translation id="5355557959165512791">Le site <ph name="SITE" /> est actuellement inaccessible, car son certificat a été révoqué. Les erreurs réseau et les attaques sont généralement temporaires. Vous devriez donc pouvoir accéder à cette page plus tard.</translation>
 <translation id="536296301121032821">Échec du stockage des paramètres de la règle.</translation>
+<translation id="5377026284221673050">"Votre horloge est en retard.", "Votre horloge est en avance." ou "&lt;span class="error-code"&gt;NET::ERR_CERT_DATE_INVALID&lt;/span&gt;"</translation>
 <translation id="5386426401304769735">La chaîne de certificats de ce site contient un certificat signé avec SHA-1.</translation>
 <translation id="5402410679244714488">Date d'expiration : <ph name="EXPIRATION_DATE_ABBR" />, dernière utilisation il y a plus d'un an</translation>
 <translation id="540969355065856584">Impossible de vérifier que ce serveur est bien <ph name="DOMAIN" />, car son certificat de sécurité actuel n'est pas valide. Cela peut être dû à une mauvaise configuration ou bien à l'interception de votre connexion par un pirate informatique.</translation>
@@ -699,6 +694,7 @@
 <translation id="5869405914158311789">Ce site est inaccessible</translation>
 <translation id="5869522115854928033">Mots de passe enregistrés</translation>
 <translation id="5893752035575986141">Les cartes de crédit sont acceptées.</translation>
+<translation id="5898382028489516745">L'équipe Chromium vous recommande de réinitialiser votre mot de passe <ph name="ORG_NAME" /> si vous l'avez réutilisé sur d'autres sites.</translation>
 <translation id="5908541034548427511"><ph name="TYPE_1" /> (synchronisés)</translation>
 <translation id="5920262536204764679">{NUM_COOKIES,plural, =1{1 en cours d'utilisation}one{# en cours d'utilisation}other{# en cours d'utilisation}}</translation>
 <translation id="5939518447894949180">Réinitialiser</translation>
@@ -712,6 +708,7 @@
 <translation id="5989320800837274978">Aucun serveur proxy déterminé ou URL de script .pac n'a été indiqué.</translation>
 <translation id="5990559369517809815">Les requêtes vers le serveur ont été bloquées par une extension.</translation>
 <translation id="6008256403891681546">JCB</translation>
+<translation id="6015796118275082299">Année</translation>
 <translation id="6016158022840135739">{COUNT,plural, =1{Page 1}one{Page #}other{Page #}}</translation>
 <translation id="6017850046339264347">Les pirates informatiques qui contrôlent le site <ph name="BEGIN_BOLD" /><ph name="SITE" /><ph name="END_BOLD" /> peuvent installer des applications trompeuses se faisant passer pour d'autres, ou collecter des données afin de vous surveiller. <ph name="BEGIN_LEARN_MORE_LINK" />En savoir plus<ph name="END_LEARN_MORE_LINK" /></translation>
 <translation id="6025416945513303461"><ph name="TYPE_1" />, <ph name="TYPE_2" />, <ph name="TYPE_3" /> (synchronisés)</translation>
@@ -721,6 +718,7 @@
 <translation id="6047233362582046994">Si vous êtes conscient des risques auxquels vous vous exposez, vous pouvez <ph name="BEGIN_LINK" />consulter ce site<ph name="END_LINK" /> avant que les applications dangereuses aient été supprimées.</translation>
 <translation id="6047927260846328439">Ce contenu peut vous inciter à installer un logiciel ou vous soutirer des informations personnelles. <ph name="BEGIN_LINK" />Je souhaite y accéder malgré tout.<ph name="END_LINK" /></translation>
 <translation id="6051221802930200923">Le site <ph name="SITE" /> est actuellement inaccessible, car il utilise l'épinglage des certificats. Les erreurs réseau et les attaques sont généralement temporaires. Vous devriez donc pouvoir accéder à cette page plus tard.</translation>
+<translation id="6059925163896151826">Appareils USB</translation>
 <translation id="6080696365213338172">Vous avez accédé à du contenu à l'aide d'un certificat fourni par l'administrateur. Les données que vous fournissez à <ph name="DOMAIN" /> peuvent être interceptées par votre administrateur.</translation>
 <translation id="610911394827799129">Votre compte Google conserve peut-être d'autres contenus d'historique de navigation sur la page <ph name="BEGIN_LINK" />myactivity.google.com<ph name="END_LINK" /></translation>
 <translation id="6144381551823904650">{COUNT,plural, =0{Aucun}=1{1 mot de passe (synchronisé)}one{# mot de passe (synchronisé)}other{# mots de passe (synchronisés)}}</translation>
@@ -742,6 +740,7 @@
 <translation id="6263376278284652872">Favoris de <ph name="DOMAIN" /></translation>
 <translation id="6264485186158353794">Retour à la sécurité</translation>
 <translation id="6276112860590028508">Les pages de votre liste de lecture s'affichent ici</translation>
+<translation id="627746635834430766">Pour régler vos achats plus rapidement la prochaine fois, enregistrez votre carte et votre adresse de facturation dans votre compte Google.</translation>
 <translation id="6280223929691119688">Impossible de livrer à cette adresse. Sélectionnez-en une autre.</translation>
 <translation id="6282194474023008486">Code postal</translation>
 <translation id="6290238015253830360">Vos articles suggérés s'affichent ici</translation>
@@ -756,6 +755,7 @@
 <translation id="6355080345576803305">Contournement dû à la session publique</translation>
 <translation id="6358450015545214790">Qu'est-ce que c'est ?</translation>
 <translation id="6386120369904791316">{COUNT,plural, =1{1 autre suggestion}one{# autre suggestion}other{# autres suggestions}}</translation>
+<translation id="6387754724289022810">Pour régler plus rapidement vos achats la prochaine fois, enregistrez votre carte et votre adresse de facturation dans votre compte Google et sur cet appareil.</translation>
 <translation id="6397451950548600259">Un logiciel installé sur votre ordinateur empêche Chrome de se connecter au Web de manière sécurisée</translation>
 <translation id="6404511346730675251">Modifier le favori</translation>
 <translation id="6410264514553301377">Saisissez la date d'expiration et le code CVC pour <ph name="CREDIT_CARD" /></translation>
@@ -769,6 +769,7 @@
 <translation id="647261751007945333">Règles relatives aux appareils</translation>
 <translation id="6477321094435799029">Chrome a détecté un code inhabituel sur cette page et a bloqué cette dernière pour protéger vos informations personnelles (mots de passe, numéros de téléphone et de cartes de paiement).</translation>
 <translation id="6489534406876378309">Lancer l'importation des plantages</translation>
+<translation id="6499038740797743453">Réinitialiser le mot de passe ?</translation>
 <translation id="6507833130742554667">Les cartes de crédit et de débit sont acceptées.</translation>
 <translation id="6508722015517270189">Relancez Chrome</translation>
 <translation id="6529602333819889595">&amp;Rétablir la suppression</translation>
@@ -854,12 +855,23 @@
 <translation id="7334320624316649418">&amp;Rétablir la réorganisation</translation>
 <translation id="733923710415886693">Le certificat du serveur n'a pas été communiqué tel que le prévoient les règles de transparence des certificats.</translation>
 <translation id="7353601530677266744">Ligne de commande</translation>
+<translation id="7365061714576910172">Exporter au format Linux</translation>
 <translation id="7372973238305370288">résultat de recherche</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE" /> - <ph name="FULL_DATE" /></translation>
 <translation id="7378627244592794276">Non</translation>
 <translation id="7378810950367401542">/</translation>
 <translation id="7390545607259442187">Valider la carte</translation>
 <translation id="7400418766976504921">URL</translation>
+<translation id="7407424307057130981">&lt;p&gt;Ce message d'erreur s'affiche si le logiciel Superfish est installé sur votre ordinateur Windows.&lt;/p&gt;
+      &lt;p&gt;Suivez ces étapes pour désactiver temporairement le logiciel afin d'accéder au Web. Vous devez disposer des droits d'administrateur.&lt;/p&gt;
+      &lt;ol&gt;
+      &lt;li&gt;Cliquez sur &lt;strong&gt;Démarrer&lt;/strong&gt;, puis recherchez et sélectionnez l'option &lt;strong&gt;Afficher les services locaux&lt;/strong&gt;
+      &lt;li&gt;Sélectionnez &lt;strong&gt;VisualDiscovery&lt;/strong&gt;
+      &lt;li&gt;Sous &lt;strong&gt;Type de démarrage&lt;/strong&gt;, sélectionnez &lt;strong&gt;Désactivé&lt;/strong&gt;
+      &lt;li&gt;Sous &lt;strong&gt;État du service&lt;/strong&gt;, cliquez sur &lt;strong&gt;Arrêter&lt;/strong&gt;
+      &lt;li&gt;Cliquez sur &lt;strong&gt;Appliquer&lt;/strong&gt;, puis sur &lt;strong&gt;OK&lt;/strong&gt;
+      &lt;li&gt;Pour savoir comment supprimer définitivement le logiciel de votre ordinateur, consultez le &lt;a href="https://support.google.com/chrome/answer/6098869"&gt;Centre d'aide Chrome&lt;/a&gt;
+      &lt;/ol&gt;</translation>
 <translation id="7419106976560586862">Chemin d'accès au profil</translation>
 <translation id="7437289804838430631">Ajouter des coordonnées</translation>
 <translation id="7441627299479586546">Objet de la règle incorrect.</translation>
@@ -881,12 +893,15 @@
 <translation id="7542403920425041731">Une fois la validation terminée, les informations relatives à votre carte seront partagées avec ce site.</translation>
 <translation id="7542995811387359312">La saisie automatique des numéros de carte de paiement est désactivée, car la connexion utilisée par ce formulaire n'est pas sécurisée.</translation>
 <translation id="7543525346216957623">Demande à tes parents</translation>
+<translation id="7548892272833184391">Corriger les erreurs de connexion</translation>
 <translation id="7549584377607005141">Pour s'afficher correctement, cette page Web a besoin des données que vous avez saisies précédemment. Vous pouvez envoyer de nouveau ces données. Cependant, en procédant ainsi, vous répéterez toute action déjà effectuée sur cette page.</translation>
 <translation id="7552846755917812628">Essayez les astuces suivantes :</translation>
 <translation id="7554791636758816595">Nouvel onglet</translation>
+<translation id="7564049878696755256">Vous risquez de perdre l'accès à votre compte <ph name="ORG_NAME" /> ou d'être victime d'usurpation d'identité. L'équipe Chrome vous recommande de modifier votre mot de passe maintenant.</translation>
 <translation id="7567204685887185387">Impossible de vérifier sur le serveur qu'il s'agit bien du domaine <ph name="DOMAIN" />. Il se peut que son certificat de sécurité ait été émis de manière frauduleuse. Cela peut être dû à une mauvaise configuration ou bien à l'interception de votre connexion par un pirate informatique.</translation>
 <translation id="7568593326407688803">Cette page est en<ph name="ORIGINAL_LANGUAGE" />Voulez-vous la traduire ?</translation>
 <translation id="7569952961197462199">Supprimer les données de carte de paiement de Chrome ?</translation>
+<translation id="7575800019233204241">"Votre connexion n'est pas privée", "&lt;span class="error-code"&gt;NET::ERR_CERT_AUTHORITY_INVALID&lt;/span&gt;", "&lt;span class="error-code"&gt;ERR_CERT_COMMON_NAME_INVALID&lt;/span&gt;", "&lt;span class="error-code"&gt;NET::ERR_CERT_WEAK_SIGNATURE_ALGORITHM&lt;/span&gt;" ou "SSL certificate error"</translation>
 <translation id="7578104083680115302">Payez rapidement sur des sites et dans des applications sur tous vos appareils au moyen de cartes que vous avez enregistrées sur Google.</translation>
 <translation id="7588950540487816470">Web physique</translation>
 <translation id="7592362899630581445">Le certificat du serveur ne respecte pas les restrictions de noms.</translation>
@@ -1039,6 +1054,7 @@
 <translation id="8761567432415473239">La fonctionnalité de navigation sécurisée a récemment permis de <ph name="BEGIN_LINK" />détecter des programmes dangereux<ph name="END_LINK" /> sur le site <ph name="SITE" />.</translation>
 <translation id="8763927697961133303">Périphérique USB</translation>
 <translation id="8790007591277257123">&amp;Rétablir la suppression</translation>
+<translation id="8792621596287649091">Vous risquez de perdre l'accès à votre compte <ph name="ORG_NAME" /> ou d'être victime d'usurpation d'identité. L'équipe Chromium vous recommande de modifier votre mot de passe maintenant.</translation>
 <translation id="8800988563907321413">Vos suggestions à proximité s'affichent ici</translation>
 <translation id="8820817407110198400">Favoris</translation>
 <translation id="883848425547221593">Autres favoris</translation>
@@ -1059,6 +1075,7 @@
 <translation id="8957210676456822347">Autorisation du portail captif</translation>
 <translation id="8971063699422889582">Le certificat du serveur a expiré.</translation>
 <translation id="8978053250194585037">La fonctionnalité de navigation sécurisée Google a récemment permis de <ph name="BEGIN_LINK" />détecter une tentative d'hameçonnage<ph name="END_LINK" /> sur le site <ph name="SITE" />. Un site d'hameçonnage se présente comme un site légitime dans le but de vous tromper.</translation>
+<translation id="8987927404178983737">Mois</translation>
 <translation id="8989148748219918422"><ph name="ORGANIZATION" /> [<ph name="COUNTRY" />]</translation>
 <translation id="8996941253935762404">Le site Web que vous allez ouvrir contient des programmes dangereux</translation>
 <translation id="8997023839087525404">Le certificat présenté par le serveur n'a pas été communiqué au public. Selon les règles de transparence des certificats, certains certificats doivent obligatoirement être communiqués publiquement pour garantir qu'ils sont dignes de confiance et qu'ils protègent contre les individus malveillants.</translation>
@@ -1106,6 +1123,8 @@
 <translation id="973773823069644502">Ajouter une adresse d'expédition</translation>
 <translation id="975560348586398090">{COUNT,plural, =0{Aucun}=1{1 élément}one{# élément}other{# éléments}}</translation>
 <translation id="981121421437150478">Hors connexion</translation>
+<translation id="985199708454569384">&lt;p&gt;Ce message s'affiche si la date et l'heure de votre ordinateur ou de votre appareil mobile sont incorrectes.&lt;/p&gt;
+    &lt;p&gt;Pour corriger cette erreur, ouvrez l'horloge de votre appareil et assurez-vous que l'heure et la date sont correctes.&lt;/p&gt;</translation>
 <translation id="988159990683914416">Build de développement</translation>
 <translation id="989988560359834682">Modifier l'adresse</translation>
 <translation id="992115559265932548"><ph name="MICROSOFT_ACTIVE_DIRECTORY" /></translation>

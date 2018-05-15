@@ -740,7 +740,8 @@ void ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
                                   GLfloat uv_x,
                                   GLfloat uv_y,
                                   GLfloat uv_width,
-                                  GLfloat uv_height) override;
+                                  GLfloat uv_height,
+                                  GLboolean enable_blend) override;
 void ScheduleCALayerSharedStateCHROMIUM(GLfloat opacity,
                                         GLboolean is_clipped,
                                         const GLfloat* clip_rect,
@@ -755,7 +756,6 @@ void ScheduleCALayerCHROMIUM(GLuint contents_texture_id,
 void ScheduleCALayerInUseQueryCHROMIUM(GLsizei count,
                                        const GLuint* textures) override;
 void CommitOverlayPlanesCHROMIUM() override;
-void SwapInterval(GLint interval) override;
 void FlushDriverCachesCHROMIUM() override;
 GLuint GetLastFlushIdCHROMIUM() override;
 void ScheduleDCLayerSharedStateCHROMIUM(GLfloat opacity,
@@ -897,7 +897,6 @@ void BeginRasterCHROMIUM(GLuint texture_id,
                          GLuint sk_color,
                          GLuint msaa_sample_count,
                          GLboolean can_use_lcd_text,
-                         GLboolean use_distance_field_text,
                          GLint color_type,
                          GLuint color_space_transfer_cache_id) override;
 void* MapRasterCHROMIUM(GLsizeiptr size) override;

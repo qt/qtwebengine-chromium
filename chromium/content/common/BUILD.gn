@@ -6,9 +6,10 @@ import("features.gni")
 import("//build/buildflag_header.gni")
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
+import("//ipc/features.gni")
 import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
-import("//ppapi/features/features.gni")
+import("//ppapi/buildflags/buildflags.gni")
 import("//sandbox/features.gni")
 import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
 if (is_mac) {
@@ -17,8 +18,8 @@ if (is_mac) {
 
 # For feature flags internal to content. See content/public/common:features
 # for feature flags that clients of contents need to know about.
-buildflag_header("features") {
-  header = "features.h"
+buildflag_header("buildflags") {
+  header = "buildflags.h"
 
   flags = [
     "USE_EXTERNAL_POPUP_MENU=$use_external_popup_menu",
@@ -36,7 +37,6 @@ source_set("common") {
   sources = [
     "accessibility_messages.h",
     "all_messages.h",
-    "android/browser_side_navigation_policy_android.cc",
     "android/gin_java_bridge_errors.cc",
     "android/gin_java_bridge_errors.h",
     "android/gin_java_bridge_value.cc",
@@ -65,7 +65,6 @@ source_set("common") {
     "browser_plugin/browser_plugin_constants.cc",
     "browser_plugin/browser_plugin_constants.h",
     "browser_plugin/browser_plugin_messages.h",
-    "cache_storage/cache_storage_messages.h",
     "cache_storage/cache_storage_types.cc",
     "cache_storage/cache_storage_types.h",
     "child_process_host_impl.cc",
@@ -96,8 +95,6 @@ source_set("common") {
     "content_security_policy_header.h",
     "content_switches_internal.cc",
     "content_switches_internal.h",
-    "cross_site_document_classifier.cc",
-    "cross_site_document_classifier.h",
     "cursors/webcursor.cc",
     "cursors/webcursor.h",
     "cursors/webcursor_android.cc",
@@ -130,6 +127,8 @@ source_set("common") {
     "font_list_fontconfig.cc",
     "font_list_mac.mm",
     "font_list_win.cc",
+    "font_loader_dispatcher_mac.cc",
+    "font_loader_dispatcher_mac.h",
     "frame_message_enums.h",
     "frame_message_structs.cc",
     "frame_message_structs.h",
@@ -139,6 +138,8 @@ source_set("common") {
     "frame_owner_properties.h",
     "frame_replication_state.cc",
     "frame_replication_state.h",
+    "frame_resize_params.cc",
+    "frame_resize_params.h",
     "gin_java_bridge_messages.h",
     "in_process_child_thread_params.cc",
     "in_process_child_thread_params.h",
@@ -214,7 +215,6 @@ source_set("common") {
     "media/media_stream_controls.h",
     "media/media_stream_param_traits.cc",
     "media/media_stream_param_traits.h",
-    "media/media_stream_track_metrics_host_messages.h",
     "media/midi_messages.h",
     "media/peer_connection_tracker_messages.h",
     "media/surface_view_manager_messages_android.h",
@@ -267,7 +267,6 @@ source_set("common") {
     "send_zygote_child_ping_linux.cc",
     "service_manager/service_manager_connection_impl.cc",
     "service_manager/service_manager_connection_impl.h",
-    "service_worker/embedded_worker_messages.h",
     "service_worker/service_worker_loader_helpers.cc",
     "service_worker/service_worker_loader_helpers.h",
     "service_worker/service_worker_messages.h",
@@ -300,8 +299,6 @@ source_set("common") {
     "user_agent.cc",
     "view_message_enums.h",
     "view_messages.h",
-    "weak_wrapper_shared_url_loader_factory.cc",
-    "weak_wrapper_shared_url_loader_factory.h",
     "wrapper_shared_url_loader_factory.cc",
     "wrapper_shared_url_loader_factory.h",
     "zygote_commands_linux.h",
@@ -320,17 +317,18 @@ source_set("common") {
     "//ipc",
     "//services/network:network_service",
     "//services/service_manager/sandbox",
-    "//third_party/WebKit/public:blink_headers",
-    "//third_party/WebKit/public/common",
+    "//third_party/blink/public:blink_headers",
+    "//third_party/blink/public/common",
     "//ui/accessibility",
   ]
   deps = [
-    ":features",
+    ":buildflags",
     "//base",
     "//base/third_party/dynamic_annotations",
     "//build/util:webkit_version",
     "//cc/ipc",
     "//components/discardable_memory/common",
+    "//components/services/filesystem/public/interfaces",
     "//components/tracing",
     "//components/tracing:startup_tracing",
     "//components/viz/service",
@@ -338,7 +336,7 @@ source_set("common") {
     "//content/app/resources",
     "//content/public/common:interfaces",
     "//content/public/common:service_names",
-    "//content/public/common:zygote_features",
+    "//content/public/common:zygote_buildflags",
     "//device/base/synchronization",
     "//device/bluetooth",
     "//gpu",
@@ -355,17 +353,17 @@ source_set("common") {
     "//media/base/ipc",
     "//media/capture",
     "//media/capture/ipc",
-    "//media/gpu:features",
+    "//media/gpu:buildflags",
     "//media/gpu/ipc/client",
     "//media/gpu/ipc/common",
     "//media/midi",
     "//media/midi:mojo",
-    "//mojo/common:common_base",
-    "//mojo/edk/system",
+    "//mojo/edk",
+    "//mojo/public/cpp/system",
     "//net",
-    "//ppapi/features",
+    "//ppapi/buildflags",
     "//sandbox",
-    "//sandbox:sandbox_features",
+    "//sandbox:sandbox_buildflags",
     "//services/network/public/cpp",
     "//services/network/public/mojom",
     "//services/resource_coordinator/public/cpp:resource_coordinator_cpp",
@@ -532,6 +530,11 @@ mojom("mojo_bindings") {
   # indexed_db.mojom uses a native typemap that is not available in Java.
   cpp_only = true
 
+  # imports vs deps check is disabled for this target to work around
+  # windows multiple definitions linker error caused by having
+  # both a direct and an indirect dependency on the same target
+  skip_deps_check = true
+
   sources = [
     "appcache.mojom",
     "associated_interfaces.mojom",
@@ -589,31 +592,49 @@ mojom("mojo_bindings") {
     sources += [ "dwrite_font_proxy.mojom" ]
   }
 
+  if (is_mac) {
+    sources += [ "font_loader_mac.mojom" ]
+  }
+
+  enabled_features = []
+  if (enable_ipc_logging) {
+    enabled_features += [ "ipc_logging" ]
+  }
+  if (is_linux || is_chromeos) {
+    enabled_features += [ "supports_thread_priorities" ]
+  }
+
   import_dirs = [ "//mojo/services" ]
 
   public_deps = [
-    "//components/leveldb/public/interfaces",
+    "//components/services/leveldb/public/interfaces",
     "//content/public/common:interfaces",
+    "//content/public/common:resource_type_bindings",
     "//ipc:mojom_constants",
     "//media/mojo/interfaces",
-    "//mojo/common:common_custom_types",
+    "//mojo/public/mojom/base",
     "//services/network/public/mojom",
     "//services/service_manager/public/mojom",
     "//services/ui/public/interfaces",
+    "//services/ui/public/interfaces/ime",
     "//services/video_capture/public/mojom",
     "//services/viz/public/interfaces",
     "//skia/public/interfaces",
-    "//third_party/WebKit/public:mojo_bindings",
-    "//third_party/WebKit/public/mojom",
+    "//third_party/blink/public:mojo_bindings",
+    "//third_party/blink/public:web_feature_mojo_bindings",
+    "//third_party/blink/public/mojom:mojom_core",
     "//ui/base/mojo:mojo_bindings",
+    "//ui/events/mojo:interfaces",
     "//ui/gfx/geometry/mojo",
     "//ui/gfx/mojo",
+    "//ui/gfx/range/mojo",
+    "//ui/latency/mojo:interfaces",
     "//url/mojom:url_mojom_gurl",
     "//url/mojom:url_mojom_origin",
   ]
 
-  overridden_deps = [ "//third_party/WebKit/public/mojom" ]
-  component_deps = [ "//third_party/WebKit/public/common" ]
+  overridden_deps = [ "//third_party/blink/public/mojom:mojom_core" ]
+  component_deps = [ "//third_party/blink/public/common" ]
 
   component_output_prefix = "content_common_mojo_bindings"
   export_class_attribute = "CONTENT_EXPORT"

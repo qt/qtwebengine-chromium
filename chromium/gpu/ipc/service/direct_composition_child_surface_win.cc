@@ -9,7 +9,6 @@
 
 #include "base/debug/alias.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/trace_event/trace_event.h"
@@ -19,6 +18,7 @@
 #include "ui/gl/gl_angle_util_win.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_surface_egl.h"
+#include "ui/gl/gl_switches.h"
 #include "ui/gl/scoped_make_current.h"
 
 #ifndef EGL_ANGLE_flexible_surface_compatibility
@@ -49,7 +49,9 @@ DirectCompositionChildSurfaceWin::DirectCompositionChildSurfaceWin(
       size_(size),
       is_hdr_(is_hdr),
       has_alpha_(has_alpha),
-      enable_dc_layers_(enable_dc_layers) {}
+      enable_dc_layers_(enable_dc_layers),
+      disable_vsync_(base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableGpuVsync)) {}
 
 DirectCompositionChildSurfaceWin::~DirectCompositionChildSurfaceWin() {
   Destroy();
@@ -151,7 +153,7 @@ void DirectCompositionChildSurfaceWin::ReleaseDrawTexture(bool will_discard) {
       base::debug::Alias(&surface_size);
       params.DirtyRectsCount = 1;
       params.pDirtyRects = &dirty_rect;
-      swap_chain_->Present1(first_swap_ ? 0 : 1, 0, &params);
+      swap_chain_->Present1(first_swap_ || disable_vsync_ ? 0 : 1, 0, &params);
       if (first_swap_) {
         // Wait for the GPU to finish executing its commands before
         // committing the DirectComposition tree, or else the swapchain

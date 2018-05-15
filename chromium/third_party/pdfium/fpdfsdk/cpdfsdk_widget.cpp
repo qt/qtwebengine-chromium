@@ -23,12 +23,12 @@
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
+#include "fpdfsdk/cpdfsdk_actionhandler.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
+#include "fpdfsdk/cpdfsdk_helpers.h"
 #include "fpdfsdk/cpdfsdk_interform.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
 #include "fpdfsdk/formfiller/cba_fontmap.h"
-#include "fpdfsdk/fsdk_actionhandler.h"
-#include "fpdfsdk/fsdk_define.h"
 #include "fpdfsdk/pwl/cpwl_appstream.h"
 #include "fpdfsdk/pwl/cpwl_edit.h"
 
@@ -40,17 +40,6 @@
 #include "xfa/fxfa/cxfa_ffwidgethandler.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
 #endif  // PDF_ENABLE_XFA
-
-namespace {
-
-// Convert a FX_ARGB to a FX_COLORREF.
-FX_COLORREF ARGBToColorRef(FX_ARGB argb) {
-  return (((static_cast<uint32_t>(argb) & 0x00FF0000) >> 16) |
-          (static_cast<uint32_t>(argb) & 0x0000FF00) |
-          ((static_cast<uint32_t>(argb) & 0x000000FF) << 16));
-}
-
-}  // namespace
 
 CPDFSDK_Widget::CPDFSDK_Widget(CPDF_Annot* pAnnot,
                                CPDFSDK_PageView* pPageView,
@@ -221,7 +210,7 @@ bool CPDFSDK_Widget::HasXFAAAction(PDFSDK_XFAAActionType eXFAAAT) {
 }
 
 bool CPDFSDK_Widget::OnXFAAAction(PDFSDK_XFAAActionType eXFAAAT,
-                                  PDFSDK_FieldAction* data,
+                                  CPDFSDK_FieldAction* data,
                                   CPDFSDK_PageView* pPageView) {
   CPDFXFA_Context* pContext = m_pPageView->GetFormFillEnv()->GetXFAContext();
 
@@ -428,28 +417,28 @@ WideString CPDFSDK_Widget::GetName() const {
 bool CPDFSDK_Widget::GetFillColor(FX_COLORREF& color) const {
   CPDF_FormControl* pFormCtrl = GetFormControl();
   int iColorType = 0;
-  color = ARGBToColorRef(pFormCtrl->GetBackgroundColor(iColorType));
+  color = ArgbToColorRef(pFormCtrl->GetBackgroundColor(iColorType));
   return iColorType != CFX_Color::kTransparent;
 }
 
 bool CPDFSDK_Widget::GetBorderColor(FX_COLORREF& color) const {
   CPDF_FormControl* pFormCtrl = GetFormControl();
   int iColorType = 0;
-  color = ARGBToColorRef(pFormCtrl->GetBorderColor(iColorType));
+  color = ArgbToColorRef(pFormCtrl->GetBorderColor(iColorType));
   return iColorType != CFX_Color::kTransparent;
 }
 
 bool CPDFSDK_Widget::GetTextColor(FX_COLORREF& color) const {
   CPDF_FormControl* pFormCtrl = GetFormControl();
   CPDF_DefaultAppearance da = pFormCtrl->GetDefaultAppearance();
-  if (!da.HasColor())
+  FX_ARGB argb;
+  Optional<CFX_Color::Type> iColorType;
+  std::tie(iColorType, argb) = da.GetColor();
+  if (!iColorType)
     return false;
 
-  FX_ARGB argb;
-  int iColorType = CFX_Color::kTransparent;
-  da.GetColor(argb, iColorType);
-  color = ARGBToColorRef(argb);
-  return iColorType != CFX_Color::kTransparent;
+  color = ArgbToColorRef(argb);
+  return *iColorType != CFX_Color::kTransparent;
 }
 
 float CPDFSDK_Widget::GetFontSize() const {
@@ -679,16 +668,11 @@ void CPDFSDK_Widget::DrawAppearance(CFX_RenderDevice* pDevice,
        fieldType == FormFieldType::kRadioButton) &&
       mode == CPDF_Annot::Normal &&
       !IsWidgetAppearanceValid(CPDF_Annot::Normal)) {
-    CFX_PathData pathData;
-
-    CFX_FloatRect rcAnnot = GetRect();
-
-    pathData.AppendRect(rcAnnot.left, rcAnnot.bottom, rcAnnot.right,
-                        rcAnnot.top);
-
     CFX_GraphStateData gsd;
     gsd.m_LineWidth = 0.0f;
 
+    CFX_PathData pathData;
+    pathData.AppendRect(GetRect());
     pDevice->DrawPath(&pathData, &mtUser2Device, &gsd, 0, 0xFFAAAAAA,
                       FXFILL_ALTERNATE);
   } else {
@@ -722,10 +706,10 @@ void CPDFSDK_Widget::DrawShadow(CFX_RenderDevice* pDevice,
   rcDevice.top = tmp.y;
   rcDevice.Normalize();
 
-  FX_RECT rcDev = rcDevice.ToFxRect();
-  pDevice->FillRect(
-      &rcDev, ArgbEncode(static_cast<int>(m_pInterForm->GetHighlightAlpha()),
-                         m_pInterForm->GetHighlightColor(fieldType)));
+  pDevice->FillRect(rcDevice.ToFxRect(),
+                    AlphaAndColorRefToArgb(
+                        static_cast<int>(m_pInterForm->GetHighlightAlpha()),
+                        m_pInterForm->GetHighlightColor(fieldType)));
 }
 
 CFX_FloatRect CPDFSDK_Widget::GetClientRect() const {
@@ -744,8 +728,8 @@ CFX_FloatRect CPDFSDK_Widget::GetClientRect() const {
 
 CFX_FloatRect CPDFSDK_Widget::GetRotatedRect() const {
   CFX_FloatRect rectAnnot = GetRect();
-  float fWidth = rectAnnot.right - rectAnnot.left;
-  float fHeight = rectAnnot.top - rectAnnot.bottom;
+  float fWidth = rectAnnot.Width();
+  float fHeight = rectAnnot.Height();
 
   CPDF_FormControl* pControl = GetFormControl();
   CFX_FloatRect rcPDFWindow;
@@ -768,8 +752,8 @@ CFX_Matrix CPDFSDK_Widget::GetMatrix() const {
   CFX_Matrix mt;
   CPDF_FormControl* pControl = GetFormControl();
   CFX_FloatRect rcAnnot = GetRect();
-  float fWidth = rcAnnot.right - rcAnnot.left;
-  float fHeight = rcAnnot.top - rcAnnot.bottom;
+  float fWidth = rcAnnot.Width();
+  float fHeight = rcAnnot.Height();
 
   switch (abs(pControl->GetRotation() % 360)) {
     default:
@@ -794,12 +778,11 @@ CFX_Color CPDFSDK_Widget::GetTextPWLColor() const {
 
   CPDF_FormControl* pFormCtrl = GetFormControl();
   CPDF_DefaultAppearance da = pFormCtrl->GetDefaultAppearance();
-  if (da.HasColor()) {
-    int32_t iColorType;
-    float fc[4];
-    da.GetColor(iColorType, fc);
-    crText = CFX_Color(iColorType, fc[0], fc[1], fc[2], fc[3]);
-  }
+
+  float fc[4];
+  Optional<CFX_Color::Type> iColorType = da.GetColor(fc);
+  if (iColorType)
+    crText = CFX_Color(*iColorType, fc[0], fc[1], fc[2], fc[3]);
 
   return crText;
 }
@@ -831,7 +814,7 @@ CFX_Color CPDFSDK_Widget::GetFillPWLColor() const {
 }
 
 bool CPDFSDK_Widget::OnAAction(CPDF_AAction::AActionType type,
-                               PDFSDK_FieldAction* data,
+                               CPDFSDK_FieldAction* data,
                                CPDFSDK_PageView* pPageView) {
   CPDFSDK_FormFillEnvironment* pFormFillEnv = pPageView->GetFormFillEnv();
 

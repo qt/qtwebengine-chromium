@@ -8,7 +8,7 @@
 
 #include "base/numerics/safe_conversions.h"
 #include "components/cbor/cbor_writer.h"
-#include "device/fido/ctap_constants.h"
+#include "device/fido/fido_constants.h"
 
 namespace device {
 
@@ -19,7 +19,13 @@ CtapGetAssertionRequest::CtapGetAssertionRequest(
       client_data_hash_(std::move(client_data_hash)) {}
 
 CtapGetAssertionRequest::CtapGetAssertionRequest(
+    const CtapGetAssertionRequest& that) = default;
+
+CtapGetAssertionRequest::CtapGetAssertionRequest(
     CtapGetAssertionRequest&& that) = default;
+
+CtapGetAssertionRequest& CtapGetAssertionRequest::operator=(
+    const CtapGetAssertionRequest& other) = default;
 
 CtapGetAssertionRequest& CtapGetAssertionRequest::operator=(
     CtapGetAssertionRequest&& other) = default;
@@ -48,11 +54,22 @@ std::vector<uint8_t> CtapGetAssertionRequest::EncodeAsCBOR() const {
   }
 
   cbor::CBORValue::MapValue option_map;
-  option_map[cbor::CBORValue(kUserPresenceMapKey)] =
-      cbor::CBORValue(user_presence_required_);
-  option_map[cbor::CBORValue(kUserVerificationMapKey)] =
-      cbor::CBORValue(user_verification_required_);
-  cbor_map[cbor::CBORValue(7)] = cbor::CBORValue(std::move(option_map));
+
+  // User presence is required by default.
+  if (!user_presence_required_) {
+    option_map[cbor::CBORValue(kUserPresenceMapKey)] =
+        cbor::CBORValue(user_presence_required_);
+  }
+
+  // User verification is not required by default.
+  if (user_verification_ == UserVerificationRequirement::kRequired) {
+    option_map[cbor::CBORValue(kUserVerificationMapKey)] =
+        cbor::CBORValue(true);
+  }
+
+  if (!option_map.empty()) {
+    cbor_map[cbor::CBORValue(5)] = cbor::CBORValue(std::move(option_map));
+  }
 
   auto serialized_param =
       cbor::CBORWriter::Write(cbor::CBORValue(std::move(cbor_map)));
@@ -65,9 +82,9 @@ std::vector<uint8_t> CtapGetAssertionRequest::EncodeAsCBOR() const {
   return cbor_request;
 }
 
-CtapGetAssertionRequest& CtapGetAssertionRequest::SetUserVerificationRequired(
-    bool user_verification_required) {
-  user_verification_required_ = user_verification_required;
+CtapGetAssertionRequest& CtapGetAssertionRequest::SetUserVerification(
+    UserVerificationRequirement user_verification) {
+  user_verification_ = user_verification;
   return *this;
 }
 

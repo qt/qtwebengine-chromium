@@ -59,6 +59,8 @@ PaymentRequestState::PaymentRequestState(
         web_contents,
         payment_request_delegate_->GetPaymentManifestWebDataService(),
         spec_->method_data(),
+        /*may_crawl_for_installable_payment_apps=*/
+        !spec_->supports_basic_card(),
         base::BindOnce(&PaymentRequestState::GetAllPaymentAppsCallback,
                        weak_ptr_factory_.GetWeakPtr(), web_contents,
                        top_level_origin, frame_origin),
@@ -412,7 +414,8 @@ void PaymentRequestState::PopulateProfileCache() {
   // Create the list of available instruments. A copy of each card will be made
   // by their respective AutofillPaymentInstrument.
   const std::vector<autofill::CreditCard*>& cards =
-      personal_data_manager_->GetCreditCardsToSuggest();
+      personal_data_manager_->GetCreditCardsToSuggest(
+          /*include_server_cards=*/true);
   for (autofill::CreditCard* card : cards)
     AddAutofillPaymentInstrument(/*selected=*/false, *card);
 }

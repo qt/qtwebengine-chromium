@@ -11,9 +11,9 @@
 #include "ipc/ipc_mojo_message_helper.h"
 #include "ipc/ipc_mojo_param_traits.h"
 #include "net/base/ip_endpoint.h"
-#include "third_party/WebKit/public/common/message_port/message_port_channel.h"
-#include "third_party/WebKit/public/common/message_port/transferable_message.h"
-#include "third_party/WebKit/public/mojom/message_port/message_port.mojom.h"
+#include "third_party/blink/public/common/message_port/message_port_channel.h"
+#include "third_party/blink/public/common/message_port/transferable_message.h"
+#include "third_party/blink/public/mojom/message_port/message_port.mojom.h"
 #include "ui/accessibility/ax_modes.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/events/blink/web_input_event_traits.h"
@@ -198,7 +198,7 @@ struct ParamTraits<blink::mojom::SerializedBlobPtr> {
 void ParamTraits<scoped_refptr<base::RefCountedData<
     blink::TransferableMessage>>>::Write(base::Pickle* m, const param_type& p) {
   m->WriteData(reinterpret_cast<const char*>(p->data.encoded_message.data()),
-               p->data.encoded_message.length());
+               p->data.encoded_message.size());
   WriteParam(m, p->data.blobs);
   WriteParam(m, p->data.stack_trace_id);
   WriteParam(m, p->data.stack_trace_debugger_id_first);

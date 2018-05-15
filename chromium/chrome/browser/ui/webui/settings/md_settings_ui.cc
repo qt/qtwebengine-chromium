@@ -14,6 +14,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/unified_consent_helper.h"
 #include "chrome/browser/ui/webui/metrics_handler.h"
 #include "chrome/browser/ui/webui/settings/about_handler.h"
 #include "chrome/browser/ui/webui/settings/appearance_handler.h"
@@ -47,7 +48,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 
 #if defined(OS_WIN)
 #include "chrome/browser/safe_browsing/chrome_cleaner/chrome_cleaner_controller_win.h"
@@ -63,6 +64,7 @@
 
 #if defined(OS_WIN) || defined(OS_CHROMEOS)
 #include "chrome/browser/ui/webui/settings/languages_handler.h"
+#include "chrome/browser/ui/webui/settings/tts_handler.h"
 #endif  // defined(OS_WIN) || defined(OS_CHROMEOS)
 
 #if defined(OS_CHROMEOS)
@@ -84,6 +86,7 @@
 #include "chrome/browser/ui/webui/settings/chromeos/fingerprint_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/google_assistant_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/internet_handler.h"
+#include "chrome/browser/ui/webui/settings/chromeos/smb_handler.h"
 #include "chrome/common/chrome_switches.h"
 #include "chromeos/chromeos_switches.h"
 #include "components/arc/arc_util.h"
@@ -185,11 +188,14 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::PointerHandler>());
   AddSettingsPageUIHandler(
+      std::make_unique<chromeos::settings::SmbHandler>(profile));
+  AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::StorageHandler>());
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::StylusHandler>());
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::InternetHandler>(profile));
+  AddSettingsPageUIHandler(std::make_unique<TtsHandler>());
 #else
   AddSettingsPageUIHandler(std::make_unique<DefaultBrowserHandler>(web_ui));
   AddSettingsPageUIHandler(std::make_unique<ManageProfileHandler>(profile));
@@ -301,6 +307,9 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   html_source->AddBoolean("diceEnabled",
                           signin::IsDiceEnabledForProfile(profile->GetPrefs()));
 #endif  // defined(OS_CHROMEOS)
+
+  html_source->AddBoolean("unifiedConsentEnabled",
+                          IsUnifiedConsentEnabled(profile));
 
   html_source->AddBoolean("showExportPasswords",
                           base::FeatureList::IsEnabled(

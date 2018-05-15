@@ -21,6 +21,7 @@
 #include "base/debug/alias.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
+#include "base/metrics/dummy_histogram.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/metrics_hashes.h"
 #include "base/metrics/persistent_histogram_allocator.h"
@@ -37,15 +38,6 @@
 namespace base {
 
 namespace {
-
-// A constant to be stored in the dummy field and later verified. This could
-// be either 32 or 64 bit but clang won't truncate the value without an error.
-// TODO(bcwhite): Remove this once crbug/736675 is fixed.
-#if defined(ARCH_CPU_64_BITS) && !defined(OS_NACL)
-constexpr uintptr_t kDummyValue = 0xFEEDC0DEDEADBEEF;
-#else
-constexpr uintptr_t kDummyValue = 0xDEADBEEF;
-#endif
 
 bool ReadHistogramArguments(PickleIterator* iter,
                             std::string* histogram_name,
@@ -84,6 +76,11 @@ bool ReadHistogramArguments(PickleIterator* iter,
 
 bool ValidateRangeChecksum(const HistogramBase& histogram,
                            uint32_t range_checksum) {
+  // Normally, |histogram| should have type HISTOGRAM or be inherited from it.
+  // However, if it's expired, it will actually be a DUMMY_HISTOGRAM.
+  // Skip the checks in that case.
+  if (histogram.GetHistogramType() == DUMMY_HISTOGRAM)
+    return true;
   const Histogram& casted_histogram =
       static_cast<const Histogram&>(histogram);
 
@@ -161,6 +158,12 @@ class Histogram::Factory {
 HistogramBase* Histogram::Factory::Build() {
   HistogramBase* histogram = StatisticsRecorder::FindHistogram(name_);
   if (!histogram) {
+    // TODO(gayane): |HashMetricName()| is called again in Histogram
+    // constructor. Refactor code to avoid the additional call.
+    bool should_record =
+        StatisticsRecorder::ShouldRecordHistogram(HashMetricName(name_));
+    if (!should_record)
+      return DummyHistogram::GetInstance();
     // To avoid racy destruction at shutdown, the following will be leaked.
     const BucketRanges* created_ranges = CreateRanges();
     const BucketRanges* registered_ranges =
@@ -538,47 +541,6 @@ void Histogram::WriteAscii(std::string* output) const {
   WriteAsciiImpl(true, "\n", output);
 }
 
-bool Histogram::ValidateHistogramContents(bool crash_if_invalid,
-                                          int identifier) const {
-  enum Fields : int {
-    kUnloggedBucketRangesField,
-    kUnloggedSamplesField,
-    kLoggedSamplesField,
-    kIdField,
-    kHistogramNameField,
-    kFlagsField,
-    kLoggedBucketRangesField,
-    kDummyField,
-  };
-
-  uint32_t bad_fields = 0;
-  if (!unlogged_samples_)
-    bad_fields |= 1 << kUnloggedSamplesField;
-  else if (!unlogged_samples_->bucket_ranges())
-    bad_fields |= 1 << kUnloggedBucketRangesField;
-  if (!logged_samples_)
-    bad_fields |= 1 << kLoggedSamplesField;
-  else if (!logged_samples_->bucket_ranges())
-    bad_fields |= 1 << kLoggedBucketRangesField;
-  else if (logged_samples_->id() == 0)
-    bad_fields |= 1 << kIdField;
-  if (flags() == 0)
-    bad_fields |= 1 << kFlagsField;
-  if (dummy_ != kDummyValue)
-    bad_fields |= 1 << kDummyField;
-
-  const bool is_valid = (bad_fields & ~(1 << kFlagsField)) == 0;
-  if (is_valid || !crash_if_invalid)
-    return is_valid;
-
-  // Abort if a problem is found (except "flags", which could legally be zero).
-  std::string debug_string = base::StringPrintf(
-      "%s/%" PRIu32 "#%d", histogram_name(), bad_fields, identifier);
-  CHECK(false) << debug_string;
-  debug::Alias(&bad_fields);
-  return false;
-}
-
 void Histogram::SerializeInfoImpl(Pickle* pickle) const {
   DCHECK(bucket_ranges()->HasValidChecksum());
   pickle->WriteString(histogram_name());
@@ -594,9 +556,8 @@ Histogram::Histogram(const char* name,
                      Sample minimum,
                      Sample maximum,
                      const BucketRanges* ranges)
-    : HistogramBase(name), dummy_(kDummyValue) {
-  // TODO(bcwhite): Make this a DCHECK once crbug/734049 is resolved.
-  CHECK(ranges) << name << ": " << minimum << "-" << maximum;
+    : HistogramBase(name) {
+  DCHECK(ranges) << name << ": " << minimum << "-" << maximum;
   unlogged_samples_.reset(new SampleVector(HashMetricName(name), ranges));
   logged_samples_.reset(new SampleVector(unlogged_samples_->id(), ranges));
 }
@@ -609,9 +570,8 @@ Histogram::Histogram(const char* name,
                      const DelayedPersistentAllocation& logged_counts,
                      HistogramSamples::Metadata* meta,
                      HistogramSamples::Metadata* logged_meta)
-    : HistogramBase(name), dummy_(kDummyValue) {
-  // TODO(bcwhite): Make this a DCHECK once crbug/734049 is resolved.
-  CHECK(ranges) << name << ": " << minimum << "-" << maximum;
+    : HistogramBase(name) {
+  DCHECK(ranges) << name << ": " << minimum << "-" << maximum;
   unlogged_samples_.reset(
       new PersistentSampleVector(HashMetricName(name), ranges, meta, counts));
   logged_samples_.reset(new PersistentSampleVector(
@@ -679,15 +639,9 @@ std::unique_ptr<SampleVector> Histogram::SnapshotAllSamples() const {
 }
 
 std::unique_ptr<SampleVector> Histogram::SnapshotUnloggedSamples() const {
-  // TODO(bcwhite): Remove these CHECKs once crbug/734049 is resolved.
-  HistogramSamples* unlogged = unlogged_samples_.get();
-  CHECK(unlogged_samples_);
-  CHECK(unlogged_samples_->id());
-  CHECK(bucket_ranges());
   std::unique_ptr<SampleVector> samples(
       new SampleVector(unlogged_samples_->id(), bucket_ranges()));
   samples->Add(*unlogged_samples_);
-  debug::Alias(&unlogged);
   return samples;
 }
 
@@ -857,6 +811,11 @@ class LinearHistogram::Factory : public Histogram::Factory {
 
   void FillHistogram(HistogramBase* base_histogram) override {
     Histogram::Factory::FillHistogram(base_histogram);
+    // Normally, |base_histogram| should have type LINEAR_HISTOGRAM or be
+    // inherited from it. However, if it's expired, it will actually be a
+    // DUMMY_HISTOGRAM. Skip filling in that case.
+    if (base_histogram->GetHistogramType() == DUMMY_HISTOGRAM)
+      return;
     LinearHistogram* histogram = static_cast<LinearHistogram*>(base_histogram);
     // Set range descriptions.
     if (descriptions_) {

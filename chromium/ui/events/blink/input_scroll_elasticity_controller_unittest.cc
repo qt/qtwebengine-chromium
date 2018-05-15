@@ -6,8 +6,8 @@
 
 #include "cc/input/input_handler.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
-#include "third_party/WebKit/public/platform/WebMouseWheelEvent.h"
+#include "third_party/blink/public/platform/web_input_event.h"
+#include "third_party/blink/public/platform/web_mouse_wheel_event.h"
 
 namespace ui {
 namespace {
@@ -93,8 +93,8 @@ class ScrollElasticityControllerTest : public testing::Test {
     blink::WebGestureEvent event(
         blink::WebInputEvent::kGestureScrollBegin,
         blink::WebInputEvent::kNoModifiers,
-        (current_time_ - base::TimeTicks()).InSecondsF());
-    event.source_device = blink::kWebGestureDeviceTouchpad;
+        (current_time_ - base::TimeTicks()).InSecondsF(),
+        blink::kWebGestureDeviceTouchpad);
     event.data.scroll_begin.inertial_phase =
         static_cast<blink::WebGestureEvent::InertialPhaseState>(inertialPhase);
 
@@ -113,8 +113,8 @@ class ScrollElasticityControllerTest : public testing::Test {
     blink::WebGestureEvent event(
         blink::WebInputEvent::kGestureScrollUpdate,
         blink::WebInputEvent::kNoModifiers,
-        (current_time_ - base::TimeTicks()).InSecondsF());
-    event.source_device = blink::kWebGestureDeviceTouchpad;
+        (current_time_ - base::TimeTicks()).InSecondsF(),
+        blink::kWebGestureDeviceTouchpad);
     event.data.scroll_update.inertial_phase =
         static_cast<blink::WebGestureEvent::InertialPhaseState>(inertialPhase);
     event.data.scroll_update.delta_x = -event_delta.x();
@@ -134,8 +134,8 @@ class ScrollElasticityControllerTest : public testing::Test {
     blink::WebGestureEvent event(
         blink::WebInputEvent::kGestureScrollEnd,
         blink::WebInputEvent::kNoModifiers,
-        (current_time_ - base::TimeTicks()).InSecondsF());
-    event.source_device = blink::kWebGestureDeviceTouchpad;
+        (current_time_ - base::TimeTicks()).InSecondsF(),
+        blink::kWebGestureDeviceTouchpad);
 
     controller_.ObserveGestureEventAndResult(event,
                                              cc::InputHandlerScrollResult());

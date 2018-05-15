@@ -30,6 +30,7 @@
 #include "components/autofill/core/browser/test_autofill_manager.h"
 #include "components/autofill/core/browser/test_form_structure.h"
 #include "components/autofill/core/browser/test_personal_data_manager.h"
+#include "components/autofill/core/browser/test_sync_service.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/common/autofill_clock.h"
 #include "components/autofill/core/common/autofill_features.h"
@@ -73,9 +74,15 @@ using UkmFieldFillStatusType = ukm::builders::Autofill_FieldFillStatus;
 using ExpectedUkmMetrics =
     std::vector<std::vector<std::pair<const char*, int64_t>>>;
 
+int64_t Collapse(uint64_t sig) {
+  return sig % 1021;
+}
+
 void VerifyDeveloperEngagementUkm(
     const ukm::TestAutoSetUkmRecorder& ukm_recorder,
     const FormData& form,
+    const bool is_for_credit_card,
+    const std::set<FormType>& form_types,
     const std::vector<int64_t>& expected_metric_values) {
   int expected_metric_value = 0;
   for (const auto it : expected_metric_values)
@@ -87,10 +94,16 @@ void VerifyDeveloperEngagementUkm(
   for (const auto* const entry : entries) {
     ukm_recorder.ExpectEntrySourceHasUrl(entry,
                                          GURL(form.main_frame_origin.GetURL()));
-    EXPECT_EQ(1u, entry->metrics.size());
+    EXPECT_EQ(3u, entry->metrics.size());
     ukm_recorder.ExpectEntryMetric(
         entry, UkmDeveloperEngagementType::kDeveloperEngagementName,
         expected_metric_value);
+    ukm_recorder.ExpectEntryMetric(
+        entry, UkmDeveloperEngagementType::kIsForCreditCardName,
+        is_for_credit_card);
+    ukm_recorder.ExpectEntryMetric(
+        entry, UkmDeveloperEngagementType::kFormTypesName,
+        AutofillMetrics::FormTypesToBitVector(form_types));
   }
 }
 
@@ -123,20 +136,24 @@ void VerifyFormInteractionUkm(const ukm::TestAutoSetUkmRecorder& ukm_recorder,
 
 void VerifySubmitFormUkm(const ukm::TestAutoSetUkmRecorder& ukm_recorder,
                          const FormData& form,
-                         AutofillMetrics::AutofillFormSubmittedState state) {
+                         AutofillMetrics::AutofillFormSubmittedState state,
+                         bool is_for_credit_card,
+                         const std::set<FormType>& form_types) {
   VerifyFormInteractionUkm(
       ukm_recorder, form, UkmFormSubmittedType::kEntryName,
       {{{UkmFormSubmittedType::kAutofillFormSubmittedStateName, state},
-        {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}}});
+        {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0},
+        {UkmFormSubmittedType::kIsForCreditCardName, is_for_credit_card},
+        {UkmFormSubmittedType::kFormTypesName,
+         AutofillMetrics::FormTypesToBitVector(form_types)}}});
 }
 
 void AppendFieldFillStatusUkm(const FormData& form,
                               ExpectedUkmMetrics* expected_metrics) {
-  int64_t form_signature = static_cast<int64_t>(CalculateFormSignature(form));
+  int64_t form_signature = Collapse(CalculateFormSignature(form));
   int64_t metric_type = static_cast<int64_t>(AutofillMetrics::TYPE_SUBMISSION);
   for (const FormFieldData& field : form.fields) {
-    int64_t field_signature =
-        static_cast<int64_t>(CalculateFieldSignatureForField(field));
+    int64_t field_signature = Collapse(CalculateFieldSignatureForField(field));
     expected_metrics->push_back(
         {{UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0},
          {UkmFieldFillStatusType::kFormSignatureName, form_signature},
@@ -156,7 +173,7 @@ void AppendFieldTypeUkm(const FormData& form,
   ASSERT_EQ(heuristic_types.size(), form.fields.size());
   ASSERT_EQ(server_types.size(), form.fields.size());
   ASSERT_EQ(actual_types.size(), form.fields.size());
-  int64_t form_signature = static_cast<int64_t>(CalculateFormSignature(form));
+  int64_t form_signature = Collapse(CalculateFormSignature(form));
   int64_t metric_type = static_cast<int64_t>(AutofillMetrics::TYPE_SUBMISSION);
   std::vector<int64_t> prediction_sources{
       AutofillMetrics::PREDICTION_SOURCE_HEURISTIC,
@@ -164,8 +181,7 @@ void AppendFieldTypeUkm(const FormData& form,
       AutofillMetrics::PREDICTION_SOURCE_OVERALL};
   for (size_t i = 0; i < form.fields.size(); ++i) {
     const FormFieldData& field = form.fields[i];
-    int64_t field_signature =
-        static_cast<int64_t>(CalculateFieldSignatureForField(field));
+    int64_t field_signature = Collapse(CalculateFieldSignatureForField(field));
     for (int64_t source : prediction_sources) {
       int64_t predicted_type = static_cast<int64_t>(
           (source == AutofillMetrics::PREDICTION_SOURCE_SERVER
@@ -209,19 +225,24 @@ class AutofillMetricsTest : public testing::Test {
   // Removes all existing profiles and creates one profile.
   void RecreateProfile();
 
-  // Removes all existing credit cards and creates 0 or 1 local profiles and
-  // 0 or 1 server profile according to the parameters.
+  // Removes all existing credit cards and creates a local, masked server,
+  // and/or full server credit card, according to the parameters.
   void RecreateCreditCards(bool include_local_credit_card,
                            bool include_masked_server_credit_card,
                            bool include_full_server_credit_card);
 
-  // Removes all existing credit cards and creates 1 server card with a bank
-  // name.
-  void RecreateServerCreditCardsWithBankName();
+  // Removes all existing credit cards and creates 1 masked server card with a
+  // bank name.
+  void RecreateMaskedServerCreditCardWithBankName();
+
+  // Removes all existing credit cards and creates 1 full server card with a
+  // bank name.
+  void RecreateFullServerCreditCardWithBankName();
 
   base::test::ScopedTaskEnvironment scoped_task_environment_;
   ukm::TestAutoSetUkmRecorder test_ukm_recorder_;
   MockAutofillClient autofill_client_;
+  TestSyncService sync_service_;
   std::unique_ptr<TestAutofillDriver> autofill_driver_;
   std::unique_ptr<TestAutofillManager> autofill_manager_;
   std::unique_ptr<TestPersonalDataManager> personal_data_;
@@ -244,6 +265,7 @@ void AutofillMetricsTest::SetUp() {
   personal_data_ = std::make_unique<TestPersonalDataManager>();
   personal_data_->set_database(autofill_client_.GetDatabase());
   personal_data_->SetPrefService(autofill_client_.GetPrefs());
+  personal_data_->SetSyncServiceForTest(&sync_service_);
   autofill_driver_ = std::make_unique<TestAutofillDriver>();
   autofill_manager_ = std::make_unique<TestAutofillManager>(
       autofill_driver_.get(), &autofill_client_, personal_data_.get());
@@ -321,7 +343,19 @@ void AutofillMetricsTest::RecreateCreditCards(
   personal_data_->Refresh();
 }
 
-void AutofillMetricsTest::RecreateServerCreditCardsWithBankName() {
+void AutofillMetricsTest::RecreateMaskedServerCreditCardWithBankName() {
+  personal_data_->ClearCreditCards();
+  CreditCard credit_card(CreditCard::MASKED_SERVER_CARD, "server_id");
+  test::SetCreditCardInfo(&credit_card, "name", "1111" /* Visa */, "01", "2999",
+                          "");
+  credit_card.set_guid("10000000-0000-0000-0000-000000000002");
+  credit_card.SetNetworkForMaskedCard(kVisaCard);
+  credit_card.set_bank_name("Chase");
+  personal_data_->AddServerCreditCard(credit_card);
+  personal_data_->Refresh();
+}
+
+void AutofillMetricsTest::RecreateFullServerCreditCardWithBankName() {
   personal_data_->ClearCreditCards();
   CreditCard credit_card(CreditCard::FULL_SERVER_CARD, "server_id");
   test::SetCreditCardInfo(&credit_card, "name", "4111111111111111", "12", "24",
@@ -2111,7 +2145,8 @@ TEST_F(AutofillMetricsTest,
     autofill_manager_->Reset();
 
     VerifyDeveloperEngagementUkm(
-        test_ukm_recorder_, form,
+        test_ukm_recorder_, form, /*is_for_credit_card=*/false,
+        {FormType::ADDRESS_FORM},
         {AutofillMetrics::FILLABLE_FORM_PARSED_WITHOUT_TYPE_HINTS});
   }
 }
@@ -2161,7 +2196,8 @@ TEST_F(AutofillMetricsTest,
     autofill_manager_->Reset();
 
     VerifyDeveloperEngagementUkm(
-        test_ukm_recorder_, form,
+        test_ukm_recorder_, form, /*is_for_credit_card=*/false,
+        {FormType::ADDRESS_FORM},
         {AutofillMetrics::FILLABLE_FORM_PARSED_WITH_TYPE_HINTS});
   }
 }
@@ -2202,8 +2238,11 @@ TEST_F(AutofillMetricsTest, UkmDeveloperEngagement_LogUpiVpaTypeHint) {
     autofill_manager_->OnFormsSeen(forms, TimeTicks::Now());
     autofill_manager_->Reset();
 
-    VerifyDeveloperEngagementUkm(test_ukm_recorder_, form,
-                                 {AutofillMetrics::FORM_CONTAINS_UPI_VPA_HINT});
+    VerifyDeveloperEngagementUkm(
+        test_ukm_recorder_, form, /*is_for_credit_card=*/false,
+        /* UPI VPA has Unknown form type.*/
+        {FormType::ADDRESS_FORM, FormType::UNKNOWN_FORM_TYPE},
+        {AutofillMetrics::FORM_CONTAINS_UPI_VPA_HINT});
     test_ukm_recorder_.Purge();
   }
 
@@ -2218,7 +2257,9 @@ TEST_F(AutofillMetricsTest, UkmDeveloperEngagement_LogUpiVpaTypeHint) {
     autofill_manager_->Reset();
 
     VerifyDeveloperEngagementUkm(
-        test_ukm_recorder_, form,
+        test_ukm_recorder_, form, /*is_for_credit_card=*/false,
+        /* UPI VPA has Unknown form type.*/
+        {FormType::ADDRESS_FORM, FormType::UNKNOWN_FORM_TYPE},
         {AutofillMetrics::FILLABLE_FORM_PARSED_WITH_TYPE_HINTS,
          AutofillMetrics::FORM_CONTAINS_UPI_VPA_HINT});
   }
@@ -2434,7 +2475,9 @@ TEST_F(AutofillMetricsTest, AutofillIsEnabledAtStartup) {
   base::HistogramTester histogram_tester;
   personal_data_->SetAutofillEnabled(true);
   personal_data_->Init(autofill_client_.GetDatabase(),
-                       autofill_client_.GetPrefs(), nullptr, false);
+                       autofill_client_.GetPrefs(),
+                       /*identity_manager=*/nullptr,
+                       /*is_off_the_record=*/false);
   histogram_tester.ExpectUniqueSample("Autofill.IsEnabled.Startup", true, 1);
 }
 
@@ -2443,7 +2486,9 @@ TEST_F(AutofillMetricsTest, AutofillIsDisabledAtStartup) {
   base::HistogramTester histogram_tester;
   personal_data_->SetAutofillEnabled(false);
   personal_data_->Init(autofill_client_.GetDatabase(),
-                       autofill_client_.GetPrefs(), nullptr, false);
+                       autofill_client_.GetPrefs(),
+                       /*identity_manager=*/nullptr,
+                       /*is_off_the_record=*/false);
   histogram_tester.ExpectUniqueSample("Autofill.IsEnabled.Startup", false, 1);
 }
 
@@ -2626,8 +2671,9 @@ TEST_F(AutofillMetricsTest, CreditCardCheckoutFlowUserActions) {
         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}}});
   // Expect |NON_FILLABLE_FORM_OR_NEW_DATA| in |AutofillFormSubmittedState|
   // because |field.value| is empty in |DeterminePossibleFieldTypesForUpload|.
-  VerifySubmitFormUkm(test_ukm_recorder_, form,
-                      AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA);
+  VerifySubmitFormUkm(
+      test_ukm_recorder_, form, AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA,
+      /*is_for_credit_card=*/true, {FormType::CREDIT_CARD_FORM});
 }
 
 // Test that the profile checkout flow user actions are correctly logged.
@@ -2742,7 +2788,8 @@ TEST_F(AutofillMetricsTest, ProfileCheckoutFlowUserActions) {
   // Expect |NON_FILLABLE_FORM_OR_NEW_DATA| in |AutofillFormSubmittedState|
   // because |field.value| is empty in |DeterminePossibleFieldTypesForUpload|.
   VerifySubmitFormUkm(test_ukm_recorder_, form,
-                      AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA);
+                      AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA,
+                      /*is_for_credit_card=*/false, {FormType::ADDRESS_FORM});
 }
 
 // Tests that the Autofill_PolledCreditCardSuggestions user action is only
@@ -3058,8 +3105,56 @@ TEST_F(AutofillMetricsTest, CreditCardShownFormEvents) {
                      ["Autofill.FormEvents.CreditCard.BankNameDisplayed"]);
   }
 
-  // Recreate server cards with bank names.
-  RecreateServerCreditCardsWithBankName();
+  // Recreate masked server cards with bank names.
+  RecreateMaskedServerCreditCardWithBankName();
+
+  // Reset the autofill manager state.
+  autofill_manager_->Reset();
+  autofill_manager_->AddSeenForm(form, field_types, field_types);
+
+  {
+    // Simulating new popup being shown.
+    base::HistogramTester histogram_tester;
+    autofill_manager_->OnQueryFormFieldAutofill(0, form, field, gfx::RectF());
+    autofill_manager_->DidShowSuggestions(true /* is_new_popup */, form, field);
+    histogram_tester.ExpectBucketCount(
+        "Autofill.FormEvents.CreditCard",
+        AutofillMetrics::FORM_EVENT_SUGGESTIONS_SHOWN, 1);
+    histogram_tester.ExpectBucketCount(
+        "Autofill.FormEvents.CreditCard",
+        AutofillMetrics::FORM_EVENT_SUGGESTIONS_SHOWN_ONCE, 1);
+    histogram_tester.ExpectBucketCount(
+        "Autofill.FormEvents.CreditCard.BankNameDisplayed",
+        AutofillMetrics::
+            FORM_EVENT_SUGGESTIONS_SHOWN_WITH_BANK_NAME_AVAILABLE_ONCE,
+        1);
+  }
+
+  // Reset the autofill manager state.
+  autofill_manager_->Reset();
+  autofill_manager_->AddSeenForm(form, field_types, field_types);
+
+  {
+    // Simulating two popups in the same page load.
+    base::HistogramTester histogram_tester;
+    autofill_manager_->OnQueryFormFieldAutofill(0, form, field, gfx::RectF());
+    autofill_manager_->DidShowSuggestions(true /* is_new_popup */, form, field);
+    autofill_manager_->DidShowSuggestions(true /* is_new_popup */, form, field);
+    histogram_tester.ExpectBucketCount(
+        "Autofill.FormEvents.CreditCard",
+        AutofillMetrics::FORM_EVENT_SUGGESTIONS_SHOWN, 2);
+    histogram_tester.ExpectBucketCount(
+        "Autofill.FormEvents.CreditCard",
+        AutofillMetrics::FORM_EVENT_SUGGESTIONS_SHOWN_ONCE, 1);
+    histogram_tester.ExpectBucketCount(
+        "Autofill.FormEvents.CreditCard.BankNameDisplayed",
+        AutofillMetrics::
+            FORM_EVENT_SUGGESTIONS_SHOWN_WITH_BANK_NAME_AVAILABLE_ONCE,
+        1);
+  }
+
+  // Recreate full server cards with bank names.
+  RecreateFullServerCreditCardWithBankName();
 
   // Reset the autofill manager state.
   autofill_manager_->Reset();
@@ -3301,8 +3396,59 @@ TEST_F(AutofillMetricsTest, CreditCardFilledFormEvents) {
         AutofillMetrics::FORM_EVENT_LOCAL_SUGGESTION_FILLED_ONCE, 1);
   }
 
-  // Recreate server cards with bank names.
-  RecreateServerCreditCardsWithBankName();
+  // Recreate masked server cards with bank names.
+  RecreateMaskedServerCreditCardWithBankName();
+
+  // Reset the autofill manager state.
+  autofill_manager_->Reset();
+  autofill_manager_->AddSeenForm(form, field_types, field_types);
+
+  {
+    // Simulating filling a masked card server suggestion.
+    base::HistogramTester histogram_tester;
+    std::string guid(
+        "10000000-0000-0000-0000-000000000002");  // masked server card
+    autofill_manager_->OnQueryFormFieldAutofill(0, form, field, gfx::RectF());
+    autofill_manager_->FillOrPreviewForm(
+        AutofillDriver::FORM_DATA_ACTION_FILL, 0, form, form.fields.back(),
+        autofill_manager_->MakeFrontendID(guid, std::string()));
+    autofill_manager_->OnDidGetRealPan(AutofillClient::SUCCESS,
+                                       "4444333322221111");
+    autofill_manager_->OnFormSubmitted(
+        form, false, SubmissionSource::FORM_SUBMISSION, TimeTicks::Now());
+    histogram_tester.ExpectBucketCount(
+        "Autofill.FormEvents.CreditCard.BankNameDisplayed",
+        AutofillMetrics::
+            FORM_EVENT_SERVER_SUGGESTION_FILLED_WITH_BANK_NAME_AVAILABLE_ONCE,
+        1);
+  }
+
+  // Reset the autofill manager state.
+  autofill_manager_->Reset();
+  autofill_manager_->AddSeenForm(form, field_types, field_types);
+
+  {
+    // Simulating filling multiple times.
+    base::HistogramTester histogram_tester;
+    std::string guid(
+        "10000000-0000-0000-0000-000000000002");  // masked server card
+    autofill_manager_->OnQueryFormFieldAutofill(0, form, field, gfx::RectF());
+    autofill_manager_->FillOrPreviewForm(
+        AutofillDriver::FORM_DATA_ACTION_FILL, 0, form, form.fields.back(),
+        autofill_manager_->MakeFrontendID(guid, std::string()));
+    autofill_manager_->OnDidGetRealPan(AutofillClient::SUCCESS,
+                                       "4444333322221111");
+    autofill_manager_->OnFormSubmitted(
+        form, false, SubmissionSource::FORM_SUBMISSION, TimeTicks::Now());
+    histogram_tester.ExpectBucketCount(
+        "Autofill.FormEvents.CreditCard.BankNameDisplayed",
+        AutofillMetrics::
+            FORM_EVENT_SERVER_SUGGESTION_FILLED_WITH_BANK_NAME_AVAILABLE_ONCE,
+        1);
+  }
+
+  // Recreate full server cards with bank names.
+  RecreateFullServerCreditCardWithBankName();
 
   // Reset the autofill manager state.
   autofill_manager_->Reset();
@@ -3771,7 +3917,9 @@ TEST_F(AutofillMetricsTest, CreditCardSubmittedFormEvents) {
         AutofillMetrics::FORM_EVENT_NO_SUGGESTION_SUBMITTED_ONCE, 1);
 
     VerifySubmitFormUkm(test_ukm_recorder_, form,
-                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA);
+                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA,
+                        /*is_for_credit_card=*/true,
+                        {FormType::CREDIT_CARD_FORM});
   }
 
   // Reset the autofill manager state and purge UKM logs.
@@ -3801,7 +3949,9 @@ TEST_F(AutofillMetricsTest, CreditCardSubmittedFormEvents) {
            HTML_TYPE_UNSPECIFIED},
           {UkmTextFieldDidChangeType::kServerTypeName, CREDIT_CARD_NUMBER}}});
     VerifySubmitFormUkm(test_ukm_recorder_, form,
-                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA);
+                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA,
+                        /*is_for_credit_card=*/true,
+                        {FormType::CREDIT_CARD_FORM});
   }
 
   // Reset the autofill manager state and purge UKM logs.
@@ -3838,7 +3988,9 @@ TEST_F(AutofillMetricsTest, CreditCardSubmittedFormEvents) {
            HTML_TYPE_UNSPECIFIED},
           {UkmTextFieldDidChangeType::kServerTypeName, CREDIT_CARD_NUMBER}}});
     VerifySubmitFormUkm(test_ukm_recorder_, form,
-                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA);
+                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA,
+                        /*is_for_credit_card=*/true,
+                        {FormType::CREDIT_CARD_FORM});
   }
 
   // Reset the autofill manager state and purge UKM logs.
@@ -3868,7 +4020,9 @@ TEST_F(AutofillMetricsTest, CreditCardSubmittedFormEvents) {
         {{{UkmSuggestionFilledType::kRecordTypeName, CreditCard::LOCAL_CARD},
           {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}}});
     VerifySubmitFormUkm(test_ukm_recorder_, form,
-                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA);
+                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA,
+                        /*is_for_credit_card=*/true,
+                        {FormType::CREDIT_CARD_FORM});
   }
 
   // Reset the autofill manager state and purge UKM logs.
@@ -3900,7 +4054,9 @@ TEST_F(AutofillMetricsTest, CreditCardSubmittedFormEvents) {
            CreditCard::FULL_SERVER_CARD},
           {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}}});
     VerifySubmitFormUkm(test_ukm_recorder_, form,
-                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA);
+                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA,
+                        /*is_for_credit_card=*/true,
+                        {FormType::CREDIT_CARD_FORM});
   }
 
   // Reset the autofill manager state and purge UKM logs.
@@ -3937,7 +4093,9 @@ TEST_F(AutofillMetricsTest, CreditCardSubmittedFormEvents) {
         test_ukm_recorder_, form, UkmSelectedMaskedServerCardType::kEntryName,
         {{{UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}}});
     VerifySubmitFormUkm(test_ukm_recorder_, form,
-                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA);
+                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA,
+                        /*is_for_credit_card=*/true,
+                        {FormType::CREDIT_CARD_FORM});
   }
 
   // Reset the autofill manager state and purge UKM logs.
@@ -3960,11 +4118,10 @@ TEST_F(AutofillMetricsTest, CreditCardSubmittedFormEvents) {
     autofill_manager_->OnQueryFormFieldAutofill(0, form, field, gfx::RectF());
     autofill_manager_->SubmitForm(form);
 
-    VerifyFormInteractionUkm(
-        test_ukm_recorder_, form, UkmFormSubmittedType::kEntryName,
-        {{{UkmFormSubmittedType::kAutofillFormSubmittedStateName,
-           AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA},
-          {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}}});
+    VerifySubmitFormUkm(test_ukm_recorder_, form,
+                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA,
+                        /*is_for_credit_card=*/true,
+                        {FormType::CREDIT_CARD_FORM});
 
     autofill_manager_->SubmitForm(form);
 
@@ -3972,10 +4129,18 @@ TEST_F(AutofillMetricsTest, CreditCardSubmittedFormEvents) {
         test_ukm_recorder_, form, UkmFormSubmittedType::kEntryName,
         {{{UkmFormSubmittedType::kAutofillFormSubmittedStateName,
            AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA},
-          {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}},
+          {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0},
+          {UkmFormSubmittedType::kIsForCreditCardName, true},
+          {UkmFormSubmittedType::kFormTypesName,
+           AutofillMetrics::FormTypesToBitVector(
+               {FormType::CREDIT_CARD_FORM})}},
          {{UkmFormSubmittedType::kAutofillFormSubmittedStateName,
            AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA},
-          {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}}});
+          {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0},
+          {UkmFormSubmittedType::kIsForCreditCardName, true},
+          {UkmFormSubmittedType::kFormTypesName,
+           AutofillMetrics::FormTypesToBitVector(
+               {FormType::CREDIT_CARD_FORM})}}});
 
     histogram_tester.ExpectBucketCount(
         "Autofill.FormEvents.CreditCard",
@@ -4068,7 +4233,9 @@ TEST_F(AutofillMetricsTest, CreditCardSubmittedFormEvents) {
            HTML_TYPE_UNSPECIFIED},
           {UkmTextFieldDidChangeType::kServerTypeName, CREDIT_CARD_NUMBER}}});
     VerifySubmitFormUkm(test_ukm_recorder_, form,
-                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA);
+                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA,
+                        /*is_for_credit_card=*/true,
+                        {FormType::CREDIT_CARD_FORM});
   }
 }
 
@@ -4546,7 +4713,8 @@ TEST_F(AutofillMetricsTest, AddressSubmittedFormEvents) {
         AutofillMetrics::FORM_EVENT_NO_SUGGESTION_SUBMITTED_ONCE, 1);
 
     VerifySubmitFormUkm(test_ukm_recorder_, form,
-                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA);
+                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA,
+                        /*is_for_credit_card=*/false, {FormType::ADDRESS_FORM});
   }
 
   // Reset the autofill manager state and purge UKM logs.
@@ -4575,7 +4743,8 @@ TEST_F(AutofillMetricsTest, AddressSubmittedFormEvents) {
         AutofillMetrics::FORM_EVENT_NO_SUGGESTION_SUBMITTED_ONCE, 1);
 
     VerifySubmitFormUkm(test_ukm_recorder_, form,
-                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA);
+                        AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA,
+                        /*is_for_credit_card=*/false, {FormType::ADDRESS_FORM});
   }
 
   // Reset the autofill manager state and purge UKM logs.
@@ -5095,7 +5264,8 @@ TEST_F(AutofillMetricsTest, AutofillFormSubmittedState) {
     histogram_tester.ExpectTotalCount("Autofill.FormSubmittedState", 0);
 
     VerifyDeveloperEngagementUkm(
-        test_ukm_recorder_, form,
+        test_ukm_recorder_, form, /*is_for_credit_card=*/false,
+        {FormType::ADDRESS_FORM, FormType::UNKNOWN_FORM_TYPE},
         {AutofillMetrics::FILLABLE_FORM_PARSED_WITHOUT_TYPE_HINTS});
   }
 
@@ -5116,7 +5286,11 @@ TEST_F(AutofillMetricsTest, AutofillFormSubmittedState) {
     expected_form_submission_ukm_metrics.push_back(
         {{UkmFormSubmittedType::kAutofillFormSubmittedStateName,
           AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA},
-         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}});
+         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0},
+         {UkmFormSubmittedType::kIsForCreditCardName, false},
+         {UkmFormSubmittedType::kFormTypesName,
+          AutofillMetrics::FormTypesToBitVector(
+              {FormType::ADDRESS_FORM, FormType::UNKNOWN_FORM_TYPE})}});
     VerifyFormInteractionUkm(test_ukm_recorder_, form,
                              UkmFormSubmittedType::kEntryName,
                              expected_form_submission_ukm_metrics);
@@ -5145,7 +5319,11 @@ TEST_F(AutofillMetricsTest, AutofillFormSubmittedState) {
     expected_form_submission_ukm_metrics.push_back(
         {{UkmFormSubmittedType::kAutofillFormSubmittedStateName,
           AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA},
-         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}});
+         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0},
+         {UkmFormSubmittedType::kIsForCreditCardName, false},
+         {UkmFormSubmittedType::kFormTypesName,
+          AutofillMetrics::FormTypesToBitVector(
+              {FormType::ADDRESS_FORM, FormType::UNKNOWN_FORM_TYPE})}});
     VerifyFormInteractionUkm(test_ukm_recorder_, form,
                              UkmFormSubmittedType::kEntryName,
                              expected_form_submission_ukm_metrics);
@@ -5178,7 +5356,11 @@ TEST_F(AutofillMetricsTest, AutofillFormSubmittedState) {
         {{UkmFormSubmittedType::kAutofillFormSubmittedStateName,
           AutofillMetrics::
               FILLABLE_FORM_AUTOFILLED_NONE_DID_NOT_SHOW_SUGGESTIONS},
-         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}});
+         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0},
+         {UkmFormSubmittedType::kIsForCreditCardName, false},
+         {UkmFormSubmittedType::kFormTypesName,
+          AutofillMetrics::FormTypesToBitVector(
+              {FormType::ADDRESS_FORM, FormType::UNKNOWN_FORM_TYPE})}});
 
     VerifyFormInteractionUkm(test_ukm_recorder_, form,
                              UkmFormSubmittedType::kEntryName,
@@ -5214,7 +5396,11 @@ TEST_F(AutofillMetricsTest, AutofillFormSubmittedState) {
     expected_form_submission_ukm_metrics.push_back(
         {{UkmFormSubmittedType::kAutofillFormSubmittedStateName,
           AutofillMetrics::FILLABLE_FORM_AUTOFILLED_NONE_DID_SHOW_SUGGESTIONS},
-         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}});
+         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0},
+         {UkmFormSubmittedType::kIsForCreditCardName, false},
+         {UkmFormSubmittedType::kFormTypesName,
+          AutofillMetrics::FormTypesToBitVector(
+              {FormType::ADDRESS_FORM, FormType::UNKNOWN_FORM_TYPE})}});
     VerifyFormInteractionUkm(test_ukm_recorder_, form,
                              UkmFormSubmittedType::kEntryName,
                              expected_form_submission_ukm_metrics);
@@ -5243,7 +5429,11 @@ TEST_F(AutofillMetricsTest, AutofillFormSubmittedState) {
     expected_form_submission_ukm_metrics.push_back(
         {{UkmFormSubmittedType::kAutofillFormSubmittedStateName,
           AutofillMetrics::FILLABLE_FORM_AUTOFILLED_SOME},
-         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}});
+         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0},
+         {UkmFormSubmittedType::kIsForCreditCardName, false},
+         {UkmFormSubmittedType::kFormTypesName,
+          AutofillMetrics::FormTypesToBitVector(
+              {FormType::ADDRESS_FORM, FormType::UNKNOWN_FORM_TYPE})}});
     VerifyFormInteractionUkm(test_ukm_recorder_, form,
                              UkmFormSubmittedType::kEntryName,
                              expected_form_submission_ukm_metrics);
@@ -5273,7 +5463,11 @@ TEST_F(AutofillMetricsTest, AutofillFormSubmittedState) {
     expected_form_submission_ukm_metrics.push_back(
         {{UkmFormSubmittedType::kAutofillFormSubmittedStateName,
           AutofillMetrics::FILLABLE_FORM_AUTOFILLED_ALL},
-         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}});
+         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0},
+         {UkmFormSubmittedType::kIsForCreditCardName, false},
+         {UkmFormSubmittedType::kFormTypesName,
+          AutofillMetrics::FormTypesToBitVector(
+              {FormType::ADDRESS_FORM, FormType::UNKNOWN_FORM_TYPE})}});
     VerifyFormInteractionUkm(test_ukm_recorder_, form,
                              UkmFormSubmittedType::kEntryName,
                              expected_form_submission_ukm_metrics);
@@ -5306,7 +5500,11 @@ TEST_F(AutofillMetricsTest, AutofillFormSubmittedState) {
     expected_form_submission_ukm_metrics.push_back(
         {{UkmFormSubmittedType::kAutofillFormSubmittedStateName,
           AutofillMetrics::NON_FILLABLE_FORM_OR_NEW_DATA},
-         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}});
+         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0},
+         {UkmFormSubmittedType::kIsForCreditCardName, false},
+         {UkmFormSubmittedType::kFormTypesName,
+          AutofillMetrics::FormTypesToBitVector(
+              {FormType::ADDRESS_FORM, FormType::UNKNOWN_FORM_TYPE})}});
     VerifyFormInteractionUkm(test_ukm_recorder_, form,
                              UkmFormSubmittedType::kEntryName,
                              expected_form_submission_ukm_metrics);
@@ -5350,7 +5548,8 @@ TEST_F(
     base::UserActionTester user_action_tester;
     autofill_manager_->OnFormsSeen(forms, TimeTicks::Now());
     VerifyDeveloperEngagementUkm(
-        test_ukm_recorder_, form,
+        test_ukm_recorder_, form, /*is_for_credit_card=*/false,
+        {FormType::ADDRESS_FORM},
         {AutofillMetrics::FILLABLE_FORM_PARSED_WITHOUT_TYPE_HINTS});
     histogram_tester.ExpectTotalCount("Autofill.FormSubmittedState", 0);
 
@@ -5374,7 +5573,10 @@ TEST_F(
     expected_form_submission_ukm_metrics.push_back(
         {{UkmFormSubmittedType::kAutofillFormSubmittedStateName,
           AutofillMetrics::FILLABLE_FORM_AUTOFILLED_ALL},
-         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0}});
+         {UkmSuggestionFilledType::kMillisecondsSinceFormParsedName, 0},
+         {UkmFormSubmittedType::kIsForCreditCardName, false},
+         {UkmFormSubmittedType::kFormTypesName,
+          AutofillMetrics::FormTypesToBitVector({FormType::ADDRESS_FORM})}});
     VerifyFormInteractionUkm(test_ukm_recorder_, form,
                              UkmFormSubmittedType::kEntryName,
                              expected_form_submission_ukm_metrics);
@@ -6632,17 +6834,23 @@ TEST_F(AutofillMetricsTest, RecordDeveloperEngagementMetric) {
   GURL url("https://www.google.com");
   int form_structure_metric = 1;
 
-  AutofillMetrics::LogDeveloperEngagementUkm(&test_ukm_recorder_, url,
+  AutofillMetrics::LogDeveloperEngagementUkm(&test_ukm_recorder_, url, true,
+                                             {FormType::CREDIT_CARD_FORM},
                                              form_structure_metric);
   auto entries = test_ukm_recorder_.GetEntriesByName(
       UkmDeveloperEngagementType::kEntryName);
   EXPECT_EQ(1u, entries.size());
   for (const auto* const entry : entries) {
     test_ukm_recorder_.ExpectEntrySourceHasUrl(entry, url);
-    EXPECT_EQ(1u, entry->metrics.size());
+    EXPECT_EQ(3u, entry->metrics.size());
     test_ukm_recorder_.ExpectEntryMetric(
         entry, UkmDeveloperEngagementType::kDeveloperEngagementName,
         form_structure_metric);
+    test_ukm_recorder_.ExpectEntryMetric(
+        entry, UkmDeveloperEngagementType::kIsForCreditCardName, true);
+    test_ukm_recorder_.ExpectEntryMetric(
+        entry, UkmDeveloperEngagementType::kFormTypesName,
+        AutofillMetrics::FormTypesToBitVector({FormType::CREDIT_CARD_FORM}));
   }
 }
 

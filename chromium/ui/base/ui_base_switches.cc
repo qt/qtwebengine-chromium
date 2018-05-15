@@ -14,6 +14,9 @@ const char kDisableAVFoundationOverlays[] = "disable-avfoundation-overlays";
 // based overlay display path.
 const char kDisableMacOverlays[] = "disable-mac-overlays";
 
+// Disable animations for showing and hiding modal dialogs.
+const char kDisableModalAnimations[] = "disable-modal-animations";
+
 // Disable use of cross-process CALayers to display content directly from the
 // GPU process on Mac.
 const char kDisableRemoteCoreAnimation[] = "disable-remote-core-animation";
@@ -78,8 +81,9 @@ const char kTopChromeMDMaterialHybrid[] = "material-hybrid";
 // |kTopChromeMD| switch.
 const char kTopChromeMDMaterialTouchOptimized[] = "material-touch-optimized";
 
-// Classic, non-material, mode for the |kTopChromeMD| switch.
-const char kTopChromeMDNonMaterial[] = "non-material";
+// Material design mode that represents a refresh of the Chrome UI for the
+// |kTopChromeMD| switch.
+const char kTopChromeMDMaterialRefresh[] = "material-refresh";
 
 // Disable partial swap which is needed for some OpenGL drivers / emulators.
 const char kUIDisablePartialSwap[] = "ui-disable-partial-swap";
@@ -95,6 +99,11 @@ const char kUIDisablePartialSwap[] = "ui-disable-partial-swap";
 // Pink: Overdrawn three times.
 // Red: Overdrawn four or more times.
 const char kShowOverdrawFeedback[] = "show-overdraw-feedback";
+
+// Use Skia Deferred Display List, with this option, SkiaRenderer will record
+// frames to Skia DDLs and play them back on the GPU thread. This flag is only
+// be effective with --use-skia-renderer.
+const char kUseSkiaDeferredDisplayList[] = "use-skia-deferred-display-list";
 
 // Use SkiaRenderer instead of GLRenderer for direct rendering.
 const char kUseSkiaRenderer[] = "use-skia-renderer";

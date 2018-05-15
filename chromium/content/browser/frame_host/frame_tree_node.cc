@@ -11,7 +11,6 @@
 
 #include "base/lazy_instance.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -24,7 +23,7 @@
 #include "content/common/frame_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/browser_side_navigation_policy.h"
-#include "third_party/WebKit/public/common/frame/sandbox_flags.h"
+#include "third_party/blink/public/common/frame/sandbox_flags.h"
 
 namespace content {
 
@@ -146,6 +145,7 @@ FrameTreeNode::FrameTreeNode(FrameTree* frame_tree,
                       manager_delegate),
       frame_tree_node_id_(next_frame_tree_node_id_++),
       parent_(parent),
+      depth_(parent ? parent->depth_ + 1 : 0u),
       opener_(nullptr),
       original_opener_(nullptr),
       has_committed_real_load_(false),
@@ -163,6 +163,7 @@ FrameTreeNode::FrameTreeNode(FrameTree* frame_tree,
       is_created_by_script_(is_created_by_script),
       devtools_frame_token_(devtools_frame_token),
       frame_owner_properties_(frame_owner_properties),
+      was_discarded_(false),
       blame_context_(frame_tree_node_id_, parent) {
   std::pair<FrameTreeNodeIdMap::iterator, bool> result =
       g_frame_tree_node_id_map.Get().insert(
@@ -489,6 +490,10 @@ void FrameTreeNode::CreatedNavigationRequest(
   }
 
   navigation_request_ = std::move(navigation_request);
+  if (was_discarded_) {
+    navigation_request_->set_was_discarded();
+    was_discarded_ = false;
+  }
   render_manager()->DidCreateNavigationRequest(navigation_request_.get());
 
   bool to_different_document = !FrameMsg_Navigate_Type::IsSameDocument(
@@ -598,7 +603,8 @@ bool FrameTreeNode::StopLoading() {
         expected_pending_nav_entry_id =
             navigation_request_->navigation_handle()->pending_nav_entry_id();
       }
-      navigator_->DiscardPendingEntryIfNeeded(expected_pending_nav_entry_id);
+      navigator_->DiscardPendingEntryIfNeeded(expected_pending_nav_entry_id,
+                                              false /* is_download */);
     }
     ResetNavigationRequest(false, true);
   }

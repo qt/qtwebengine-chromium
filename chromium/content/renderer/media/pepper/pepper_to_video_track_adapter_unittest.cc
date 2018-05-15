@@ -16,9 +16,9 @@
 #include "content/test/ppapi_unittest.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/web/WebHeap.h"
+#include "third_party/blink/public/platform/web_media_stream_track.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/web/web_heap.h"
 
 using ::testing::_;
 
@@ -89,7 +89,8 @@ TEST_F(PepperToVideoTrackAdapterTest, PutFrame) {
     base::RunLoop run_loop;
     base::Closure quit_closure = run_loop.QuitClosure();
 
-    EXPECT_CALL(sink, OnVideoFrame()).WillOnce(RunClosure(quit_closure));
+    EXPECT_CALL(sink, OnVideoFrame())
+        .WillOnce(RunClosure(std::move(quit_closure)));
     frame_writer->PutFrame(image.get(), 10);
     run_loop.Run();
     // Run all pending tasks to let the the test clean up before the test ends.

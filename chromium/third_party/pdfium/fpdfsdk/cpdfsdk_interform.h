@@ -77,7 +77,7 @@ class CPDFSDK_InterForm : public IPDF_FormNotify {
 
   bool DoAction_Hide(const CPDF_Action& action);
   bool DoAction_SubmitForm(const CPDF_Action& action);
-  bool DoAction_ResetForm(const CPDF_Action& action);
+  void DoAction_ResetForm(const CPDF_Action& action);
 
   std::vector<CPDF_FormField*> GetFieldFromObjects(
       const std::vector<CPDF_Object*>& objects) const;
@@ -102,17 +102,14 @@ class CPDFSDK_InterForm : public IPDF_FormNotify {
 
  private:
   // IPDF_FormNotify:
-  int BeforeValueChange(CPDF_FormField* pField,
-                        const WideString& csValue) override;
+  bool BeforeValueChange(CPDF_FormField* pField,
+                         const WideString& csValue) override;
   void AfterValueChange(CPDF_FormField* pField) override;
-  int BeforeSelectionChange(CPDF_FormField* pField,
-                            const WideString& csValue) override;
+  bool BeforeSelectionChange(CPDF_FormField* pField,
+                             const WideString& csValue) override;
   void AfterSelectionChange(CPDF_FormField* pField) override;
   void AfterCheckedStatusChange(CPDF_FormField* pField) override;
-  int BeforeFormReset(CPDF_InterForm* pForm) override;
   void AfterFormReset(CPDF_InterForm* pForm) override;
-  int BeforeFormImportData(CPDF_InterForm* pForm) override;
-  void AfterFormImportData(CPDF_InterForm* pForm) override;
 
   bool FDFToURLEncodedData(uint8_t*& pBuf, size_t& nBufSize);
   int GetPageIndexByAnnotDict(CPDF_Document* pDocument,

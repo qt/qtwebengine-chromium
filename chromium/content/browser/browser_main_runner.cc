@@ -16,6 +16,7 @@
 #include "base/run_loop.h"
 #include "base/sampling_heap_profiler/sampling_heap_profiler.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/synchronization/atomic_flag.h"
 #include "base/time/time.h"
 #include "base/trace_event/heap_profiler_allocation_context_tracker.h"
 #include "base/trace_event/trace_event.h"
@@ -26,7 +27,6 @@
 #include "content/browser/browser_shutdown_profile_dumper.h"
 #include "content/browser/notification_service_impl.h"
 #include "content/common/content_switches_internal.h"
-#include "content/public/browser/tracing_controller.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "third_party/skia/include/core/SkGraphics.h"
@@ -74,6 +74,7 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
 
       const base::TimeTicks start_time_step1 = base::TimeTicks::Now();
 
+      base::SamplingHeapProfiler::InitTLSSlot();
       if (parameters.command_line.HasSwitch(switches::kSamplingHeapProfiler)) {
         base::SamplingHeapProfiler* profiler =
             base::SamplingHeapProfiler::GetInstance();
@@ -190,8 +191,7 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
         startup_profiler.reset(
             new BrowserShutdownProfileDumper(main_loop_->startup_trace_file()));
       }
-    } else if (tracing::TraceConfigFile::GetInstance()->IsEnabled() &&
-               TracingController::GetInstance()->IsTracing()) {
+    } else if (tracing::TraceConfigFile::GetInstance()->IsEnabled()) {
       base::FilePath result_file;
 #if defined(OS_ANDROID)
       TracingControllerAndroid::GenerateTracingFilePath(&result_file);

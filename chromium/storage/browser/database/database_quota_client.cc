@@ -21,7 +21,7 @@
 #include "storage/browser/database/database_tracker.h"
 #include "storage/browser/database/database_util.h"
 #include "storage/common/database/database_identifier.h"
-#include "third_party/WebKit/public/mojom/quota/quota_types.mojom.h"
+#include "third_party/blink/public/mojom/quota/quota_types.mojom.h"
 
 using blink::mojom::StorageType;
 using storage::QuotaClient;
@@ -43,10 +43,8 @@ void GetOriginsOnDBThread(DatabaseTracker* db_tracker,
                           std::set<url::Origin>* origins_ptr) {
   std::vector<std::string> origin_identifiers;
   if (db_tracker->GetAllOriginIdentifiers(&origin_identifiers)) {
-    for (std::vector<std::string>::const_iterator iter =
-         origin_identifiers.begin();
-         iter != origin_identifiers.end(); ++iter) {
-      origins_ptr->insert(storage::GetOriginFromIdentifier(*iter));
+    for (const auto& identifier : origin_identifiers) {
+      origins_ptr->insert(storage::GetOriginFromIdentifier(identifier));
     }
   }
 }
@@ -56,12 +54,10 @@ void GetOriginsForHostOnDBThread(DatabaseTracker* db_tracker,
                                  const std::string& host) {
   std::vector<std::string> origin_identifiers;
   if (db_tracker->GetAllOriginIdentifiers(&origin_identifiers)) {
-    for (std::vector<std::string>::const_iterator iter =
-         origin_identifiers.begin();
-         iter != origin_identifiers.end(); ++iter) {
-      if (host ==
-          net::GetHostOrSpecFromURL(storage::GetOriginURLFromIdentifier(*iter)))
-        origins_ptr->insert(storage::GetOriginFromIdentifier(*iter));
+    for (const auto& identifier : origin_identifiers) {
+      url::Origin origin = storage::GetOriginFromIdentifier(identifier);
+      if (host == net::GetHostOrSpecFromURL(origin.GetURL()))
+        origins_ptr->insert(origin);
     }
   }
 }

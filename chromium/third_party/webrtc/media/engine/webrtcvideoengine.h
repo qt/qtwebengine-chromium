@@ -177,6 +177,8 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
 
   rtc::Optional<uint32_t> GetDefaultReceiveStreamSsrc();
 
+  StreamParams unsignaled_stream_params() { return unsignaled_stream_params_; }
+
   // AdaptReason is used for expressing why a WebRtcVideoSendStream request
   // a lower input frame size than the currently configured camera input frame
   // size. There can be more than one reason OR:ed together.
@@ -213,6 +215,7 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
     // These optionals are unset if not changed.
     rtc::Optional<VideoCodecSettings> codec;
     rtc::Optional<std::vector<webrtc::RtpExtension>> rtp_header_extensions;
+    rtc::Optional<std::string> mid;
     rtc::Optional<int> max_bandwidth_bps;
     rtc::Optional<bool> conference_mode;
     rtc::Optional<webrtc::RtcpMode> rtcp_mode;
@@ -258,7 +261,6 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
         const StreamParams& sp,
         webrtc::VideoSendStream::Config config,
         const VideoOptions& options,
-        webrtc::VideoEncoderFactory* encoder_factory,
         bool enable_cpu_overuse_detection,
         int max_bitrate_bps,
         const rtc::Optional<VideoCodecSettings>& codec_settings,
@@ -312,8 +314,7 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
 
     rtc::scoped_refptr<webrtc::VideoEncoderConfig::EncoderSpecificSettings>
     ConfigureVideoEncoderSettings(const VideoCodec& codec);
-    void SetCodec(const VideoCodecSettings& codec,
-                  bool force_encoder_allocation);
+    void SetCodec(const VideoCodecSettings& codec);
     void RecreateWebRtcStream();
     webrtc::VideoEncoderConfig CreateVideoEncoderConfig(
         const VideoCodec& codec) const;
@@ -337,8 +338,6 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
     const bool enable_cpu_overuse_detection_;
     rtc::VideoSourceInterface<webrtc::VideoFrame>* source_
         RTC_GUARDED_BY(&thread_checker_);
-    webrtc::VideoEncoderFactory* const encoder_factory_
-        RTC_GUARDED_BY(&thread_checker_);
 
     webrtc::VideoSendStream* stream_ RTC_GUARDED_BY(&thread_checker_);
     rtc::VideoSinkInterface<webrtc::VideoFrame>* encoder_sink_
@@ -355,7 +354,6 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
     webrtc::RtpParameters rtp_parameters_ RTC_GUARDED_BY(&thread_checker_);
     std::unique_ptr<webrtc::VideoEncoder> allocated_encoder_
         RTC_GUARDED_BY(&thread_checker_);
-    VideoCodec allocated_codec_ RTC_GUARDED_BY(&thread_checker_);
 
     bool sending_ RTC_GUARDED_BY(&thread_checker_);
   };
@@ -508,6 +506,11 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
   VideoOptions default_send_options_;
   VideoRecvParameters recv_params_;
   int64_t last_stats_log_ms_;
+  // This is a stream param that comes from the remote description, but wasn't
+  // signaled with any a=ssrc lines. It holds information that was signaled
+  // before the unsignaled receive stream is created when the first packet is
+  // received.
+  StreamParams unsignaled_stream_params_;
 };
 
 class EncoderStreamFactory

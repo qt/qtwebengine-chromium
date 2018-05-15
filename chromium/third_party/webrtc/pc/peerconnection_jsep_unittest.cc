@@ -1162,11 +1162,11 @@ TEST_F(PeerConnectionJsepTest,
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
-  ASSERT_EQ(callee->observer()->add_track_events_.size(), 1u);
-  EXPECT_EQ(kTrackLabel,
-            callee->observer()->add_track_events_[0].receiver->track()->id());
-  // TODO(bugs.webrtc.org/7933): Also verify that no stream was added to the
-  // receiver.
+  const auto& track_events = callee->observer()->add_track_events_;
+  ASSERT_EQ(1u, track_events.size());
+  const auto& event = track_events[0];
+  EXPECT_EQ(kTrackLabel, event.receiver->track()->id());
+  EXPECT_EQ(0u, event.streams.size());
 }
 
 // Test that setting a remote offer with one track that has one stream fires off
@@ -1174,11 +1174,11 @@ TEST_F(PeerConnectionJsepTest,
 TEST_F(PeerConnectionJsepTest,
        SetRemoteOfferWithOneTrackOneStreamFiresOnAddTrack) {
   const std::string kTrackLabel = "audio_track";
-  const std::string kStreamLabel = "audio_stream";
+  const std::string kStreamId = "audio_stream";
 
   auto caller = CreatePeerConnection();
   auto callee = CreatePeerConnection();
-  ASSERT_TRUE(caller->AddAudioTrack(kTrackLabel, {kStreamLabel}));
+  ASSERT_TRUE(caller->AddAudioTrack(kTrackLabel, {kStreamId}));
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
@@ -1187,7 +1187,7 @@ TEST_F(PeerConnectionJsepTest,
   const auto& event = track_events[0];
   ASSERT_EQ(1u, event.streams.size());
   auto stream = event.streams[0];
-  EXPECT_EQ(kStreamLabel, stream->label());
+  EXPECT_EQ(kStreamId, stream->id());
   EXPECT_THAT(track_events[0].snapshotted_stream_tracks.at(stream),
               ElementsAre(event.receiver->track()));
   EXPECT_EQ(event.receiver->streams(), track_events[0].streams);
@@ -1202,12 +1202,12 @@ TEST_F(PeerConnectionJsepTest,
        SetRemoteOfferWithTwoTracksSameStreamFiresOnAddTrack) {
   const std::string kTrack1Label = "audio_track1";
   const std::string kTrack2Label = "audio_track2";
-  const std::string kSharedStreamLabel = "stream";
+  const std::string kSharedStreamId = "stream";
 
   auto caller = CreatePeerConnection();
   auto callee = CreatePeerConnection();
-  ASSERT_TRUE(caller->AddAudioTrack(kTrack1Label, {kSharedStreamLabel}));
-  ASSERT_TRUE(caller->AddAudioTrack(kTrack2Label, {kSharedStreamLabel}));
+  ASSERT_TRUE(caller->AddAudioTrack(kTrack1Label, {kSharedStreamId}));
+  ASSERT_TRUE(caller->AddAudioTrack(kTrack2Label, {kSharedStreamId}));
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
@@ -1226,7 +1226,27 @@ TEST_F(PeerConnectionJsepTest,
               UnorderedElementsAre(track1, track2));
 }
 
-// TODO(bugs.webrtc.org/7932): Also test multi-stream case.
+// Test that setting a remote offer with one track that has two streams fires
+// off the correct OnAddTrack event.
+TEST_F(PeerConnectionJsepTest,
+       SetRemoteOfferWithOneTrackTwoStreamFiresOnAddTrack) {
+  const std::string kTrackLabel = "audio_track";
+  const std::string kStreamId1 = "audio_stream1";
+  const std::string kStreamId2 = "audio_stream2";
+
+  auto caller = CreatePeerConnection();
+  auto callee = CreatePeerConnection();
+  ASSERT_TRUE(caller->AddAudioTrack(kTrackLabel, {kStreamId1, kStreamId2}));
+
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
+
+  const auto& track_events = callee->observer()->add_track_events_;
+  ASSERT_EQ(1u, track_events.size());
+  const auto& event = track_events[0];
+  ASSERT_EQ(2u, event.streams.size());
+  EXPECT_EQ(kStreamId1, event.streams[0]->id());
+  EXPECT_EQ(kStreamId2, event.streams[1]->id());
+}
 
 // Test that if an RtpTransceiver with a current_direction set is stopped, then
 // current_direction is changed to null.
@@ -1241,6 +1261,20 @@ TEST_F(PeerConnectionJsepTest, CurrentDirectionResetWhenRtpTransceiverStopped) {
   ASSERT_TRUE(transceiver->current_direction());
   transceiver->Stop();
   EXPECT_FALSE(transceiver->current_direction());
+}
+
+// Tests that you can't set an answer on a PeerConnection before setting
+// the offer.
+TEST_F(PeerConnectionJsepTest, AnswerBeforeOfferFails) {
+  auto caller = CreatePeerConnection();
+  auto callee = CreatePeerConnection();
+  RTCError error_out;
+  caller->AddAudioTrack("audio");
+  auto offer = caller->CreateOffer();
+  callee->SetRemoteDescription(std::move(offer), &error_out);
+  auto answer = callee->CreateAnswer();
+  EXPECT_FALSE(caller->SetRemoteDescription(std::move(answer), &error_out));
+  EXPECT_EQ(RTCErrorType::INVALID_STATE, error_out.type());
 }
 
 }  // namespace webrtc

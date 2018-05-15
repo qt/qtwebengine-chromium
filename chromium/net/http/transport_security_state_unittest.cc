@@ -35,7 +35,7 @@
 #include "net/cert/x509_certificate.h"
 #include "net/http/http_status_code.h"
 #include "net/http/http_util.h"
-#include "net/net_features.h"
+#include "net/net_buildflags.h"
 #include "net/ssl/ssl_info.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/test_data_directory.h"
@@ -218,8 +218,10 @@ class MockExpectCTReporter : public TransportSecurityState::ExpectCTReporter {
 
 class MockRequireCTDelegate : public TransportSecurityState::RequireCTDelegate {
  public:
-  MOCK_METHOD1(IsCTRequiredForHost,
-               CTRequirementLevel(const std::string& hostname));
+  MOCK_METHOD3(IsCTRequiredForHost,
+               CTRequirementLevel(const std::string& hostname,
+                                  const X509Certificate* chain,
+                                  const HashValueVector& hashes));
 };
 
 void CompareCertificateChainWithList(
@@ -395,6 +397,23 @@ void CheckExpectStapleReport(TransportSecurityState* state,
   EXPECT_NO_FATAL_FAILURE(CheckSerializedExpectStapleReport(
       serialized_report, host_port, ssl_info, ocsp_response, response_status,
       cert_status));
+}
+
+bool operator==(const TransportSecurityState::STSState& lhs,
+                const TransportSecurityState::STSState& rhs) {
+  return lhs.last_observed == rhs.last_observed && lhs.expiry == rhs.expiry &&
+         lhs.upgrade_mode == rhs.upgrade_mode &&
+         lhs.include_subdomains == rhs.include_subdomains &&
+         lhs.domain == rhs.domain;
+}
+
+bool operator==(const TransportSecurityState::PKPState& lhs,
+                const TransportSecurityState::PKPState& rhs) {
+  return lhs.last_observed == rhs.last_observed && lhs.expiry == rhs.expiry &&
+         lhs.spki_hashes == rhs.spki_hashes &&
+         lhs.bad_spki_hashes == rhs.bad_spki_hashes &&
+         lhs.include_subdomains == rhs.include_subdomains &&
+         lhs.domain == rhs.domain && lhs.report_uri == rhs.report_uri;
 }
 
 }  // namespace
@@ -1790,10 +1809,7 @@ TEST_F(TransportSecurityStateTest, DecodePreloadedMultiplePrefix) {
   EXPECT_FALSE(sts_state.include_subdomains);
   EXPECT_EQ(TransportSecurityState::STSState::MODE_FORCE_HTTPS,
             sts_state.upgrade_mode);
-  EXPECT_FALSE(pkp_state.include_subdomains);
-  EXPECT_EQ(GURL(), pkp_state.report_uri);
-  EXPECT_EQ(0U, pkp_state.spki_hashes.size());
-  EXPECT_EQ(0U, pkp_state.bad_spki_hashes.size());
+  EXPECT_TRUE(pkp_state == TransportSecurityState::PKPState());
   EXPECT_FALSE(GetExpectCTState(&state, "hsts.example.com", &ct_state));
   EXPECT_FALSE(GetExpectStapleState(&state, "hsts.example.com", &staple_state));
 
@@ -1803,9 +1819,7 @@ TEST_F(TransportSecurityStateTest, DecodePreloadedMultiplePrefix) {
   staple_state = TransportSecurityState::ExpectStapleState();
   EXPECT_TRUE(
       GetStaticDomainState(&state, "hpkp.example.com", &sts_state, &pkp_state));
-  EXPECT_FALSE(sts_state.include_subdomains);
-  EXPECT_EQ(TransportSecurityState::STSState::MODE_DEFAULT,
-            sts_state.upgrade_mode);
+  EXPECT_TRUE(sts_state == TransportSecurityState::STSState());
   EXPECT_TRUE(pkp_state.include_subdomains);
   EXPECT_EQ(GURL("https://report.example.com/hpkp-upload"),
             pkp_state.report_uri);
@@ -1821,13 +1835,8 @@ TEST_F(TransportSecurityStateTest, DecodePreloadedMultiplePrefix) {
   staple_state = TransportSecurityState::ExpectStapleState();
   EXPECT_TRUE(GetStaticDomainState(&state, "expect-ct.example.com", &sts_state,
                                    &pkp_state));
-  EXPECT_FALSE(sts_state.include_subdomains);
-  EXPECT_EQ(TransportSecurityState::STSState::MODE_DEFAULT,
-            sts_state.upgrade_mode);
-  EXPECT_FALSE(pkp_state.include_subdomains);
-  EXPECT_EQ(GURL(), pkp_state.report_uri);
-  EXPECT_EQ(0U, pkp_state.spki_hashes.size());
-  EXPECT_EQ(0U, pkp_state.bad_spki_hashes.size());
+  EXPECT_TRUE(sts_state == TransportSecurityState::STSState());
+  EXPECT_TRUE(pkp_state == TransportSecurityState::PKPState());
   EXPECT_TRUE(GetExpectCTState(&state, "expect-ct.example.com", &ct_state));
   EXPECT_EQ(GURL("https://report.example.com/ct-upload"), ct_state.report_uri);
   EXPECT_FALSE(
@@ -1839,13 +1848,8 @@ TEST_F(TransportSecurityStateTest, DecodePreloadedMultiplePrefix) {
   staple_state = TransportSecurityState::ExpectStapleState();
   EXPECT_TRUE(GetStaticDomainState(&state, "expect-staple.example.com",
                                    &sts_state, &pkp_state));
-  EXPECT_FALSE(sts_state.include_subdomains);
-  EXPECT_EQ(TransportSecurityState::STSState::MODE_DEFAULT,
-            sts_state.upgrade_mode);
-  EXPECT_FALSE(pkp_state.include_subdomains);
-  EXPECT_EQ(GURL(), pkp_state.report_uri);
-  EXPECT_EQ(0U, pkp_state.spki_hashes.size());
-  EXPECT_EQ(0U, pkp_state.bad_spki_hashes.size());
+  EXPECT_TRUE(sts_state == TransportSecurityState::STSState());
+  EXPECT_TRUE(pkp_state == TransportSecurityState::PKPState());
   EXPECT_FALSE(
       GetExpectCTState(&state, "expect-staple.example.com", &ct_state));
   EXPECT_TRUE(
@@ -1903,10 +1907,7 @@ TEST_F(TransportSecurityStateTest, DecodePreloadedMultipleMix) {
   EXPECT_TRUE(sts_state.include_subdomains);
   EXPECT_EQ(TransportSecurityState::STSState::MODE_FORCE_HTTPS,
             sts_state.upgrade_mode);
-  EXPECT_FALSE(pkp_state.include_subdomains);
-  EXPECT_EQ(GURL(), pkp_state.report_uri);
-  EXPECT_EQ(0U, pkp_state.spki_hashes.size());
-  EXPECT_EQ(0U, pkp_state.bad_spki_hashes.size());
+  EXPECT_TRUE(pkp_state == TransportSecurityState::PKPState());
   EXPECT_FALSE(GetExpectCTState(&state, "example.com", &ct_state));
   EXPECT_EQ(GURL(), ct_state.report_uri);
   EXPECT_TRUE(GetExpectStapleState(&state, "example.com", &staple_state));
@@ -1920,9 +1921,7 @@ TEST_F(TransportSecurityStateTest, DecodePreloadedMultipleMix) {
   staple_state = TransportSecurityState::ExpectStapleState();
   EXPECT_TRUE(
       GetStaticDomainState(&state, "hpkp.example.com", &sts_state, &pkp_state));
-  EXPECT_FALSE(sts_state.include_subdomains);
-  EXPECT_EQ(TransportSecurityState::STSState::MODE_DEFAULT,
-            sts_state.upgrade_mode);
+  EXPECT_TRUE(sts_state == TransportSecurityState::STSState());
   EXPECT_TRUE(pkp_state.include_subdomains);
   EXPECT_EQ(GURL("https://report.example.com/hpkp-upload"),
             pkp_state.report_uri);
@@ -1944,10 +1943,7 @@ TEST_F(TransportSecurityStateTest, DecodePreloadedMultipleMix) {
   EXPECT_FALSE(sts_state.include_subdomains);
   EXPECT_EQ(TransportSecurityState::STSState::MODE_FORCE_HTTPS,
             sts_state.upgrade_mode);
-  EXPECT_FALSE(pkp_state.include_subdomains);
-  EXPECT_EQ(GURL(), pkp_state.report_uri);
-  EXPECT_EQ(0U, pkp_state.spki_hashes.size());
-  EXPECT_EQ(0U, pkp_state.bad_spki_hashes.size());
+  EXPECT_TRUE(pkp_state == TransportSecurityState::PKPState());
   EXPECT_TRUE(GetExpectCTState(&state, "example.org", &ct_state));
   EXPECT_EQ(GURL("https://report.example.org/ct-upload"), ct_state.report_uri);
   EXPECT_FALSE(GetExpectStapleState(&state, "example.org", &staple_state));
@@ -1960,9 +1956,7 @@ TEST_F(TransportSecurityStateTest, DecodePreloadedMultipleMix) {
   staple_state = TransportSecurityState::ExpectStapleState();
   EXPECT_TRUE(
       GetStaticDomainState(&state, "badssl.com", &sts_state, &pkp_state));
-  EXPECT_TRUE(sts_state.include_subdomains);
-  EXPECT_EQ(TransportSecurityState::STSState::MODE_DEFAULT,
-            sts_state.upgrade_mode);
+  EXPECT_TRUE(sts_state == TransportSecurityState::STSState());
   EXPECT_TRUE(pkp_state.include_subdomains);
   EXPECT_EQ(GURL("https://report.example.com/hpkp-upload"),
             pkp_state.report_uri);
@@ -2010,7 +2004,7 @@ TEST_F(TransportSecurityStateTest, DecodePreloadedMultipleMix) {
   EXPECT_TRUE(sts_state.include_subdomains);
   EXPECT_EQ(TransportSecurityState::STSState::MODE_FORCE_HTTPS,
             sts_state.upgrade_mode);
-  EXPECT_FALSE(pkp_state.include_subdomains);
+  EXPECT_TRUE(pkp_state == TransportSecurityState::PKPState());
   EXPECT_FALSE(GetExpectCTState(&state, "simple-entry.example.com", &ct_state));
   EXPECT_FALSE(
       GetExpectStapleState(&state, "simple-entry.example.com", &staple_state));
@@ -2224,6 +2218,9 @@ TEST_F(TransportSecurityStateTest, RequireCTConsultsDelegate) {
   hashes.push_back(
       HashValue(X509Certificate::CalculateFingerprint256(cert->cert_buffer())));
 
+  // If CT is required, then the requirements are not met if the CT policy
+  // wasn't met, but are met if the policy was met or the build was out of
+  // date.
   {
     TransportSecurityState state;
     const TransportSecurityState::CTRequirementsStatus original_status =
@@ -2234,7 +2231,7 @@ TEST_F(TransportSecurityStateTest, RequireCTConsultsDelegate) {
             ct::CTPolicyCompliance::CT_POLICY_NOT_ENOUGH_SCTS);
 
     MockRequireCTDelegate always_require_delegate;
-    EXPECT_CALL(always_require_delegate, IsCTRequiredForHost(_))
+    EXPECT_CALL(always_require_delegate, IsCTRequiredForHost(_, _, _))
         .WillRepeatedly(Return(CTRequirementLevel::REQUIRED));
     state.SetRequireCTDelegate(&always_require_delegate);
     EXPECT_EQ(
@@ -2276,6 +2273,8 @@ TEST_F(TransportSecurityStateTest, RequireCTConsultsDelegate) {
             ct::CTPolicyCompliance::CT_POLICY_NOT_ENOUGH_SCTS));
   }
 
+  // If CT is not required, then regardless of the CT state for the host,
+  // it should indicate CT is not required.
   {
     TransportSecurityState state;
     const TransportSecurityState::CTRequirementsStatus original_status =
@@ -2286,7 +2285,7 @@ TEST_F(TransportSecurityStateTest, RequireCTConsultsDelegate) {
             ct::CTPolicyCompliance::CT_POLICY_NOT_ENOUGH_SCTS);
 
     MockRequireCTDelegate never_require_delegate;
-    EXPECT_CALL(never_require_delegate, IsCTRequiredForHost(_))
+    EXPECT_CALL(never_require_delegate, IsCTRequiredForHost(_, _, _))
         .WillRepeatedly(Return(CTRequirementLevel::NOT_REQUIRED));
     state.SetRequireCTDelegate(&never_require_delegate);
     EXPECT_EQ(
@@ -2314,6 +2313,8 @@ TEST_F(TransportSecurityStateTest, RequireCTConsultsDelegate) {
             ct::CTPolicyCompliance::CT_POLICY_NOT_ENOUGH_SCTS));
   }
 
+  // If the Delegate is in the default state, then it should return the same
+  // result as if there was no delegate in the first place.
   {
     TransportSecurityState state;
     const TransportSecurityState::CTRequirementsStatus original_status =
@@ -2324,7 +2325,7 @@ TEST_F(TransportSecurityStateTest, RequireCTConsultsDelegate) {
             ct::CTPolicyCompliance::CT_POLICY_NOT_ENOUGH_SCTS);
 
     MockRequireCTDelegate default_require_ct_delegate;
-    EXPECT_CALL(default_require_ct_delegate, IsCTRequiredForHost(_))
+    EXPECT_CALL(default_require_ct_delegate, IsCTRequiredForHost(_, _, _))
         .WillRepeatedly(Return(CTRequirementLevel::DEFAULT));
     state.SetRequireCTDelegate(&default_require_ct_delegate);
     EXPECT_EQ(
@@ -2500,7 +2501,7 @@ TEST_F(TransportSecurityStateTest, RequireCTViaFieldTrial) {
       kFeatureName, base::FeatureList::OVERRIDE_ENABLE_FEATURE, trial.get());
   scoped_feature_list.InitWithFeatureList(std::move(feature_list));
 
-  // It should fail if it doesn't comply with policy...
+  // It should fail if it doesn't comply with policy.
   EXPECT_EQ(TransportSecurityState::CT_REQUIREMENTS_NOT_MET,
             state.CheckCTRequirements(
                 HostPortPair("www.example.com", 443), true, hashes, cert.get(),
@@ -2508,7 +2509,7 @@ TEST_F(TransportSecurityStateTest, RequireCTViaFieldTrial) {
                 TransportSecurityState::DISABLE_EXPECT_CT_REPORTS,
                 ct::CTPolicyCompliance::CT_POLICY_NOT_ENOUGH_SCTS));
 
-  // ... and succeed if it does comply with policy ...
+  // It should succeed if it does comply with policy.
   EXPECT_EQ(TransportSecurityState::CT_REQUIREMENTS_MET,
             state.CheckCTRequirements(
                 HostPortPair("www.example.com", 443), true, hashes, cert.get(),
@@ -2516,10 +2517,18 @@ TEST_F(TransportSecurityStateTest, RequireCTViaFieldTrial) {
                 TransportSecurityState::DISABLE_EXPECT_CT_REPORTS,
                 ct::CTPolicyCompliance::CT_POLICY_COMPLIES_VIA_SCTS));
 
-  // ... or if the build is outdated.
+  // It should succeed if the build is outdated.
   EXPECT_EQ(TransportSecurityState::CT_REQUIREMENTS_MET,
             state.CheckCTRequirements(
                 HostPortPair("www.example.com", 443), true, hashes, cert.get(),
+                cert.get(), SignedCertificateTimestampAndStatusList(),
+                TransportSecurityState::DISABLE_EXPECT_CT_REPORTS,
+                ct::CTPolicyCompliance::CT_POLICY_BUILD_NOT_TIMELY));
+
+  // It should succeed if it was a locally-trusted CA.
+  EXPECT_EQ(TransportSecurityState::CT_NOT_REQUIRED,
+            state.CheckCTRequirements(
+                HostPortPair("www.example.com", 443), false, hashes, cert.get(),
                 cert.get(), SignedCertificateTimestampAndStatusList(),
                 TransportSecurityState::DISABLE_EXPECT_CT_REPORTS,
                 ct::CTPolicyCompliance::CT_POLICY_BUILD_NOT_TIMELY));
@@ -3100,10 +3109,66 @@ TEST_F(TransportSecurityStateTest, CheckCTRequirementsWithExpectCTAndDelegate) {
   // A connection to an Expect-CT host, which also requires CT by the delegate,
   // should be closed and reported.
   MockRequireCTDelegate always_require_delegate;
-  EXPECT_CALL(always_require_delegate, IsCTRequiredForHost(_))
+  EXPECT_CALL(always_require_delegate, IsCTRequiredForHost(_, _, _))
       .WillRepeatedly(Return(CTRequirementLevel::REQUIRED));
   state.SetRequireCTDelegate(&always_require_delegate);
   EXPECT_EQ(TransportSecurityState::CT_REQUIREMENTS_NOT_MET,
+            state.CheckCTRequirements(
+                HostPortPair("example.test", 443), true, HashValueVector(),
+                cert1.get(), cert2.get(), sct_list,
+                TransportSecurityState::ENABLE_EXPECT_CT_REPORTS,
+                ct::CTPolicyCompliance::CT_POLICY_NOT_ENOUGH_SCTS));
+  EXPECT_EQ(1u, reporter.num_failures());
+  EXPECT_EQ("example.test", reporter.host_port_pair().host());
+  EXPECT_EQ(443, reporter.host_port_pair().port());
+  EXPECT_EQ(expiry, reporter.expiration());
+  EXPECT_EQ(cert1.get(), reporter.validated_certificate_chain());
+  EXPECT_EQ(cert2.get(), reporter.served_certificate_chain());
+  EXPECT_EQ(sct_list.size(), reporter.signed_certificate_timestamps().size());
+  EXPECT_EQ(sct_list[0].status,
+            reporter.signed_certificate_timestamps()[0].status);
+  EXPECT_EQ(sct_list[0].sct, reporter.signed_certificate_timestamps()[0].sct);
+}
+
+// Tests that for a host that explicitly disabled CT by delegate and is also
+// Expect-CT-enabled, CheckCTRequirements() sends reports.
+TEST_F(TransportSecurityStateTest,
+       CheckCTRequirementsWithExpectCTAndDelegateDisables) {
+  using ::testing::_;
+  using ::testing::Return;
+  using CTRequirementLevel =
+      TransportSecurityState::RequireCTDelegate::CTRequirementLevel;
+
+  const base::Time current_time(base::Time::Now());
+  const base::Time expiry = current_time + base::TimeDelta::FromSeconds(1000);
+  scoped_refptr<X509Certificate> cert1 =
+      ImportCertFromFile(GetTestCertsDirectory(), "ok_cert.pem");
+  ASSERT_TRUE(cert1);
+  scoped_refptr<X509Certificate> cert2 =
+      ImportCertFromFile(GetTestCertsDirectory(), "expired_cert.pem");
+  ASSERT_TRUE(cert2);
+  SignedCertificateTimestampAndStatusList sct_list;
+  MakeTestSCTAndStatus(ct::SignedCertificateTimestamp::SCT_EMBEDDED, "test_log",
+                       std::string(), std::string(), base::Time::Now(),
+                       ct::SCT_STATUS_INVALID_SIGNATURE, &sct_list);
+
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      TransportSecurityState::kDynamicExpectCTFeature);
+
+  TransportSecurityState state;
+  MockExpectCTReporter reporter;
+  state.SetExpectCTReporter(&reporter);
+  state.AddExpectCT("example.test", expiry, false /* enforce */,
+                    GURL("https://example-report.test"));
+
+  // A connection to an Expect-CT host, which is exempted from the CT
+  // requirements by the delegate, should be reported but not closed.
+  MockRequireCTDelegate never_require_delegate;
+  EXPECT_CALL(never_require_delegate, IsCTRequiredForHost(_, _, _))
+      .WillRepeatedly(Return(CTRequirementLevel::NOT_REQUIRED));
+  state.SetRequireCTDelegate(&never_require_delegate);
+  EXPECT_EQ(TransportSecurityState::CT_NOT_REQUIRED,
             state.CheckCTRequirements(
                 HostPortPair("example.test", 443), true, HashValueVector(),
                 cert1.get(), cert2.get(), sct_list,
@@ -3270,6 +3335,7 @@ TEST_F(TransportSecurityStateStaticTest, IsPreloaded) {
 
 TEST_F(TransportSecurityStateStaticTest, PreloadedDomainSet) {
   TransportSecurityState state;
+  EnableStaticPins(&state);
   TransportSecurityState::STSState sts_state;
   TransportSecurityState::PKPState pkp_state;
 

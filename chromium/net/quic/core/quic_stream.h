@@ -34,6 +34,7 @@
 #include "net/quic/platform/api/quic_reference_counted.h"
 #include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_string_piece.h"
+#include "net/spdy/core/spdy_protocol.h"
 
 namespace net {
 
@@ -45,7 +46,19 @@ class QuicSession;
 
 class QUIC_EXPORT_PRIVATE QuicStream {
  public:
-  QuicStream(QuicStreamId id, QuicSession* session);
+  // This is somewhat arbitrary.  It's possible, but unlikely, we will either
+  // fail to set a priority client-side, or cancel a stream before stripping the
+  // priority from the wire server-side.  In either case, start out with a
+  // priority in the middle.
+  static const SpdyPriority kDefaultPriority = 3;
+  static_assert(kDefaultPriority ==
+                    (kV3LowestPriority + kV3HighestPriority) / 2,
+                "Unexpected value of kDefaultPriority");
+
+  // Creates a new stream with stream_id |id| associated with |session|. If
+  // |is_static| is true, then the stream will be given precedence
+  // over other streams when determing what streams should write next.
+  QuicStream(QuicStreamId id, QuicSession* session, bool is_static);
 
   virtual ~QuicStream();
 
@@ -92,6 +105,12 @@ class QUIC_EXPORT_PRIVATE QuicStream {
   // this end.
   virtual void CloseConnectionWithDetails(QuicErrorCode error,
                                           const QuicString& details);
+
+  SpdyPriority priority() const;
+
+  // Sets priority_ to priority.  This should only be called before bytes are
+  // written to the server.
+  void SetPriority(SpdyPriority priority);
 
   // Returns true if this stream is still waiting for acks of sent data.
   // This will return false if all data has been acked, or if the stream
@@ -338,6 +357,8 @@ class QUIC_EXPORT_PRIVATE QuicStream {
   QuicStreamId id_;
   // Pointer to the owning QuicSession object.
   QuicSession* session_;
+  // The priority of the stream, once parsed.
+  SpdyPriority priority_;
   // Bytes read refers to payload bytes only: they do not include framing,
   // encryption overhead etc.
   uint64_t stream_bytes_read_;
@@ -409,6 +430,10 @@ class QUIC_EXPORT_PRIVATE QuicStream {
 
   // Latched value of FLAGS_quic_buffered_data_threshold.
   const QuicByteCount buffered_data_threshold_;
+
+  // If true, then this stream has precedence over other streams for write
+  // scheduling.
+  const bool is_static_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicStream);
 };

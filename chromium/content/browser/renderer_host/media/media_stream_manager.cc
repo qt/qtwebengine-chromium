@@ -112,6 +112,24 @@ void CreateJpegDecodeAccelerator(
                                          std::move(request)));
 }
 
+void CreateJpegEncodeAcceleratorOnIOThread(
+    media::mojom::JpegEncodeAcceleratorRequest request) {
+  auto* host =
+      GpuProcessHost::Get(GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED, false);
+  if (host) {
+    host->gpu_service()->CreateJpegEncodeAccelerator(std::move(request));
+  } else {
+    LOG(ERROR) << "No GpuProcessHost";
+  }
+}
+
+void CreateJpegEncodeAccelerator(
+    media::mojom::JpegEncodeAcceleratorRequest request) {
+  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+                          base::BindOnce(&CreateJpegEncodeAcceleratorOnIOThread,
+                                         std::move(request)));
+}
+
 void ParseStreamType(const StreamControls& controls,
                      MediaStreamType* audio_type,
                      MediaStreamType* video_type) {
@@ -183,7 +201,7 @@ bool CalledOnIOThread() {
   // Check if this function call is on the IO thread, except for unittests where
   // an IO thread might not have been created.
   return BrowserThread::CurrentlyOn(BrowserThread::IO) ||
-         !BrowserThread::IsMessageLoopValid(BrowserThread::IO);
+         !BrowserThread::IsThreadInitialized(BrowserThread::IO);
 }
 
 bool GetDeviceIDFromHMAC(const std::string& salt,
@@ -495,7 +513,8 @@ MediaStreamManager::MediaStreamManager(
               media::VideoCaptureDeviceFactory::CreateFactory(
                   BrowserThread::GetTaskRunnerForThread(BrowserThread::UI),
                   BrowserGpuMemoryBufferManager::current(),
-                  base::BindRepeating(&CreateJpegDecodeAccelerator))),
+                  base::BindRepeating(&CreateJpegDecodeAccelerator),
+                  base::BindRepeating(&CreateJpegEncodeAccelerator))),
           std::move(device_task_runner),
           base::BindRepeating(&SendVideoCaptureLogMessage));
     }
@@ -1495,7 +1514,7 @@ void MediaStreamManager::UseFakeUIFactoryForTests(
     base::Callback<std::unique_ptr<FakeMediaStreamUIProxy>(void)>
         fake_ui_factory) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  fake_ui_factory_ = fake_ui_factory;
+  fake_ui_factory_ = std::move(fake_ui_factory);
 }
 
 // static
@@ -1837,7 +1856,7 @@ void MediaStreamManager::SetCapturingLinkSecured(int render_process_id,
 
 void MediaStreamManager::SetGenerateStreamCallbackForTesting(
     GenerateStreamTestCallback test_callback) {
-  generate_stream_test_callback_ = test_callback;
+  generate_stream_test_callback_ = std::move(test_callback);
 }
 
 MediaStreamDevices MediaStreamManager::ConvertToMediaStreamDevices(

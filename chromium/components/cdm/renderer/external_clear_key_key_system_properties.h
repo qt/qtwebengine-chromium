@@ -9,13 +9,9 @@
 
 #include "build/build_config.h"
 #include "media/base/key_system_properties.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 
 namespace cdm {
-
-#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
-extern const char kExternalClearKeyPepperType[];
-#endif
 
 // KeySystemProperties implementation for external Clear Key key systems.
 class ExternalClearKeyProperties : public media::KeySystemProperties {
@@ -36,9 +32,6 @@ class ExternalClearKeyProperties : public media::KeySystemProperties {
       const override;
   media::EmeFeatureSupport GetPersistentStateSupport() const override;
   media::EmeFeatureSupport GetDistinctiveIdentifierSupport() const override;
-#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
-  std::string GetPepperType() const override;
-#endif
 
  private:
   const std::string key_system_name_;

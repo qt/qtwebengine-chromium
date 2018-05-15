@@ -5,13 +5,18 @@
 #include "content/browser/web_package/signed_exchange_signature_verifier.h"
 
 #include "base/containers/span.h"
+#include "base/format_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
-#include "components/cbor/cbor_values.h"
+#include "base/strings/stringprintf.h"
+#include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "components/cbor/cbor_writer.h"
 #include "content/browser/web_package/signed_exchange_consts.h"
+#include "content/browser/web_package/signed_exchange_header.h"
 #include "content/browser/web_package/signed_exchange_header_parser.h"
+#include "content/browser/web_package/signed_exchange_utils.h"
 #include "crypto/signature_verifier.h"
 #include "net/cert/asn1_util.h"
 #include "net/cert/x509_util.h"
@@ -20,79 +25,61 @@ namespace content {
 
 namespace {
 
-// https://wicg.github.io/webpackage/draft-yasskin-http-origin-signed-responses.html#rfc.section.3.6
-// Step 11. "Let message be the concatenation of the following byte strings."
+// https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html#signature-validity
+// Step 7. "Let message be the concatenation of the following byte strings."
 constexpr uint8_t kMessageHeader[] =
-    // 11.1. "A string that consists of octet 32 (0x20) repeated 64 times."
+    // 7.1. "A string that consists of octet 32 (0x20) repeated 64 times."
     // [spec text]
     "\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20"
     "\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20"
     "\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20"
     "\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20"
-    // 11.2. "A context string: the ASCII encoding of "HTTP Exchange"."
+    // 7.2. "A context string: the ASCII encoding of "HTTP Exchange"."
     // [spec text]
-    // 11.3. "A single 0 byte which serves as a separator." [spec text]
+    // 7.3. "A single 0 byte which serves as a separator." [spec text]
     "HTTP Exchange";
 
 base::Optional<cbor::CBORValue> GenerateCanonicalRequestCBOR(
-    const SignedExchangeSignatureVerifier::Input& input) {
+    const SignedExchangeHeader& header) {
   cbor::CBORValue::MapValue map;
   map.insert_or_assign(
       cbor::CBORValue(kMethodKey, cbor::CBORValue::Type::BYTE_STRING),
-      cbor::CBORValue(input.method, cbor::CBORValue::Type::BYTE_STRING));
+      cbor::CBORValue(header.request_method(),
+                      cbor::CBORValue::Type::BYTE_STRING));
   map.insert_or_assign(
       cbor::CBORValue(kUrlKey, cbor::CBORValue::Type::BYTE_STRING),
-      cbor::CBORValue(input.url, cbor::CBORValue::Type::BYTE_STRING));
+      cbor::CBORValue(header.request_url().spec(),
+                      cbor::CBORValue::Type::BYTE_STRING));
 
   return cbor::CBORValue(map);
 }
 
 base::Optional<cbor::CBORValue> GenerateCanonicalResponseCBOR(
-    const SignedExchangeSignatureVerifier::Input& input) {
-  const auto& headers = input.response_headers;
-
-  auto it = headers.find(kSignedHeadersName);
-  if (it == headers.end()) {
-    DVLOG(1) << "The Signed-Headers http header not found";
-    return base::nullopt;
-  }
-  const std::string& signed_header_value = it->second;
-
-  base::Optional<std::vector<std::string>> signed_headers =
-      SignedExchangeHeaderParser::ParseSignedHeaders(signed_header_value);
-  if (!signed_headers)
-    return base::nullopt;
-
+    const SignedExchangeHeader& header) {
+  const auto& headers = header.response_headers();
   cbor::CBORValue::MapValue map;
-  std::string response_code_str = base::NumberToString(input.response_code);
+  std::string response_code_str = base::NumberToString(header.response_code());
   map.insert_or_assign(
       cbor::CBORValue(kStatusKey, cbor::CBORValue::Type::BYTE_STRING),
       cbor::CBORValue(response_code_str, cbor::CBORValue::Type::BYTE_STRING));
-
-  for (const std::string& name : *signed_headers) {
-    auto headers_it = headers.find(name);
-    if (headers_it == headers.end()) {
-      DVLOG(1) << "Signed header \"" << name
-               << "\" expected, but not found in response_headers.";
-      return base::nullopt;
-    }
-    const std::string& value = headers_it->second;
+  for (const auto& pair : headers) {
+    if (pair.first == kSignature)
+      continue;
     map.insert_or_assign(
-        cbor::CBORValue(name, cbor::CBORValue::Type::BYTE_STRING),
-        cbor::CBORValue(value, cbor::CBORValue::Type::BYTE_STRING));
+        cbor::CBORValue(pair.first, cbor::CBORValue::Type::BYTE_STRING),
+        cbor::CBORValue(pair.second, cbor::CBORValue::Type::BYTE_STRING));
   }
-
   return cbor::CBORValue(map);
 }
 
-// Generate CBORValue from |input| as specified in:
-// https://wicg.github.io/webpackage/draft-yasskin-http-origin-signed-responses.html#rfc.section.3.4
+// Generate CBORValue from |header| as specified in:
+// https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html#cbor-representation
 base::Optional<cbor::CBORValue> GenerateCanonicalExchangeHeadersCBOR(
-    const SignedExchangeSignatureVerifier::Input& input) {
-  auto req_val = GenerateCanonicalRequestCBOR(input);
+    const SignedExchangeHeader& header) {
+  auto req_val = GenerateCanonicalRequestCBOR(header);
   if (!req_val)
     return base::nullopt;
-  auto res_val = GenerateCanonicalResponseCBOR(input);
+  auto res_val = GenerateCanonicalResponseCBOR(header);
   if (!res_val)
     return base::nullopt;
 
@@ -103,58 +90,66 @@ base::Optional<cbor::CBORValue> GenerateCanonicalExchangeHeadersCBOR(
 }
 
 // Generate a CBOR map value as specified in
-// https://wicg.github.io/webpackage/draft-yasskin-http-origin-signed-responses.html#rfc.section.3.6
-// Step 11.4.
+// https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html#signature-validity
+// Step 7.4.
 base::Optional<cbor::CBORValue> GenerateSignedMessageCBOR(
-    const SignedExchangeSignatureVerifier::Input& input) {
-  auto headers_val = GenerateCanonicalExchangeHeadersCBOR(input);
+    const SignedExchangeHeader& header) {
+  auto headers_val = GenerateCanonicalExchangeHeadersCBOR(header);
   if (!headers_val)
     return base::nullopt;
 
-  // 11.4. "The bytes of the canonical CBOR serialization (Section 3.5) of
+  // 7.4. "The bytes of the canonical CBOR serialization (Section 3.4) of
   // a CBOR map mapping:" [spec text]
   cbor::CBORValue::MapValue map;
-  // 11.4.1. "If certSha256 is set: The text string "certSha256" to the byte
+  // 7.4.1. "If certSha256 is set: The text string "certSha256" to the byte
   // string value of certSha256." [spec text]
-  if (!input.signature.cert_sha256.empty()) {
-    map.insert_or_assign(cbor::CBORValue(kCertSha256Key),
-                         cbor::CBORValue(input.signature.cert_sha256,
-                                         cbor::CBORValue::Type::BYTE_STRING));
+  if (header.signature().cert_sha256.has_value()) {
+    map.insert_or_assign(
+        cbor::CBORValue(kCertSha256Key),
+        cbor::CBORValue(
+            base::StringPiece(reinterpret_cast<const char*>(
+                                  header.signature().cert_sha256->data),
+                              sizeof(header.signature().cert_sha256->data)),
+            cbor::CBORValue::Type::BYTE_STRING));
   }
-  // 11.4.2. "The text string "validityUrl" to the byte string value of
+  // 7.4.2. "The text string "validityUrl" to the byte string value of
   // validityUrl." [spec text]
   map.insert_or_assign(cbor::CBORValue(kValidityUrlKey),
-                       cbor::CBORValue(input.signature.validity_url,
+                       cbor::CBORValue(header.signature().validity_url.spec(),
                                        cbor::CBORValue::Type::BYTE_STRING));
-  // 11.4.3. "The text string "date" to the integer value of date." [spec text]
-  if (!base::IsValueInRangeForNumericType<int64_t>(input.signature.date))
+  // 7.4.3. "The text string "date" to the integer value of date." [spec text]
+  if (!base::IsValueInRangeForNumericType<int64_t>(header.signature().date))
     return base::nullopt;
 
   map.insert_or_assign(
       cbor::CBORValue(kDateKey),
-      cbor::CBORValue(base::checked_cast<int64_t>(input.signature.date)));
-  // 11.4.4. "The text string "expires" to the integer value of expires."
+      cbor::CBORValue(base::checked_cast<int64_t>(header.signature().date)));
+  // 7.4.4. "The text string "expires" to the integer value of expires."
   // [spec text]
-  if (!base::IsValueInRangeForNumericType<int64_t>(input.signature.expires))
+  if (!base::IsValueInRangeForNumericType<int64_t>(header.signature().expires))
     return base::nullopt;
 
   map.insert_or_assign(
       cbor::CBORValue(kExpiresKey),
-      cbor::CBORValue(base::checked_cast<int64_t>(input.signature.expires)));
-  // 11.4.5. "The text string "headers" to the CBOR representation
-  // (Section 3.4) of exchange's headers." [spec text]
+      cbor::CBORValue(base::checked_cast<int64_t>(header.signature().expires)));
+  // 7.4.5. "The text string "headers" to the CBOR representation
+  // (Section 3.2) of exchange's headers." [spec text]
   map.insert_or_assign(cbor::CBORValue(kHeadersKey), std::move(*headers_val));
   return cbor::CBORValue(map);
 }
 
-bool VerifySignature(base::span<const uint8_t> sig,
-                     base::span<const uint8_t> msg,
-                     scoped_refptr<net::X509Certificate> cert) {
+bool VerifySignature(
+    base::span<const uint8_t> sig,
+    base::span<const uint8_t> msg,
+    scoped_refptr<net::X509Certificate> cert,
+    const signed_exchange_utils::LogCallback& error_message_callback) {
+  TRACE_EVENT_BEGIN0(TRACE_DISABLED_BY_DEFAULT("loading"), "VerifySignature");
   base::StringPiece spki;
   if (!net::asn1::ExtractSPKIFromDERCert(
           net::x509_util::CryptoBufferAsStringPiece(cert->cert_buffer()),
           &spki)) {
-    DVLOG(1) << "Failed to extract SPKI.";
+    signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
+        "VerifySignature", error_message_callback, "Failed to extract SPKI.");
     return false;
   }
 
@@ -165,7 +160,9 @@ bool VerifySignature(base::span<const uint8_t> sig,
   if (type != net::X509Certificate::kPublicKeyTypeRSA) {
     // TODO(crbug.com/803774): Add support for ecdsa_secp256r1_sha256 and
     // ecdsa_secp384r1_sha384.
-    DVLOG(1) << "Unsupported public key type: " << type;
+    signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
+        "VerifySignature", error_message_callback,
+        base::StringPrintf("Unsupported public key type: %d", type));
     return false;
   }
 
@@ -175,80 +172,173 @@ bool VerifySignature(base::span<const uint8_t> sig,
   if (!verifier.VerifyInit(
           crypto::SignatureVerifier::RSA_PSS_SHA256, sig.data(), sig.size(),
           reinterpret_cast<const uint8_t*>(spki.data()), spki.size())) {
-    DVLOG(1) << "VerifyInit failed.";
+    signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
+        "VerifySignature", error_message_callback, "VerifyInit failed.");
     return false;
   }
   verifier.VerifyUpdate(msg.data(), msg.size());
-  return verifier.VerifyFinal();
+  if (!verifier.VerifyFinal()) {
+    signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
+        "VerifySignature", error_message_callback, "VerifyFinal failed.");
+    return false;
+  }
+  TRACE_EVENT_END0(TRACE_DISABLED_BY_DEFAULT("loading"), "VerifySignature");
+  return true;
+}
+
+std::string HexDump(const std::vector<uint8_t>& msg) {
+  std::string output;
+  for (const auto& byte : msg) {
+    base::StringAppendF(&output, "%02x", byte);
+  }
+  return output;
 }
 
 base::Optional<std::vector<uint8_t>> GenerateSignedMessage(
-    const SignedExchangeSignatureVerifier::Input& input) {
-  // GenerateSignedMessageCBOR corresponds to Step 11.4.
-  base::Optional<cbor::CBORValue> cbor_val = GenerateSignedMessageCBOR(input);
-  if (!cbor_val)
+    const SignedExchangeHeader& header) {
+  TRACE_EVENT_BEGIN0(TRACE_DISABLED_BY_DEFAULT("loading"),
+                     "GenerateSignedMessage");
+
+  // GenerateSignedMessageCBOR corresponds to Step 7.4.
+  base::Optional<cbor::CBORValue> cbor_val = GenerateSignedMessageCBOR(header);
+  if (!cbor_val) {
+    TRACE_EVENT_END1(TRACE_DISABLED_BY_DEFAULT("loading"),
+                     "GenerateSignedMessage", "error",
+                     "GenerateSignedMessageCBOR failed.");
     return base::nullopt;
+  }
+
   base::Optional<std::vector<uint8_t>> cbor_message =
       cbor::CBORWriter::Write(*cbor_val);
-  if (!cbor_message)
+  if (!cbor_message) {
+    TRACE_EVENT_END1(TRACE_DISABLED_BY_DEFAULT("loading"),
+                     "GenerateSignedMessage", "error",
+                     "CBORWriter::Write failed.");
     return base::nullopt;
+  }
 
-  // https://wicg.github.io/webpackage/draft-yasskin-http-origin-signed-responses.html#rfc.section.3.6
-  // Step 11. "Let message be the concatenation of the following byte strings."
+  // https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html#signature-validity
+  // Step 7. "Let message be the concatenation of the following byte strings."
   std::vector<uint8_t> message;
-  // see kMessageHeader for Steps 11.1 to 11.3.
+  // see kMessageHeader for Steps 7.1 to 7.3.
   message.reserve(arraysize(kMessageHeader) + cbor_message->size());
   message.insert(message.end(), std::begin(kMessageHeader),
                  std::end(kMessageHeader));
-  // 11.4. "The text string “headers” to the CBOR representation (Section 3.4)
-  // of exchange’s headers." [spec text]
+  // 7.4. "The bytes of the canonical CBOR serialization (Section 3.4) of
+  // a CBOR map mapping:" [spec text]
   message.insert(message.end(), cbor_message->begin(), cbor_message->end());
+  TRACE_EVENT_END1(TRACE_DISABLED_BY_DEFAULT("loading"),
+                   "GenerateSignedMessage", "dump", HexDump(message));
   return message;
 }
 
-}  // namespace
+base::Time TimeFromSignedExchangeUnixTime(uint64_t t) {
+  return base::Time::UnixEpoch() + base::TimeDelta::FromSeconds(t);
+}
 
-SignedExchangeSignatureVerifier::Input::Input() = default;
+// Implements steps 5-6 of
+// https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html#signature-validity
+bool VerifyTimestamps(const SignedExchangeHeader& header,
+                      const base::Time& verification_time) {
+  base::Time expires_time =
+      TimeFromSignedExchangeUnixTime(header.signature().expires);
+  base::Time creation_time =
+      TimeFromSignedExchangeUnixTime(header.signature().date);
 
-SignedExchangeSignatureVerifier::Input::Input(const Input&) = default;
-
-SignedExchangeSignatureVerifier::Input::~Input() = default;
-
-bool SignedExchangeSignatureVerifier::Verify(const Input& input) {
-  // TODO(crbug.com/803774): Verify input.signature.certSha256 against
-  // input.certificate.
-
-  auto message = GenerateSignedMessage(input);
-  if (!message) {
-    DVLOG(1) << "Failed to reconstruct signed message.";
+  // 5. "If expires is more than 7 days (604800 seconds) after date, return
+  // "invalid"." [spec text]
+  if ((expires_time - creation_time).InSeconds() > 604800)
     return false;
-  }
 
-  const std::string& sig = input.signature.sig;
-  if (!VerifySignature(
-          base::make_span(reinterpret_cast<const uint8_t*>(sig.data()),
-                          sig.size()),
-          *message, input.certificate)) {
-    DVLOG(1) << "Failed to verify signature \"sig\".";
+  // 6. "If the current time is before date or after expires, return
+  // "invalid"."
+  if (verification_time < creation_time || expires_time < verification_time)
     return false;
-  }
-
-  if (!base::EqualsCaseInsensitiveASCII(input.signature.integrity, "mi")) {
-    DVLOG(1)
-        << "The current implemention only supports \"mi\" integrity scheme.";
-    return false;
-  }
-
-  // TODO(crbug.com/803774): Verify input.signature.{date,expires}.
 
   return true;
 }
 
+}  // namespace
+
+SignedExchangeSignatureVerifier::Result SignedExchangeSignatureVerifier::Verify(
+    const SignedExchangeHeader& header,
+    scoped_refptr<net::X509Certificate> certificate,
+    const base::Time& verification_time,
+    const signed_exchange_utils::LogCallback& error_message_callback) {
+  TRACE_EVENT_BEGIN0(TRACE_DISABLED_BY_DEFAULT("loading"),
+                     "SignedExchangeSignatureVerifier::Verify");
+
+  if (!VerifyTimestamps(header, verification_time)) {
+    signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
+        "SignedExchangeSignatureVerifier::Verify", error_message_callback,
+        base::StringPrintf(
+            "Invalid timestamp. creation_time: %" PRIu64
+            ", expires_time: %" PRIu64 ", verification_time: %" PRIu64,
+            header.signature().date, header.signature().expires,
+            (verification_time - base::Time::UnixEpoch()).InSeconds()));
+    return Result::kErrInvalidTimestamp;
+  }
+
+  if (!certificate) {
+    signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
+        "SignedExchangeSignatureVerifier::Verify", error_message_callback,
+        "No certificate set.");
+    return Result::kErrNoCertificate;
+  }
+
+  if (!header.signature().cert_sha256.has_value()) {
+    signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
+        "SignedExchangeSignatureVerifier::Verify", error_message_callback,
+        "No certSha256 set.");
+    return Result::kErrNoCertificateSHA256;
+  }
+
+  // The main-certificate is the first certificate in certificate-chain.
+  if (*header.signature().cert_sha256 !=
+      net::X509Certificate::CalculateFingerprint256(
+          certificate->cert_buffer())) {
+    signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
+        "SignedExchangeSignatureVerifier::Verify", error_message_callback,
+        "certSha256 mismatch.");
+    return Result::kErrCertificateSHA256Mismatch;
+  }
+
+  auto message = GenerateSignedMessage(header);
+  if (!message) {
+    signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
+        "SignedExchangeSignatureVerifier::Verify", error_message_callback,
+        "Failed to reconstruct signed message.");
+    return Result::kErrInvalidSignatureFormat;
+  }
+
+  const std::string& sig = header.signature().sig;
+  if (!VerifySignature(
+          base::make_span(reinterpret_cast<const uint8_t*>(sig.data()),
+                          sig.size()),
+          *message, certificate, error_message_callback)) {
+    signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
+        "SignedExchangeSignatureVerifier::Verify", error_message_callback,
+        "Failed to verify signature \"sig\".");
+    return Result::kErrSignatureVerificationFailed;
+  }
+
+  if (!base::EqualsCaseInsensitiveASCII(header.signature().integrity, "mi")) {
+    signed_exchange_utils::RunErrorMessageCallbackAndEndTraceEvent(
+        "SignedExchangeSignatureVerifier::Verify", error_message_callback,
+        "The current implemention only supports \"mi\" integrity scheme.");
+    return Result::kErrInvalidSignatureIntegrity;
+  }
+
+  TRACE_EVENT_END0(TRACE_DISABLED_BY_DEFAULT("loading"),
+                   "SignedExchangeSignatureVerifier::Verify");
+  return Result::kSuccess;
+}
+
 base::Optional<std::vector<uint8_t>>
 SignedExchangeSignatureVerifier::EncodeCanonicalExchangeHeaders(
-    const SignedExchangeSignatureVerifier::Input& input) {
+    const SignedExchangeHeader& header) {
   base::Optional<cbor::CBORValue> cbor_val =
-      GenerateCanonicalExchangeHeadersCBOR(input);
+      GenerateCanonicalExchangeHeadersCBOR(header);
   if (!cbor_val)
     return base::nullopt;
 

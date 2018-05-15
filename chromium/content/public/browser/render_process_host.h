@@ -11,7 +11,6 @@
 #include <list>
 
 #include "base/containers/id_map.h"
-#include "base/memory/ptr_util.h"
 #include "base/process/kill.h"
 #include "base/process/process_handle.h"
 #include "base/supports_user_data.h"
@@ -20,8 +19,12 @@
 #include "content/public/common/bind_interface_helpers.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "ui/gfx/native_widget_types.h"
+
+#if defined(OS_ANDROID)
+#include "content/public/browser/android/child_process_importance.h"
+#endif
 
 class GURL;
 
@@ -67,6 +70,28 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
                                          public base::SupportsUserData {
  public:
   using iterator = base::IDMap<RenderProcessHost*>::iterator;
+
+  // Priority (or on Android, the importance) that a client contributes to this
+  // RenderProcessHost. Eg a RenderProcessHost with a visible client has higher
+  // priority / importance than a RenderProcessHost with hidden clients only.
+  struct Priority {
+    bool is_hidden;
+    unsigned int frame_depth;
+#if defined(OS_ANDROID)
+    ChildProcessImportance importance;
+#endif
+  };
+
+  // Interface for a client that contributes Priority to this
+  // RenderProcessHost. Clients can call UpdateClientPriority when their
+  // Priority changes.
+  class PriorityClient {
+   public:
+    virtual Priority GetPriority() = 0;
+
+   protected:
+    virtual ~PriorityClient() {}
+  };
 
   // Details for RENDERER_PROCESS_CLOSED notifications.
   struct RendererClosedDetails {
@@ -126,11 +151,15 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // will be reported as well.
   virtual void ShutdownForBadMessage(CrashReportMode crash_report_mode) = 0;
 
-  // Track the count of visible widgets. Called by listeners to register and
-  // unregister visibility.
-  virtual void WidgetRestored() = 0;
-  virtual void WidgetHidden() = 0;
-  virtual int VisibleWidgetCount() const = 0;
+  // Recompute Priority state. PriorityClient should call this when their
+  // individual priority changes.
+  virtual void UpdateClientPriority(PriorityClient* client) = 0;
+
+  // Number of visible (ie |!is_hidden|) PriorityClients.
+  virtual int VisibleClientCount() const = 0;
+
+  // Get computed frame depth from PriorityClients.
+  virtual unsigned int GetFrameDepthForTesting() const = 0;
 
   virtual RendererAudioOutputStreamFactoryContext*
   GetRendererAudioOutputStreamFactoryContext() = 0;
@@ -150,12 +179,11 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   virtual StoragePartition* GetStoragePartition() const = 0;
 
   // Try to shut down the associated renderer process without running unload
-  // handlers, etc, giving it the specified exit code. If |wait| is true, wait
-  // for the process to be actually terminated before returning.  Returns true
+  // handlers, etc, giving it the specified exit code.  Returns true
   // if it was able to shut down.  On Windows, this must not be called before
   // RenderProcessReady was called on a RenderProcessHostObserver, otherwise
   // RenderProcessExited may never be called.
-  virtual bool Shutdown(int exit_code, bool wait) = 0;
+  virtual bool Shutdown(int exit_code) = 0;
 
   // Try to shut down the associated renderer process as fast as possible.
   // If a non-zero |page_count| value is provided, then a fast shutdown will
@@ -234,12 +262,8 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   virtual void RemoveWidget(RenderWidgetHost* widget) = 0;
 
 #if defined(OS_ANDROID)
-  // Called by an already added widget when its importance changes.
-  virtual void UpdateWidgetImportance(ChildProcessImportance old_value,
-                                      ChildProcessImportance new_value) = 0;
-
   // Return the highest importance of all widgets in this process.
-  virtual ChildProcessImportance ComputeEffectiveImportance() = 0;
+  virtual ChildProcessImportance GetEffectiveImportance() = 0;
 #endif
 
   // Sets a flag indicating that the process can be abnormally terminated.
@@ -289,6 +313,10 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
       bool incoming,
       bool outgoing,
       const WebRtcRtpPacketCallback& packet_callback) = 0;
+
+  // Start/stop event log output from WebRTC on this RPH for the peer connection
+  // identified locally within the RPH using the ID |lid|.
+  virtual void SetWebRtcEventLogOutput(int lid, bool enabled) = 0;
 #endif
 
   // Tells the ResourceDispatcherHost to resume a deferred navigation without
@@ -319,6 +347,11 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Returns true if this process currently has backgrounded priority.
   virtual bool IsProcessBackgrounded() const = 0;
 
+  enum class KeepAliveClientType {
+    kServiceWorker = 0,
+    kSharedWorker = 1,
+    kFetch = 2,
+  };
   // "Keep alive ref count" represents the number of the customers of this
   // render process who wish the renderer process to be alive. While the ref
   // count is positive, |this| object will keep the renderer process alive,
@@ -340,8 +373,8 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   //    When a fetch request with keepalive flag
   //    (https://fetch.spec.whatwg.org/#request-keepalive-flag) specified is
   //    pending, it wishes the renderer process to be kept alive.
-  virtual void IncrementKeepAliveRefCount() = 0;
-  virtual void DecrementKeepAliveRefCount() = 0;
+  virtual void IncrementKeepAliveRefCount(KeepAliveClientType) = 0;
+  virtual void DecrementKeepAliveRefCount(KeepAliveClientType) = 0;
 
   // Sets keep alive ref counts to zero. Called when the browser context will be
   // destroyed so this RenderProcessHost can immediately die.
@@ -427,9 +460,11 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // The spare RenderProcessHost is meant to be created in a situation where a
   // navigation is imminent and it is unlikely an existing RenderProcessHost
   // will be used, for example in a cross-site navigation when a Service Worker
-  // will need to be started.
-  static void WarmupSpareRenderProcessHost(
-      content::BrowserContext* browser_context);
+  // will need to be started.  Note that if ContentBrowserClient opts into
+  // strict site isolation (via ShouldEnableStrictSiteIsolation), then the
+  // //content layer will maintain a warm spare process host at all times
+  // (without a need for separate calls to WarmupSpareRenderProcessHost).
+  static void WarmupSpareRenderProcessHost(BrowserContext* browser_context);
 
   // Flag to run the renderer in process.  This is primarily
   // for debugging purposes.  When running "in process", the
@@ -468,15 +503,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   static bool ShouldTryToUseExistingProcessHost(
       content::BrowserContext* browser_context, const GURL& site_url);
 
-  // Get an existing RenderProcessHost associated with the given browser
-  // context, if possible.  The renderer process is chosen randomly from
-  // suitable renderers that share the same context and type (determined by the
-  // site url).
-  // Returns nullptr if no suitable renderer process is available, in which case
-  // the caller is free to create a new renderer.
-  static RenderProcessHost* GetExistingProcessHost(
-      content::BrowserContext* browser_context, const GURL& site_url);
-
   // Overrides the default heuristic for limiting the max renderer process
   // count.  This is useful for unit testing process limit behaviors.  It is
   // also used to allow a command line parameter to configure the max number of
@@ -492,6 +518,9 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   using AnalyzeHungRendererFunction = void (*)(const base::Process& renderer);
   static void SetHungRendererAnalysisFunction(
       AnalyzeHungRendererFunction analyze_hung_renderer);
+
+  // Counts current RenderProcessHost(s), ignoring the spare process.
+  static int GetCurrentRenderProcessCountForTesting();
 };
 
 }  // namespace content

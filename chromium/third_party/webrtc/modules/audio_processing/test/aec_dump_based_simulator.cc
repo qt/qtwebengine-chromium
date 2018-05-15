@@ -62,8 +62,10 @@ bool VerifyFloatBitExactness(const webrtc::audioproc::Stream& msg,
 
 }  // namespace
 
-AecDumpBasedSimulator::AecDumpBasedSimulator(const SimulationSettings& settings)
-    : AudioProcessingSimulator(settings) {}
+AecDumpBasedSimulator::AecDumpBasedSimulator(
+    const SimulationSettings& settings,
+    std::unique_ptr<AudioProcessingBuilder> ap_builder)
+    : AudioProcessingSimulator(settings, std::move(ap_builder)) {}
 
 AecDumpBasedSimulator::~AecDumpBasedSimulator() = default;
 
@@ -471,10 +473,6 @@ void AecDumpBasedSimulator::HandleMessage(
     if (settings_.use_refined_adaptive_filter) {
       config.Set<RefinedAdaptiveFilter>(
           new RefinedAdaptiveFilter(*settings_.use_refined_adaptive_filter));
-    }
-
-    if (settings_.use_lc) {
-      apm_config.level_controller.enabled = *settings_.use_lc;
     }
 
     if (settings_.use_ed) {

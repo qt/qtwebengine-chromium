@@ -80,9 +80,9 @@ jumbo_component("mus") {
   ]
 
   if (is_linux && !is_android) {
-    deps += [ "//components/font_service/public/cpp" ]
+    deps += [ "//components/services/font/public/cpp" ]
     data_deps = [
-      "//components/font_service",
+      "//components/services/font:font_service",
     ]
   }
 }
@@ -122,7 +122,7 @@ jumbo_static_library("test_support") {
     ":mus",
     "//base",
     "//base/test:test_support",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//services/catalog:lib",
     "//services/service_manager/background:lib",
     "//services/service_manager/public/cpp",
@@ -192,6 +192,7 @@ test("views_mus_unittests") {
     "//ui/views",
     "//ui/views:test_support_internal",
     "//ui/views:views_unittests_sources",
+    "//ui/views/mus/remote_view:tests",
     "//ui/wm",
     "//url",
   ]
@@ -244,7 +245,7 @@ test("views_mus_interactive_ui_tests") {
     ":mus",
     ":test_support",
     "//base",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//testing/gmock",
     "//testing/gtest",
     "//ui/aura",

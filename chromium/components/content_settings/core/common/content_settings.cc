@@ -29,7 +29,7 @@ struct HistogramValue {
 // content settings type name instead.
 //
 // The array size must be explicit for the static_asserts below.
-constexpr size_t kNumHistogramValues = 37;
+constexpr size_t kNumHistogramValues = 38;
 constexpr HistogramValue kHistogramValue[kNumHistogramValues] = {
     {CONTENT_SETTINGS_TYPE_COOKIES, 0},
     {CONTENT_SETTINGS_TYPE_IMAGES, 1},
@@ -68,6 +68,7 @@ constexpr HistogramValue kHistogramValue[kNumHistogramValues] = {
     {CONTENT_SETTINGS_TYPE_CLIPBOARD_WRITE, 41},
     {CONTENT_SETTINGS_TYPE_PLUGINS_DATA, 42},
     {CONTENT_SETTINGS_TYPE_PAYMENT_HANDLER, 43},
+    {CONTENT_SETTINGS_TYPE_USB_GUARD, 44},
 };
 
 }  // namespace
@@ -106,7 +107,7 @@ int ContentSettingTypeToHistogramValue(ContentSettingsType content_setting,
 ContentSettingPatternSource::ContentSettingPatternSource(
     const ContentSettingsPattern& primary_pattern,
     const ContentSettingsPattern& secondary_pattern,
-    std::unique_ptr<base::Value> setting_value,
+    base::Value setting_value,
     const std::string& source,
     bool incognito)
     : primary_pattern(primary_pattern),
@@ -126,8 +127,7 @@ ContentSettingPatternSource& ContentSettingPatternSource::operator=(
     const ContentSettingPatternSource& other) {
   primary_pattern = other.primary_pattern;
   secondary_pattern = other.secondary_pattern;
-  if (other.setting_value)
-    setting_value = std::make_unique<base::Value>(other.setting_value->Clone());
+  setting_value = other.setting_value.Clone();
   source = other.source;
   incognito = other.incognito;
   return *this;
@@ -136,7 +136,7 @@ ContentSettingPatternSource& ContentSettingPatternSource::operator=(
 ContentSettingPatternSource::~ContentSettingPatternSource() {}
 
 ContentSetting ContentSettingPatternSource::GetContentSetting() const {
-  return content_settings::ValueToContentSetting(setting_value.get());
+  return content_settings::ValueToContentSetting(&setting_value);
 }
 
 RendererContentSettingRules::RendererContentSettingRules() {}

@@ -19,6 +19,7 @@
 #include "net/base/net_export.h"
 #include "net/http/bidirectional_stream_impl.h"
 #include "net/http/http_stream_factory.h"
+#include "net/http/http_stream_request.h"
 #include "net/log/net_log_with_source.h"
 
 namespace net {
@@ -26,7 +27,6 @@ namespace net {
 class HttpAuthController;
 class HttpNetworkSession;
 class HttpStream;
-class HttpStreamRequest;
 class IOBuffer;
 class ProxyInfo;
 class SpdyHeaderBlock;
@@ -176,6 +176,7 @@ class NET_EXPORT BidirectionalStream : public BidirectionalStreamImpl::Delegate,
   void PopulateNetErrorDetails(NetErrorDetails* details);
 
  private:
+  void StartRequest(const SSLConfig& ssl_config);
   // BidirectionalStreamImpl::Delegate implementation:
   void OnStreamReady(bool request_headers_sent) override;
   void OnHeadersReceived(const SpdyHeaderBlock& response_headers) override;

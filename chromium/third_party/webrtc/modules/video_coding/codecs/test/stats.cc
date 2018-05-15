@@ -32,10 +32,14 @@ std::string FrameStatistics::ToString() const {
   ss << " decoded_height " << decoded_height;
   ss << " simulcast_svc_idx " << simulcast_svc_idx;
   ss << " temporal_layer_idx " << temporal_layer_idx;
+  ss << " inter_layer_predicted " << inter_layer_predicted;
   ss << " frame_type " << frame_type;
-  ss << " encoded_frame_size_bytes " << encoded_frame_size_bytes;
+  ss << " length_bytes " << length_bytes;
   ss << " qp " << qp;
   ss << " psnr " << psnr;
+  ss << " psnr_y " << psnr_y;
+  ss << " psnr_u " << psnr_u;
+  ss << " psnr_v " << psnr_v;
   ss << " ssim " << ssim;
   ss << " encode_time_us " << encode_time_us;
   ss << " decode_time_us " << decode_time_us;
@@ -89,15 +93,15 @@ std::string VideoStatistics::ToString(std::string prefix) const {
 FrameStatistics* Stats::AddFrame(size_t timestamp, size_t layer_idx) {
   RTC_DCHECK(rtp_timestamp_to_frame_num_[layer_idx].find(timestamp) ==
              rtp_timestamp_to_frame_num_[layer_idx].end());
-  const size_t frame_num = layer_idx_to_stats_[layer_idx].size();
+  const size_t frame_num = layer_stats_[layer_idx].size();
   rtp_timestamp_to_frame_num_[layer_idx][timestamp] = frame_num;
-  layer_idx_to_stats_[layer_idx].emplace_back(frame_num, timestamp);
-  return &layer_idx_to_stats_[layer_idx].back();
+  layer_stats_[layer_idx].emplace_back(frame_num, timestamp);
+  return &layer_stats_[layer_idx].back();
 }
 
 FrameStatistics* Stats::GetFrame(size_t frame_num, size_t layer_idx) {
-  RTC_CHECK_LT(frame_num, layer_idx_to_stats_[layer_idx].size());
-  return &layer_idx_to_stats_[layer_idx][frame_num];
+  RTC_CHECK_LT(frame_num, layer_stats_[layer_idx].size());
+  return &layer_stats_[layer_idx][frame_num];
 }
 
 FrameStatistics* Stats::GetFrameWithTimestamp(size_t timestamp,
@@ -149,12 +153,21 @@ VideoStatistics Stats::SliceAndCalcAggregatedVideoStatistic(
                                     num_temporal_layers - 1, true);
 }
 
+void Stats::PrintFrameStatistics() {
+  for (size_t frame_num = 0; frame_num < layer_stats_[0].size(); ++frame_num) {
+    for (const auto& it : layer_stats_) {
+      const FrameStatistics& frame_stat = it.second[frame_num];
+      printf("\n%s", frame_stat.ToString().c_str());
+    }
+  }
+}
+
 size_t Stats::Size(size_t spatial_layer_idx) {
-  return layer_idx_to_stats_[spatial_layer_idx].size();
+  return layer_stats_[spatial_layer_idx].size();
 }
 
 void Stats::Clear() {
-  layer_idx_to_stats_.clear();
+  layer_stats_.clear();
   rtp_timestamp_to_frame_num_.clear();
 }
 
@@ -167,8 +180,7 @@ FrameStatistics Stats::AggregateFrameStatistic(
   while (spatial_layer_idx-- > 0) {
     if (aggregate_independent_layers || inter_layer_predicted) {
       FrameStatistics* base_frame_stat = GetFrame(frame_num, spatial_layer_idx);
-      frame_stat.encoded_frame_size_bytes +=
-          base_frame_stat->encoded_frame_size_bytes;
+      frame_stat.length_bytes += base_frame_stat->length_bytes;
       frame_stat.target_bitrate_kbps += base_frame_stat->target_bitrate_kbps;
 
       inter_layer_predicted = base_frame_stat->inter_layer_predicted;
@@ -183,26 +195,25 @@ size_t Stats::CalcLayerTargetBitrateKbps(size_t first_frame_num,
                                          size_t spatial_layer_idx,
                                          size_t temporal_layer_idx,
                                          bool aggregate_independent_layers) {
-  std::vector<size_t> target_bitrate_kbps(temporal_layer_idx + 1, 0);
+  size_t target_bitrate_kbps = 0;
 
   // We don't know if superframe includes all required spatial layers because
-  // of possible frame drops. Run through all frames required range, track
-  // maximum target bitrate per temporal layers and return sum of these.
-  // Assume target bitrate in frame statistic is specified per temporal layer.
+  // of possible frame drops. Run through all frames in specified range, find
+  // and return maximum target bitrate. Assume that target bitrate in frame
+  // statistic is specified per temporal layer.
   for (size_t frame_num = first_frame_num; frame_num <= last_frame_num;
        ++frame_num) {
     FrameStatistics superframe = AggregateFrameStatistic(
         frame_num, spatial_layer_idx, aggregate_independent_layers);
 
     if (superframe.temporal_layer_idx <= temporal_layer_idx) {
-      target_bitrate_kbps[superframe.temporal_layer_idx] =
-          std::max(target_bitrate_kbps[superframe.temporal_layer_idx],
-                   superframe.target_bitrate_kbps);
+      target_bitrate_kbps =
+          std::max(target_bitrate_kbps, superframe.target_bitrate_kbps);
     }
   }
 
-  return std::accumulate(target_bitrate_kbps.begin(), target_bitrate_kbps.end(),
-                         std::size_t {0});
+  RTC_DCHECK_GT(target_bitrate_kbps, 0);
+  return target_bitrate_kbps;
 }
 
 VideoStatistics Stats::SliceAndCalcVideoStatistic(
@@ -222,6 +233,9 @@ VideoStatistics Stats::SliceAndCalcVideoStatistic(
   Statistics frame_encoding_time_us;
   Statistics frame_decoding_time_us;
 
+  Statistics psnr_y;
+  Statistics psnr_u;
+  Statistics psnr_v;
   Statistics psnr;
   Statistics ssim;
   Statistics qp;
@@ -253,20 +267,20 @@ VideoStatistics Stats::SliceAndCalcVideoStatistic(
 
     buffer_level_bits -= time_since_prev_frame_sec * 1000 * target_bitrate_kbps;
     buffer_level_bits = std::max(0.0f, buffer_level_bits);
-    buffer_level_bits += 8.0 * frame_stat.encoded_frame_size_bytes;
+    buffer_level_bits += 8.0 * frame_stat.length_bytes;
     buffer_level_sec.AddSample(buffer_level_bits /
                                (1000 * target_bitrate_kbps));
 
-    video_stat.length_bytes += frame_stat.encoded_frame_size_bytes;
+    video_stat.length_bytes += frame_stat.length_bytes;
 
     if (frame_stat.encoding_successful) {
       ++video_stat.num_encoded_frames;
 
       if (frame_stat.frame_type == kVideoFrameKey) {
-        key_frame_size_bytes.AddSample(frame_stat.encoded_frame_size_bytes);
+        key_frame_size_bytes.AddSample(frame_stat.length_bytes);
         ++video_stat.num_key_frames;
       } else {
-        delta_frame_size_bytes.AddSample(frame_stat.encoded_frame_size_bytes);
+        delta_frame_size_bytes.AddSample(frame_stat.length_bytes);
       }
 
       frame_encoding_time_us.AddSample(frame_stat.encode_time_us);
@@ -279,9 +293,13 @@ VideoStatistics Stats::SliceAndCalcVideoStatistic(
     if (frame_stat.decoding_successful) {
       ++video_stat.num_decoded_frames;
 
-      video_stat.width = frame_stat.decoded_width;
-      video_stat.height = frame_stat.decoded_height;
+      video_stat.width = std::max(video_stat.width, frame_stat.decoded_width);
+      video_stat.height =
+          std::max(video_stat.height, frame_stat.decoded_height);
 
+      psnr_y.AddSample(frame_stat.psnr_y);
+      psnr_u.AddSample(frame_stat.psnr_u);
+      psnr_v.AddSample(frame_stat.psnr_v);
       psnr.AddSample(frame_stat.psnr);
       ssim.AddSample(frame_stat.ssim);
 
@@ -351,6 +369,9 @@ VideoStatistics Stats::SliceAndCalcVideoStatistic(
   video_stat.avg_delta_frame_size_bytes = delta_frame_size_bytes.Mean();
   video_stat.avg_qp = qp.Mean();
 
+  video_stat.avg_psnr_y = psnr_y.Mean();
+  video_stat.avg_psnr_u = psnr_u.Mean();
+  video_stat.avg_psnr_v = psnr_v.Mean();
   video_stat.avg_psnr = psnr.Mean();
   video_stat.min_psnr = psnr.Min();
   video_stat.avg_ssim = ssim.Mean();
@@ -366,7 +387,7 @@ void Stats::GetNumberOfEncodedLayers(size_t first_frame_num,
   *num_encoded_spatial_layers = 0;
   *num_encoded_temporal_layers = 0;
 
-  const size_t num_spatial_layers = layer_idx_to_stats_.size();
+  const size_t num_spatial_layers = layer_stats_.size();
 
   for (size_t frame_num = first_frame_num; frame_num <= last_frame_num;
        ++frame_num) {

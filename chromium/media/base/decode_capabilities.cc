@@ -7,18 +7,13 @@
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "media/base/media_switches.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "third_party/libaom/av1_features.h"
 #include "ui/display/display_switches.h"
 
 #if BUILDFLAG(ENABLE_LIBVPX)
-// VPX_CODEC_DISABLE_COMPAT excludes parts of the libvpx API that provide
-// backwards compatibility for legacy applications using the library.
-#define VPX_CODEC_DISABLE_COMPAT 1
-extern "C" {
-#include "third_party/libvpx/source/libvpx/vpx/vp8dx.h"      // nogncheck
-#include "third_party/libvpx/source/libvpx/vpx/vpx_codec.h"  // nogncheck
-}
+#include "third_party/libvpx/source/libvpx/vpx/vp8dx.h"
+#include "third_party/libvpx/source/libvpx/vpx/vpx_codec.h"
 #endif
 
 namespace media {

@@ -7,18 +7,16 @@
 #include "base/atomic_sequence_num.h"
 #include "base/callback.h"
 #include "base/optional.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "content/common/service_worker/service_worker_loader_helpers.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/common/content_features.h"
-#include "content/public/common/shared_url_loader_factory.h"
 #include "content/renderer/service_worker/controller_service_worker_connector.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
-#include "net/url_request/redirect_info.h"
 #include "net/url_request/redirect_util.h"
 #include "net/url_request/url_request.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "ui/base/page_transition_types.h"
 
 namespace content {
@@ -36,53 +34,27 @@ network::ResourceResponseHead RewriteServiceWorkerTime(
 }
 
 // A wrapper URLLoaderClient that invokes the given RewriteHeaderCallback
-// whenever a response or redirect is received. It self-destructs when the Mojo
-// connection is closed.
+// whenever a response or redirect is received.
 class HeaderRewritingURLLoaderClient : public network::mojom::URLLoaderClient {
  public:
   using RewriteHeaderCallback = base::Callback<network::ResourceResponseHead(
       const network::ResourceResponseHead&)>;
 
-  static network::mojom::URLLoaderClientPtr CreateAndBind(
-      network::mojom::URLLoaderClientPtr url_loader_client,
-      RewriteHeaderCallback rewrite_header_callback) {
-    return (new HeaderRewritingURLLoaderClient(std::move(url_loader_client),
-                                               rewrite_header_callback))
-        ->CreateInterfacePtrAndBind();
-  }
-
-  ~HeaderRewritingURLLoaderClient() override {}
-
- private:
   HeaderRewritingURLLoaderClient(
       network::mojom::URLLoaderClientPtr url_loader_client,
       RewriteHeaderCallback rewrite_header_callback)
       : url_loader_client_(std::move(url_loader_client)),
-        binding_(this),
         rewrite_header_callback_(rewrite_header_callback) {}
+  ~HeaderRewritingURLLoaderClient() override {}
 
-  network::mojom::URLLoaderClientPtr CreateInterfacePtrAndBind() {
-    DCHECK(!binding_.is_bound());
-    network::mojom::URLLoaderClientPtr ptr;
-    binding_.Bind(mojo::MakeRequest(&ptr));
-    binding_.set_connection_error_handler(
-        base::BindOnce(&HeaderRewritingURLLoaderClient::OnClientConnectionError,
-                       base::Unretained(this)));
-    return ptr;
-  }
-
-  void OnClientConnectionError() {
-    base::ThreadTaskRunnerHandle::Get()->DeleteSoon(FROM_HERE, this);
-  }
-
+ private:
   // network::mojom::URLLoaderClient implementation:
   void OnReceiveResponse(
       const network::ResourceResponseHead& response_head,
-      const base::Optional<net::SSLInfo>& ssl_info,
       network::mojom::DownloadedTempFilePtr downloaded_file) override {
     DCHECK(url_loader_client_.is_bound());
     url_loader_client_->OnReceiveResponse(
-        rewrite_header_callback_.Run(response_head), ssl_info,
+        rewrite_header_callback_.Run(response_head),
         std::move(downloaded_file));
   }
 
@@ -129,7 +101,6 @@ class HeaderRewritingURLLoaderClient : public network::mojom::URLLoaderClient {
   }
 
   network::mojom::URLLoaderClientPtr url_loader_client_;
-  mojo::Binding<network::mojom::URLLoaderClient> binding_;
   RewriteHeaderCallback rewrite_header_callback_;
 };
 }  // namespace
@@ -171,7 +142,7 @@ ServiceWorkerSubresourceLoader::ServiceWorkerSubresourceLoader(
     network::mojom::URLLoaderClientPtr client,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
     scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
-    scoped_refptr<SharedURLLoaderFactory> network_loader_factory)
+    scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory)
     : redirect_limit_(net::URLRequest::kMaxRedirects),
       url_loader_client_(std::move(client)),
       url_loader_binding_(this, std::move(request)),
@@ -190,8 +161,9 @@ ServiceWorkerSubresourceLoader::ServiceWorkerSubresourceLoader(
   response_head_.load_timing.request_start = base::TimeTicks::Now();
   response_head_.load_timing.request_start_time = base::Time::Now();
   // base::Unretained() is safe since |url_loader_binding_| is owned by |this|.
-  url_loader_binding_.set_connection_error_handler(base::BindOnce(
-      &ServiceWorkerSubresourceLoader::DeleteSoon, base::Unretained(this)));
+  url_loader_binding_.set_connection_error_handler(
+      base::BindOnce(&ServiceWorkerSubresourceLoader::OnConnectionError,
+                     base::Unretained(this)));
   StartRequest(resource_request);
 }
 
@@ -199,8 +171,8 @@ ServiceWorkerSubresourceLoader::~ServiceWorkerSubresourceLoader() {
   SettleInflightFetchRequestIfNeeded();
 };
 
-void ServiceWorkerSubresourceLoader::DeleteSoon() {
-  base::ThreadTaskRunnerHandle::Get()->DeleteSoon(FROM_HERE, this);
+void ServiceWorkerSubresourceLoader::OnConnectionError() {
+  delete this;
 }
 
 void ServiceWorkerSubresourceLoader::StartRequest(
@@ -231,7 +203,8 @@ void ServiceWorkerSubresourceLoader::DispatchFetchEvent() {
   mojom::ServiceWorkerFetchResponseCallbackPtr response_callback_ptr;
   response_callback_binding_.Bind(mojo::MakeRequest(&response_callback_ptr));
   mojom::ControllerServiceWorker* controller =
-      controller_connector_->GetControllerServiceWorker();
+      controller_connector_->GetControllerServiceWorker(
+          mojom::ControllerServiceWorkerPurpose::FETCH_SUB_RESOURCE);
   // When |controller| is null, the network request will be aborted soon since
   // the network provider has already been discarded. In that case, We don't
   // need to return an error as the client must be shutting down.
@@ -245,7 +218,7 @@ void ServiceWorkerSubresourceLoader::DispatchFetchEvent() {
           url_loader_binding_.Unbind(), routing_id_, request_id_, options_,
           resource_request_, std::move(url_loader_client_),
           traffic_annotation_);
-      DeleteSoon();
+      delete this;
       return;
     }
     DCHECK_EQ(ControllerServiceWorkerConnector::State::kNoContainerHost,
@@ -391,18 +364,20 @@ void ServiceWorkerSubresourceLoader::OnFallback(
   }
 
   // Hand over to the network loader.
+  network::mojom::URLLoaderClientPtr client;
+  auto client_impl = std::make_unique<HeaderRewritingURLLoaderClient>(
+      std::move(url_loader_client_),
+      base::BindRepeating(&RewriteServiceWorkerTime,
+                          response_head_.service_worker_start_time,
+                          response_head_.service_worker_ready_time));
+  mojo::MakeStrongBinding(std::move(client_impl), mojo::MakeRequest(&client));
+
   network_loader_factory_->CreateLoaderAndStart(
       url_loader_binding_.Unbind(), routing_id_, request_id_, options_,
-      resource_request_,
-      HeaderRewritingURLLoaderClient::CreateAndBind(
-          std::move(url_loader_client_),
-          base::BindRepeating(&RewriteServiceWorkerTime,
-                              response_head_.service_worker_start_time,
-                              response_head_.service_worker_ready_time)),
-      traffic_annotation_);
+      resource_request_, std::move(client), traffic_annotation_);
   // Per spec, redirects after this point are not intercepted by the service
   // worker again (https://crbug.com/517364). So this loader is done.
-  DeleteSoon();
+  delete this;
 }
 
 void ServiceWorkerSubresourceLoader::StartResponse(
@@ -481,7 +456,6 @@ void ServiceWorkerSubresourceLoader::CommitResponseHeaders() {
   status_ = Status::kSentHeader;
   // TODO(kinuko): Fill the ssl_info.
   url_loader_client_->OnReceiveResponse(response_head_,
-                                        base::nullopt /* ssl_info_ */,
                                         nullptr /* downloaded_file */);
 }
 
@@ -541,12 +515,27 @@ void ServiceWorkerSubresourceLoader::OnBlobReadingComplete(int net_error) {
 
 // ServiceWorkerSubresourceLoaderFactory ------------------------------------
 
+// static
+void ServiceWorkerSubresourceLoaderFactory::Create(
+    scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
+    scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory,
+    network::mojom::URLLoaderFactoryRequest request) {
+  new ServiceWorkerSubresourceLoaderFactory(std::move(controller_connector),
+                                            std::move(network_loader_factory),
+                                            std::move(request));
+}
+
 ServiceWorkerSubresourceLoaderFactory::ServiceWorkerSubresourceLoaderFactory(
     scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
-    scoped_refptr<SharedURLLoaderFactory> network_loader_factory)
+    scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory,
+    network::mojom::URLLoaderFactoryRequest request)
     : controller_connector_(std::move(controller_connector)),
       network_loader_factory_(std::move(network_loader_factory)) {
   DCHECK(network_loader_factory_);
+  bindings_.AddBinding(this, std::move(request));
+  bindings_.set_connection_error_handler(base::BindRepeating(
+      &ServiceWorkerSubresourceLoaderFactory::OnConnectionError,
+      base::Unretained(this)));
 }
 
 ServiceWorkerSubresourceLoaderFactory::
@@ -572,7 +561,13 @@ void ServiceWorkerSubresourceLoaderFactory::CreateLoaderAndStart(
 
 void ServiceWorkerSubresourceLoaderFactory::Clone(
     network::mojom::URLLoaderFactoryRequest request) {
-  NOTREACHED();
+  bindings_.AddBinding(this, std::move(request));
+}
+
+void ServiceWorkerSubresourceLoaderFactory::OnConnectionError() {
+  if (!bindings_.empty())
+    return;
+  delete this;
 }
 
 }  // namespace content

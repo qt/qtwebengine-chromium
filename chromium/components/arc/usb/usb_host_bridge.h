@@ -54,6 +54,7 @@ class ArcUsbHostBridge : public KeyedService,
                          bool interactive,
                          RequestPermissionCallback callback) override;
   void OpenDevice(const std::string& guid,
+                  const base::Optional<std::string>& package,
                   OpenDeviceCallback callback) override;
   void GetDeviceInfo(const std::string& guid,
                      GetDeviceInfoCallback callback) override;
@@ -73,11 +74,15 @@ class ArcUsbHostBridge : public KeyedService,
   void SetUiDelegate(ArcUsbHostUiDelegate* ui_delegate);
 
  private:
+  std::vector<std::string> GetEventReceiverPackages(const std::string& guid);
   void OnDeviceChecked(const std::string& guid, bool allowed);
   void DoRequestUserAuthorization(const std::string& guid,
                                   const std::string& package,
                                   RequestPermissionCallback callback);
-  bool HasPermissionForDevice(const std::string& guid);
+  bool HasPermissionForDevice(const std::string& guid,
+                              const std::string& package);
+  void HandleScanDeviceListRequest(const std::string& package,
+                                   RequestPermissionCallback callback);
 
   ArcBridgeService* const arc_bridge_service_;  // Owned by ArcServiceManager.
   mojom::UsbHostHostPtr usb_host_ptr_;

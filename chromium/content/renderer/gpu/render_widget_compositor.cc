@@ -17,7 +17,6 @@
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
@@ -68,13 +67,13 @@
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "media/base/media_switches.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
-#include "third_party/WebKit/public/platform/WebCompositeAndReadbackAsyncCallback.h"
-#include "third_party/WebKit/public/platform/WebLayoutAndPaintAsyncCallback.h"
-#include "third_party/WebKit/public/platform/WebRuntimeFeatures.h"
-#include "third_party/WebKit/public/platform/WebSize.h"
-#include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
-#include "third_party/WebKit/public/web/WebKit.h"
-#include "third_party/WebKit/public/web/WebSelection.h"
+#include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
+#include "third_party/blink/public/platform/web_composite_and_readback_async_callback.h"
+#include "third_party/blink/public/platform/web_layout_and_paint_async_callback.h"
+#include "third_party/blink/public/platform/web_runtime_features.h"
+#include "third_party/blink/public/platform/web_size.h"
+#include "third_party/blink/public/web/blink.h"
+#include "third_party/blink/public/web/web_selection.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/switches.h"
@@ -101,6 +100,9 @@ using blink::WebOverscrollBehavior;
 namespace content {
 namespace {
 
+const base::Feature kUnpremultiplyAndDitherLowBitDepthTiles = {
+    "UnpremultiplyAndDitherLowBitDepthTiles", base::FEATURE_ENABLED_BY_DEFAULT};
+
 using ReportTimeCallback =
     base::Callback<void(WebLayerTreeView::SwapResult, double)>;
 
@@ -117,7 +119,8 @@ class ReportTimeSwapPromise : public cc::SwapPromise {
   ~ReportTimeSwapPromise() override;
 
   void DidActivate() override {}
-  void WillSwap(viz::CompositorFrameMetadata* metadata) override {}
+  void WillSwap(viz::CompositorFrameMetadata* metadata,
+                cc::FrameTokenAllocator* frame_token_allocator) override {}
   void DidSwap() override;
   DidNotSwapAction DidNotSwap(DidNotSwapReason reason) override;
 
@@ -189,39 +192,37 @@ bool GetSwitchValueAsInt(const base::CommandLine& command_line,
   }
 }
 
-cc::LayerSelectionBound ConvertWebSelectionBound(
-    const WebSelection& web_selection,
-    bool is_start) {
-  cc::LayerSelectionBound cc_bound;
-  if (web_selection.IsNone())
-    return cc_bound;
+gfx::SelectionBound::Type ConvertFromWebSelectionBoundType(
+    blink::WebSelectionBound::Type type) {
+  if (type == blink::WebSelectionBound::Type::kSelectionLeft)
+    return gfx::SelectionBound::Type::LEFT;
+  if (type == blink::WebSelectionBound::Type::kSelectionRight)
+    return gfx::SelectionBound::Type::RIGHT;
+  // if WebSelection is not a range (caret or none),
+  // The type of gfx::SelectionBound should be CENTER.
+  DCHECK_EQ(type, blink::WebSelectionBound::Type::kCaret);
+  return gfx::SelectionBound::Type::CENTER;
+}
 
-  const blink::WebSelectionBound& web_bound =
-      is_start ? web_selection.Start() : web_selection.end();
-  DCHECK(web_bound.layer_id);
-  cc_bound.type = gfx::SelectionBound::CENTER;
-  if (web_selection.IsRange()) {
-    if (is_start) {
-      cc_bound.type = web_bound.is_text_direction_rtl
-                          ? gfx::SelectionBound::RIGHT
-                          : gfx::SelectionBound::LEFT;
-    } else {
-      cc_bound.type = web_bound.is_text_direction_rtl
-                          ? gfx::SelectionBound::LEFT
-                          : gfx::SelectionBound::RIGHT;
-    }
-  }
-  cc_bound.layer_id = web_bound.layer_id;
-  cc_bound.edge_top = gfx::Point(web_bound.edge_top_in_layer);
-  cc_bound.edge_bottom = gfx::Point(web_bound.edge_bottom_in_layer);
-  cc_bound.hidden = web_bound.hidden;
+cc::LayerSelectionBound ConvertFromWebSelectionBound(
+    const blink::WebSelectionBound& bound) {
+  cc::LayerSelectionBound cc_bound;
+  DCHECK(bound.layer_id);
+
+  cc_bound.type = ConvertFromWebSelectionBoundType(bound.type);
+  cc_bound.layer_id = bound.layer_id;
+  cc_bound.edge_top = gfx::Point(bound.edge_top_in_layer);
+  cc_bound.edge_bottom = gfx::Point(bound.edge_bottom_in_layer);
+  cc_bound.hidden = bound.hidden;
   return cc_bound;
 }
 
-cc::LayerSelection ConvertWebSelection(const WebSelection& web_selection) {
+cc::LayerSelection ConvertFromWebSelection(const WebSelection& web_selection) {
+  if (web_selection.IsNone())
+    return cc::LayerSelection();
   cc::LayerSelection cc_selection;
-  cc_selection.start = ConvertWebSelectionBound(web_selection, true);
-  cc_selection.end = ConvertWebSelectionBound(web_selection, false);
+  cc_selection.start = ConvertFromWebSelectionBound(web_selection.Start());
+  cc_selection.end = ConvertFromWebSelectionBound(web_selection.end());
   return cc_selection;
 }
 
@@ -416,8 +417,6 @@ cc::LayerTreeSettings RenderWidgetCompositor::GenerateLayerTreeSettings(
       compositor_deps->IsGpuRasterizationForced();
 
   settings.can_use_lcd_text = compositor_deps->IsLcdTextEnabled();
-  settings.use_distance_field_text =
-      compositor_deps->IsDistanceFieldTextEnabled();
   settings.use_zero_copy = compositor_deps->IsZeroCopyEnabled();
   settings.use_partial_raster = compositor_deps->IsPartialRasterEnabled();
   settings.enable_elastic_overscroll =
@@ -552,6 +551,17 @@ cc::LayerTreeSettings RenderWidgetCompositor::GenerateLayerTreeSettings(
         base::SysInfo::AmountOfPhysicalMemoryMB() <= 512 &&
         !using_synchronous_compositor) {
       settings.preferred_tile_format = viz::RGBA_4444;
+
+      // If we are going to unpremultiply and dither these tiles, we need to
+      // allocate an additional RGBA_8888 intermediate for each tile
+      // rasterization when rastering to RGBA_4444 to allow for dithering.
+      // Setting a reasonable sized max tile size allows this intermediate to
+      // be consistently reused.
+      if (base::FeatureList::IsEnabled(
+              kUnpremultiplyAndDitherLowBitDepthTiles)) {
+        settings.max_gpu_raster_tile_size = gfx::Size(512, 256);
+        settings.unpremultiply_and_dither_low_bit_depth_tiles = true;
+      }
     }
   }
 
@@ -590,8 +600,8 @@ cc::LayerTreeSettings RenderWidgetCompositor::GenerateLayerTreeSettings(
     settings.enable_latency_recovery = false;
   }
 
-  settings.enable_image_animations =
-      cmd.HasSwitch(switches::kEnableCompositorImageAnimations);
+  settings.enable_image_animation_resync =
+      !cmd.HasSwitch(switches::kDisableImageAnimationResync);
 
   settings.always_request_presentation_time =
       cmd.HasSwitch(cc::switches::kAlwaysRequestPresentationTime);
@@ -777,6 +787,11 @@ void RenderWidgetCompositor::SetViewportSizeAndScale(
       device_viewport_size, device_scale_factor, local_surface_id);
 }
 
+void RenderWidgetCompositor::SetViewportVisibleRect(
+    const gfx::Rect& visible_rect) {
+  layer_tree_host_->SetViewportVisibleRect(visible_rect);
+}
+
 viz::FrameSinkId RenderWidgetCompositor::GetFrameSinkId() {
   return frame_sink_id_;
 }
@@ -899,7 +914,7 @@ void RenderWidgetCompositor::ClearViewportLayers() {
 
 void RenderWidgetCompositor::RegisterSelection(
     const blink::WebSelection& selection) {
-  layer_tree_host_->RegisterSelection(ConvertWebSelection(selection));
+  layer_tree_host_->RegisterSelection(ConvertFromWebSelection(selection));
 }
 
 void RenderWidgetCompositor::ClearSelection() {
@@ -1176,18 +1191,18 @@ void RenderWidgetCompositor::WillBeginMainFrame() {
 void RenderWidgetCompositor::DidBeginMainFrame() {}
 
 void RenderWidgetCompositor::BeginMainFrame(const viz::BeginFrameArgs& args) {
-  compositor_deps_->GetRendererScheduler()->WillBeginFrame(args);
+  compositor_deps_->GetWebMainThreadScheduler()->WillBeginFrame(args);
   double frame_time_sec = (args.frame_time - base::TimeTicks()).InSecondsF();
   delegate_->BeginMainFrame(frame_time_sec);
 }
 
 void RenderWidgetCompositor::BeginMainFrameNotExpectedSoon() {
-  compositor_deps_->GetRendererScheduler()->BeginFrameNotExpectedSoon();
+  compositor_deps_->GetWebMainThreadScheduler()->BeginFrameNotExpectedSoon();
 }
 
 void RenderWidgetCompositor::BeginMainFrameNotExpectedUntil(
     base::TimeTicks time) {
-  compositor_deps_->GetRendererScheduler()->BeginMainFrameNotExpectedUntil(
+  compositor_deps_->GetWebMainThreadScheduler()->BeginMainFrameNotExpectedUntil(
       time);
 }
 
@@ -1246,7 +1261,7 @@ void RenderWidgetCompositor::WillCommit() {
 
 void RenderWidgetCompositor::DidCommit() {
   delegate_->DidCommitCompositorFrame();
-  compositor_deps_->GetRendererScheduler()->DidCommitFrameToCompositor();
+  compositor_deps_->GetWebMainThreadScheduler()->DidCommitFrameToCompositor();
 }
 
 void RenderWidgetCompositor::DidCommitAndDrawFrame() {

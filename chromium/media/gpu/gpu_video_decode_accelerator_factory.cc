@@ -11,7 +11,7 @@
 #include "build/build_config.h"
 #include "gpu/command_buffer/service/gpu_preferences.h"
 #include "media/base/media_switches.h"
-#include "media/gpu/features.h"
+#include "media/gpu/buildflags.h"
 #include "media/gpu/gpu_video_accelerator_util.h"
 #include "media/gpu/media_gpu_export.h"
 
@@ -228,8 +228,7 @@ GpuVideoDecodeAcceleratorFactory::CreateVTVDA(
     const gpu::GpuDriverBugWorkarounds& workarounds,
     const gpu::GpuPreferences& gpu_preferences) const {
   std::unique_ptr<VideoDecodeAccelerator> decoder;
-  decoder.reset(
-      new VTVideoDecodeAccelerator(make_context_current_cb_, bind_image_cb_));
+  decoder.reset(new VTVideoDecodeAccelerator(bind_image_cb_));
   return decoder;
 }
 #endif

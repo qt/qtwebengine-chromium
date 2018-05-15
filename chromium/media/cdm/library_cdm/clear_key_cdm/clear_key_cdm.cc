@@ -28,7 +28,7 @@
 #include "media/cdm/library_cdm/clear_key_cdm/cdm_host_proxy_impl.h"
 #include "media/cdm/library_cdm/clear_key_cdm/cdm_proxy_test.h"
 #include "media/cdm/library_cdm/clear_key_cdm/cdm_video_decoder.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 
 #if defined(CLEAR_KEY_CDM_USE_FFMPEG_DECODER)
 #include "base/at_exit.h"
@@ -37,14 +37,6 @@
 #include "media/base/media.h"
 #include "media/cdm/library_cdm/clear_key_cdm/ffmpeg_cdm_audio_decoder.h"
 #include "media/cdm/library_cdm/clear_key_cdm/ffmpeg_cdm_video_decoder.h"
-
-// Include FFmpeg avformat.h for av_register_all().
-extern "C" {
-// Temporarily disable possible loss of data warning.
-MSVC_PUSH_DISABLE_WARNING(4244);
-#include <libavformat/avformat.h>
-MSVC_POP_WARNING();
-}  // extern "C"
 
 #if !defined COMPONENT_BUILD
 static base::AtExitManager g_at_exit_manager;
@@ -88,10 +80,10 @@ const char kDummyIndividualizationRequest[] = "dummy individualization request";
 
 static bool g_is_cdm_module_initialized = false;
 
-// Copies |input_buffer| into a media::DecoderBuffer. If the |input_buffer| is
-// empty, an empty (end-of-stream) media::DecoderBuffer is returned.
+// Copies |input_buffer| into a DecoderBuffer. If the |input_buffer| is
+// empty, an empty (end-of-stream) DecoderBuffer is returned.
 static scoped_refptr<media::DecoderBuffer> CopyDecoderBufferFrom(
-    const cdm::InputBuffer& input_buffer) {
+    const cdm::InputBuffer_2& input_buffer) {
   if (!input_buffer.data) {
     DCHECK(!input_buffer.data_size);
     return media::DecoderBuffer::CreateEOSBuffer();
@@ -234,7 +226,6 @@ void INITIALIZE_CDM_MODULE() {
   DVLOG(1) << __func__;
 #if defined(CLEAR_KEY_CDM_USE_FFMPEG_DECODER)
   media::InitializeMediaLibrary();
-  av_register_all();
 #endif  // CLEAR_KEY_CDM_USE_FFMPEG_DECODER
 
   g_is_cdm_module_initialized = true;
@@ -359,6 +350,59 @@ bool VerifyCdmHost_0(const cdm::HostFile* host_files, uint32_t num_files) {
 }
 
 namespace media {
+
+namespace {
+
+bool IsSupportedConfigEncryptionScheme(cdm::EncryptionScheme scheme) {
+  // TODO(crbug.com/658026): Support other decryption schemes.
+  switch (scheme) {
+    case cdm::EncryptionScheme::kUnencrypted:
+    case cdm::EncryptionScheme::kCenc:
+      return true;
+    case cdm::EncryptionScheme::kCbcs:
+      return false;
+  }
+
+  NOTREACHED();
+  return false;
+}
+
+bool IsSupportedBufferEncryptionScheme(cdm::EncryptionScheme scheme,
+                                       cdm::Pattern pattern) {
+  // TODO(crbug.com/658026): Support other decryption schemes.
+  switch (scheme) {
+    case cdm::EncryptionScheme::kUnencrypted:
+      return true;
+    case cdm::EncryptionScheme::kCenc:
+      return pattern.crypt_byte_block == 0 && pattern.skip_byte_block == 0;
+    case cdm::EncryptionScheme::kCbcs:
+      return false;
+  }
+
+  NOTREACHED();
+  return false;
+}
+
+cdm::InputBuffer_2 ToInputBuffer_2(cdm::InputBuffer_1 encrypted_buffer) {
+  cdm::InputBuffer_2 buffer = {};
+  buffer.data = encrypted_buffer.data;
+  buffer.data_size = encrypted_buffer.data_size;
+  buffer.key_id = encrypted_buffer.key_id;
+  buffer.key_id_size = encrypted_buffer.key_id_size;
+  buffer.iv = encrypted_buffer.iv;
+  buffer.iv_size = encrypted_buffer.iv_size;
+  buffer.subsamples = encrypted_buffer.subsamples;
+  buffer.num_subsamples = encrypted_buffer.num_subsamples;
+  buffer.timestamp = encrypted_buffer.timestamp;
+  // InputBuffer_1 must be either 'cenc' or unencrypted.
+  buffer.encryption_scheme = (buffer.iv_size == 0)
+                                 ? cdm::EncryptionScheme::kUnencrypted
+                                 : cdm::EncryptionScheme::kCenc;
+  buffer.pattern = {0, 0};
+  return buffer;
+}
+
+}  // namespace
 
 template <typename HostInterface>
 ClearKeyCdm::ClearKeyCdm(HostInterface* host, const std::string& key_system)
@@ -505,6 +549,13 @@ void ClearKeyCdm::OnUpdateSuccess(uint32_t promise_id,
     expiration = 3153600000.0;  // 100 * 365 * 24 * 60 * 60;
 
     if (!has_set_renewal_timer_) {
+      // Make sure the CDM can get time and sleep if necessary.
+      constexpr auto kSleepDuration = base::TimeDelta::FromSeconds(1);
+      auto start_time = base::Time::Now();
+      base::PlatformThread::Sleep(kSleepDuration);
+      auto time_elapsed = base::Time::Now() - start_time;
+      CHECK_GE(time_elapsed, kSleepDuration);
+
       ScheduleNextRenewal();
       has_set_renewal_timer_ = true;
     }
@@ -592,21 +643,25 @@ void ClearKeyCdm::TimerExpired(void* context) {
   ScheduleNextRenewal();
 }
 
-static void CopyDecryptResults(
-    media::Decryptor::Status* status_copy,
-    scoped_refptr<media::DecoderBuffer>* buffer_copy,
-    media::Decryptor::Status status,
-    const scoped_refptr<media::DecoderBuffer>& buffer) {
+static void CopyDecryptResults(media::Decryptor::Status* status_copy,
+                               scoped_refptr<DecoderBuffer>* buffer_copy,
+                               media::Decryptor::Status status,
+                               scoped_refptr<DecoderBuffer> buffer) {
   *status_copy = status;
-  *buffer_copy = buffer;
+  *buffer_copy = std::move(buffer);
 }
 
-cdm::Status ClearKeyCdm::Decrypt(const cdm::InputBuffer& encrypted_buffer,
+cdm::Status ClearKeyCdm::Decrypt(const cdm::InputBuffer_1& encrypted_buffer,
+                                 cdm::DecryptedBlock* decrypted_block) {
+  return Decrypt(ToInputBuffer_2(encrypted_buffer), decrypted_block);
+}
+
+cdm::Status ClearKeyCdm::Decrypt(const cdm::InputBuffer_2& encrypted_buffer,
                                  cdm::DecryptedBlock* decrypted_block) {
   DVLOG(1) << __func__;
   DCHECK(encrypted_buffer.data);
 
-  scoped_refptr<media::DecoderBuffer> buffer;
+  scoped_refptr<DecoderBuffer> buffer;
   cdm::Status status = DecryptToMediaDecoderBuffer(encrypted_buffer, &buffer);
 
   if (status != cdm::kSuccess)
@@ -624,9 +679,29 @@ cdm::Status ClearKeyCdm::Decrypt(const cdm::InputBuffer& encrypted_buffer,
 }
 
 cdm::Status ClearKeyCdm::InitializeAudioDecoder(
-    const cdm::AudioDecoderConfig& audio_decoder_config) {
+    const cdm::AudioDecoderConfig_1& audio_decoder_config) {
+  // AudioDecoderConfig_1 doesn't specify the encryption scheme, but only
+  // supports 'cenc' or unencrypted media, so expect encrypted audio.
+  cdm::AudioDecoderConfig_2 audio_config = {
+      audio_decoder_config.codec,
+      audio_decoder_config.channel_count,
+      audio_decoder_config.bits_per_channel,
+      audio_decoder_config.samples_per_second,
+      audio_decoder_config.extra_data,
+      audio_decoder_config.extra_data_size,
+      cdm::EncryptionScheme::kCenc};
+  return InitializeAudioDecoder(audio_config);
+}
+
+cdm::Status ClearKeyCdm::InitializeAudioDecoder(
+    const cdm::AudioDecoderConfig_2& audio_decoder_config) {
   if (key_system_ == kExternalClearKeyDecryptOnlyKeySystem)
     return cdm::kInitializationError;
+
+  if (!IsSupportedConfigEncryptionScheme(
+          audio_decoder_config.encryption_scheme)) {
+    return cdm::kInitializationError;
+  }
 
 #if defined(CLEAR_KEY_CDM_USE_FFMPEG_DECODER)
   if (!audio_decoder_)
@@ -644,9 +719,26 @@ cdm::Status ClearKeyCdm::InitializeAudioDecoder(
 }
 
 cdm::Status ClearKeyCdm::InitializeVideoDecoder(
-    const cdm::VideoDecoderConfig& video_decoder_config) {
+    const cdm::VideoDecoderConfig_1& video_decoder_config) {
+  // VideoDecoderConfig_1 doesn't specify the encryption scheme, but only
+  // supports 'cenc' or unencrypted media, so expect encrypted video.
+  cdm::VideoDecoderConfig_2 video_config = {
+      video_decoder_config.codec,      video_decoder_config.profile,
+      video_decoder_config.format,     video_decoder_config.coded_size,
+      video_decoder_config.extra_data, video_decoder_config.extra_data_size,
+      cdm::EncryptionScheme::kCenc};
+  return InitializeVideoDecoder(video_config);
+}
+
+cdm::Status ClearKeyCdm::InitializeVideoDecoder(
+    const cdm::VideoDecoderConfig_2& video_decoder_config) {
   if (key_system_ == kExternalClearKeyDecryptOnlyKeySystem)
     return cdm::kInitializationError;
+
+  if (!IsSupportedConfigEncryptionScheme(
+          video_decoder_config.encryption_scheme)) {
+    return cdm::kInitializationError;
+  }
 
   if (video_decoder_ && video_decoder_->is_initialized()) {
     DCHECK(!video_decoder_->is_initialized());
@@ -695,12 +787,19 @@ void ClearKeyCdm::DeinitializeDecoder(cdm::StreamType decoder_type) {
 }
 
 cdm::Status ClearKeyCdm::DecryptAndDecodeFrame(
-    const cdm::InputBuffer& encrypted_buffer,
+    const cdm::InputBuffer_1& encrypted_buffer,
+    cdm::VideoFrame* decoded_frame) {
+  return DecryptAndDecodeFrame(ToInputBuffer_2(encrypted_buffer),
+                               decoded_frame);
+}
+
+cdm::Status ClearKeyCdm::DecryptAndDecodeFrame(
+    const cdm::InputBuffer_2& encrypted_buffer,
     cdm::VideoFrame* decoded_frame) {
   DVLOG(1) << __func__;
   TRACE_EVENT0("media", "ClearKeyCdm::DecryptAndDecodeFrame");
 
-  scoped_refptr<media::DecoderBuffer> buffer;
+  scoped_refptr<DecoderBuffer> buffer;
   cdm::Status status = DecryptToMediaDecoderBuffer(encrypted_buffer, &buffer);
 
   if (status != cdm::kSuccess)
@@ -719,7 +818,14 @@ cdm::Status ClearKeyCdm::DecryptAndDecodeFrame(
 }
 
 cdm::Status ClearKeyCdm::DecryptAndDecodeSamples(
-    const cdm::InputBuffer& encrypted_buffer,
+    const cdm::InputBuffer_1& encrypted_buffer,
+    cdm::AudioFrames* audio_frames) {
+  return DecryptAndDecodeSamples(ToInputBuffer_2(encrypted_buffer),
+                                 audio_frames);
+}
+
+cdm::Status ClearKeyCdm::DecryptAndDecodeSamples(
+    const cdm::InputBuffer_2& encrypted_buffer,
     cdm::AudioFrames* audio_frames) {
   DVLOG(1) << __func__;
 
@@ -731,7 +837,7 @@ cdm::Status ClearKeyCdm::DecryptAndDecodeSamples(
     CHECK(false) << "Crash in decrypt-and-decode with crash key system.";
   }
 
-  scoped_refptr<media::DecoderBuffer> buffer;
+  scoped_refptr<DecoderBuffer> buffer;
   cdm::Status status = DecryptToMediaDecoderBuffer(encrypted_buffer, &buffer);
 
   if (status != cdm::kSuccess)
@@ -775,17 +881,22 @@ void ClearKeyCdm::ScheduleNextRenewal() {
 }
 
 cdm::Status ClearKeyCdm::DecryptToMediaDecoderBuffer(
-    const cdm::InputBuffer& encrypted_buffer,
-    scoped_refptr<media::DecoderBuffer>* decrypted_buffer) {
+    const cdm::InputBuffer_2& encrypted_buffer,
+    scoped_refptr<DecoderBuffer>* decrypted_buffer) {
   DCHECK(decrypted_buffer);
-  scoped_refptr<media::DecoderBuffer> buffer =
-      CopyDecoderBufferFrom(encrypted_buffer);
+
+  if (!IsSupportedBufferEncryptionScheme(encrypted_buffer.encryption_scheme,
+                                         encrypted_buffer.pattern)) {
+    return cdm::kDecryptError;
+  }
+
+  scoped_refptr<DecoderBuffer> buffer = CopyDecoderBufferFrom(encrypted_buffer);
 
   // TODO(xhwang): Unify how to check whether a buffer is encrypted.
   // See http://crbug.com/675003
   if (buffer->end_of_stream() || !buffer->decrypt_config() ||
       !buffer->decrypt_config()->is_encrypted()) {
-    *decrypted_buffer = buffer;
+    *decrypted_buffer = std::move(buffer);
     return cdm::kSuccess;
   }
 
@@ -794,7 +905,7 @@ cdm::Status ClearKeyCdm::DecryptToMediaDecoderBuffer(
   // The CDM does not care what the stream type is. Pass kVideo
   // for both audio and video decryption.
   cdm_->GetCdmContext()->GetDecryptor()->Decrypt(
-      media::Decryptor::kVideo, buffer,
+      media::Decryptor::kVideo, std::move(buffer),
       base::Bind(&CopyDecryptResults, &status, decrypted_buffer));
 
   if (status == media::Decryptor::kError)

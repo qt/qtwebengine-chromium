@@ -82,6 +82,8 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
     // Called with the path may be degrading. Note that the path may only be
     // temporarily degrading.
+    // TODO(b/76462761): remove this once
+    // FLAGS_quic_reloadable_flag_quic_path_degrading_alarm is deprecated.
     virtual void OnPathDegrading() = 0;
 
     // Called when the Path MTU may have increased.
@@ -110,8 +112,9 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   void SetHandshakeConfirmed();
 
-  // Processes the incoming ack.
-  void OnIncomingAck(const QuicAckFrame& ack_frame, QuicTime ack_receive_time);
+  // Processes the incoming ack. Returns true if a previously-unacked packet is
+  // acked.
+  bool OnIncomingAck(const QuicAckFrame& ack_frame, QuicTime ack_receive_time);
 
   // Requests retransmission of all unacked packets of |retransmission_type|.
   // The behavior of this method depends on the value of |retransmission_type|:
@@ -148,6 +151,9 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   bool HasUnackedPackets() const;
 
+  // Returns true if there's outstanding crypto data.
+  bool HasUnackedCryptoPackets() const;
+
   // Returns the smallest packet number of a serialized packet which has not
   // been acked by the peer.
   QuicPacketNumber GetLeastUnacked() const;
@@ -175,6 +181,10 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // either a tail loss probe or do a full RTO.  Returns QuicTime::Zero() if
   // there are no retransmittable packets.
   const QuicTime GetRetransmissionTime() const;
+
+  // Returns the current delay for the path degrading timer, which is used to
+  // notify the session that this connection is degrading.
+  const QuicTime::Delta GetPathDegradingDelay() const;
 
   const RttStats* GetRttStats() const;
 
@@ -218,13 +228,16 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Called when an ack frame is initially parsed.
   void OnAckFrameStart(QuicPacketNumber largest_acked,
-                       QuicTime::Delta ack_delay_time);
+                       QuicTime::Delta ack_delay_time,
+                       QuicTime ack_receive_time);
 
-  // Called when ack range [start, end) is received.
-  void OnAckRange(QuicPacketNumber start,
-                  QuicPacketNumber end,
-                  bool last_range,
-                  QuicTime ack_receive_time);
+  // Called when ack range [start, end) is received. Populates packets_acked_
+  // with newly acked packets.
+  void OnAckRange(QuicPacketNumber start, QuicPacketNumber end);
+
+  // Called when an ack frame is parsed completely. Returns true if a previously
+  // -unacked packet is acked.
+  bool OnAckFrameEnd(QuicTime ack_receive_time);
 
   // Called to enable/disable letting session decide what to write.
   void SetSessionDecideWhatToWrite(bool session_decides_what_to_write);
@@ -248,6 +261,10 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   const SendAlgorithmInterface* GetSendAlgorithm() const;
 
   void SetSessionNotifier(SessionNotifierInterface* session_notifier);
+
+  QuicPacketCount initial_congestion_window() const {
+    return initial_congestion_window_;
+  }
 
   QuicPacketNumber largest_packet_peer_knows_is_acked() const {
     return largest_packet_peer_knows_is_acked_;
@@ -301,13 +318,26 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // packets from flight.
   void RetransmitRtoPackets();
 
-  // Returns the timer for retransmitting crypto handshake packets.
+  // Returns the timeout for retransmitting crypto handshake packets.
   const QuicTime::Delta GetCryptoRetransmissionDelay() const;
 
-  // Returns the timer for a new tail loss probe.
+  // Returns the timeout for a new tail loss probe. |consecutive_tlp_count| is
+  // the number of consecutive tail loss probes that have already been sent.
+  const QuicTime::Delta GetTailLossProbeDelay(
+      size_t consecutive_tlp_count) const;
+
+  // Calls GetTailLossProbeDelay() with values from the current state of this
+  // packet manager as its params.
   const QuicTime::Delta GetTailLossProbeDelay() const;
 
   // Returns the retransmission timeout, after which a full RTO occurs.
+  // |consecutive_rto_count| is the number of consecutive RTOs that have already
+  // occurred.
+  const QuicTime::Delta GetRetransmissionDelay(
+      size_t consecutive_rto_count) const;
+
+  // Calls GetRetransmissionDelay() with values from the current state of this
+  // packet manager as its params.
   const QuicTime::Delta GetRetransmissionDelay() const;
 
   // Returns the newest transmission associated with a packet.
@@ -317,7 +347,9 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Update the RTT if the ack is for the largest acked packet number.
   // Returns true if the rtt was updated.
-  bool MaybeUpdateRTT(const QuicAckFrame& ack_frame, QuicTime ack_receive_time);
+  bool MaybeUpdateRTT(QuicPacketNumber largest_acked,
+                      QuicTime::Delta ack_delay_time,
+                      QuicTime ack_receive_time);
 
   // Invokes the loss detection algorithm and loses and retransmits packets if
   // necessary.
@@ -344,6 +376,13 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // a pending retransmission.
   void MarkForRetransmission(QuicPacketNumber packet_number,
                              TransmissionType transmission_type);
+
+  // Called after packets have been marked handled with last received ack frame.
+  void PostProcessAfterMarkingPacketHandled(
+      const QuicAckFrame& ack_frame,
+      QuicTime ack_receive_time,
+      bool rtt_updated,
+      QuicByteCount prior_bytes_in_flight);
 
   // Notify observers that packet with QuicTransmissionInfo |info| is a spurious
   // retransmission. It is caller's responsibility to guarantee the packet with
@@ -389,7 +428,7 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   DebugDelegate* debug_delegate_;
   NetworkChangeVisitor* network_change_visitor_;
-  const QuicPacketCount initial_congestion_window_;
+  QuicPacketCount initial_congestion_window_;
   RttStats rtt_stats_;
   std::unique_ptr<SendAlgorithmInterface> send_algorithm_;
   // Not owned. Always points to |general_loss_algorithm_| outside of tests.
@@ -458,6 +497,23 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Latest received ack frame.
   QuicAckFrame last_ack_frame_;
+
+  // Record whether RTT gets updated by last largest acked. This is only used
+  // when quic_reloadable_flag_quic_use_incremental_ack_processing3 is true.
+  bool rtt_updated_;
+
+  // A reverse iterator of last_ack_frame_.packets. This is reset in
+  // OnAckRangeStart, and gradually moves in OnAckRange. This is only used
+  // when quic_reloadable_flag_quic_use_incremental_ack_processing3 is true.
+  PacketNumberQueue::const_reverse_iterator acked_packets_iter_;
+
+  // Latched value of
+  // quic_reloadable_flag_quic_path_degrading_alarm
+  const bool use_path_degrading_alarm_;
+
+  // Latched value of
+  // quic_reloadable_flag_quic_better_crypto_retransmission
+  const bool use_better_crypto_retransmission_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicSentPacketManager);
 };

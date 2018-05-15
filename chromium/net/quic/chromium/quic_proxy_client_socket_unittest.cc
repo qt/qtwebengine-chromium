@@ -25,6 +25,7 @@
 #include "net/quic/chromium/quic_chromium_packet_writer.h"
 #include "net/quic/chromium/quic_http_utils.h"
 #include "net/quic/chromium/quic_server_info.h"
+#include "net/quic/chromium/quic_stream_factory.h"
 #include "net/quic/chromium/quic_test_packet_maker.h"
 #include "net/quic/chromium/test_task_runner.h"
 #include "net/quic/core/crypto/null_encrypter.h"
@@ -1362,13 +1363,8 @@ TEST_P(QuicProxyClientSocketTest, RstWithReadAndWritePending) {
   mock_quic_data_.AddRead(SYNCHRONOUS, ERR_IO_PENDING);
   mock_quic_data_.AddAsyncWrite(
       ConstructAckAndDataPacket(3, 1, 1, 1, 0, kMsg2, kLen2));
-  if (FLAGS_quic_reloadable_flag_quic_use_control_frame_manager) {
     mock_quic_data_.AddWrite(
         ConstructAckAndRstPacket(4, QUIC_RST_ACKNOWLEDGEMENT, 2, 2, 1, kLen2));
-  } else {
-    mock_quic_data_.AddWrite(
-        ConstructRstPacket(4, QUIC_RST_ACKNOWLEDGEMENT, kLen2));
-  }
 
   Initialize();
 
@@ -1485,13 +1481,8 @@ TEST_P(QuicProxyClientSocketTest, RstWithReadAndWritePendingDelete) {
   mock_quic_data_.AddRead(SYNCHRONOUS, ERR_IO_PENDING);
   mock_quic_data_.AddAsyncWrite(
       ConstructAckAndDataPacket(3, 1, 1, 1, 0, kMsg1, kLen1));
-  if (FLAGS_quic_reloadable_flag_quic_use_control_frame_manager) {
     mock_quic_data_.AddWrite(
         ConstructAckAndRstPacket(4, QUIC_RST_ACKNOWLEDGEMENT, 2, 2, 1, kLen1));
-  } else {
-    mock_quic_data_.AddWrite(
-        ConstructRstPacket(4, QUIC_RST_ACKNOWLEDGEMENT, kLen1));
-  }
 
   Initialize();
 

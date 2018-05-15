@@ -41,17 +41,17 @@
 #include "content/renderer/render_widget_owner_delegate.h"
 #include "content/renderer/stats_collection_observer.h"
 #include "ipc/ipc_platform_file.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
-#include "third_party/WebKit/public/platform/WebScopedVirtualTimePauser.h"
-#include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
-#include "third_party/WebKit/public/web/WebAXObject.h"
-#include "third_party/WebKit/public/web/WebConsoleMessage.h"
-#include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebFrameWidget.h"
-#include "third_party/WebKit/public/web/WebHistoryItem.h"
-#include "third_party/WebKit/public/web/WebNavigationType.h"
-#include "third_party/WebKit/public/web/WebNode.h"
-#include "third_party/WebKit/public/web/WebViewClient.h"
+#include "third_party/blink/public/platform/web_input_event.h"
+#include "third_party/blink/public/platform/web_scoped_virtual_time_pauser.h"
+#include "third_party/blink/public/platform/web_security_origin.h"
+#include "third_party/blink/public/web/web_ax_object.h"
+#include "third_party/blink/public/web/web_console_message.h"
+#include "third_party/blink/public/web/web_element.h"
+#include "third_party/blink/public/web/web_frame_widget.h"
+#include "third_party/blink/public/web/web_history_item.h"
+#include "third_party/blink/public/web/web_navigation_type.h"
+#include "third_party/blink/public/web/web_node.h"
+#include "third_party/blink/public/web/web_view_client.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
@@ -72,8 +72,6 @@ namespace blink {
 class WebDateTimeChooserCompletion;
 class WebGestureEvent;
 class WebMouseEvent;
-class WebSpeechRecognizer;
-class WebTappedInfo;
 class WebURLRequest;
 struct WebDateTimeChooserParams;
 struct WebMediaPlayerAction;
@@ -92,7 +90,6 @@ class RendererDateTimePicker;
 class RenderViewImplTest;
 class RenderViewObserver;
 class RenderViewTest;
-class SpeechRecognitionDispatcher;
 struct FileChooserParams;
 struct ResizeParams;
 
@@ -271,8 +268,6 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   void SetToolTipText(const blink::WebString&,
                       blink::WebTextDirection hint) override;
   void SetTouchAction(cc::TouchAction touchAction) override;
-  void ShowUnhandledTapUIIfNeeded(
-      const blink::WebTappedInfo& tappedInfo) override;
   blink::WebWidgetClient* WidgetClient() override;
 
   // blink::WebViewClient implementation --------------------------------------
@@ -315,7 +310,6 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   void NavigateBackForwardSoon(int offset) override;
   int HistoryBackListCount() override;
   int HistoryForwardListCount() override;
-  blink::WebSpeechRecognizer* SpeechRecognizer() override;
   void ZoomLimitsChanged(double minimum_level, double maximum_level) override;
   void PageScaleFactorChanged() override;
   virtual double zoomLevelToZoomFactor(double zoom_level) const;
@@ -396,7 +390,8 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
                  scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
   void Initialize(mojom::CreateViewParamsPtr params,
-                  const RenderWidget::ShowCallback& show_callback);
+                  const RenderWidget::ShowCallback& show_callback,
+                  scoped_refptr<base::SingleThreadTaskRunner> task_runner);
   void SetScreenMetricsEmulationParameters(
       bool enabled,
       const blink::WebDeviceEmulationParams& params) override;
@@ -512,15 +507,6 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   void OnDisableScrollbarsForSmallWindows(
       const gfx::Size& disable_scrollbars_size_limit);
   void OnEnablePreferredSizeChangedMode();
-  void OnEnableAutoResize(const gfx::Size& min_size, const gfx::Size& max_size);
-  void OnDisableAutoResize(const gfx::Size& new_size);
-  void OnSetLocalSurfaceIdForAutoResize(
-      uint64_t sequence_number,
-      const gfx::Size& min_size,
-      const gfx::Size& max_size,
-      const content::ScreenInfo& screen_info,
-      uint32_t content_source_id,
-      const viz::LocalSurfaceId& local_surface_id);
   void OnEnumerateDirectoryResponse(int id,
                                     const std::vector<base::FilePath>& paths);
   void OnMediaPlayerActionAt(const gfx::Point& location,
@@ -545,9 +531,7 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   void OnForceRedraw(const ui::LatencyInfo& latency_info);
   void OnSelectWordAroundCaret();
   void OnAudioStateChanged(bool is_audio_playing);
-#if defined(OS_MACOSX)
-  void OnGetRenderedText();
-#endif
+  void OnPausePageScheduledTasks(bool paused);
 
   // Page message handlers -----------------------------------------------------
   void OnUpdateWindowScreenRect(gfx::Rect window_screen_rect);
@@ -555,6 +539,7 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   void OnPageWasHidden();
   void OnPageWasShown();
   void OnUpdateScreenInfo(const ScreenInfo& screen_info);
+  void OnFreezePage();
 
   // Adding a new message handler? Please add it in alphabetical order above
   // and put it in the same position in the .cc file.
@@ -745,14 +730,6 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   // Note: RenderViewImpl is pulling double duty: it's the RenderWidget for the
   // "view", but it's also the RenderWidget for the main frame.
   blink::WebFrameWidget* frame_widget_;
-
-  // The next group of objects all implement RenderViewObserver, so are deleted
-  // along with the RenderView automatically.  This is why we just store
-  // weak references.
-
-  // The speech recognition dispatcher attached to this view, lazily
-  // initialized.
-  SpeechRecognitionDispatcher* speech_recognition_dispatcher_;
 
 #if defined(OS_ANDROID)
   // Android Specific ---------------------------------------------------------

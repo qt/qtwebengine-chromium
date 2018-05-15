@@ -23,6 +23,9 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadUkmHelper {
   // that could trace back the user's exact actions.
   static int CalcExponentialBucket(int value);
 
+  // Calculate the number of bytes to the nearest kilobyte to maintain privacy.
+  static int CalcNearestKB(int num_bytes);
+
   // Record when the download has started.
   static void RecordDownloadStarted(int download_id,
                                     ukm::SourceId source_id,
@@ -30,12 +33,12 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadUkmHelper {
                                     DownloadSource download_source);
 
   // Record when the download is interrupted.
-  static void RecordDownloadInterrupted(
-      int download_id,
-      base::Optional<int> change_in_file_size,
-      download::DownloadInterruptReason reason,
-      int resulting_file_size,
-      const base::TimeDelta& time_since_start);
+  static void RecordDownloadInterrupted(int download_id,
+                                        base::Optional<int> change_in_file_size,
+                                        DownloadInterruptReason reason,
+                                        int resulting_file_size,
+                                        const base::TimeDelta& time_since_start,
+                                        int64_t bytes_wasted);
 
   // Record when the download is resumed.
   static void RecordDownloadResumed(int download_id,
@@ -45,7 +48,8 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadUkmHelper {
   // Record when the download is completed.
   static void RecordDownloadCompleted(int download_id,
                                       int resulting_file_size,
-                                      const base::TimeDelta& time_since_start);
+                                      const base::TimeDelta& time_since_start,
+                                      int64_t bytes_wasted);
 
   // Friended Helper for recording main frame URLs to UKM.
   static void UpdateSourceURL(ukm::UkmRecorder* ukm_recorder,

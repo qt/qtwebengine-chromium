@@ -3751,6 +3751,30 @@ static void encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
 
   suppress_active_map(cpi);
 
+  // For SVC on non-zero spatial layer: check for disabling inter-layer
+  // (spatial) prediction, if svc.disable_inter_layer_pred is set.
+  // if the previous spatial layer was dropped then disable the prediction from
+  // this (scaled) reference.
+  if (cpi->use_svc && cpi->svc.spatial_layer_id > 0) {
+    if ((cpi->svc.disable_inter_layer_pred == INTER_LAYER_PRED_OFF_NONKEY &&
+         !cpi->svc.layer_context[cpi->svc.temporal_layer_id].is_key_frame) ||
+        cpi->svc.disable_inter_layer_pred == INTER_LAYER_PRED_OFF ||
+        cpi->svc.drop_spatial_layer[cpi->svc.spatial_layer_id - 1]) {
+      MV_REFERENCE_FRAME ref_frame;
+      static const int flag_list[4] = { 0, VP9_LAST_FLAG, VP9_GOLD_FLAG,
+                                        VP9_ALT_FLAG };
+      for (ref_frame = LAST_FRAME; ref_frame <= ALTREF_FRAME; ++ref_frame) {
+        const YV12_BUFFER_CONFIG *yv12 = get_ref_frame_buffer(cpi, ref_frame);
+        if (yv12 != NULL && (cpi->ref_frame_flags & flag_list[ref_frame])) {
+          const struct scale_factors *const scale_fac =
+              &cm->frame_refs[ref_frame - 1].sf;
+          if (vp9_is_scaled(scale_fac))
+            cpi->ref_frame_flags &= (~flag_list[ref_frame]);
+        }
+      }
+    }
+  }
+
   // Variance adaptive and in frame q adjustment experiments are mutually
   // exclusive.
   if (cpi->oxcf.aq_mode == VARIANCE_AQ) {
@@ -4499,10 +4523,14 @@ static void encode_frame_to_data_rate(VP9_COMP *cpi, size_t *size,
 
   // SVC: skip encoding of enhancement layer if the layer target bandwidth = 0.
   if (cpi->use_svc && cpi->svc.spatial_layer_id > 0 &&
-      !cpi->svc.rc_drop_superframe && cpi->oxcf.target_bandwidth == 0) {
+      cpi->oxcf.target_bandwidth == 0) {
     cpi->svc.skip_enhancement_layer = 1;
     vp9_rc_postencode_update_drop_frame(cpi);
+    vp9_inc_frame_in_layer(cpi);
     cpi->ext_refresh_frame_flags_pending = 0;
+    cpi->last_frame_dropped = 1;
+    cpi->svc.last_layer_dropped[cpi->svc.spatial_layer_id] = 1;
+    cpi->svc.drop_spatial_layer[cpi->svc.spatial_layer_id] = 1;
     return;
   }
 
@@ -4590,23 +4618,41 @@ static void encode_frame_to_data_rate(VP9_COMP *cpi, size_t *size,
   }
 
   // For 1 pass CBR, check if we are dropping this frame.
-  // For spatial layers, for now only check for frame-dropping on first spatial
-  // layer, and if decision is to drop, we drop whole super-frame.
+  // Never drop on key frame, or if base layer is key for svc.
   if (oxcf->pass == 0 && oxcf->rc_mode == VPX_CBR &&
-      cm->frame_type != KEY_FRAME) {
-    if (vp9_rc_drop_frame(cpi) ||
-        (is_one_pass_cbr_svc(cpi) && cpi->svc.rc_drop_superframe == 1)) {
+      cm->frame_type != KEY_FRAME &&
+      (!cpi->use_svc ||
+       !cpi->svc.layer_context[cpi->svc.temporal_layer_id].is_key_frame)) {
+    int svc_prev_layer_dropped = 0;
+    // In the contrained framedrop mode for svc (framedrop_mode =
+    // CONSTRAINED_LAYER_DROP), if the previous spatial layer was dropped, drop
+    // the current spatial layer.
+    if (cpi->use_svc && cpi->svc.spatial_layer_id > 0 &&
+        cpi->svc.drop_spatial_layer[cpi->svc.spatial_layer_id - 1])
+      svc_prev_layer_dropped = 1;
+    if ((svc_prev_layer_dropped &&
+         cpi->svc.framedrop_mode == CONSTRAINED_LAYER_DROP) ||
+        vp9_rc_drop_frame(cpi)) {
       vp9_rc_postencode_update_drop_frame(cpi);
       cpi->ext_refresh_frame_flags_pending = 0;
-      cpi->svc.rc_drop_superframe = 1;
       cpi->last_frame_dropped = 1;
-      // TODO(marpan): Advancing the svc counters on dropped frames can break
-      // the referencing scheme for the fixed svc patterns defined in
-      // vp9_one_pass_cbr_svc_start_layer(). Look into fixing this issue, but
-      // for now, don't advance the svc frame counters on dropped frame.
-      // if (cpi->use_svc)
-      //   vp9_inc_frame_in_layer(cpi);
-
+      if (cpi->use_svc) {
+        cpi->svc.last_layer_dropped[cpi->svc.spatial_layer_id] = 1;
+        cpi->svc.drop_spatial_layer[cpi->svc.spatial_layer_id] = 1;
+        vp9_inc_frame_in_layer(cpi);
+        cpi->svc.skip_enhancement_layer = 1;
+        if (cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 1) {
+          int i;
+          int all_layers_drop = 1;
+          for (i = 0; i < cpi->svc.spatial_layer_id; i++) {
+            if (cpi->svc.drop_spatial_layer[i] == 0) {
+              all_layers_drop = 0;
+              break;
+            }
+          }
+          if (all_layers_drop == 1) cpi->svc.skip_enhancement_layer = 0;
+        }
+      }
       return;
     }
   }
@@ -4625,6 +4671,7 @@ static void encode_frame_to_data_rate(VP9_COMP *cpi, size_t *size,
   }
 
   cpi->last_frame_dropped = 0;
+  cpi->svc.last_layer_dropped[cpi->svc.spatial_layer_id] = 0;
 
   // Disable segmentation if it decrease rate/distortion ratio
   if (cpi->oxcf.aq_mode == LOOKAHEAD_AQ)
@@ -5225,12 +5272,6 @@ int vp9_get_compressed_data(VP9_COMP *cpi, unsigned int *frame_flags,
   int i;
 
   if (is_two_pass_svc(cpi)) {
-#if CONFIG_SPATIAL_SVC
-    vp9_svc_start_frame(cpi);
-    // Use a small empty frame instead of a real frame
-    if (cpi->svc.encode_empty_frame_state == ENCODING)
-      source = &cpi->svc.empty_frame;
-#endif
     if (oxcf->pass == 2) vp9_restore_layer_context(cpi);
   } else if (is_one_pass_cbr_svc(cpi)) {
     vp9_one_pass_cbr_svc_start_layer(cpi);
@@ -5283,19 +5324,6 @@ int vp9_get_compressed_data(VP9_COMP *cpi, unsigned int *frame_flags,
     if ((source = vp9_lookahead_peek(cpi->lookahead, arf_src_index)) != NULL) {
       cpi->alt_ref_source = source;
 
-#if CONFIG_SPATIAL_SVC
-      if (is_two_pass_svc(cpi) && cpi->svc.spatial_layer_id > 0) {
-        int i;
-        // Reference a hidden frame from a lower layer
-        for (i = cpi->svc.spatial_layer_id - 1; i >= 0; --i) {
-          if (oxcf->ss_enable_auto_arf[i]) {
-            cpi->gld_fb_idx = cpi->svc.layer_context[i].alt_ref_idx;
-            break;
-          }
-        }
-      }
-      cpi->svc.layer_context[cpi->svc.spatial_layer_id].has_alt_frame = 1;
-#endif
 #if !CONFIG_REALTIME_ONLY
       if ((oxcf->mode != REALTIME) && (oxcf->arnr_max_frames > 0) &&
           (oxcf->arnr_strength > 0)) {

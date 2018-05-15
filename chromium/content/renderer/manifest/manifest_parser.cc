@@ -7,7 +7,6 @@
 #include <stddef.h>
 
 #include "base/json/json_reader.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/nullable_string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -15,13 +14,14 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/public/common/manifest.h"
+#include "content/public/common/manifest_share_target_util.h"
 #include "content/public/common/manifest_util.h"
 #include "content/renderer/manifest/manifest_uma_util.h"
-#include "third_party/WebKit/public/platform/WebColor.h"
-#include "third_party/WebKit/public/platform/WebIconSizesParser.h"
-#include "third_party/WebKit/public/platform/WebSize.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/web/WebCSSParser.h"
+#include "third_party/blink/public/platform/web_color.h"
+#include "third_party/blink/public/platform/web_icon_sizes_parser.h"
+#include "third_party/blink/public/platform/web_size.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/web/web_css_parser.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace content {
@@ -347,9 +347,18 @@ std::vector<Manifest::Icon> ManifestParser::ParseIcons(
   return icons;
 }
 
-base::NullableString16 ManifestParser::ParseShareTargetURLTemplate(
+GURL ManifestParser::ParseShareTargetURLTemplate(
     const base::DictionaryValue& share_target) {
-  return ParseString(share_target, "url_template", Trim);
+  GURL url_template = ParseURL(share_target, "url_template", manifest_url_,
+                               ParseURLOriginRestrictions::kSameOriginOnly);
+  if (!ValidateWebShareUrlTemplate(url_template)) {
+    AddErrorInfo(
+        "property 'url_template' ignored. Placeholders have incorrect "
+        "syntax.");
+    return GURL();
+  }
+
+  return url_template;
 }
 
 base::Optional<Manifest::ShareTarget> ManifestParser::ParseShareTarget(
@@ -362,9 +371,8 @@ base::Optional<Manifest::ShareTarget> ManifestParser::ParseShareTarget(
   dictionary.GetDictionary("share_target", &share_target_dict);
   share_target.url_template = ParseShareTargetURLTemplate(*share_target_dict);
 
-  if (share_target.url_template.is_null()) {
+  if (share_target.url_template.is_empty())
     return base::nullopt;
-  }
   return base::Optional<Manifest::ShareTarget>(share_target);
 }
 

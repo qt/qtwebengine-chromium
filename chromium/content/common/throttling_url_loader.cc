@@ -60,6 +60,20 @@ class ThrottlingURLLoader::ForwardingThrottleDelegate
     loader_->ResumeReadingBodyFromNet(throttle_);
   }
 
+  void InterceptResponse(
+      network::mojom::URLLoaderPtr new_loader,
+      network::mojom::URLLoaderClientRequest new_client_request,
+      network::mojom::URLLoaderPtr* original_loader,
+      network::mojom::URLLoaderClientRequest* original_client_request)
+      override {
+    if (!loader_)
+      return;
+
+    ScopedDelegateCall scoped_delegate_call(this);
+    loader_->InterceptResponse(std::move(new_loader),
+                               std::move(new_client_request), original_loader,
+                               original_client_request);
+  }
   void Detach() { loader_ = nullptr; }
 
  private:
@@ -95,7 +109,7 @@ class ThrottlingURLLoader::ForwardingThrottleDelegate
 };
 
 ThrottlingURLLoader::StartInfo::StartInfo(
-    scoped_refptr<SharedURLLoaderFactory> in_url_loader_factory,
+    scoped_refptr<network::SharedURLLoaderFactory> in_url_loader_factory,
     int32_t in_routing_id,
     int32_t in_request_id,
     uint32_t in_options,
@@ -112,10 +126,8 @@ ThrottlingURLLoader::StartInfo::~StartInfo() = default;
 
 ThrottlingURLLoader::ResponseInfo::ResponseInfo(
     const network::ResourceResponseHead& in_response_head,
-    const base::Optional<net::SSLInfo>& in_ssl_info,
     network::mojom::DownloadedTempFilePtr in_downloaded_file)
     : response_head(in_response_head),
-      ssl_info(in_ssl_info),
       downloaded_file(std::move(in_downloaded_file)) {}
 
 ThrottlingURLLoader::ResponseInfo::~ResponseInfo() = default;
@@ -136,7 +148,7 @@ ThrottlingURLLoader::PriorityInfo::~PriorityInfo() = default;
 
 // static
 std::unique_ptr<ThrottlingURLLoader> ThrottlingURLLoader::CreateLoaderAndStart(
-    scoped_refptr<SharedURLLoaderFactory> factory,
+    scoped_refptr<network::SharedURLLoaderFactory> factory,
     std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
     int32_t routing_id,
     int32_t request_id,
@@ -205,7 +217,7 @@ ThrottlingURLLoader::ThrottlingURLLoader(
 }
 
 void ThrottlingURLLoader::Start(
-    scoped_refptr<SharedURLLoaderFactory> factory,
+    scoped_refptr<network::SharedURLLoaderFactory> factory,
     int32_t routing_id,
     int32_t request_id,
     uint32_t options,
@@ -242,7 +254,7 @@ void ThrottlingURLLoader::Start(
 }
 
 void ThrottlingURLLoader::StartNow(
-    SharedURLLoaderFactory* factory,
+    network::SharedURLLoaderFactory* factory,
     int32_t routing_id,
     int32_t request_id,
     uint32_t options,
@@ -296,7 +308,6 @@ void ThrottlingURLLoader::StopDeferringForThrottle(
 
 void ThrottlingURLLoader::OnReceiveResponse(
     const network::ResourceResponseHead& response_head,
-    const base::Optional<net::SSLInfo>& ssl_info,
     network::mojom::DownloadedTempFilePtr downloaded_file) {
   DCHECK_EQ(DEFERRED_NONE, deferred_stage_);
   DCHECK(!loader_cancelled_);
@@ -316,13 +327,13 @@ void ThrottlingURLLoader::OnReceiveResponse(
     if (deferred) {
       deferred_stage_ = DEFERRED_RESPONSE;
       response_info_ = std::make_unique<ResponseInfo>(
-          response_head, ssl_info, std::move(downloaded_file));
+          response_head, std::move(downloaded_file));
       client_binding_.PauseIncomingMethodCallProcessing();
       return;
     }
   }
 
-  forwarding_client_->OnReceiveResponse(response_head, ssl_info,
+  forwarding_client_->OnReceiveResponse(response_head,
                                         std::move(downloaded_file));
 }
 
@@ -454,19 +465,21 @@ void ThrottlingURLLoader::Resume() {
     }
     case DEFERRED_REDIRECT: {
       client_binding_.ResumeIncomingMethodCallProcessing();
-      forwarding_client_->OnReceiveRedirect(redirect_info_->redirect_info,
-                                            redirect_info_->response_head);
       // TODO(dhausknecht) at this point we do not actually know if we commit to
       // the redirect or if it will be cancelled. FollowRedirect would be a more
       // suitable place to set this URL but there we do not have the data.
       response_url_ = redirect_info_->redirect_info.new_url;
+      forwarding_client_->OnReceiveRedirect(redirect_info_->redirect_info,
+                                            redirect_info_->response_head);
+      // Note: |this| may be deleted here.
       break;
     }
     case DEFERRED_RESPONSE: {
       client_binding_.ResumeIncomingMethodCallProcessing();
       forwarding_client_->OnReceiveResponse(
-          response_info_->response_head, response_info_->ssl_info,
+          response_info_->response_head,
           std::move(response_info_->downloaded_file));
+      // Note: |this| may be deleted here.
       break;
     }
     default:
@@ -496,6 +509,24 @@ void ThrottlingURLLoader::ResumeReadingBodyFromNet(
   pausing_reading_body_from_net_throttles_.erase(iter);
   if (pausing_reading_body_from_net_throttles_.empty() && url_loader_)
     url_loader_->ResumeReadingBodyFromNet();
+}
+
+void ThrottlingURLLoader::InterceptResponse(
+    network::mojom::URLLoaderPtr new_loader,
+    network::mojom::URLLoaderClientRequest new_client_request,
+    network::mojom::URLLoaderPtr* original_loader,
+    network::mojom::URLLoaderClientRequest* original_client_request) {
+  response_intercepted_ = true;
+
+  if (original_loader)
+    *original_loader = std::move(url_loader_);
+  url_loader_ = std::move(new_loader);
+
+  if (original_client_request)
+    *original_client_request = client_binding_.Unbind();
+  client_binding_.Bind(std::move(new_client_request));
+  client_binding_.set_connection_error_handler(base::BindOnce(
+      &ThrottlingURLLoader::OnClientConnectionError, base::Unretained(this)));
 }
 
 void ThrottlingURLLoader::DisconnectClient(base::StringPiece custom_reason) {

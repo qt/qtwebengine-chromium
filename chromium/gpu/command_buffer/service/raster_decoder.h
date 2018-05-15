@@ -15,7 +15,9 @@ namespace gpu {
 class DecoderClient;
 
 namespace gles2 {
+class CopyTextureCHROMIUMResourceManager;
 class GLES2Util;
+class ImageManager;
 class Logger;
 class Outputter;
 }  // namespace gles2
@@ -37,6 +39,15 @@ class GPU_GLES2_EXPORT RasterDecoder : public DecoderContext,
   // DecoderContext implementation.
   bool initialized() const override;
   TextureBase* GetTextureBase(uint32_t client_id) override;
+  void SetLevelInfo(uint32_t client_id,
+                    int level,
+                    unsigned internal_format,
+                    unsigned width,
+                    unsigned height,
+                    unsigned depth,
+                    unsigned format,
+                    unsigned type,
+                    const gfx::Rect& cleared_rect) override;
   void BeginDecoding() override;
   void EndDecoding() override;
   base::StringPiece GetLogPrefix() override;
@@ -44,6 +55,9 @@ class GPU_GLES2_EXPORT RasterDecoder : public DecoderContext,
   virtual gles2::GLES2Util* GetGLES2Util() = 0;
   virtual gles2::Logger* GetLogger() = 0;
   virtual void SetIgnoreCachedStateForTest(bool ignore) = 0;
+
+  // Gets the ImageManager for this context.
+  virtual gles2::ImageManager* GetImageManagerForTest() = 0;
 
   void set_initialized() { initialized_ = true; }
 
@@ -54,6 +68,10 @@ class GPU_GLES2_EXPORT RasterDecoder : public DecoderContext,
   // Set to true to LOG every command.
   void set_log_commands(bool log_commands) { log_commands_ = log_commands; }
   bool log_commands() const { return log_commands_; }
+
+  virtual void SetCopyTextureResourceManagerForTest(
+      gles2::CopyTextureCHROMIUMResourceManager*
+          copy_texture_resource_manager) = 0;
 
  protected:
   RasterDecoder(CommandBufferServiceBase* command_buffer_service);

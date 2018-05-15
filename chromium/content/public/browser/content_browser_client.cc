@@ -12,17 +12,17 @@
 #include "base/logging.h"
 #include "build/build_config.h"
 #include "content/public/browser/client_certificate_delegate.h"
+#include "content/public/browser/login_delegate.h"
 #include "content/public/browser/memory_coordinator_delegate.h"
 #include "content/public/browser/navigation_ui_data.h"
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/page_navigator.h"
-#include "content/public/browser/resource_dispatcher_host_login_delegate.h"
 #include "content/public/browser/vpn_service_proxy.h"
 #include "content/public/common/url_loader_throttle.h"
 #include "device/geolocation/public/cpp/location_provider.h"
 #include "media/audio/audio_manager.h"
 #include "media/base/cdm_factory.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "net/ssl/client_cert_identity.h"
 #include "net/ssl/client_cert_store.h"
@@ -82,6 +82,12 @@ bool ContentBrowserClient::ShouldUseProcessPerSite(
   return false;
 }
 
+bool ContentBrowserClient::ShouldUseSpareRenderProcessHost(
+    BrowserContext* browser_context,
+    const GURL& site_url) {
+  return true;
+}
+
 bool ContentBrowserClient::DoesSiteRequireDedicatedProcess(
     BrowserContext* browser_context,
     const GURL& effective_site_url) {
@@ -93,11 +99,8 @@ bool ContentBrowserClient::ShouldLockToOrigin(BrowserContext* browser_context,
   return true;
 }
 
-bool ContentBrowserClient::ShouldBypassDocumentBlocking(
-    const url::Origin& initiator,
-    const GURL& url,
-    ResourceType resource_type) {
-  return false;
+const char* ContentBrowserClient::GetInitatorSchemeBypassingDocumentBlocking() {
+  return nullptr;
 }
 
 void ContentBrowserClient::GetAdditionalViewSourceSchemes(
@@ -179,6 +182,13 @@ bool ContentBrowserClient::ShouldAssignSiteForURL(const GURL& url) {
 std::vector<url::Origin>
 ContentBrowserClient::GetOriginsRequiringDedicatedProcess() {
   return std::vector<url::Origin>();
+}
+
+bool ContentBrowserClient::ShouldEnableStrictSiteIsolation() {
+  // By default --site-per-process is turned off for //content embedders.
+  // This ensures that embedders like ChromeCast and/or Opera are not forced
+  // into --site-per-process.
+  return false;
 }
 
 bool ContentBrowserClient::IsFileAccessAllowed(
@@ -263,7 +273,7 @@ void ContentBrowserClient::AllowWorkerFileSystem(
     ResourceContext* context,
     const std::vector<std::pair<int, int> >& render_frames,
     base::Callback<void(bool)> callback) {
-  callback.Run(true);
+  std::move(callback).Run(true);
 }
 
 bool ContentBrowserClient::AllowWorkerIndexedDB(
@@ -623,8 +633,9 @@ bool ContentBrowserClient::ShouldOverrideUrlLoading(
     bool has_user_gesture,
     bool is_redirect,
     bool is_main_frame,
-    ui::PageTransition transition) {
-  return false;
+    ui::PageTransition transition,
+    bool* ignore_navigation) {
+  return true;
 }
 #endif
 
@@ -672,12 +683,16 @@ void ContentBrowserClient::ShouldReturnAttestationForWebauthnRPID(
   std::move(callback).Run(true);
 }
 
+bool ContentBrowserClient::IsFocused(content::WebContents* web_contents) {
+  return true;
+}
+
 std::unique_ptr<net::ClientCertStore>
 ContentBrowserClient::CreateClientCertStore(ResourceContext* resource_context) {
   return nullptr;
 }
 
-ResourceDispatcherHostLoginDelegate* ContentBrowserClient::CreateLoginDelegate(
+scoped_refptr<LoginDelegate> ContentBrowserClient::CreateLoginDelegate(
     net::AuthChallengeInfo* auth_info,
     content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
     bool is_main_frame,
@@ -685,6 +700,23 @@ ResourceDispatcherHostLoginDelegate* ContentBrowserClient::CreateLoginDelegate(
     bool first_auth_attempt,
     const base::Callback<void(const base::Optional<net::AuthCredentials>&)>&
         auth_required_callback) {
+  return nullptr;
+}
+
+bool ContentBrowserClient::HandleExternalProtocol(
+    const GURL& url,
+    ResourceRequestInfo::WebContentsGetter web_contents_getter,
+    int child_id,
+    NavigationUIData* navigation_data,
+    bool is_main_frame,
+    ui::PageTransition page_transition,
+    bool has_user_gesture) {
+  return true;
+}
+
+std::unique_ptr<OverlayWindow>
+ContentBrowserClient::CreateWindowForPictureInPicture(
+    PictureInPictureWindowController* controller) {
   return nullptr;
 }
 

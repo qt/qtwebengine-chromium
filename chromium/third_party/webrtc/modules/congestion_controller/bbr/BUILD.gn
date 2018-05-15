@@ -1,0 +1,93 @@
+# Copyright (c) 2018 The WebRTC project authors. All Rights Reserved.
+#
+# Use of this source code is governed by a BSD-style license
+# that can be found in the LICENSE file in the root of the source
+# tree. An additional intellectual property rights grant can be found
+# in the file PATENTS.  All contributing project authors may
+# be found in the AUTHORS file in the root of the source tree.
+
+import("../../../webrtc.gni")
+
+rtc_static_library("bbr") {
+  sources = [
+    "bbr_factory.cc",
+    "bbr_factory.h",
+  ]
+  deps = [
+    ":bbr_controller",
+    "../../../rtc_base:rtc_base_approved",
+    "../network_control",
+  ]
+}
+
+rtc_source_set("bbr_controller") {
+  visibility = [ ":*" ]
+  sources = [
+    "bbr_network_controller.cc",
+    "bbr_network_controller.h",
+  ]
+  deps = [
+    ":data_transfer_tracker",
+    ":rtt_stats",
+    ":windowed_filter",
+    "../../../api:optional",
+    "../../../rtc_base:checks",
+    "../../../rtc_base:rtc_base_approved",
+    "../../../rtc_base/system:fallthrough",
+    "../network_control",
+  ]
+}
+rtc_source_set("data_transfer_tracker") {
+  visibility = [ ":*" ]
+  sources = [
+    "data_transfer_tracker.cc",
+    "data_transfer_tracker.h",
+  ]
+  deps = [
+    "../../../rtc_base:checks",
+    "../../../rtc_base:rtc_base_approved",
+    "../network_control",
+  ]
+}
+rtc_source_set("rtt_stats") {
+  visibility = [ ":*" ]
+  sources = [
+    "rtt_stats.cc",
+    "rtt_stats.h",
+  ]
+  deps = [
+    "../../../rtc_base:rtc_base_approved",
+    "../network_control",
+  ]
+}
+rtc_source_set("windowed_filter") {
+  visibility = [ ":*" ]
+  sources = [
+    "windowed_filter.h",
+  ]
+}
+if (rtc_include_tests) {
+  rtc_source_set("bbr_unittests") {
+    testonly = true
+    sources = [
+      "bbr_network_controller_unittest.cc",
+      "data_transfer_tracker_unittest.cc",
+      "rtt_stats_unittest.cc",
+      "windowed_filter_unittest.cc",
+    ]
+    deps = [
+      ":bbr",
+      ":bbr_controller",
+      ":data_transfer_tracker",
+      ":rtt_stats",
+      ":windowed_filter",
+      "../../../test:test_support",
+      "../network_control",
+      "../network_control:network_control_test",
+    ]
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+    }
+  }
+}

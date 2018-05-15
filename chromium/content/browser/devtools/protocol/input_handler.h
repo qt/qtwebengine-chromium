@@ -16,11 +16,7 @@
 #include "content/browser/renderer_host/input/synthetic_gesture.h"
 #include "content/common/input/synthetic_smooth_scroll_gesture_params.h"
 #include "content/public/browser/render_widget_host.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
-
-namespace viz {
-class CompositorFrameMetadata;
-}
+#include "third_party/blink/public/platform/web_input_event.h"
 
 namespace content {
 class DevToolsAgentHostImpl;
@@ -40,8 +36,7 @@ class InputHandler : public DevToolsDomainHandler, public Input::Backend {
   void SetRenderer(int process_host_id,
                    RenderFrameHostImpl* frame_host) override;
 
-  void OnSwapCompositorFrame(
-      const viz::CompositorFrameMetadata& frame_metadata);
+  void OnPageScaleFactorChanged(float page_scale_factor);
   Response Disable() override;
 
   void DispatchKeyEvent(

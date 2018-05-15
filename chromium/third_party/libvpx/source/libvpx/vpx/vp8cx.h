@@ -602,6 +602,24 @@ enum vp8e_enc_control_id {
    * Supported in codecs: VP9
    */
   VP9E_ENABLE_MOTION_VECTOR_UNIT_TEST,
+
+  /*!\brief Codec control function to constrain the inter-layer prediction
+   * (prediction of lower spatial resolution) in VP9 SVC.
+   *
+   * 0 : inter-layer prediction on, 1 : off, 2 : off only on non-key frames
+   *
+   * Supported in codecs: VP9
+   */
+  VP9E_SET_SVC_INTER_LAYER_PRED,
+
+  /*!\brief Codec control function to set mode and thresholds for frame
+   *  dropping in SVC. Drop frame thresholds are set per-layer. Mode is set as:
+   * 0 : layer-dependent dropping, 1 : constrained dropping, current layer drop
+   * forces drop on all upper layers. Default mode is 0.
+   *
+   * Supported in codecs: VP9
+   */
+  VP9E_SET_SVC_FRAME_DROP_LAYER,
 };
 
 /*!\brief vpx 1-D scaling mode
@@ -730,7 +748,7 @@ typedef struct vpx_svc_layer_id {
   int temporal_layer_id; /**< Temporal layer id number. */
 } vpx_svc_layer_id_t;
 
-/*!\brief  vp9 svc frame flag parameters.
+/*!\brief vp9 svc frame flag parameters.
  *
  * This defines the frame flags and buffer indices for each spatial layer for
  * svc encoding.
@@ -744,6 +762,30 @@ typedef struct vpx_svc_ref_frame_config {
   int gld_fb_idx[VPX_TS_MAX_LAYERS];  /**< Golden buffer index. */
   int alt_fb_idx[VPX_TS_MAX_LAYERS];  /**< Altref buffer index. */
 } vpx_svc_ref_frame_config_t;
+
+/*!\brief VP9 svc frame dropping mode.
+ *
+ * This defines the frame drop mode for SVC.
+ *
+ */
+typedef enum {
+  CONSTRAINED_LAYER_DROP,
+  /**< Upper layers are constrained to drop if current layer drops. */
+  LAYER_DROP, /**< Any spatial layer can drop. */
+} SVC_LAYER_DROP_MODE;
+
+/*!\brief vp9 svc frame dropping parameters.
+ *
+ * This defines the frame drop thresholds for each spatial layer, and the
+ * the frame dropping mode: 0 = layer based frame dropping (default),
+ * 1 = constrained dropping where current layer drop forces all upper
+ * spatial layers to drop.
+ */
+typedef struct vpx_svc_frame_drop {
+  int framedrop_thresh[VPX_SS_MAX_LAYERS]; /**< Frame drop thresholds */
+  SVC_LAYER_DROP_MODE
+  framedrop_mode; /**< Layer-based or constrained dropping. */
+} vpx_svc_frame_drop_t;
 
 /*!\cond */
 /*!\brief VP8 encoder control function parameter type
@@ -878,6 +920,12 @@ VPX_CTRL_USE_TYPE(VP9E_GET_LEVEL, int *)
 
 VPX_CTRL_USE_TYPE(VP9E_ENABLE_MOTION_VECTOR_UNIT_TEST, unsigned int)
 #define VPX_CTRL_VP9E_ENABLE_MOTION_VECTOR_UNIT_TEST
+
+VPX_CTRL_USE_TYPE(VP9E_SET_SVC_INTER_LAYER_PRED, unsigned int)
+#define VPX_CTRL_VP9E_SET_SVC_INTER_LAYER_PRED
+
+VPX_CTRL_USE_TYPE(VP9E_SET_SVC_FRAME_DROP_LAYER, vpx_svc_frame_drop_t *)
+#define VPX_CTRL_VP9E_SET_SVC_FRAME_DROP_LAYER
 
 /*!\endcond */
 /*! @} - end defgroup vp8_encoder */

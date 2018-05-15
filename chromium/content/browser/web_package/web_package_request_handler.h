@@ -6,17 +6,24 @@
 #define CONTENT_BROWSER_WEB_PACKAGE_WEB_PACKAGE_REQUEST_HANDLER_H_
 
 #include "base/memory/weak_ptr.h"
-#include "content/browser/loader/url_loader_request_handler.h"
+#include "content/browser/loader/navigation_loader_interceptor.h"
 #include "content/public/common/resource_type.h"
 #include "url/origin.h"
 
+namespace net {
+class URLRequestContextGetter;
+}  // namespace net
+
+namespace network {
+class SharedURLLoaderFactory;
+}  // namespace network
+
 namespace content {
 
-class SharedURLLoaderFactory;
 class URLLoaderThrottle;
 class WebPackageLoader;
 
-class WebPackageRequestHandler final : public URLLoaderRequestHandler {
+class WebPackageRequestHandler final : public NavigationLoaderInterceptor {
  public:
   using URLLoaderThrottlesGetter = base::RepeatingCallback<
       std::vector<std::unique_ptr<content::URLLoaderThrottle>>()>;
@@ -26,11 +33,13 @@ class WebPackageRequestHandler final : public URLLoaderRequestHandler {
   WebPackageRequestHandler(
       url::Origin request_initiator,
       uint32_t url_loader_options,
-      scoped_refptr<SharedURLLoaderFactory> url_loader_factory,
-      URLLoaderThrottlesGetter url_loader_throttles_getter);
+      int frame_tree_node_id,
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      URLLoaderThrottlesGetter url_loader_throttles_getter,
+      scoped_refptr<net::URLRequestContextGetter> request_context_getter);
   ~WebPackageRequestHandler() override;
 
-  // URLLoaderRequestHandler implementation
+  // NavigationLoaderInterceptor implementation
   void MaybeCreateLoader(const network::ResourceRequest& resource_request,
                          ResourceContext* resource_context,
                          LoaderCallback callback) override;
@@ -51,8 +60,10 @@ class WebPackageRequestHandler final : public URLLoaderRequestHandler {
 
   url::Origin request_initiator_;
   const uint32_t url_loader_options_;
-  scoped_refptr<SharedURLLoaderFactory> url_loader_factory_;
+  const int frame_tree_node_id_;
+  scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
   URLLoaderThrottlesGetter url_loader_throttles_getter_;
+  scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
 
   base::WeakPtrFactory<WebPackageRequestHandler> weak_factory_;
 

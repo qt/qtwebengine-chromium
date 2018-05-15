@@ -33,7 +33,6 @@
 namespace {
 
 const uint32_t kMaxNestedParsingLevel = 512;
-const uint32_t kMaxWordBuffer = 256;
 const size_t kMaxStringLength = 32767;
 
 uint32_t DecodeAllScanlines(std::unique_ptr<CCodec_ScanlineDecoder> pDecoder,
@@ -102,13 +101,12 @@ uint32_t DecodeInlineStream(const uint8_t* src_buf,
 
 }  // namespace
 
-CPDF_StreamParser::CPDF_StreamParser(const uint8_t* pData, uint32_t dwSize)
-    : m_pBuf(pData), m_Size(dwSize), m_Pos(0), m_pPool(nullptr) {}
+CPDF_StreamParser::CPDF_StreamParser(pdfium::span<const uint8_t> span)
+    : m_pBuf(span) {}
 
-CPDF_StreamParser::CPDF_StreamParser(const uint8_t* pData,
-                                     uint32_t dwSize,
+CPDF_StreamParser::CPDF_StreamParser(pdfium::span<const uint8_t> span,
                                      const WeakPtr<ByteStringPool>& pPool)
-    : m_pBuf(pData), m_Size(dwSize), m_Pos(0), m_pPool(pPool) {}
+    : m_pPool(pPool), m_pBuf(span) {}
 
 CPDF_StreamParser::~CPDF_StreamParser() {}
 
@@ -116,11 +114,11 @@ std::unique_ptr<CPDF_Stream> CPDF_StreamParser::ReadInlineStream(
     CPDF_Document* pDoc,
     std::unique_ptr<CPDF_Dictionary> pDict,
     CPDF_Object* pCSObj) {
-  if (m_Pos == m_Size)
-    return nullptr;
-
-  if (PDFCharIsWhitespace(m_pBuf[m_Pos]))
+  if (m_Pos < m_pBuf.size() && PDFCharIsWhitespace(m_pBuf[m_Pos]))
     m_Pos++;
+
+  if (m_Pos == m_pBuf.size())
+    return nullptr;
 
   ByteString Decoder;
   CPDF_Dictionary* pParam = nullptr;
@@ -177,17 +175,17 @@ std::unique_ptr<CPDF_Stream> CPDF_StreamParser::ReadInlineStream(
   std::unique_ptr<uint8_t, FxFreeDeleter> pData;
   uint32_t dwStreamSize;
   if (Decoder.IsEmpty()) {
-    if (OrigSize > m_Size - m_Pos)
-      OrigSize = m_Size - m_Pos;
+    if (OrigSize > m_pBuf.size() - m_Pos)
+      OrigSize = m_pBuf.size() - m_Pos;
     pData.reset(FX_Alloc(uint8_t, OrigSize));
-    memcpy(pData.get(), m_pBuf + m_Pos, OrigSize);
+    memcpy(pData.get(), &m_pBuf[m_Pos], OrigSize);
     dwStreamSize = OrigSize;
     m_Pos += OrigSize;
   } else {
     uint8_t* pIgnore = nullptr;
     uint32_t dwDestSize = OrigSize;
     dwStreamSize =
-        DecodeInlineStream(m_pBuf + m_Pos, m_Size - m_Pos, width, height,
+        DecodeInlineStream(&m_pBuf[m_Pos], m_pBuf.size() - m_Pos, width, height,
                            Decoder, pParam, &pIgnore, &dwDestSize);
     FX_Free(pIgnore);
     if (static_cast<int>(dwStreamSize) < 0)
@@ -213,7 +211,7 @@ std::unique_ptr<CPDF_Stream> CPDF_StreamParser::ReadInlineStream(
     }
     m_Pos = dwSavePos;
     pData.reset(FX_Alloc(uint8_t, dwStreamSize));
-    memcpy(pData.get(), m_pBuf + m_Pos, dwStreamSize);
+    memcpy(pData.get(), &m_pBuf[m_Pos], dwStreamSize);
     m_Pos += dwStreamSize;
   }
   pDict->SetNewFor<CPDF_Number>("Length", static_cast<int>(dwStreamSize));
@@ -257,7 +255,7 @@ CPDF_StreamParser::SyntaxType CPDF_StreamParser::ParseNextElement() {
 
   bool bIsNumber = true;
   while (1) {
-    if (m_WordSize < kMaxWordBuffer)
+    if (m_WordSize < kMaxWordLength)
       m_WordBuffer[m_WordSize++] = ch;
 
     if (!PDFCharIsNumeric(ch))
@@ -424,8 +422,7 @@ void CPDF_StreamParser::GetNextWord(bool& bIsNumber) {
           m_Pos--;
           return;
         }
-
-        if (m_WordSize < kMaxWordBuffer)
+        if (m_WordSize < kMaxWordLength)
           m_WordBuffer[m_WordSize++] = ch;
       }
     } else if (ch == '<') {
@@ -449,13 +446,13 @@ void CPDF_StreamParser::GetNextWord(bool& bIsNumber) {
   }
 
   while (1) {
-    if (m_WordSize < kMaxWordBuffer)
+    if (m_WordSize < kMaxWordLength)
       m_WordBuffer[m_WordSize++] = ch;
     if (!PDFCharIsNumeric(ch))
       bIsNumber = false;
-
     if (!PositionIsInBounds())
       return;
+
     ch = m_pBuf[m_Pos++];
     if (PDFCharIsDelimiter(ch) || PDFCharIsWhitespace(ch)) {
       m_Pos--;
@@ -605,5 +602,5 @@ ByteString CPDF_StreamParser::ReadHexString() {
 }
 
 bool CPDF_StreamParser::PositionIsInBounds() const {
-  return m_Pos < m_Size;
+  return m_Pos < m_pBuf.size();
 }

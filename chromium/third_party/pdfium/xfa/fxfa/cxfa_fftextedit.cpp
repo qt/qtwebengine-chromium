@@ -10,7 +10,6 @@
 
 #include "xfa/fwl/cfwl_datetimepicker.h"
 #include "xfa/fwl/cfwl_edit.h"
-#include "xfa/fwl/cfwl_eventcheckword.h"
 #include "xfa/fwl/cfwl_eventtarget.h"
 #include "xfa/fwl/cfwl_eventtextchanged.h"
 #include "xfa/fwl/cfwl_messagekillfocus.h"
@@ -108,13 +107,22 @@ void CXFA_FFTextEdit::UpdateWidgetProperty() {
   m_pNormalWidget->ModifyStylesEx(dwExtendedStyle, 0xFFFFFFFF);
 }
 
-bool CXFA_FFTextEdit::OnLButtonDown(uint32_t dwFlags, const CFX_PointF& point) {
+bool CXFA_FFTextEdit::AcceptsFocusOnButtonDown(uint32_t dwFlags,
+                                               const CFX_PointF& point,
+                                               FWL_MouseCommand command) {
+  if (command == FWL_MouseCommand::RightButtonDown && !m_pNode->IsOpenAccess())
+    return false;
   if (!PtInActiveRect(point))
     return false;
+
+  return true;
+}
+
+void CXFA_FFTextEdit::OnLButtonDown(uint32_t dwFlags, const CFX_PointF& point) {
   if (!IsFocused()) {
     m_dwStatus |= XFA_WidgetStatus_Focused;
     UpdateFWLData();
-    AddInvalidateRect();
+    InvalidateRect();
   }
 
   SetButtonDown(true);
@@ -123,18 +131,13 @@ bool CXFA_FFTextEdit::OnLButtonDown(uint32_t dwFlags, const CFX_PointF& point) {
   ms.m_dwFlags = dwFlags;
   ms.m_pos = FWLToClient(point);
   TranslateFWLMessage(&ms);
-  return true;
 }
 
-bool CXFA_FFTextEdit::OnRButtonDown(uint32_t dwFlags, const CFX_PointF& point) {
-  if (!m_pNode->IsOpenAccess())
-    return false;
-  if (!PtInActiveRect(point))
-    return false;
+void CXFA_FFTextEdit::OnRButtonDown(uint32_t dwFlags, const CFX_PointF& point) {
   if (!IsFocused()) {
     m_dwStatus |= XFA_WidgetStatus_Focused;
     UpdateFWLData();
-    AddInvalidateRect();
+    InvalidateRect();
   }
 
   SetButtonDown(true);
@@ -143,7 +146,6 @@ bool CXFA_FFTextEdit::OnRButtonDown(uint32_t dwFlags, const CFX_PointF& point) {
   ms.m_dwFlags = dwFlags;
   ms.m_pos = FWLToClient(point);
   TranslateFWLMessage(&ms);
-  return true;
 }
 
 bool CXFA_FFTextEdit::OnRButtonUp(uint32_t dwFlags, const CFX_PointF& point) {
@@ -159,7 +161,7 @@ bool CXFA_FFTextEdit::OnSetFocus(CXFA_FFWidget* pOldWidget) {
   if (!IsFocused()) {
     m_dwStatus |= XFA_WidgetStatus_Focused;
     UpdateFWLData();
-    AddInvalidateRect();
+    InvalidateRect();
   }
   CXFA_FFWidget::OnSetFocus(pOldWidget);
   CFWL_MessageSetFocus ms(nullptr, m_pNormalWidget.get());
@@ -175,7 +177,7 @@ bool CXFA_FFTextEdit::OnKillFocus(CXFA_FFWidget* pNewWidget) {
   SetEditScrollOffset();
   ProcessCommittedData();
   UpdateFWLData();
-  AddInvalidateRect();
+  InvalidateRect();
   CXFA_FFWidget::OnKillFocus(pNewWidget);
 
   m_dwStatus &= ~XFA_WidgetStatus_TextEditValueChanged;
@@ -327,11 +329,6 @@ void CXFA_FFTextEdit::OnTextFull(CFWL_Widget* pWidget) {
   m_pNode->ProcessEvent(GetDocView(), XFA_AttributeEnum::Full, &eParam);
 }
 
-bool CXFA_FFTextEdit::CheckWord(const ByteStringView& sWord) {
-  return sWord.IsEmpty() ||
-         m_pNode->GetFFWidgetType() != XFA_FFWidgetType::kTextEdit;
-}
-
 void CXFA_FFTextEdit::OnProcessMessage(CFWL_Message* pMessage) {
   m_pOldDelegate->OnProcessMessage(pMessage);
 }
@@ -348,12 +345,6 @@ void CXFA_FFTextEdit::OnProcessEvent(CFWL_Event* pEvent) {
     }
     case CFWL_Event::Type::TextFull: {
       OnTextFull(m_pNormalWidget.get());
-      break;
-    }
-    case CFWL_Event::Type::CheckWord: {
-      WideString wstr(L"FWL_EVENT_DTP_SelectChanged");
-      CFWL_EventCheckWord* event = static_cast<CFWL_EventCheckWord*>(pEvent);
-      event->bCheckWord = CheckWord(event->bsWord.AsStringView());
       break;
     }
     default:

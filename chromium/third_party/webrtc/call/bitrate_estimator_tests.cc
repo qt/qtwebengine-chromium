@@ -118,10 +118,9 @@ class BitrateEstimatorTest : public test::CallTest {
       video_send_config_.rtp.ssrcs.push_back(kVideoSendSsrcs[0]);
       // Encoders will be set separately per stream.
       video_send_config_.encoder_settings.encoder = nullptr;
-      video_send_config_.encoder_settings.payload_name = "FAKE";
-      video_send_config_.encoder_settings.payload_type =
-          kFakeVideoSendPayloadType;
-      test::FillEncoderConfiguration(1, &video_encoder_config_);
+      video_send_config_.rtp.payload_name = "FAKE";
+      video_send_config_.rtp.payload_type = kFakeVideoSendPayloadType;
+      test::FillEncoderConfiguration(kVideoCodecVP8, 1, &video_encoder_config_);
 
       receive_config_ = VideoReceiveStream::Config(receive_transport_.get());
       // receive_config_.decoders will be set by every stream separately.
@@ -172,8 +171,8 @@ class BitrateEstimatorTest : public test::CallTest {
           test_->video_encoder_config_.Copy());
       RTC_DCHECK_EQ(1, test_->video_encoder_config_.number_of_streams);
       frame_generator_capturer_.reset(test::FrameGeneratorCapturer::Create(
-          kDefaultWidth, kDefaultHeight, kDefaultFramerate,
-          Clock::GetRealTimeClock()));
+          kDefaultWidth, kDefaultHeight, rtc::nullopt, rtc::nullopt,
+          kDefaultFramerate, Clock::GetRealTimeClock()));
       send_stream_->SetSource(
           frame_generator_capturer_.get(),
           VideoSendStream::DegradationPreference::kMaintainFramerate);
@@ -182,10 +181,8 @@ class BitrateEstimatorTest : public test::CallTest {
 
       VideoReceiveStream::Decoder decoder;
       decoder.decoder = &fake_decoder_;
-      decoder.payload_type =
-          test_->video_send_config_.encoder_settings.payload_type;
-      decoder.payload_name =
-          test_->video_send_config_.encoder_settings.payload_name;
+      decoder.payload_type = test_->video_send_config_.rtp.payload_type;
+      decoder.payload_name = test_->video_send_config_.rtp.payload_name;
       test_->receive_config_.decoders.clear();
       test_->receive_config_.decoders.push_back(decoder);
       test_->receive_config_.rtp.remote_ssrc =

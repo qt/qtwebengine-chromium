@@ -16,10 +16,12 @@ namespace network {
 
 DataPipeElementReader::DataPipeElementReader(
     scoped_refptr<ResourceRequestBody> resource_request_body,
-    mojom::DataPipeGetterPtr data_pipe_getter_)
+    mojom::DataPipeGetterPtr data_pipe_getter)
     : resource_request_body_(std::move(resource_request_body)),
-      data_pipe_getter_(std::move(data_pipe_getter_)),
-      handle_watcher_(FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL),
+      data_pipe_getter_(std::move(data_pipe_getter)),
+      handle_watcher_(FROM_HERE,
+                      mojo::SimpleWatcher::ArmingPolicy::MANUAL,
+                      base::SequencedTaskRunnerHandle::Get()),
       weak_factory_(this) {}
 
 DataPipeElementReader::~DataPipeElementReader() {}

@@ -4,14 +4,19 @@
 
 #include "chrome/browser/ui/webui/print_preview/print_preview_handler.h"
 
+#include <map>
+#include <utility>
+#include <vector>
+
 #include "base/base64.h"
 #include "base/containers/flat_set.h"
-#include "base/i18n/rtl.h"
 #include "base/json/json_writer.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/icu_test_util.h"
 #include "base/values.h"
+#include "chrome/browser/printing/print_test_utils.h"
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 #include "chrome/browser/ui/webui/print_preview/printer_handler.h"
@@ -31,7 +36,6 @@ namespace printing {
 
 namespace {
 
-const char kDummyPrinterName[] = "DefaultPrinter";
 const char kDummyInitiatorName[] = "TestInitiator";
 const char kTestData[] = "abc";
 
@@ -76,67 +80,6 @@ PrinterInfo GetEmptyPrinterInfo() {
   empty_printer.capabilities.SetKey("printer",
                                     empty_printer.basic_info.Clone());
   return empty_printer;
-}
-
-// Creates a print ticket with some default values. Based on ticket creation in
-// chrome/browser/resources/print_preview/native_layer.js.
-base::Value GetPrintTicket(printing::PrinterType type, bool cloud) {
-  bool is_privet_printer = !cloud && type == printing::kPrivetPrinter;
-  bool is_extension_printer = !cloud && type == printing::kExtensionPrinter;
-
-  base::Value ticket(base::Value::Type::DICTIONARY);
-
-  // Letter
-  base::Value media_size(base::Value::Type::DICTIONARY);
-  media_size.SetKey(kSettingMediaSizeIsDefault, base::Value(true));
-  media_size.SetKey(kSettingMediaSizeWidthMicrons, base::Value(215900));
-  media_size.SetKey(kSettingMediaSizeHeightMicrons, base::Value(279400));
-  ticket.SetKey(kSettingMediaSize, std::move(media_size));
-
-  ticket.SetKey(kSettingPreviewPageCount, base::Value(1));
-  ticket.SetKey(kSettingLandscape, base::Value(false));
-  ticket.SetKey(kSettingColor, base::Value(2));  // color printing
-  ticket.SetKey(kSettingHeaderFooterEnabled, base::Value(false));
-  ticket.SetKey(kSettingMarginsType, base::Value(0));  // default margins
-  ticket.SetKey(kSettingDuplexMode, base::Value(1));   // LONG_EDGE
-  ticket.SetKey(kSettingCopies, base::Value(1));
-  ticket.SetKey(kSettingCollate, base::Value(true));
-  ticket.SetKey(kSettingShouldPrintBackgrounds, base::Value(false));
-  ticket.SetKey(kSettingShouldPrintSelectionOnly, base::Value(false));
-  ticket.SetKey(kSettingPreviewModifiable, base::Value(false));
-  ticket.SetKey(kSettingPrintToPDF,
-                base::Value(!cloud && type == printing::kPdfPrinter));
-  ticket.SetKey(kSettingCloudPrintDialog, base::Value(cloud));
-  ticket.SetKey(kSettingPrintWithPrivet, base::Value(is_privet_printer));
-  ticket.SetKey(kSettingPrintWithExtension, base::Value(is_extension_printer));
-  ticket.SetKey(kSettingRasterizePdf, base::Value(false));
-  ticket.SetKey(kSettingScaleFactor, base::Value(100));
-  ticket.SetKey(kSettingDpiHorizontal, base::Value(600));
-  ticket.SetKey(kSettingDpiVertical, base::Value(600));
-  ticket.SetKey(kSettingDeviceName, base::Value(kDummyPrinterName));
-  ticket.SetKey(kSettingFitToPageEnabled, base::Value(true));
-  ticket.SetKey(kSettingPageWidth, base::Value(215900));
-  ticket.SetKey(kSettingPageHeight, base::Value(279400));
-  ticket.SetKey(kSettingShowSystemDialog, base::Value(false));
-
-  if (cloud)
-    ticket.SetKey(kSettingCloudPrintId, base::Value(kDummyPrinterName));
-
-  if (is_privet_printer || is_extension_printer) {
-    base::Value capabilities(base::Value::Type::DICTIONARY);
-    capabilities.SetKey("duplex", base::Value(true));  // non-empty
-    std::string caps_string;
-    base::JSONWriter::Write(capabilities, &caps_string);
-    ticket.SetKey(kSettingCapabilities, base::Value(caps_string));
-    base::Value print_ticket(base::Value::Type::DICTIONARY);
-    print_ticket.SetKey("version", base::Value("1.0"));
-    print_ticket.SetKey("print", base::Value());
-    std::string ticket_string;
-    base::JSONWriter::Write(print_ticket, &ticket_string);
-    ticket.SetKey(kSettingTicket, base::Value(ticket_string));
-  }
-
-  return ticket;
 }
 
 base::Value GetPrintPreviewTicket(bool is_pdf) {
@@ -203,7 +146,7 @@ class TestPrinterHandler : public PrinterHandler {
                   const base::string16& job_title,
                   const std::string& ticket_json,
                   const gfx::Size& page_size,
-                  const scoped_refptr<base::RefCountedBytes>& print_data,
+                  const scoped_refptr<base::RefCountedMemory>& print_data,
                   PrintCallback callback) override {
     std::move(callback).Run(base::Value());
   }
@@ -239,8 +182,8 @@ class FakePrintPreviewUI : public PrintPreviewUI {
 
   void GetPrintPreviewDataForIndex(
       int index,
-      scoped_refptr<base::RefCountedBytes>* data) const override {
-    *data = base::MakeRefCounted<base::RefCountedBytes>(
+      scoped_refptr<base::RefCountedMemory>* data) const override {
+    *data = base::MakeRefCounted<base::RefCountedStaticMemory>(
         reinterpret_cast<const unsigned char*>(kTestData),
         sizeof(kTestData) - 1);
   }
@@ -342,7 +285,7 @@ class PrintPreviewHandlerTest : public testing::Test {
   void Initialize() {
     // Set locale since the delimeters we check in VerifyInitialSettings()
     // depend on it.
-    base::i18n::SetICUDefaultLocale("en");
+    base::test::ScopedRestoreICUDefaultLocale scoped_locale("en");
 
     // Sending this message will enable javascript, so it must always be called
     // before any other messages are sent.
@@ -394,14 +337,14 @@ class PrintPreviewHandlerTest : public testing::Test {
     ASSERT_TRUE(settings->FindKeyOfType("isInAppKioskMode",
                                         base::Value::Type::BOOLEAN));
 
-    const base::Value* thousandsDelimeter = settings->FindKeyOfType(
+    const base::Value* thousands_delimeter = settings->FindKeyOfType(
         "thousandsDelimeter", base::Value::Type::STRING);
-    ASSERT_TRUE(thousandsDelimeter);
-    EXPECT_EQ(",", thousandsDelimeter->GetString());
-    const base::Value* decimalDelimeter =
+    ASSERT_TRUE(thousands_delimeter);
+    EXPECT_EQ(",", thousands_delimeter->GetString());
+    const base::Value* decimal_delimeter =
         settings->FindKeyOfType("decimalDelimeter", base::Value::Type::STRING);
-    ASSERT_TRUE(decimalDelimeter);
-    EXPECT_EQ(".", decimalDelimeter->GetString());
+    ASSERT_TRUE(decimal_delimeter);
+    EXPECT_EQ(".", decimal_delimeter->GetString());
 
     ASSERT_TRUE(
         settings->FindKeyOfType("unitType", base::Value::Type::INTEGER));

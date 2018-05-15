@@ -32,10 +32,10 @@ class FrameResourceReleaserImpl final : public mojom::FrameResourceReleaser {
  public:
   explicit FrameResourceReleaserImpl(scoped_refptr<VideoFrame> frame)
       : frame_(std::move(frame)) {
-    DVLOG(1) << __func__;
+    DVLOG(3) << __func__;
     DCHECK_EQ(VideoFrame::STORAGE_MOJO_SHARED_BUFFER, frame_->storage_type());
   }
-  ~FrameResourceReleaserImpl() override { DVLOG(1) << __func__; }
+  ~FrameResourceReleaserImpl() override { DVLOG(3) << __func__; }
 
  private:
   scoped_refptr<VideoFrame> frame_;
@@ -58,13 +58,17 @@ MojoDecryptorService::MojoDecryptorService(
   binding_.set_connection_error_handler(error_handler);
 }
 
-MojoDecryptorService::~MojoDecryptorService() = default;
+MojoDecryptorService::~MojoDecryptorService() {
+  DVLOG(1) << __func__;
+}
 
 void MojoDecryptorService::Initialize(
     mojo::ScopedDataPipeConsumerHandle audio_pipe,
     mojo::ScopedDataPipeConsumerHandle video_pipe,
     mojo::ScopedDataPipeConsumerHandle decrypt_pipe,
     mojo::ScopedDataPipeProducerHandle decrypted_pipe) {
+  DVLOG(1) << __func__;
+
   audio_buffer_reader_.reset(
       new MojoDecoderBufferReader(std::move(audio_pipe)));
   video_buffer_reader_.reset(
@@ -86,7 +90,7 @@ void MojoDecryptorService::Decrypt(StreamType stream_type,
 }
 
 void MojoDecryptorService::CancelDecrypt(StreamType stream_type) {
-  DVLOG(1) << __func__;
+  DVLOG(2) << __func__;
   decryptor_->CancelDecrypt(stream_type);
 }
 
@@ -102,7 +106,7 @@ void MojoDecryptorService::InitializeAudioDecoder(
 void MojoDecryptorService::InitializeVideoDecoder(
     const VideoDecoderConfig& config,
     InitializeVideoDecoderCallback callback) {
-  DVLOG(1) << __func__;
+  DVLOG(2) << __func__;
   decryptor_->InitializeVideoDecoder(
       config, base::Bind(&MojoDecryptorService::OnVideoDecoderInitialized,
                          weak_this_, base::Passed(&callback)));
@@ -127,7 +131,7 @@ void MojoDecryptorService::DecryptAndDecodeVideo(
 }
 
 void MojoDecryptorService::ResetDecoder(StreamType stream_type) {
-  DVLOG(1) << __func__ << ": stream_type = " << stream_type;
+  DVLOG(2) << __func__ << ": stream_type = " << stream_type;
 
   // Reset the reader so that pending decodes will be dispatched first.
   if (!GetBufferReader(stream_type))
@@ -139,7 +143,7 @@ void MojoDecryptorService::ResetDecoder(StreamType stream_type) {
 }
 
 void MojoDecryptorService::DeinitializeDecoder(StreamType stream_type) {
-  DVLOG(1) << __func__;
+  DVLOG(2) << __func__;
   DCHECK(!GetBufferReader(stream_type)->HasPendingReads())
       << "The decoder should be fully flushed before deinitialized.";
 
@@ -159,10 +163,9 @@ void MojoDecryptorService::OnReadDone(StreamType stream_type,
                                  weak_this_, base::Passed(&callback)));
 }
 
-void MojoDecryptorService::OnDecryptDone(
-    DecryptCallback callback,
-    Status status,
-    const scoped_refptr<DecoderBuffer>& buffer) {
+void MojoDecryptorService::OnDecryptDone(DecryptCallback callback,
+                                         Status status,
+                                         scoped_refptr<DecoderBuffer> buffer) {
   DVLOG_IF(1, status != Status::kSuccess) << __func__ << "(" << status << ")";
   DVLOG_IF(3, status == Status::kSuccess) << __func__;
 
@@ -173,7 +176,7 @@ void MojoDecryptorService::OnDecryptDone(
   }
 
   mojom::DecoderBufferPtr mojo_buffer =
-      decrypted_buffer_writer_->WriteDecoderBuffer(buffer);
+      decrypted_buffer_writer_->WriteDecoderBuffer(std::move(buffer));
   if (!mojo_buffer) {
     std::move(callback).Run(Status::kError, nullptr);
     return;
@@ -185,14 +188,14 @@ void MojoDecryptorService::OnDecryptDone(
 void MojoDecryptorService::OnAudioDecoderInitialized(
     InitializeAudioDecoderCallback callback,
     bool success) {
-  DVLOG(1) << __func__ << "(" << success << ")";
+  DVLOG(2) << __func__ << "(" << success << ")";
   std::move(callback).Run(success);
 }
 
 void MojoDecryptorService::OnVideoDecoderInitialized(
     InitializeVideoDecoderCallback callback,
     bool success) {
-  DVLOG(1) << __func__ << "(" << success << ")";
+  DVLOG(2) << __func__ << "(" << success << ")";
   std::move(callback).Run(success);
 }
 
@@ -222,7 +225,7 @@ void MojoDecryptorService::OnVideoRead(DecryptAndDecodeVideoCallback callback,
 }
 
 void MojoDecryptorService::OnReaderFlushDone(StreamType stream_type) {
-  DVLOG(1) << __func__ << ": stream_type = " << stream_type;
+  DVLOG(2) << __func__ << ": stream_type = " << stream_type;
   decryptor_->ResetDecoder(stream_type);
 }
 

@@ -143,7 +143,7 @@ CHAR-LIMIT guidelines:
       <message name="IDS_SAVE" desc="Label for a button to save a change. Used in multiple contexts. [CHAR-LIMIT=20]">
         Save
       </message>
-      <message name="IDS_DETAILS_LINK" desc="The label of the link to open the detailed information.">
+      <message name="IDS_DETAILS_LINK" desc="In 1) Settings > Clean up computer (desktop), a link to open details of incompatible applications. In 2) Settings > Data Saver (mobile), static title for data usage breakdown." meaning="Short for 'view details'. Link; static title.">
         Details
       </message>
       <message name="IDS_DONE" desc="Label for a button to save a change or finish editing data. Used in multiple contexts. [CHAR-LIMIT=20]">
@@ -532,6 +532,17 @@ CHAR-LIMIT guidelines:
       </message>
       <message name="IDS_SAVE_PASSWORD_PREFERENCES_EXPORT_SUBJECT" desc="Chrome sets this string to be the subject of the sharing intent for sharing exported passwords. How the subject is interpreted is up to the consumer app, e.g., Google Drive will make it the filename, GMail will make it the e-mail subject. In general, it describes what is being shared.">
         Chrome Passwords
+      </message>
+
+      <!-- Contextual suggestions preferences -->
+      <message name="IDS_PREFS_CONTEXTUAL_SUGGESTIONS" desc="Title of contextual suggestions settings, which allows the user to get site suggestions based on the current website.">
+        Suggest related pages
+      </message>
+      <message name="IDS_CONTEXTUAL_SUGGESTIONS_DESCRIPTION" desc="Description of contextual suggestions, which tells the user what contextual suggestions does.">
+        When you scroll up, show quick links to related pages.
+      </message>
+      <message name="IDS_CONTEXTUAL_SUGGESTIONS_MESSAGE" desc="Message of contextual suggestions settings, which tells the user how to opt in contextual suggestions.">
+        This feature uses <ph name="BEGIN_LINK">&lt;link&gt;</ph>sync<ph name="END_LINK">&lt;/link&gt;</ph>. The URLs of pages you visit are sent to Google.
       </message>
 
       <!-- Homepage preferences -->
@@ -1105,16 +1116,13 @@ To obtain new licenses, connect to the internet and play your downloaded content
         <ph name="PERCENT">%1$s<ex>49%</ex></ph> data savings
       </message>
       <message name="IDS_DATA_REDUCTION_SAVINGS_LABEL" desc="Data Reduction statistics label that states the amount of mobile data that was saved by Data Saver. Data Saver allows users to to reduce their mobile data usage by compressing network traffic.">
-        Data saved:
+        data saved
       </message>
       <message name="IDS_DATA_REDUCTION_USAGE_LABEL" desc="Data Reduction statistics label that states the amount of data that was used by Chrome when Data Saver is enabled.">
-        Data used:
+        data used
       </message>
       <message name="IDS_DATA_REDUCTION_PROXY_UNREACHABLE_WARN" desc="Warning message shown when Google data reduction proxy servers are not reachable.">
         Chrome is unable to reach Google servers for data compression. Your data savings may be limited.
-      </message>
-      <message name="IDS_DATA_REDUCTION_DATA_USAGE_BREAKDOWN_TITLE" desc="Title for the data usage breakdown on the Data Reduction statistics page. The breakdown lists the top ten sites with the greatest amount of data usage or mobile data that was saved.">
-        Data usage breakdown
       </message>
       <message name="IDS_DATA_REDUCTION_BREAKDOWN_SITE_TITLE" desc="Title for the sites column on the Data Reduction statistics page. The breakdown lists the top ten sites with the greatest amount of data usage or mobile data that was saved.">
         Site
@@ -1189,9 +1197,6 @@ To obtain new licenses, connect to the internet and play your downloaded content
       </message>
 
       <!-- Downloads preferences -->
-      <message name="IDS_DOWNLOAD_LOCATION_TITLE" desc="Title for 'Downloads location' preference that changes the default device directory that stores downloaded items.">
-        Location
-      </message>
       <message name="IDS_DOWNLOADS_LOCATION_SELECTOR_TITLE" desc="Title of the preference that allows the user to select which of the folders they would like to make the default location to save their downloads.">
         Download location
       </message>
@@ -1209,6 +1214,27 @@ To obtain new licenses, connect to the internet and play your downloaded content
       </message>
       <message name="IDS_DOWNLOAD_LOCATION_DIALOG_CHECKBOX" desc="Label for the checkbox that allows the user to indicate if they do not want the download location selection dialog to appear every time they initiate a download.">
         Don‘t show again
+      </message>
+      <message name="IDS_DOWNLOAD_LOCATION_DOWNLOAD_AGAIN" desc="Title for download location dialog in the case that there exists a file with the same name as the one they are trying to download, confirming the user wants to download a file with the same name.">
+        Download file again?
+      </message>
+      <message name="IDS_DOWNLOAD_LOCATION_NAME_EXISTS" desc="Subtitle for download location dialog in the case that the file needs to be renamed because another file has the same name.">
+        File name already exists
+      </message>
+      <message name="IDS_DOWNLOAD_LOCATION_RENAME_FILE" desc="Title for download location dialog in the case that the file needs to be renamed.">
+        Rename file
+      </message>
+      <message name="IDS_DOWNLOAD_LOCATION_NAME_TOO_LONG" desc="Subtitle for download location dialog in the case that the file needs to be renamed because the name is too long.">
+        File name too long
+      </message>
+      <message name="IDS_DOWNLOAD_LOCATION_NOT_ENOUGH_SPACE" desc="Text on download location dialog in the case that there is not enough space in the chosen location.">
+        Not enough space
+      </message>
+      <message name="IDS_DOWNLOAD_LOCATION_DOWNLOAD_TO_DEFAULT_FOLDER" desc="Subtitle for download location dialog in the case that the download location the user had originally selected is full or not found. We automatically revert back to the default download location and ask the user to confirm that this is ok.">
+        Download to default folder?
+      </message>
+      <message name="IDS_DOWNLOAD_LOCATION_NO_SD_CARD" desc="Title for download location dialog in the case that the SD card is not found.">
+        No SD card found
       </message>
 
       <!-- About Chrome preferences -->
@@ -2035,7 +2061,7 @@ To obtain new licenses, connect to the internet and play your downloaded content
         <ph name="FILE_NAME">%1$s<ex>http://abc.com/test.pdf</ex></ph> download failed due to server issues.
       </message>
       <message name="IDS_DOWNLOAD_FAILED_REASON_STORAGE_NOT_FOUND" desc="Message to explain that the download failed because no storage is found.">
-        <ph name="FILE_NAME">%1$s<ex>http://abc.com/test.pdf</ex></ph> download failed due to missing SD Card.
+        <ph name="FILE_NAME">%1$s<ex>http://abc.com/test.pdf</ex></ph> download failed because storage location is not reachable.
       </message>
       <message name="IDS_DOWNLOAD_FAILED_REASON_UNKNOWN_ERROR" desc="Message to explain that the download failed because unkown error.">
         <ph name="FILE_NAME">%1$s<ex>http://abc.com/test.pdf</ex></ph> download failed due to an unknown error.
@@ -2299,7 +2325,33 @@ To obtain new licenses, connect to the internet and play your downloaded content
         Waiting for Google Play Services to finish updating
       </message>
 
-      <!-- New Signin Promos Strings -->
+      <!-- Strings for Streamlined Signin and Unified Consent. -->
+      <!-- TODO(https://crbug.com/814728): Make translatable when strings are approved. -->
+      <message name="IDS_SIGNIN_TITLE" desc="Title for the screen that asks users to sign-in and turn on Sync and personalization. [CHAR-LIMIT=27]" translateable="false">
+        Get even more from Chrome
+      </message>
+      <message name="IDS_SIGNIN_SYNC_DESCRIPTION" desc="Description of Sync feature for the screen that asks users to sign-in and turn on Sync and personalization." translateable="false">
+        Sync your bookmarks, passwords, history, and more on all your devices
+      </message>
+      <message name="IDS_SIGNIN_PERSONALIZATION_DESCRIPTION" desc="Description of personalization feature for the screen that asks users to sign-in and turn on Sync and personalization." translateable="false">
+        Get more personalized experiences, such as better content suggestions and smarter Translate
+      </message>
+      <message name="IDS_SIGNIN_GOOGLE_SERVICES_DESCRIPTION" desc="Description of Google Services for the screen that asks users to sign-in and turn on Sync and personalization." translateable="false">
+        Bring powerful Google services to Chrome, like Google Pay and tap to search
+      </message>
+      <message name="IDS_SIGNIN_DETAILS_DESCRIPTION" desc="Message explaining that user can customize Sync and personalization and explains what data is shared with Google. This message is shown in the screen that asks users to sign-in and turn on Sync and personalization." translateable="false">
+        You can customize what information Google collects in <ph name="BEGIN_LINK1">&lt;LINK1&gt;</ph>Settings<ph name="END_LINK1">&lt;/LINK1&gt;</ph> anytime.
+
+Google may use your browsing activity, content on some sites you visit, and other browser interactions to personalize Chrome and other Google services like Translate, Search and ads.
+      </message>
+      <message name="IDS_SIGNIN_ACCEPT_BUTTON" desc="Text for the confirmation button in the sign-in screen. By clicking this button users signs in and turns on Sync and personalization. [CHAR-LIMIT=20]" translateable="false">
+        Yes, I'm in
+      </message>
+      <message name="IDS_SIGNIN_ACCOUNT_PICKER_DIALOG_TITLE" desc="The title for the dialog that shows the list of accounts on the device and asks user to select one of these accounts. [CHAR-LIMIT=27]" translateable="false">
+        Choose an account
+      </message>
+
+      <!-- Personalized Signin Promos Strings -->
       <message name="IDS_SIGNIN_PROMO_DESCRIPTION_BOOKMARKS" desc="Description string for 'Continue as' signin promo shown in Bookmarks screen.">
         To get your bookmarks on all your devices, sign in to Chrome.
       </message>
@@ -2427,8 +2479,10 @@ To obtain new licenses, connect to the internet and play your downloaded content
       <message name="IDS_NTP_ALL_DISMISSED_REFRESH" desc="Text label for button to refresh the New Tab Page when all suggested content has been dismissed. [CHAR-LIMIT=20]">
         Refresh
       </message>
-      <message name="IDS_CONTEXTUAL_SUGGESTIONS_TITLE" desc="The title for a section containing a list of article suggestions based on the user's current webpage. The title tells users that the list contains articles viewed by people who also viewed the current webpage.">
-        People also viewed
+
+      <!-- Contextual suggestions strings -->
+      <message name="IDS_CONTEXTUAL_SUGGESTIONS_IN_PRODUCT_HELP" desc="The string displayed in an in-product help bubble when contextual suggestions are displayed for the first time. The bubble points to a swipeable panel containing suggestions related to the webpage the user is currently viewing.">
+        See more like this from Google
       </message>
 
       <!-- Toolbar button strings -->
@@ -2440,6 +2494,9 @@ To obtain new licenses, connect to the internet and play your downloaded content
       </message>
       <message name="IDS_BUTTON_NEW_INCOGNITO_TAB" desc="Tooltip for the button to open a new incognito browser tab.">
         New incognito tab
+      </message>
+      <message name="IDS_CUSTOM_TAB_AMP_PUBLISHER_URL" desc="Text shown in a Custom Tab toolbar for a web page that is hosted by the Google content delivery network but was originally published by someone else.">
+        From <ph name="PUBLISHER_ORIGIN">%1$s<ex>example.com</ex></ph> – <ph name="BEGIN_DEEMPHASIZED">&lt;bg&gt;</ph>delivered by Google<ph name="END_DEEMPHASIZED">&lt;/bg&gt;</ph>
       </message>
 
       <!-- Main menu items -->
@@ -2663,7 +2720,7 @@ To obtain new licenses, connect to the internet and play your downloaded content
       <message name="IDS_URL_COPIED" desc="Notification telling the user that the url has been copied to clipboard. [CHAR-LIMIT=32]">
         URL copied.
       </message>
-      <message name="IDS_CHROME_HOME_SURVEY_PROMPT" desc="Message shown that invites the user to take a survey about Chrome. 'Help' and 'improve' are imperative verbs. 'Take survey' is a tappable link. When tapped, a survey about Chrome opens.">
+      <message name="IDS_CHROME_SURVEY_PROMPT" desc="Message shown that invites the user to take a survey about Chrome. 'Help' and 'improve' are imperative verbs. 'Take survey' is a tappable link. When tapped, a survey about Chrome opens.">
         Help improve Chrome. <ph name="BEGIN_LINK">&lt;LINK&gt;</ph>Take survey<ph name="END_LINK">&lt;/LINK&gt;</ph>
       </message>
 
@@ -2972,21 +3029,6 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       <message name="IDS_PHYSICAL_WEB_LAUNCH_BUTTON" desc="The label for a button that opens a list of nearby URLs">
         See what’s nearby
       </message>
-      <message name="IDS_PHYSICAL_WEB_SHARE_ACTIVITY_TITLE" desc="Title of the Physical Web Share activity that will appear in the Android share dialog.">
-        Physical Web
-      </message>
-      <message name="IDS_PHYSICAL_WEB_SHARE_ENTRY_TITLE" desc="Label of the Physical Web Share Entry Activity.">
-        Physical Web Sharing
-      </message>
-      <message name="IDS_PHYSICAL_WEB_SHARE_ENTRY_MESSAGE" desc="This is the message the is shown in the alert box to notify that the Physical Web Share Feature sends a URL to Google Servers.">
-        This service needs to anonymously send this website address to Google servers for verification.
-      </message>
-      <message name="IDS_PHYSICAL_WEB_BROADCAST_NOTIFICATION" desc="The message that will be displayed when a Physical Web URL is broadcasted successfully.">
-        Website is broadcasting
-      </message>
-      <message name="IDS_PHYSICAL_WEB_STOP_BROADCAST" desc="The label for the button within a notification that stops a Physical Web broadcast.">
-        Stop
-      </message>
 
       <!-- WebUsb Picker UI strings -->
       <message name="IDS_USB_CHOOSER_DIALOG_PROMPT" desc="The text that is used to introduce the USB chooser dialog to the user.">
@@ -3174,9 +3216,6 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       <message name="IDS_IPH_DOWNLOAD_HOME_ACCESSIBILITY_TEXT_CHROME_HOME" desc="The in-product-help accessibility text to open download home after a restart in chrome home mode.">
         Pull up the toolbar to find your files and pages in downloads
       </message>
-      <message name="IDS_IPH_DOWNLOAD_HOME_ACCESSIBILITY_TEXT_CHROME_HOME_EXPAND" desc="The in-product-help accessibility text to open download home after a restart in chrome home mode with expand button enabled.">
-        Double tap the expand button to find your files and pages in downloads
-      </message>
       <message name="IDS_IPH_DATA_SAVER_PREVIEW_TEXT" desc="In-product help for when a data saver preview page and infobar are shown.">
           Chrome is using less data to show you this page
       </message>
@@ -3206,18 +3245,6 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       </message>
 
       <!-- Chrome Home -->
-      <message name="IDS_BOTTOM_SHEET_HELP_BUBBLE_MESSAGE" desc="Text displayed in a help bubble above the bottom navigation sheet prompting users to pull the sheet up to see their bookmarks and other content.">
-        Pull up to see bookmarks and more
-      </message>
-      <message name="IDS_BOTTOM_SHEET_PULL_TO_REFRESH_HELP_BUBBLE_MESSAGE" desc="Text displayed in a help bubble above the address bar. “access” is a verb (imperative). The intent of the string is to help users find the address bar at the bottom of the screen.">
-        Access the address bar here
-      </message>
-      <message name="IDS_BOTTOM_SHEET_PULL_TO_REFRESH_HELP_BUBBLE_ACCESSIBILITY_MESSAGE" desc="Text displayed in a help bubble above the address bar when TalkBack is enabled. “access” is a verb (imperative). The intent of the string is to help users find the address bar at the bottom of the screen.">
-        Access the address bar at the bottom of your screen
-      </message>
-      <message name="IDS_BOTTOM_SHEET_EXPAND_BUTTON_ACCESSIBILITY" desc="Part of the accessibility string read when the expand button is tapped informing users that tapping button will show downloads, bookmarks, and history. 'access' is a verb. 'Downloads', 'Bookmarks', and 'History' should use the same translations as in Chrome settings and menu items. TalkBack will read 'Expand navigation panel button. Double tap to access downloads, bookmarks, and history'.">
-        access downloads, bookmarks, and history.
-      </message>
      <message name="IDS_BOTTOM_SHEET_ACCESSIBILITY_DESCRIPTION" desc="Accessibility string read when the navigation panel is focused informing the user that the panel can be closed by swiping down.">
         Navigation panel. Swipe down to close.
       </message>
@@ -3229,33 +3256,6 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       </message>
       <message name="IDS_BOTTOM_SHEET_CLOSED" desc="Accessibility string read when the bottom navigation panel is closed.">
         Navigation panel closed
-      </message>
-      <message name="IDS_BOTTOM_SHEET_BOOKMARKS_TAB" desc="Accessibility string read when the bookmarks tab is selected.">
-        Bookmarks tab selected
-      </message>
-      <message name="IDS_BOTTOM_SHEET_DOWNLOADS_TAB" desc="Accessibility string read when the downloads tab is selected.">
-        Downloads tab selected
-      </message>
-      <message name="IDS_BOTTOM_SHEET_HISTORY_TAB" desc="Accessibility string read when the history tab is selected.">
-        History tab selected
-      </message>
-      <message name="IDS_BOTTOM_SHEET_HOME_TAB" desc="Accessibility string read when the home tab is selected.">
-        Home tab selected
-      </message>
-      <message name="IDS_BOTTOM_SHEET_APP_MENU_IPH" desc="Label for in-product help that appears in the Chrome three-dot menu (navigation menu). In previous versions of Chrome, the menu contained Downloads, Bookmarks, and History. In this version of Chrome, these three items have been moved out of the menu. Tapping this help text will show the user where they can find these three items. 'Downloads', 'Bookmarks', and 'History' should use the same translations as in Chrome settings and menu items. The tone of this string is that of the user asking Chrome, 'where are these 3 things?'">
-        Where are downloads, bookmarks, and history?
-      </message>
-      <message name="IDS_CHROME_HOME_MENU_BOOKMARKS_HELP_BUBBLE" desc="Help text. Shown after a user taps the ‘Bookmarks’ item in the three-dot menu of mobile Chrome. Context: In Chrome Hub, ‘Bookmarks’ is moving from the three-dot menu to a bottom navigation bar, which can be accessed by swiping the address bar up. This help text notifies the user of the change. Please ensure ‘Bookmarks’ in this message matches the ‘Bookmarks’ menu item and button label.">
-        “Bookmarks” is moving. Next time, pull the address bar up.
-      </message>
-      <message name="IDS_CHROME_HOME_MENU_DOWNLOADS_HELP_BUBBLE" desc="Help text. Shown after a user taps the ‘Downloads’ item in the three-dot menu of mobile Chrome. Context: In Chrome Hub, ‘Downloads’ is moving from the three-dot menu to a bottom navigation bar, which can be accessed by swiping the address bar up. This help text notifies the user of the change. Please ensure ‘Downloads’ in this message matches the ‘Downloads’ menu item and button label.">
-        “Downloads” is moving. Next time, pull the address bar up.
-      </message>
-      <message name="IDS_CHROME_HOME_MENU_HISTORY_HELP_BUBBLE" desc="Help text. Shown after a user taps the ‘History’ item in the three-dot menu of mobile Chrome. Context: In Chrome Hub, ‘History’ is moving from the three-dot menu to a bottom navigation bar, which can be accessed by swiping the address bar up. This help text notifies the user of the change. Please ensure ‘History’ in this message matches the ‘History’ menu item and button label.">
-        “History” is moving. Next time, pull the address bar up.
-      </message>
-      <message name="IDS_BOTTOM_SHEET_ACCESSIBILITY_TOOLBAR" desc="Accessibilty string read when the bottom toolbar, containing the adddress bar and some buttons, is focused. Informs users that they can pull up on the address bar to see their bookmarks and other content.">
-        Address bar. Swipe up to see downloads, bookmarks, and history.
       </message>
 
       <!-- Photo picker -->

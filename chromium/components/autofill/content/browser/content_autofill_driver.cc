@@ -208,6 +208,13 @@ void ContentAutofillDriver::TextFieldDidScroll(const FormData& form,
   autofill_handler_->OnTextFieldDidScroll(form, field, bounding_box);
 }
 
+void ContentAutofillDriver::SelectControlDidChange(
+    const FormData& form,
+    const FormFieldData& field,
+    const gfx::RectF& bounding_box) {
+  autofill_handler_->OnSelectControlDidChange(form, field, bounding_box);
+}
+
 void ContentAutofillDriver::QueryFormFieldAutofill(
     int32_t id,
     const FormData& form,
@@ -247,6 +254,10 @@ void ContentAutofillDriver::SetDataList(
     const std::vector<base::string16>& values,
     const std::vector<base::string16>& labels) {
   autofill_handler_->OnSetDataList(values, labels);
+}
+
+void ContentAutofillDriver::SelectFieldOptionsDidChange(const FormData& form) {
+  autofill_handler_->SelectFieldOptionsDidChange(form);
 }
 
 void ContentAutofillDriver::DidNavigateMainFrame(

@@ -10,7 +10,6 @@
 
 #include "base/debug/dump_without_crashing.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
@@ -25,6 +24,7 @@
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/gpu/compositor_util.h"
+#include "content/browser/renderer_host/cursor_manager.h"
 #include "content/browser/renderer_host/display_util.h"
 #include "content/browser/renderer_host/frame_connector_delegate.h"
 #include "content/browser/renderer_host/input/touch_selection_controller_client_child_frame.h"
@@ -40,7 +40,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "gpu/ipc/common/gpu_messages.h"
 #include "services/service_manager/runner/common/client_util.h"
-#include "third_party/WebKit/public/platform/WebTouchEvent.h"
+#include "third_party/blink/public/platform/web_touch_event.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/gfx/geometry/dip_util.h"
 #include "ui/gfx/geometry/size_conversions.h"
@@ -65,7 +65,7 @@ RenderWidgetHostViewChildFrame* RenderWidgetHostViewChildFrame::Create(
 
 RenderWidgetHostViewChildFrame::RenderWidgetHostViewChildFrame(
     RenderWidgetHost* widget_host)
-    : host_(RenderWidgetHostImpl::From(widget_host)),
+    : RenderWidgetHostViewBase(widget_host),
       frame_sink_id_(
           base::checked_cast<uint32_t>(widget_host->GetProcess()->GetID()),
           base::checked_cast<uint32_t>(widget_host->GetRoutingID())),
@@ -104,7 +104,7 @@ RenderWidgetHostViewChildFrame::~RenderWidgetHostViewChildFrame() {
 
 void RenderWidgetHostViewChildFrame::Init() {
   RegisterFrameSinkId();
-  host_->SetView(this);
+  host()->SetView(this);
   GetTextInputManager();
 }
 
@@ -225,7 +225,7 @@ void RenderWidgetHostViewChildFrame::SetBounds(const gfx::Rect& rect) {
   // Resizing happens in CrossProcessFrameConnector for child frames.
   if (rect != last_screen_rect_) {
     last_screen_rect_ = rect;
-    host_->SendScreenRects();
+    host()->SendScreenRects();
   }
 }
 
@@ -242,29 +242,29 @@ bool RenderWidgetHostViewChildFrame::IsSurfaceAvailableForCopy() const {
 }
 
 void RenderWidgetHostViewChildFrame::Show() {
-  if (!host_->is_hidden())
+  if (!host()->is_hidden())
     return;
 
   if (!CanBecomeVisible())
     return;
 
-  host_->WasShown(ui::LatencyInfo());
+  host()->WasShown(ui::LatencyInfo());
 
   if (frame_connector_)
     frame_connector_->SetVisibilityForChildViews(true);
 }
 
 void RenderWidgetHostViewChildFrame::Hide() {
-  if (host_->is_hidden())
+  if (host()->is_hidden())
     return;
-  host_->WasHidden();
+  host()->WasHidden();
 
   if (frame_connector_)
     frame_connector_->SetVisibilityForChildViews(false);
 }
 
 bool RenderWidgetHostViewChildFrame::IsShowing() {
-  return !host_->is_hidden();
+  return !host()->is_hidden();
 }
 
 gfx::Rect RenderWidgetHostViewChildFrame::GetViewBounds() const {
@@ -301,12 +301,13 @@ gfx::Size RenderWidgetHostViewChildFrame::GetVisibleViewportSize() const {
   // is that Blink ends up using the visual viewport to calculate things like
   // window.innerWidth/innerHeight for main frames, and a guest is considered
   // to be a main frame.  This should be cleaned up eventually.
-  bool is_guest = BrowserPluginGuest::IsGuest(RenderViewHostImpl::From(host_));
+  bool is_guest = BrowserPluginGuest::IsGuest(RenderViewHostImpl::From(host()));
   if (frame_connector_ && !is_guest) {
     // An auto-resize set by the top-level frame overrides what would be
     // reported by embedding RenderWidgetHostViews.
-    if (host_->delegate() && !host_->delegate()->GetAutoResizeSize().IsEmpty())
-      return host_->delegate()->GetAutoResizeSize();
+    if (host()->delegate() &&
+        !host()->delegate()->GetAutoResizeSize().IsEmpty())
+      return host()->delegate()->GetAutoResizeSize();
 
     RenderWidgetHostView* parent_view =
         frame_connector_->GetParentRenderWidgetHostView();
@@ -314,11 +315,22 @@ gfx::Size RenderWidgetHostViewChildFrame::GetVisibleViewportSize() const {
     if (parent_view)
       return parent_view->GetVisibleViewportSize();
   }
-  return GetViewBounds().size();
+
+  gfx::Rect bounds = GetViewBounds();
+
+  // It doesn't make sense to set insets on an OOP iframe. The only time this
+  // should happen is when the virtual keyboard comes up on a <webview>.
+  if (is_guest)
+    bounds.Inset(insets_);
+
+  return bounds.size();
 }
 
-gfx::Vector2dF RenderWidgetHostViewChildFrame::GetLastScrollOffset() const {
-  return last_scroll_offset_;
+void RenderWidgetHostViewChildFrame::SetInsets(const gfx::Insets& insets) {
+  // Insets are used only for <webview> and are used to let the UI know it's
+  // being obscured (for e.g. by the virtual keyboard).
+  insets_ = insets;
+  host()->WasResized(!insets_.IsEmpty());
 }
 
 gfx::NativeView RenderWidgetHostViewChildFrame::GetNativeView() const {
@@ -342,7 +354,7 @@ void RenderWidgetHostViewChildFrame::SetBackgroundColor(SkColor color) {
 
   DCHECK(SkColorGetA(color) == SK_AlphaOPAQUE ||
          SkColorGetA(color) == SK_AlphaTRANSPARENT);
-  host_->SetBackgroundOpaque(SkColorGetA(color) == SK_AlphaOPAQUE);
+  host()->SetBackgroundOpaque(SkColorGetA(color) == SK_AlphaOPAQUE);
 }
 
 SkColor RenderWidgetHostViewChildFrame::background_color() const {
@@ -379,7 +391,7 @@ void RenderWidgetHostViewChildFrame::SetIsLoading(bool is_loading) {
   // inner/outer WebContents, only subframe's RenderWidgetHostView can be a
   // RenderWidgetHostViewChildFrame which do not get a SetIsLoading() call.
   if (GuestMode::IsCrossProcessFrameGuest(
-          WebContents::FromRenderViewHost(RenderViewHost::From(host_))))
+          WebContents::FromRenderViewHost(RenderViewHost::From(host()))))
     return;
 
   NOTREACHED();
@@ -407,15 +419,21 @@ void RenderWidgetHostViewChildFrame::Destroy() {
   // RenderWidgetHostInputEventRouter afterwards.
   NotifyObserversAboutShutdown();
 
-  host_->SetView(nullptr);
-  host_ = nullptr;
+  RenderWidgetHostViewBase::Destroy();
 
   delete this;
 }
 
 void RenderWidgetHostViewChildFrame::SetTooltipText(
     const base::string16& tooltip_text) {
-  frame_connector_->GetRootRenderWidgetHostView()->SetTooltipText(tooltip_text);
+  if (!frame_connector_)
+    return;
+
+  auto* root_view = frame_connector_->GetRootRenderWidgetHostView();
+  if (!root_view)
+    return;
+
+  root_view->GetCursorManager()->SetTooltipTextForView(this, tooltip_text);
 }
 
 RenderWidgetHostViewBase* RenderWidgetHostViewChildFrame::GetParentView() {
@@ -426,41 +444,45 @@ RenderWidgetHostViewBase* RenderWidgetHostViewChildFrame::GetParentView() {
 
 void RenderWidgetHostViewChildFrame::RegisterFrameSinkId() {
   // If Destroy() has been called before we get here, host_ may be null.
-  if (host_ && host_->delegate() && host_->delegate()->GetInputEventRouter()) {
+  if (host() && host()->delegate() &&
+      host()->delegate()->GetInputEventRouter()) {
     RenderWidgetHostInputEventRouter* router =
-        host_->delegate()->GetInputEventRouter();
+        host()->delegate()->GetInputEventRouter();
     if (!router->is_registered(frame_sink_id_))
       router->AddFrameSinkIdOwner(frame_sink_id_, this);
   }
 }
 
 void RenderWidgetHostViewChildFrame::UnregisterFrameSinkId() {
-  DCHECK(host_);
-  if (host_->delegate() && host_->delegate()->GetInputEventRouter()) {
-    host_->delegate()->GetInputEventRouter()->RemoveFrameSinkIdOwner(
+  DCHECK(host());
+  if (host()->delegate() && host()->delegate()->GetInputEventRouter()) {
+    host()->delegate()->GetInputEventRouter()->RemoveFrameSinkIdOwner(
         frame_sink_id_);
     DetachFromTouchSelectionClientManagerIfNecessary();
   }
 }
 
 void RenderWidgetHostViewChildFrame::UpdateViewportIntersection(
-    const gfx::Rect& viewport_intersection) {
-  if (host_)
-    host_->Send(new ViewMsg_SetViewportIntersection(host_->GetRoutingID(),
-                                                    viewport_intersection));
+    const gfx::Rect& viewport_intersection,
+    const gfx::Rect& compositor_visible_rect) {
+  if (host()) {
+    host()->Send(new ViewMsg_SetViewportIntersection(host()->GetRoutingID(),
+                                                     viewport_intersection,
+                                                     compositor_visible_rect));
+  }
 }
 
 void RenderWidgetHostViewChildFrame::SetIsInert() {
-  if (host_ && frame_connector_) {
-    host_->Send(new ViewMsg_SetIsInert(host_->GetRoutingID(),
-                                       frame_connector_->IsInert()));
+  if (host() && frame_connector_) {
+    host()->Send(new ViewMsg_SetIsInert(host()->GetRoutingID(),
+                                        frame_connector_->IsInert()));
   }
 }
 
 void RenderWidgetHostViewChildFrame::UpdateRenderThrottlingStatus() {
-  if (host_ && frame_connector_) {
-    host_->Send(new ViewMsg_UpdateRenderThrottlingStatus(
-        host_->GetRoutingID(), frame_connector_->IsThrottled(),
+  if (host() && frame_connector_) {
+    host()->Send(new ViewMsg_UpdateRenderThrottlingStatus(
+        host()->GetRoutingID(), frame_connector_->IsThrottled(),
         frame_connector_->IsSubtreeThrottled()));
   }
 }
@@ -579,31 +601,6 @@ void RenderWidgetHostViewChildFrame::SetParentFrameSinkId(
   }
 }
 
-void RenderWidgetHostViewChildFrame::ProcessCompositorFrame(
-    const viz::LocalSurfaceId& local_surface_id,
-    viz::CompositorFrame frame,
-    viz::mojom::HitTestRegionListPtr hit_test_region_list) {
-  current_surface_size_ = frame.size_in_pixels();
-  current_surface_scale_factor_ = frame.device_scale_factor();
-
-  support_->SubmitCompositorFrame(local_surface_id, std::move(frame),
-                                  std::move(hit_test_region_list));
-  has_frame_ = true;
-
-  if (last_received_local_surface_id_ != local_surface_id ||
-      HasEmbedderChanged()) {
-    last_received_local_surface_id_ = local_surface_id;
-    SendSurfaceInfoToEmbedder();
-  }
-
-  if (selection_controller_client_) {
-    selection_controller_client_->UpdateSelectionBoundsIfNeeded(
-        frame.metadata.selection, current_device_scale_factor_);
-  }
-
-  ProcessFrameSwappedCallbacks();
-}
-
 void RenderWidgetHostViewChildFrame::SendSurfaceInfoToEmbedder() {
   if (base::FeatureList::IsEnabled(features::kMash))
     return;
@@ -626,11 +623,20 @@ void RenderWidgetHostViewChildFrame::SubmitCompositorFrame(
   DCHECK(!enable_viz_);
   TRACE_EVENT0("content",
                "RenderWidgetHostViewChildFrame::OnSwapCompositorFrame");
-  last_scroll_offset_ = frame.metadata.root_scroll_offset;
-  if (!frame_connector_)
-    return;
-  ProcessCompositorFrame(local_surface_id, std::move(frame),
-                         std::move(hit_test_region_list));
+  current_surface_size_ = frame.size_in_pixels();
+  current_surface_scale_factor_ = frame.device_scale_factor();
+
+  support_->SubmitCompositorFrame(local_surface_id, std::move(frame),
+                                  std::move(hit_test_region_list));
+  has_frame_ = true;
+
+  if (last_received_local_surface_id_ != local_surface_id ||
+      HasEmbedderChanged()) {
+    last_received_local_surface_id_ = local_surface_id;
+    SendSurfaceInfoToEmbedder();
+  }
+
+  ProcessFrameSwappedCallbacks();
 }
 
 void RenderWidgetHostViewChildFrame::OnDidNotProduceFrame(
@@ -689,21 +695,16 @@ bool RenderWidgetHostViewChildFrame::LockMouse() {
 }
 
 void RenderWidgetHostViewChildFrame::UnlockMouse() {
-  if (host_->delegate() && host_->delegate()->HasMouseLock(host_) &&
+  if (host()->delegate() && host()->delegate()->HasMouseLock(host()) &&
       frame_connector_)
     frame_connector_->UnlockMouse();
 }
 
 bool RenderWidgetHostViewChildFrame::IsMouseLocked() {
-  if (!host_->delegate())
+  if (!host()->delegate())
     return false;
 
-  return host_->delegate()->HasMouseLock(host_);
-}
-
-RenderWidgetHostImpl* RenderWidgetHostViewChildFrame::GetRenderWidgetHostImpl()
-    const {
-  return host_;
+  return host()->delegate()->HasMouseLock(host());
 }
 
 viz::FrameSinkId RenderWidgetHostViewChildFrame::GetFrameSinkId() {
@@ -805,7 +806,8 @@ void RenderWidgetHostViewChildFrame::WillSendScreenRects() {
   // spammy way to do this, but triggering on SendScreenRects() is reasonable
   // until somebody figures that out. RWHVCF::Init() is too early.
   if (frame_connector_) {
-    UpdateViewportIntersection(frame_connector_->ViewportIntersection());
+    UpdateViewportIntersection(frame_connector_->viewport_intersection_rect(),
+                               frame_connector_->compositor_visible_rect());
     SetIsInert();
     UpdateRenderThrottlingStatus();
   }
@@ -821,17 +823,7 @@ void RenderWidgetHostViewChildFrame::ShowDefinitionForSelection() {
   }
 }
 
-bool RenderWidgetHostViewChildFrame::SupportsSpeech() const {
-  return false;
-}
-
 void RenderWidgetHostViewChildFrame::SpeakSelection() {}
-
-bool RenderWidgetHostViewChildFrame::IsSpeaking() const {
-  return false;
-}
-
-void RenderWidgetHostViewChildFrame::StopSpeaking() {}
 #endif  // defined(OS_MACOSX)
 
 void RenderWidgetHostViewChildFrame::RegisterFrameSwappedCallback(
@@ -883,7 +875,9 @@ void RenderWidgetHostViewChildFrame::CopyFromSurface(
         gfx::Vector2d(output_size.width(), output_size.height()));
   }
 
-  support_->RequestCopyOfSurface(std::move(request));
+  GetHostFrameSinkManager()->RequestCopyOfOutput(
+      viz::SurfaceId(frame_sink_id_, last_received_local_surface_id_),
+      std::move(request));
 }
 
 void RenderWidgetHostViewChildFrame::ReclaimResources(
@@ -894,6 +888,7 @@ void RenderWidgetHostViewChildFrame::ReclaimResources(
 
 void RenderWidgetHostViewChildFrame::OnBeginFrame(
     const viz::BeginFrameArgs& args) {
+  host_->ProgressFling(args.frame_time);
   if (renderer_compositor_frame_sink_)
     renderer_compositor_frame_sink_->OnBeginFrame(args);
 }
@@ -928,9 +923,24 @@ RenderWidgetHostViewChildFrame::GetTouchSelectionControllerClientManager() {
   return root_view->GetTouchSelectionControllerClientManager();
 }
 
+void RenderWidgetHostViewChildFrame::OnRenderFrameMetadataChanged() {
+  RenderWidgetHostViewBase::OnRenderFrameMetadataChanged();
+  if (selection_controller_client_) {
+    const cc::RenderFrameMetadata& metadata =
+        host()->render_frame_metadata_provider()->LastRenderFrameMetadata();
+    selection_controller_client_->UpdateSelectionBoundsIfNeeded(
+        metadata.selection, current_device_scale_factor_);
+  }
+}
+
 void RenderWidgetHostViewChildFrame::SetWantsAnimateOnlyBeginFrames() {
   if (support_)
     support_->SetWantsAnimateOnlyBeginFrames();
+}
+
+void RenderWidgetHostViewChildFrame::TakeFallbackContentFrom(
+    RenderWidgetHostView* view) {
+  // This method only makes sense for top-level views.
 }
 
 InputEventAckState RenderWidgetHostViewChildFrame::FilterInputEvent(
@@ -940,7 +950,7 @@ InputEventAckState RenderWidgetHostViewChildFrame::FilterInputEvent(
         static_cast<const blink::WebGestureEvent&>(input_event);
     // Zero-velocity touchpad flings are an Aura-specific signal that the
     // touchpad scroll has ended, and should not be forwarded to the renderer.
-    if (gesture_event.source_device == blink::kWebGestureDeviceTouchpad &&
+    if (gesture_event.SourceDevice() == blink::kWebGestureDeviceTouchpad &&
         !gesture_event.data.fling_start.velocity_x &&
         !gesture_event.data.fling_start.velocity_y) {
       // Here we indicate that there was no consumer for this event, as
@@ -1014,18 +1024,33 @@ void RenderWidgetHostViewChildFrame::GetScreenInfo(
     DisplayUtil::GetDefaultScreenInfo(screen_info);
 }
 
-void RenderWidgetHostViewChildFrame::ResizeDueToAutoResize(
-    const gfx::Size& new_size,
-    uint64_t sequence_number) {
+void RenderWidgetHostViewChildFrame::EnableAutoResize(
+    const gfx::Size& min_size,
+    const gfx::Size& max_size) {
   if (frame_connector_)
-    frame_connector_->ResizeDueToAutoResize(new_size, sequence_number);
+    frame_connector_->EnableAutoResize(min_size, max_size);
 }
 
-void RenderWidgetHostViewChildFrame::ClearCompositorSurfaceIfNecessary() {
-  if (!support_)
-    return;
-  support_->EvictLastActivatedSurface();
-  has_frame_ = false;
+void RenderWidgetHostViewChildFrame::DisableAutoResize(
+    const gfx::Size& new_size) {
+  // For child frames, the size comes from the parent when auto-resize is
+  // disabled so we ignore |new_size| here.
+  if (frame_connector_)
+    frame_connector_->DisableAutoResize();
+}
+
+viz::ScopedSurfaceIdAllocator
+RenderWidgetHostViewChildFrame::ResizeDueToAutoResize(
+    const gfx::Size& new_size,
+    uint64_t sequence_number) {
+  // TODO(cblume): This doesn't currently suppress allocation.
+  // It maintains existing behavior while using the suppression style.
+  // This will be addressed in a follow-up patch.
+  // See https://crbug.com/805073
+  base::OnceCallback<void()> allocation_task = base::BindOnce(
+      &RenderWidgetHostViewChildFrame::OnResizeDueToAutoResizeComplete,
+      weak_factory_.GetWeakPtr(), new_size, sequence_number);
+  return viz::ScopedSurfaceIdAllocator(std::move(allocation_task));
 }
 
 void RenderWidgetHostViewChildFrame::CreateCompositorFrameSinkSupport() {
@@ -1041,7 +1066,7 @@ void RenderWidgetHostViewChildFrame::CreateCompositorFrameSinkSupport() {
     GetHostFrameSinkManager()->RegisterFrameSinkHierarchy(parent_frame_sink_id_,
                                                           frame_sink_id_);
   }
-  if (host_->needs_begin_frames())
+  if (host()->needs_begin_frames())
     support_->SetNeedsBeginFrame(true);
 }
 
@@ -1107,10 +1132,18 @@ bool RenderWidgetHostViewChildFrame::CanBecomeVisible() {
       ->CanBecomeVisible();
 }
 
+void RenderWidgetHostViewChildFrame::OnResizeDueToAutoResizeComplete(
+    const gfx::Size& new_size,
+    uint64_t sequence_number) {
+  if (frame_connector_)
+    frame_connector_->ResizeDueToAutoResize(new_size, sequence_number);
+}
+
 void RenderWidgetHostViewChildFrame::DidNavigate() {
-  if (host_->auto_resize_enabled()) {
-    host_->DidAllocateLocalSurfaceIdForAutoResize(
-        host_->last_auto_resize_request_number());
+  host()->WasResized();
+  if (host()->auto_resize_enabled()) {
+    host()->DidAllocateLocalSurfaceIdForAutoResize(
+        host()->last_auto_resize_request_number());
   }
 }
 

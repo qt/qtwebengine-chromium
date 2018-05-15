@@ -20,30 +20,12 @@
 #include "content/renderer/media/stream/media_stream_source.h"
 #include "content/renderer/media/stream/media_stream_video_source.h"
 #include "content/renderer/media/stream/media_stream_video_track.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
-#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/blink/public/platform/web_media_stream_source.h"
+#include "third_party/blink/public/platform/web_media_stream_track.h"
+#include "third_party/blink/public/platform/web_string.h"
 
 namespace content {
 namespace {
-
-blink::mojom::FacingMode GetMojoFacingMode(
-    const blink::WebMediaStreamTrack::FacingMode facing_mode) {
-  switch (facing_mode) {
-    case blink::WebMediaStreamTrack::FacingMode::kUser:
-      return blink::mojom::FacingMode::USER;
-    case blink::WebMediaStreamTrack::FacingMode::kEnvironment:
-      return blink::mojom::FacingMode::ENVIRONMENT;
-    case blink::WebMediaStreamTrack::FacingMode::kLeft:
-      return blink::mojom::FacingMode::LEFT;
-    case blink::WebMediaStreamTrack::FacingMode::kRight:
-      return blink::mojom::FacingMode::RIGHT;
-    case blink::WebMediaStreamTrack::FacingMode::kNone:
-      return blink::mojom::FacingMode::NONE;
-  }
-  NOTREACHED();
-  return blink::mojom::FacingMode::NONE;
-}
 
 void RequestFailed(blink::WebApplyConstraintsRequest request,
                    const blink::WebString& constraint,
@@ -58,8 +40,10 @@ void RequestSucceeded(blink::WebApplyConstraintsRequest request) {
 }  // namespace
 
 ApplyConstraintsProcessor::ApplyConstraintsProcessor(
-    MediaDevicesDispatcherCallback media_devices_dispatcher_cb)
+    MediaDevicesDispatcherCallback media_devices_dispatcher_cb,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner)
     : media_devices_dispatcher_cb_(std::move(media_devices_dispatcher_cb)),
+      task_runner_(std::move(task_runner)),
       weak_factory_(this) {}
 
 ApplyConstraintsProcessor::~ApplyConstraintsProcessor() {
@@ -263,10 +247,9 @@ VideoCaptureSettings ApplyConstraintsProcessor::SelectVideoSettings(
       blink::mojom::VideoInputDeviceCapabilities::New();
   device_capabilities->device_id =
       current_request_.Track().Source().Id().Ascii();
-  device_capabilities->facing_mode = GetMojoFacingMode(
-      GetCurrentVideoSource()
-          ? ToWebFacingMode(GetCurrentVideoSource()->device().video_facing)
-          : blink::WebMediaStreamTrack::FacingMode::kNone);
+  device_capabilities->facing_mode =
+      GetCurrentVideoSource() ? GetCurrentVideoSource()->device().video_facing
+                              : media::MEDIA_VIDEO_FACING_NONE;
   device_capabilities->formats = std::move(formats);
 
   DCHECK(video_source_->GetCurrentCaptureParams());
@@ -327,7 +310,7 @@ bool ApplyConstraintsProcessor::AbortIfVideoRequestStateInvalid() {
 }
 
 void ApplyConstraintsProcessor::ApplyConstraintsSucceeded() {
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
+  task_runner_->PostTask(
       FROM_HERE,
       base::BindOnce(&ApplyConstraintsProcessor::CleanupRequest,
                      weak_factory_.GetWeakPtr(),
@@ -337,7 +320,7 @@ void ApplyConstraintsProcessor::ApplyConstraintsSucceeded() {
 void ApplyConstraintsProcessor::ApplyConstraintsFailed(
     const char* failed_constraint_name) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
+  task_runner_->PostTask(
       FROM_HERE,
       base::BindOnce(
           &ApplyConstraintsProcessor::CleanupRequest,
@@ -351,7 +334,7 @@ void ApplyConstraintsProcessor::ApplyConstraintsFailed(
 void ApplyConstraintsProcessor::CannotApplyConstraints(
     const blink::WebString& message) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
+  task_runner_->PostTask(
       FROM_HERE, base::BindOnce(&ApplyConstraintsProcessor::CleanupRequest,
                                 weak_factory_.GetWeakPtr(),
                                 base::BindOnce(&RequestFailed, current_request_,

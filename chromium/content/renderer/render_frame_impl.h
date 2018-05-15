@@ -30,8 +30,8 @@
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
 #include "content/common/associated_interface_registry_impl.h"
+#include "content/common/buildflags.h"
 #include "content/common/download/mhtml_save_status.h"
-#include "content/common/features.h"
 #include "content/common/frame.mojom.h"
 #include "content/common/frame_message_enums.h"
 #include "content/common/host_zoom.mojom.h"
@@ -53,7 +53,6 @@
 #include "content/renderer/input/input_target_client_impl.h"
 #include "content/renderer/loader/child_url_loader_factory_bundle.h"
 #include "content/renderer/media/media_factory.h"
-#include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_webcookiejar_impl.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_platform_file.h"
@@ -62,40 +61,40 @@
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "mojo/public/cpp/system/data_pipe.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/service_manager/public/cpp/bind_source_info.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/service_manager/public/mojom/connector.mojom.h"
 #include "services/service_manager/public/mojom/interface_provider.mojom.h"
-#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
-#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
-#include "third_party/WebKit/public/platform/WebEffectiveConnectionType.h"
-#include "third_party/WebKit/public/platform/WebFocusType.h"
-#include "third_party/WebKit/public/platform/WebLoadingBehaviorFlag.h"
-#include "third_party/WebKit/public/platform/WebMediaPlayer.h"
-#include "third_party/WebKit/public/platform/media_engagement.mojom.h"
-#include "third_party/WebKit/public/platform/modules/manifest/manifest_manager.mojom.h"
-#include "third_party/WebKit/public/platform/site_engagement.mojom.h"
-#include "third_party/WebKit/public/web/WebAXObject.h"
-#include "third_party/WebKit/public/web/WebDocumentLoader.h"
-#include "third_party/WebKit/public/web/WebFrameClient.h"
-#include "third_party/WebKit/public/web/WebFrameLoadType.h"
-#include "third_party/WebKit/public/web/WebFrameSerializerClient.h"
-#include "third_party/WebKit/public/web/WebHistoryCommitType.h"
-#include "third_party/WebKit/public/web/WebIconURL.h"
-#include "third_party/WebKit/public/web/WebMeaningfulLayout.h"
-#include "third_party/WebKit/public/web/WebScriptExecutionCallback.h"
-#include "third_party/WebKit/public/web/WebTriggeringEventInfo.h"
-#include "third_party/WebKit/public/web/commit_result.mojom.h"
+#include "third_party/blink/public/common/feature_policy/feature_policy.h"
+#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
+#include "third_party/blink/public/platform/autoplay.mojom.h"
+#include "third_party/blink/public/platform/modules/manifest/manifest_manager.mojom.h"
+#include "third_party/blink/public/platform/site_engagement.mojom.h"
+#include "third_party/blink/public/platform/web_effective_connection_type.h"
+#include "third_party/blink/public/platform/web_focus_type.h"
+#include "third_party/blink/public/platform/web_loading_behavior_flag.h"
+#include "third_party/blink/public/platform/web_media_player.h"
+#include "third_party/blink/public/web/commit_result.mojom.h"
+#include "third_party/blink/public/web/web_ax_object.h"
+#include "third_party/blink/public/web/web_document_loader.h"
+#include "third_party/blink/public/web/web_frame_client.h"
+#include "third_party/blink/public/web/web_frame_load_type.h"
+#include "third_party/blink/public/web/web_frame_serializer_client.h"
+#include "third_party/blink/public/web/web_history_commit_type.h"
+#include "third_party/blink/public/web/web_icon_url.h"
+#include "third_party/blink/public/web/web_meaningful_layout.h"
+#include "third_party/blink/public/web/web_script_execution_callback.h"
+#include "third_party/blink/public/web/web_triggering_event_info.h"
 #include "ui/accessibility/ax_modes.h"
 #include "ui/gfx/range/range.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
 #if defined(OS_MACOSX)
-#include "third_party/WebKit/public/mojom/clipboard/clipboard.mojom.h"
+#include "third_party/blink/public/mojom/clipboard/clipboard.mojom.h"
 #endif
 
 #if BUILDFLAG(ENABLE_PLUGINS)
@@ -110,17 +109,18 @@ struct FrameMsg_TextTrackSettings_Params;
 namespace blink {
 class WebComputedAXTree;
 class WebContentDecryptionModule;
+class WebLayerTreeView;
 class WebLocalFrame;
 class WebPresentationClient;
 class WebPushClient;
+class WebRelatedAppsFetcher;
 class WebSecurityOrigin;
-struct WebImeTextSpan;
+class WebSpeechRecognizer;
+struct FramePolicy;
 struct WebContextMenuData;
 struct WebCursorInfo;
 struct WebFindOptions;
-class WebLayerTreeView;
-class WebRelatedAppsFetcher;
-struct FramePolicy;
+struct WebImeTextSpan;
 struct WebScrollIntoViewParams;
 }  // namespace blink
 
@@ -168,6 +168,7 @@ class RenderViewImpl;
 class RenderWidget;
 class RenderWidgetFullscreenPepper;
 class SharedWorkerRepository;
+class SpeechRecognitionDispatcher;
 class UserMediaClientImpl;
 struct CSPViolationParams;
 struct CommonNavigationParams;
@@ -183,7 +184,7 @@ struct ScreenInfo;
 class CONTENT_EXPORT RenderFrameImpl
     : public RenderFrame,
       blink::mojom::EngagementClient,
-      blink::mojom::MediaEngagementClient,
+      blink::mojom::AutoplayConfigurationClient,
       mojom::Frame,
       mojom::FrameNavigationControl,
       mojom::FullscreenVideoElementHandler,
@@ -498,14 +499,15 @@ class CONTENT_EXPORT RenderFrameImpl
       blink::TaskType task_type) override;
   int GetEnabledBindings() const override;
   void SetAccessibilityModeForTest(ui::AXMode new_mode) override;
-  scoped_refptr<SharedURLLoaderFactory> GetURLLoaderFactory() override;
+  scoped_refptr<network::SharedURLLoaderFactory> GetURLLoaderFactory() override;
 
   // blink::mojom::EngagementClient implementation:
   void SetEngagementLevel(const url::Origin& origin,
                           blink::mojom::EngagementLevel level) override;
 
-  // blink::mojom::MediaEngagementClient implementation:
-  void SetHasHighMediaEngagement(const url::Origin& origin) override;
+  // blink::mojom::AutoplayConfigurationClient implementation:
+  void AddAutoplayFlags(const url::Origin& origin,
+                        const int32_t flags) override;
 
   // mojom::Frame implementation:
   void GetInterfaceProvider(
@@ -529,6 +531,8 @@ class CONTENT_EXPORT RenderFrameImpl
       const RequestNavigationParams& request_params,
       network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
       std::unique_ptr<URLLoaderFactoryBundleInfo> subresource_loaders,
+      base::Optional<std::vector<mojom::TransferrableURLLoaderPtr>>
+          subresource_overrides,
       mojom::ControllerServiceWorkerInfoPtr controller_service_worker_info,
       const base::UnguessableToken& devtools_navigation_token) override;
   void CommitFailedNavigation(
@@ -620,8 +624,7 @@ class CONTENT_EXPORT RenderFrameImpl
                               const blink::WebString& source_name,
                               unsigned source_line,
                               const blink::WebString& stack_trace) override;
-  void DownloadURL(const blink::WebURLRequest& request,
-                   const blink::WebString& suggested_name) override;
+  void DownloadURL(const blink::WebURLRequest& request) override;
   void LoadErrorPage(int reason) override;
   blink::WebNavigationPolicy DecidePolicyForNavigation(
       const NavigationPolicyInfo& info) override;
@@ -698,6 +701,8 @@ class CONTENT_EXPORT RenderFrameImpl
   void DidObserveLoadingBehavior(
       blink::WebLoadingBehaviorFlag behavior) override;
   void DidObserveNewFeatureUsage(blink::mojom::WebFeature feature) override;
+  void DidObserveNewCssPropertyUsage(int css_property,
+                                     bool is_animated) override;
   bool ShouldTrackUseCounter(const blink::WebURL& url) override;
   void DidCreateScriptContext(v8::Local<v8::Context> context,
                               int world_id) override;
@@ -747,6 +752,7 @@ class CONTENT_EXPORT RenderFrameImpl
       const blink::WebString& sink_id,
       const blink::WebSecurityOrigin& security_origin,
       blink::WebSetSinkIdCallbacks* web_callbacks) override;
+  blink::WebSpeechRecognizer* SpeechRecognizer() override;
   blink::mojom::PageVisibilityState VisibilityState() const override;
   std::unique_ptr<blink::WebURLLoaderFactory> CreateURLLoaderFactory() override;
   void DraggableRegionsChanged() override;
@@ -770,9 +776,9 @@ class CONTENT_EXPORT RenderFrameImpl
   void BindFullscreen(
       mojom::FullscreenVideoElementHandlerAssociatedRequest request);
 
-  // Binds to the media engagement service in the browser.
-  void BindMediaEngagement(
-      blink::mojom::MediaEngagementClientAssociatedRequest request);
+  // Binds to the autoplay configuration service in the browser.
+  void BindAutoplayConfiguration(
+      blink::mojom::AutoplayConfigurationClientAssociatedRequest request);
 
   // Binds to the FrameHost in the browser.
   void BindFrame(const service_manager::BindSourceInfo& browser_info,
@@ -871,8 +877,13 @@ class CONTENT_EXPORT RenderFrameImpl
   // frame.
   void FrameDidCallFocus();
 
-  // Send SurfaceId information to FrameHost to use for Picture-in-Picture.
-  void OnPictureInPictureSurfaceIdUpdated(const viz::SurfaceId& surface_id);
+  // Send viz::SurfaceId and video information to FrameHost to use for
+  // Picture-in-Picture.
+  void OnPictureInPictureSurfaceIdUpdated(const viz::SurfaceId& surface_id,
+                                          const gfx::Size& natural_size);
+
+  // Send signal that Picture-in-Picture mode has ended.
+  void OnExitPictureInPicture();
 
  protected:
   explicit RenderFrameImpl(CreateParams params);
@@ -1038,7 +1049,7 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnReloadLoFiImages();
   void OnTextSurroundingSelectionRequest(uint32_t max_length);
   void OnSetAccessibilityMode(ui::AXMode new_mode);
-  void OnSnapshotAccessibilityTree(int callback_id);
+  void OnSnapshotAccessibilityTree(int callback_id, ui::AXMode ax_mode);
   void OnUpdateOpener(int opener_routing_id);
   void OnDidUpdateFramePolicy(const blink::FramePolicy& frame_policy);
   void OnSetFrameOwnerProperties(
@@ -1075,7 +1086,7 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnFindMatchRects(int current_version);
 #endif
   void OnSetOverlayRoutingToken(const base::UnguessableToken& token);
-  void OnSetHasReceivedUserGesture();
+  void OnNotifyUserActivation();
 
 #if BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
 #if defined(OS_MACOSX)
@@ -1119,7 +1130,9 @@ class CONTENT_EXPORT RenderFrameImpl
   ChildURLLoaderFactoryBundle* GetLoaderFactoryBundle();
 
   void SetupLoaderFactoryBundle(
-      std::unique_ptr<URLLoaderFactoryBundleInfo> info);
+      std::unique_ptr<URLLoaderFactoryBundleInfo> info,
+      base::Optional<std::vector<mojom::TransferrableURLLoaderPtr>>
+          subresource_overrides);
 
   // Update current main frame's encoding and send it to browser window.
   // Since we want to let users see the right encoding info from menu
@@ -1140,7 +1153,6 @@ class CONTENT_EXPORT RenderFrameImpl
   bool RunJavaScriptDialog(JavaScriptDialogType type,
                            const base::string16& message,
                            const base::string16& default_value,
-                           const GURL& frame_url,
                            base::string16* result);
 
   // Loads the appropriate error page for the specified failure into the frame.
@@ -1260,10 +1272,8 @@ class CONTENT_EXPORT RenderFrameImpl
   // Ask the host to send our AndroidOverlay routing token to us.
   void RequestOverlayRoutingTokenFromHost();
 
-  void SendUpdateFaviconURL(blink::WebIconURL::Type icon_types_mask);
+  void SendUpdateFaviconURL();
 
-  void UpdatePeakMemoryStats();
-  void ReportPeakMemoryStats();
   void BindWidget(mojom::WidgetRequest request);
 
   void ShowDeferredContextMenu(const ContextMenuParams& params);
@@ -1507,6 +1517,11 @@ class CONTENT_EXPORT RenderFrameImpl
   // process.
   std::unique_ptr<ManifestManager> manifest_manager_;
 
+  // The speech recognition dispatcher attached to this frame, lazily
+  // initialized. It is an observer of this frame, owning itself and managing
+  // its own lifetime.
+  SpeechRecognitionDispatcher* speech_recognition_dispatcher_ = nullptr;
+
   // The current accessibility mode.
   ui::AXMode accessibility_mode_;
 
@@ -1569,11 +1584,13 @@ class CONTENT_EXPORT RenderFrameImpl
 
   HostZoomLevels host_zoom_levels_;
   EngagementOriginAndLevel engagement_level_;
-  url::Origin high_media_engagement_origin_;
+
+  using AutoplayOriginAndFlags = std::pair<url::Origin, int32_t>;
+  AutoplayOriginAndFlags autoplay_flags_;
 
   mojo::AssociatedBinding<blink::mojom::EngagementClient> engagement_binding_;
-  mojo::AssociatedBinding<blink::mojom::MediaEngagementClient>
-      media_engagement_binding_;
+  mojo::AssociatedBinding<blink::mojom::AutoplayConfigurationClient>
+      autoplay_configuration_binding_;
   mojo::Binding<mojom::Frame> frame_binding_;
   mojo::AssociatedBinding<mojom::HostZoom> host_zoom_binding_;
   mojo::AssociatedBinding<mojom::FrameBindingsControl>
@@ -1618,8 +1635,10 @@ class CONTENT_EXPORT RenderFrameImpl
     blink::WebFormElement form;
     blink::WebSourceLocation source_location;
     blink::WebString devtools_initiator_info;
+    blink::mojom::BlobURLTokenPtr blob_url_token;
 
     explicit PendingNavigationInfo(const NavigationPolicyInfo& info);
+    ~PendingNavigationInfo();
   };
 
   // Contains information about a pending navigation to be sent to the browser.
@@ -1652,8 +1671,6 @@ class CONTENT_EXPORT RenderFrameImpl
   std::vector<media::RoutingTokenCallback> pending_routing_token_callbacks_;
 
   InputTargetClientImpl input_target_client_impl_;
-
-  RenderThreadImpl::RendererMemoryMetrics peak_memory_metrics_;
 
   // Used for devtools instrumentation and trace-ability. This token is
   // used to tag calls and requests in order to attribute them to the context

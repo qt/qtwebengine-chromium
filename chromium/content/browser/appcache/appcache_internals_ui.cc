@@ -99,7 +99,8 @@ std::unique_ptr<base::ListValue> GetListValueFromAppCacheInfoCollection(
   std::unique_ptr<base::ListValue> list(new base::ListValue());
   for (const auto& key_value : appcache_collection->infos_by_origin) {
     base::DictionaryValue* dict = new base::DictionaryValue;
-    dict->SetString("originURL", key_value.first.spec());
+    // Use GURL::spec() to keep consistency with previous version
+    dict->SetString("originURL", key_value.first.GetURL().spec());
     dict->Set("manifests", GetListValueForAppCacheInfoVector(key_value.second));
     list->Append(std::unique_ptr<base::Value>(dict));
   }
@@ -297,7 +298,7 @@ void AppCacheInternalsUI::Proxy::OnResponseInfoLoaded(
     reader->ReadData(response_data.get(), amount_to_read,
                      base::BindOnce(&Proxy::OnResponseDataReadComplete, this,
                                     response_enquiry, response_info,
-                                    base::Passed(&reader), response_data));
+                                    std::move(reader), response_data));
   } else {
     OnResponseDataReadComplete(response_enquiry, nullptr, nullptr, nullptr, -1);
   }
@@ -332,19 +333,20 @@ AppCacheInternalsUI::AppCacheInternalsUI(WebUI* web_ui)
     : WebUIController(web_ui), weak_ptr_factory_(this) {
   web_ui->RegisterMessageCallback(
       kRequestGetAllAppCacheInfo,
-      base::Bind(&AppCacheInternalsUI::GetAllAppCache, AsWeakPtr()));
+      base::BindRepeating(&AppCacheInternalsUI::GetAllAppCache, AsWeakPtr()));
 
   web_ui->RegisterMessageCallback(
       kRequestDeleteAppCache,
-      base::Bind(&AppCacheInternalsUI::DeleteAppCache, AsWeakPtr()));
+      base::BindRepeating(&AppCacheInternalsUI::DeleteAppCache, AsWeakPtr()));
 
   web_ui->RegisterMessageCallback(
       kRequestGetAppCacheDetails,
-      base::Bind(&AppCacheInternalsUI::GetAppCacheDetails, AsWeakPtr()));
+      base::BindRepeating(&AppCacheInternalsUI::GetAppCacheDetails,
+                          AsWeakPtr()));
 
   web_ui->RegisterMessageCallback(
       kRequestGetFileDetails,
-      base::Bind(&AppCacheInternalsUI::GetFileDetails, AsWeakPtr()));
+      base::BindRepeating(&AppCacheInternalsUI::GetFileDetails, AsWeakPtr()));
 
   WebUIDataSource* source =
       WebUIDataSource::Create(kChromeUIAppCacheInternalsHost);

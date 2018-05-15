@@ -31,11 +31,14 @@ source_set("keyboard_assist") {
     "//ios/chrome/browser/ui/location_bar:constants",
     "//ios/chrome/browser/ui/omnibox:omnibox_internal",
     "//ios/chrome/browser/ui/toolbar/public",
+    "//ios/chrome/browser/ui/util/",
     "//ios/public/provider/chrome/browser",
     "//ios/public/provider/chrome/browser/external_search",
     "//ios/public/provider/chrome/browser/voice",
     "//ui/base",
     "//ui/gfx",
   ]
+  allow_circular_includes_from =
+      [ "//ios/chrome/browser/ui/omnibox:omnibox_internal" ]
   libs = [ "UIKit.framework" ]
 }

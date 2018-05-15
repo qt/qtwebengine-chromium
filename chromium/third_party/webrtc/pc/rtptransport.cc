@@ -134,26 +134,6 @@ bool RtpTransport::SendPacket(bool rtcp,
   return true;
 }
 
-bool RtpTransport::HandlesPacket(const uint8_t* data, size_t len) {
-  return bundle_filter_.DemuxPacket(data, len);
-}
-
-bool RtpTransport::HandlesPayloadType(int payload_type) const {
-  return bundle_filter_.FindPayloadType(payload_type);
-}
-
-void RtpTransport::AddHandledPayloadType(int payload_type) {
-  bundle_filter_.AddPayloadType(payload_type);
-}
-
-PacketTransportInterface* RtpTransport::GetRtpPacketTransport() const {
-  return rtp_packet_transport_;
-}
-
-PacketTransportInterface* RtpTransport::GetRtcpPacketTransport() const {
-  return rtcp_packet_transport_;
-}
-
 RTCError RtpTransport::SetParameters(const RtpTransportParameters& parameters) {
   if (parameters_.rtcp.mux && !parameters.rtcp.mux) {
     LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_STATE,
@@ -250,6 +230,11 @@ void RtpTransport::OnReadPacket(rtc::PacketTransportInternal* transport,
                                 int flags) {
   TRACE_EVENT0("webrtc", "RtpTransport::OnReadPacket");
 
+  if (!cricket::IsRtpPacket(data, len) &&
+      !IsRtcp(data, static_cast<int>(len))) {
+    return;
+  }
+
   // When using RTCP multiplexing we might get RTCP packets on the RTP
   // transport. We check the RTP payload type to determine if it is RTCP.
   bool rtcp = transport == rtcp_packet_transport() ||
@@ -259,6 +244,7 @@ void RtpTransport::OnReadPacket(rtc::PacketTransportInternal* transport,
   if (!WantsPacket(rtcp, &packet)) {
     return;
   }
+
   // This mutates |packet| if it is protected.
   SignalPacketReceived(rtcp, &packet, packet_time);
 }
@@ -272,12 +258,7 @@ bool RtpTransport::WantsPacket(bool rtcp,
                       << " packet: wrong size=" << packet->size();
     return false;
   }
-  if (rtcp) {
-    // Permit all (seemingly valid) RTCP packets.
-    return true;
-  }
-  // Check whether we handle this payload.
-  return HandlesPacket(packet->data(), packet->size());
+  return true;
 }
 
 }  // namespace webrtc

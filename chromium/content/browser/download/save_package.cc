@@ -24,6 +24,7 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
+#include "components/download/public/common/download_item_impl.h"
 #include "components/download/public/common/download_request_handle_interface.h"
 #include "components/download/public/common/download_stats.h"
 #include "components/download/public/common/download_task_runner.h"
@@ -31,7 +32,6 @@
 #include "components/filename_generation/filename_generation.h"
 #include "components/url_formatter/url_formatter.h"
 #include "content/browser/bad_message.h"
-#include "content/browser/download/download_item_impl.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/download/save_file.h"
 #include "content/browser/download/save_file_manager.h"
@@ -297,7 +297,7 @@ bool SavePackage::Init(
 
 void SavePackage::InitWithDownloadItem(
     const SavePackageDownloadCreatedCallback& download_created_callback,
-    DownloadItemImpl* item) {
+    download::DownloadItemImpl* item) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(item);
   download_ = item;
@@ -314,7 +314,7 @@ void SavePackage::InitWithDownloadItem(
     MHTMLGenerationParams mhtml_generation_params(saved_main_file_path_);
     web_contents()->GenerateMHTML(
         mhtml_generation_params,
-        base::Bind(&SavePackage::OnMHTMLGenerated, this));
+        base::BindOnce(&SavePackage::OnMHTMLGenerated, this));
   } else {
     DCHECK_EQ(SAVE_PAGE_TYPE_AS_ONLY_HTML, save_type_);
     wait_state_ = NET_FILES;
@@ -820,7 +820,13 @@ void SavePackage::SaveNextFile(bool process_all_remaining_items) {
         requester_frame->render_view_host()->GetRoutingID(),
         requester_frame->routing_id(), save_item_ptr->save_source(),
         save_item_ptr->full_path(),
-        web_contents()->GetBrowserContext()->GetResourceContext(), this);
+        web_contents()->GetBrowserContext()->GetResourceContext(),
+        web_contents()
+            ->GetRenderViewHost()
+            ->GetProcess()
+            ->GetStoragePartition(),
+        this);
+
   } while (process_all_remaining_items && !waiting_item_queue_.empty());
 }
 
@@ -1046,16 +1052,10 @@ void SavePackage::OnSerializedHtmlWithLocalLinksResponse(
   }
 
   if (!data.empty()) {
-    // Prepare buffer for saving HTML data.
-    scoped_refptr<net::IOBuffer> new_data(new net::IOBuffer(data.size()));
-    memcpy(new_data->data(), data.data(), data.size());
-
     // Call write file functionality in download sequence.
     download::GetDownloadTaskRunner()->PostTask(
-        FROM_HERE,
-        base::BindOnce(&SaveFileManager::UpdateSaveProgress, file_manager_,
-                       save_item->id(), base::RetainedRef(new_data),
-                       static_cast<int>(data.size())));
+        FROM_HERE, base::BindOnce(&SaveFileManager::UpdateSaveProgress,
+                                  file_manager_, save_item->id(), data));
   }
 
   // Current frame is completed saving, call finish in download sequence.

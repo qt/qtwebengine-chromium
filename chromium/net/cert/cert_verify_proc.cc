@@ -290,7 +290,13 @@ void RecordTLSFeatureExtensionWithPrivateRoot(
 // This also accounts for situations in which a new CA is introduced, and
 // has been cross-signed by an existing CA. Assessing impact should use the
 // most-specific trust anchor, when possible.
-void RecordTrustAnchorHistogram(const HashValueVector& spki_hashes) {
+//
+// This also histograms for divergence between the root store and
+// |spki_hashes| - that is, situations in which the OS methods of detecting
+// a known root flag a certificate as known, but its hash is not known as part
+// of the built-in list.
+void RecordTrustAnchorHistogram(const HashValueVector& spki_hashes,
+                                bool is_issued_by_known_root) {
   int32_t id = 0;
   for (const auto& hash : spki_hashes) {
     id = GetNetTrustAnchorHistogramIdForSPKI(hash);
@@ -298,6 +304,14 @@ void RecordTrustAnchorHistogram(const HashValueVector& spki_hashes) {
       break;
   }
   base::UmaHistogramSparse("Net.Certificate.TrustAnchor.Verify", id);
+
+  // Record when a known trust anchor is not found within the chain, but the
+  // certificate is flagged as being from a known root (meaning a fallback to
+  // OS-based methods of determination).
+  if (id == 0) {
+    UMA_HISTOGRAM_BOOLEAN("Net.Certificate.TrustAnchor.VerifyOutOfDate",
+                          is_issued_by_known_root);
+  }
 }
 
 // Comparison functor used for binary searching whether a given HashValue,
@@ -508,13 +522,6 @@ int CertVerifyProc::Verify(X509Certificate* cert,
     return ERR_CERT_REVOKED;
   }
 
-  // We do online revocation checking for EV certificates that aren't covered
-  // by a fresh CRLSet.
-  // TODO(rsleevi): http://crbug.com/142974 - Allow preferences to fully
-  // disable revocation checking.
-  if (flags & CertVerifier::VERIFY_EV_CERT)
-    flags |= CertVerifier::VERIFY_REV_CHECKING_ENABLED_EV_ONLY;
-
   int rv = VerifyInternal(cert, hostname, ocsp_response, flags, crl_set,
                           additional_trust_anchors, verify_result);
 
@@ -639,8 +646,10 @@ int CertVerifyProc::Verify(X509Certificate* cert,
     RecordTLSFeatureExtensionWithPrivateRoot(cert, verify_result->ocsp_result);
 
   // Record a histogram for per-verification usage of root certs.
-  if (rv == OK)
-    RecordTrustAnchorHistogram(verify_result->public_key_hashes);
+  if (rv == OK) {
+    RecordTrustAnchorHistogram(verify_result->public_key_hashes,
+                               verify_result->is_issued_by_known_root);
+  }
 
   return rv;
 }
@@ -860,23 +869,6 @@ bool CertVerifyProc::HasTooLongValidity(const X509Certificate& cert) {
     return true;
   }
 
-  base::Time::Exploded exploded_start;
-  base::Time::Exploded exploded_expiry;
-  cert.valid_start().UTCExplode(&exploded_start);
-  cert.valid_expiry().UTCExplode(&exploded_expiry);
-
-  if (exploded_expiry.year - exploded_start.year > 10)
-    return true;
-
-  int month_diff = (exploded_expiry.year - exploded_start.year) * 12 +
-                   (exploded_expiry.month - exploded_start.month);
-
-  base::TimeDelta days_diff = cert.valid_expiry() - cert.valid_start();
-
-  // Add any remainder as a full month.
-  if (exploded_expiry.day_of_month > exploded_start.day_of_month)
-    ++month_diff;
-
   // These dates are derived from the transitions noted in Section 1.2.2
   // (Relevant Dates) of the Baseline Requirements.
   const base::Time time_2012_07_01 =
@@ -888,22 +880,41 @@ bool CertVerifyProc::HasTooLongValidity(const X509Certificate& cert) {
   const base::Time time_2019_07_01 =
       base::Time::UnixEpoch() + base::TimeDelta::FromSeconds(1561939200);
 
+  // Compute the maximally permissive interpretations, accounting for leap
+  // years.
+  // 10 years - two possible leap years.
+  constexpr base::TimeDelta kTenYears =
+      base::TimeDelta::FromDays((365 * 8) + (366 * 2));
+  // 5 years - two possible leap years (year 0/year 4 or year 1/year 5).
+  constexpr base::TimeDelta kSixtyMonths =
+      base::TimeDelta::FromDays((365 * 3) + (366 * 2));
+  // 39 months - one possible leap year, two at 365 days, and the longest
+  // monthly sequence of 31/31/30 days (June/July/August).
+  constexpr base::TimeDelta kThirtyNineMonths =
+      base::TimeDelta::FromDays(366 + 365 + 365 + 31 + 31 + 30);
+
+  base::TimeDelta validity_duration = cert.valid_expiry() - cert.valid_start();
+
   // For certificates issued before the BRs took effect.
-  if (start < time_2012_07_01 && (month_diff > 120 || expiry > time_2019_07_01))
+  if (start < time_2012_07_01 &&
+      (validity_duration > kTenYears || expiry > time_2019_07_01)) {
     return true;
+  }
 
   // For certificates issued after the BR effective date of 1 July 2012: 60
   // months.
-  if (start >= time_2012_07_01 && month_diff > 60)
+  if (start >= time_2012_07_01 && validity_duration > kSixtyMonths)
     return true;
 
   // For certificates issued after 1 April 2015: 39 months.
-  if (start >= time_2015_04_01 && month_diff > 39)
+  if (start >= time_2015_04_01 && validity_duration > kThirtyNineMonths)
     return true;
 
   // For certificates issued after 1 March 2018: 825 days.
-  if (start >= time_2018_03_01 && days_diff > base::TimeDelta::FromDays(825))
+  if (start >= time_2018_03_01 &&
+      validity_duration > base::TimeDelta::FromDays(825)) {
     return true;
+  }
 
   return false;
 }

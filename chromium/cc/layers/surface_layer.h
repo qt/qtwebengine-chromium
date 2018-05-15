@@ -28,6 +28,12 @@ class CC_EXPORT SurfaceLayer : public Layer {
   // When stretch_content_to_fill_bounds is true, the scale of the embedded
   // surface is ignored and the content will be stretched to fill the bounds.
   void SetStretchContentToFillBounds(bool stretch_content_to_fill_bounds);
+  bool stretch_content_to_fill_bounds() const {
+    return stretch_content_to_fill_bounds_;
+  }
+
+  void SetHitTestable(bool hit_testable);
+  bool hit_testable() const { return hit_testable_; }
 
   // Layer overrides.
   std::unique_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
@@ -58,6 +64,7 @@ class CC_EXPORT SurfaceLayer : public Layer {
   base::Optional<uint32_t> deadline_in_frames_ = 0u;
 
   bool stretch_content_to_fill_bounds_ = false;
+  bool hit_testable_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(SurfaceLayer);
 };

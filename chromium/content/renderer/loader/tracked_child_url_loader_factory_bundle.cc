@@ -25,7 +25,7 @@ TrackedChildURLLoaderFactoryBundleInfo::TrackedChildURLLoaderFactoryBundleInfo(
 TrackedChildURLLoaderFactoryBundleInfo::
     ~TrackedChildURLLoaderFactoryBundleInfo() = default;
 
-scoped_refptr<SharedURLLoaderFactory>
+scoped_refptr<network::SharedURLLoaderFactory>
 TrackedChildURLLoaderFactoryBundleInfo::CreateFactory() {
   auto other = std::make_unique<TrackedChildURLLoaderFactoryBundleInfo>();
   other->default_factory_info_ = std::move(default_factory_info_);
@@ -43,7 +43,7 @@ TrackedChildURLLoaderFactoryBundle::TrackedChildURLLoaderFactoryBundle(
     std::unique_ptr<TrackedChildURLLoaderFactoryBundleInfo> info) {
   DCHECK(info->main_thread_host_bundle());
   main_thread_host_bundle_ = std::move(info->main_thread_host_bundle());
-  Update(std::move(info));
+  Update(std::move(info), base::nullopt);
   AddObserverOnMainThread();
 }
 
@@ -51,7 +51,7 @@ TrackedChildURLLoaderFactoryBundle::~TrackedChildURLLoaderFactoryBundle() {
   RemoveObserverOnMainThread();
 };
 
-std::unique_ptr<SharedURLLoaderFactoryInfo>
+std::unique_ptr<network::SharedURLLoaderFactoryInfo>
 TrackedChildURLLoaderFactoryBundle::Clone() {
   auto info = base::WrapUnique(static_cast<ChildURLLoaderFactoryBundleInfo*>(
       ChildURLLoaderFactoryBundle::Clone().release()));
@@ -96,30 +96,33 @@ void TrackedChildURLLoaderFactoryBundle::RemoveObserverOnMainThread() {
 }
 
 void TrackedChildURLLoaderFactoryBundle::OnUpdate(
-    std::unique_ptr<SharedURLLoaderFactoryInfo> info) {
+    std::unique_ptr<network::SharedURLLoaderFactoryInfo> info) {
   Update(base::WrapUnique(
-      static_cast<ChildURLLoaderFactoryBundleInfo*>(info.release())));
+             static_cast<ChildURLLoaderFactoryBundleInfo*>(info.release())),
+         base::nullopt);
 }
 
 // -----------------------------------------------------------------------------
 
-HostChildURLLoaderFactoryBundle::HostChildURLLoaderFactoryBundle()
-    : observer_list_(std::make_unique<ObserverList>()) {
+HostChildURLLoaderFactoryBundle::HostChildURLLoaderFactoryBundle(
+    scoped_refptr<base::SequencedTaskRunner> task_runner)
+    : observer_list_(std::make_unique<ObserverList>()),
+      task_runner_(std::move(task_runner)) {
   DCHECK(RenderThread::Get()) << "HostChildURLLoaderFactoryBundle should live "
                                  "on the main renderer thread";
 }
 
 HostChildURLLoaderFactoryBundle::~HostChildURLLoaderFactoryBundle() = default;
 
-std::unique_ptr<SharedURLLoaderFactoryInfo>
+std::unique_ptr<network::SharedURLLoaderFactoryInfo>
 HostChildURLLoaderFactoryBundle::Clone() {
   auto info = base::WrapUnique(static_cast<ChildURLLoaderFactoryBundleInfo*>(
       ChildURLLoaderFactoryBundle::Clone().release()));
 
   DCHECK(base::SequencedTaskRunnerHandle::IsSet());
   auto main_thread_host_bundle_clone = std::make_unique<
-      TrackedChildURLLoaderFactoryBundle::HostPtrAndTaskRunner>(
-      AsWeakPtr(), base::SequencedTaskRunnerHandle::Get());
+      TrackedChildURLLoaderFactoryBundle::HostPtrAndTaskRunner>(AsWeakPtr(),
+                                                                task_runner_);
 
   return std::make_unique<TrackedChildURLLoaderFactoryBundleInfo>(
       std::move(info->default_factory_info()),
@@ -142,7 +145,7 @@ void HostChildURLLoaderFactoryBundle::UpdateThisAndAllClones(
                                      partial_bundle->Clone());
   }
 
-  Update(partial_bundle->PassInterface());
+  Update(partial_bundle->PassInterface(), base::nullopt);
 }
 
 bool HostChildURLLoaderFactoryBundle::IsHostChildURLLoaderFactoryBundle()
@@ -167,7 +170,7 @@ void HostChildURLLoaderFactoryBundle::RemoveObserver(
 
 void HostChildURLLoaderFactoryBundle::NotifyUpdateOnMainOrWorkerThread(
     ObserverPtrAndTaskRunner* observer_bundle,
-    std::unique_ptr<SharedURLLoaderFactoryInfo> update_info) {
+    std::unique_ptr<network::SharedURLLoaderFactoryInfo> update_info) {
   observer_bundle->second->PostTask(
       FROM_HERE,
       base::BindOnce(&TrackedChildURLLoaderFactoryBundle::OnUpdate,

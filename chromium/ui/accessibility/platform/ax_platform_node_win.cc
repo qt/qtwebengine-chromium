@@ -347,9 +347,17 @@ void AXPlatformNodeWin::NotifyAccessibilityEvent(ax::mojom::Event event_type) {
 
   // Menu items fire selection events but Windows screen readers work reliably
   // with focus events. Remap here.
-  if (event_type == ax::mojom::Event::kSelection &&
-      GetData().role == ax::mojom::Role::kMenuItem)
-    event_type = ax::mojom::Event::kFocus;
+  if (event_type == ax::mojom::Event::kSelection) {
+    // A menu item could have something other than a role of
+    // |ROLE_SYSTEM_MENUITEM|. Zoom modification controls for example have a
+    // role of button.
+    auto* parent =
+        static_cast<AXPlatformNodeWin*>(FromNativeViewAccessible(GetParent()));
+    if (MSAARole() == ROLE_SYSTEM_MENUITEM ||
+        (parent && parent->MSAARole() == ROLE_SYSTEM_MENUPOPUP)) {
+      event_type = ax::mojom::Event::kFocus;
+    }
+  }
 
   int native_event = MSAAEvent(event_type);
   if (native_event < EVENT_MIN)
@@ -844,7 +852,8 @@ STDMETHODIMP AXPlatformNodeWin::get_accSelection(VARIANT* selected) {
   for (int i = 0; i < delegate_->GetChildCount(); ++i) {
     auto* node = static_cast<AXPlatformNodeWin*>(
         FromNativeViewAccessible(delegate_->ChildAtIndex(i)));
-    if (node && node->GetData().HasState(ax::mojom::State::kSelected))
+    if (node &&
+        node->GetData().GetBoolAttribute(ax::mojom::BoolAttribute::kSelected))
       selected_nodes.emplace_back(node);
   }
 
@@ -1440,7 +1449,8 @@ STDMETHODIMP AXPlatformNodeWin::get_nSelectedChildren(LONG* cell_count) {
   for (int r = 0; r < rows; ++r) {
     for (int c = 0; c < columns; ++c) {
       AXPlatformNodeBase* cell = GetTableCell(r, c);
-      if (cell && cell->GetData().HasState(ax::mojom::State::kSelected))
+      if (cell &&
+          cell->GetData().GetBoolAttribute(ax::mojom::BoolAttribute::kSelected))
         result++;
     }
   }
@@ -1467,7 +1477,8 @@ STDMETHODIMP AXPlatformNodeWin::get_nSelectedColumns(LONG* column_count) {
     bool selected = true;
     for (int r = 0; r < rows && selected == true; ++r) {
       AXPlatformNodeBase* cell = GetTableCell(r, c);
-      if (!cell || !(cell->GetData().HasState(ax::mojom::State::kSelected)))
+      if (!cell || !(cell->GetData().GetBoolAttribute(
+                       ax::mojom::BoolAttribute::kSelected)))
         selected = false;
     }
     if (selected)
@@ -1497,7 +1508,8 @@ STDMETHODIMP AXPlatformNodeWin::get_nSelectedRows(LONG* row_count) {
     bool selected = true;
     for (int c = 0; c < columns && selected == true; ++c) {
       AXPlatformNodeBase* cell = GetTableCell(r, c);
-      if (!cell || !(cell->GetData().HasState(ax::mojom::State::kSelected)))
+      if (!cell || !(cell->GetData().GetBoolAttribute(
+                       ax::mojom::BoolAttribute::kSelected)))
         selected = false;
     }
     if (selected)
@@ -1607,7 +1619,8 @@ STDMETHODIMP AXPlatformNodeWin::get_selectedChildren(LONG max_children,
   for (int r = 0; r < rows; ++r) {
     for (int c = 0; c < columns; ++c) {
       AXPlatformNodeBase* cell = GetTableCell(r, c);
-      if (cell && cell->GetData().HasState(ax::mojom::State::kSelected))
+      if (cell &&
+          cell->GetData().GetBoolAttribute(ax::mojom::BoolAttribute::kSelected))
         // index is row index * column count + column index.
         results.push_back(r * columns + c);
     }
@@ -1636,7 +1649,8 @@ STDMETHODIMP AXPlatformNodeWin::get_selectedColumns(LONG max_columns,
     bool selected = true;
     for (int r = 0; r < row_count && selected == true; ++r) {
       AXPlatformNodeBase* cell = GetTableCell(r, c);
-      if (!cell || !(cell->GetData().HasState(ax::mojom::State::kSelected)))
+      if (!cell || !(cell->GetData().GetBoolAttribute(
+                       ax::mojom::BoolAttribute::kSelected)))
         selected = false;
     }
     if (selected)
@@ -1664,7 +1678,8 @@ STDMETHODIMP AXPlatformNodeWin::get_selectedRows(LONG max_rows,
     bool selected = true;
     for (int c = 0; c < column_count && selected == true; ++c) {
       AXPlatformNodeBase* cell = GetTableCell(r, c);
-      if (!cell || !(cell->GetData().HasState(ax::mojom::State::kSelected)))
+      if (!cell || !(cell->GetData().GetBoolAttribute(
+                       ax::mojom::BoolAttribute::kSelected)))
         selected = false;
     }
     if (selected)
@@ -1701,7 +1716,8 @@ STDMETHODIMP AXPlatformNodeWin::get_isColumnSelected(LONG column,
 
   for (int r = 0; r < rows; ++r) {
     AXPlatformNodeBase* cell = GetTableCell(r, column);
-    if (!cell || !(cell->GetData().HasState(ax::mojom::State::kSelected)))
+    if (!cell || !(cell->GetData().GetBoolAttribute(
+                     ax::mojom::BoolAttribute::kSelected)))
       return S_OK;
   }
 
@@ -1724,7 +1740,8 @@ STDMETHODIMP AXPlatformNodeWin::get_isRowSelected(LONG row,
 
   for (int c = 0; c < columns; ++c) {
     AXPlatformNodeBase* cell = GetTableCell(row, c);
-    if (!cell || !(cell->GetData().HasState(ax::mojom::State::kSelected)))
+    if (!cell || !(cell->GetData().GetBoolAttribute(
+                     ax::mojom::BoolAttribute::kSelected)))
       return S_OK;
   }
 
@@ -1748,7 +1765,8 @@ STDMETHODIMP AXPlatformNodeWin::get_isSelected(LONG row,
     return S_FALSE;
 
   AXPlatformNodeBase* cell = GetTableCell(row, column);
-  if (cell && cell->GetData().HasState(ax::mojom::State::kSelected))
+  if (cell &&
+      cell->GetData().GetBoolAttribute(ax::mojom::BoolAttribute::kSelected))
     *is_selected = true;
 
   return S_OK;
@@ -1865,7 +1883,8 @@ STDMETHODIMP AXPlatformNodeWin::get_selectedCells(IUnknown*** cells,
   for (int r = 0; r < rows; ++r) {
     for (int c = 0; c < columns; ++c) {
       AXPlatformNodeBase* cell = GetTableCell(r, c);
-      if (cell && cell->GetData().HasState(ax::mojom::State::kSelected))
+      if (cell &&
+          cell->GetData().GetBoolAttribute(ax::mojom::BoolAttribute::kSelected))
         selected.push_back(cell);
     }
   }
@@ -2411,7 +2430,10 @@ int AXPlatformNodeWin::MSAARole() {
       return ROLE_SYSTEM_ALERT;
 
     case ax::mojom::Role::kAlertDialog:
-      return ROLE_SYSTEM_DIALOG;
+      // We temporarily use |ROLE_SYSTEM_ALERT| because some Windows screen
+      // readers are not compatible with |ax::mojom::Role::kAlertDialog| yet.
+      // TODO(aleventhal) modify this to return |ROLE_SYSTEM_DIALOG|.
+      return ROLE_SYSTEM_ALERT;
 
     case ax::mojom::Role::kAnchor:
       return ROLE_SYSTEM_LINK;
@@ -2859,8 +2881,10 @@ int32_t AXPlatformNodeWin::ComputeIA2State() {
     ia2_state |= IA2_STATE_SELECTABLE_TEXT;
   }
 
-  if (!GetStringAttribute(ax::mojom::StringAttribute::kAutoComplete).empty())
+  if (!GetStringAttribute(ax::mojom::StringAttribute::kAutoComplete).empty() ||
+      IsAutofillField()) {
     ia2_state |= IA2_STATE_SUPPORTS_AUTOCOMPLETION;
+  }
 
   if (GetBoolAttribute(ax::mojom::BoolAttribute::kModal))
     ia2_state |= IA2_STATE_MODAL;
@@ -3024,6 +3048,11 @@ std::vector<base::string16> AXPlatformNodeWin::ComputeIA2Attributes() {
 
   StringAttributeToIA2(result, ax::mojom::StringAttribute::kAutoComplete,
                        "autocomplete");
+  if (!HasStringAttribute(ax::mojom::StringAttribute::kAutoComplete) &&
+      IsAutofillField()) {
+    result.push_back(L"autocomplete:list");
+  }
+
   StringAttributeToIA2(result, ax::mojom::StringAttribute::kRoleDescription,
                        "roledescription");
   StringAttributeToIA2(result, ax::mojom::StringAttribute::kKeyShortcuts,
@@ -3375,7 +3404,7 @@ bool AXPlatformNodeWin::ShouldNodeHaveFocusableState(
 
     case ax::mojom::Role::kListBoxOption:
     case ax::mojom::Role::kMenuListOption:
-      if (data.HasState(ax::mojom::State::kSelectable))
+      if (data.HasBoolAttribute(ax::mojom::BoolAttribute::kSelected))
         return true;
       break;
 
@@ -3384,6 +3413,11 @@ bool AXPlatformNodeWin::ShouldNodeHaveFocusableState(
   }
 
   return data.HasState(ax::mojom::State::kFocusable);
+}
+
+bool AXPlatformNodeWin::IsAutofillField() {
+  return IsAutofillShown() && IsPlainTextField() &&
+         delegate_->GetFocus() == GetNativeViewAccessible();
 }
 
 int AXPlatformNodeWin::MSAAState() {
@@ -3410,7 +3444,9 @@ int AXPlatformNodeWin::MSAAState() {
   if (ShouldNodeHaveFocusableState(data))
     msaa_state |= STATE_SYSTEM_FOCUSABLE;
 
-  if (data.HasState(ax::mojom::State::kHaspopup))
+  // Note: autofill is special-cased here because there is no way for the
+  // browser to know when the autofill popup is shown.
+  if (data.HasState(ax::mojom::State::kHaspopup) || IsAutofillField())
     msaa_state |= STATE_SYSTEM_HASPOPUP;
 
   // TODO(dougt) unhandled ux::ax::mojom::State::kHorizontal
@@ -3448,10 +3484,10 @@ int AXPlatformNodeWin::MSAAState() {
   // TODO(dougt) unhandled ux::ax::mojom::State::kRequired
   // TODO(dougt) unhandled ux::ax::mojom::State::kRichlyEditable
 
-  if (data.HasState(ax::mojom::State::kSelectable))
+  if (data.HasBoolAttribute(ax::mojom::BoolAttribute::kSelected))
     msaa_state |= STATE_SYSTEM_SELECTABLE;
 
-  if (data.HasState(ax::mojom::State::kSelected))
+  if (data.GetBoolAttribute(ax::mojom::BoolAttribute::kSelected))
     msaa_state |= STATE_SYSTEM_SELECTED;
 
   // TODO(dougt) unhandled VERTICAL
@@ -3504,6 +3540,22 @@ int AXPlatformNodeWin::MSAAState() {
   if (focus == GetNativeViewAccessible())
     msaa_state |= STATE_SYSTEM_FOCUSED;
 
+  // In focused single selection UI menus and listboxes, mirror item selection
+  // to focus. This helps NVDA read the selected option as it changes.
+  if ((data.role == ax::mojom::Role::kListBoxOption ||
+       data.role == ax::mojom::Role::kMenuItem) &&
+      data.GetBoolAttribute(ax::mojom::BoolAttribute::kSelected)) {
+    AXPlatformNodeBase* container = FromNativeViewAccessible(GetParent());
+    if (container && container->GetParent() == focus) {
+      ui::AXNodeData container_data = container->GetData();
+      if ((container_data.role == ax::mojom::Role::kListBox ||
+           container_data.role == ax::mojom::Role::kMenu) &&
+          !container_data.HasState(ax::mojom::State::kMultiselectable)) {
+        msaa_state |= STATE_SYSTEM_FOCUSED;
+      }
+    }
+  }
+
   // On Windows, the "focus" bit should be set on certain containers, like
   // menu bars, when visible.
   //
@@ -3534,7 +3586,10 @@ int AXPlatformNodeWin::MSAAEvent(ax::mojom::Event event) {
     case ax::mojom::Event::kExpandedChanged:
       return EVENT_OBJECT_STATECHANGE;
     case ax::mojom::Event::kFocus:
+    case ax::mojom::Event::kFocusContext:
       return EVENT_OBJECT_FOCUS;
+    case ax::mojom::Event::kLiveRegionChanged:
+      return EVENT_OBJECT_LIVEREGIONCHANGED;
     case ax::mojom::Event::kMenuStart:
       return EVENT_SYSTEM_MENUSTART;
     case ax::mojom::Event::kMenuEnd:

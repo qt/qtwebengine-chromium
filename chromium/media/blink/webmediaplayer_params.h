@@ -21,7 +21,7 @@
 #include "media/blink/media_blink_export.h"
 #include "media/filters/context_3d.h"
 #include "media/mojo/interfaces/media_metrics_provider.mojom.h"
-#include "third_party/WebKit/public/platform/WebVideoFrameSubmitter.h"
+#include "third_party/blink/public/platform/web_video_frame_submitter.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -50,10 +50,14 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerParams {
   typedef base::Callback<void(const base::Closure&)> DeferLoadCB;
   typedef base::Callback<Context3D()> Context3DCB;
 
-  // Callback to obtain the video SurfaceInfo to trigger Picture-in-Picture
-  // mode.
+  // Callback to obtain the SurfaceInfo and natural size for the relevant video
+  // to trigger Picture-in-Picture mode.
   using PipSurfaceInfoCB =
-      base::RepeatingCallback<void(const viz::SurfaceId& surface_id)>;
+      base::RepeatingCallback<void(const viz::SurfaceId& surface_id,
+                                   const gfx::Size& natural_size)>;
+
+  // Callback to exit Picture-in-Picture.
+  using ExitPipCB = base::RepeatingCallback<void()>;
 
   // Callback to obtain the media ContextProvider.
   // Requires being called on the media thread.
@@ -93,7 +97,8 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerParams {
           blink::WebSurfaceLayerBridgeObserver*)> bridge_callback,
       scoped_refptr<viz::ContextProvider> context_provider,
       bool use_surface_layer_for_video,
-      const PipSurfaceInfoCB& surface_info_cb);
+      const PipSurfaceInfoCB& surface_info_cb,
+      const ExitPipCB& exit_pip_cb);
 
   ~WebMediaPlayerParams();
 
@@ -180,6 +185,8 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerParams {
     return pip_surface_info_cb_;
   }
 
+  const ExitPipCB exit_pip_cb() const { return exit_pip_cb_; }
+
  private:
   DeferLoadCB defer_load_cb_;
   scoped_refptr<SwitchableAudioRendererSink> audio_renderer_sink_;
@@ -206,6 +213,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerParams {
   scoped_refptr<viz::ContextProvider> context_provider_;
   bool use_surface_layer_for_video_;
   PipSurfaceInfoCB pip_surface_info_cb_;
+  ExitPipCB exit_pip_cb_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(WebMediaPlayerParams);
 };

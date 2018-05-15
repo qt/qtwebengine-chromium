@@ -4,19 +4,26 @@
 
 #include "services/network/network_service.h"
 
+#include <map>
 #include <utility>
 
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
+#include "base/metrics/field_trial_params.h"
+#include "base/task_scheduler/post_task.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/base/logging_network_change_observer.h"
 #include "net/base/network_change_notifier.h"
+#include "net/dns/host_resolver.h"
+#include "net/dns/mapped_host_resolver.h"
 #include "net/log/file_net_log_observer.h"
 #include "net/log/net_log.h"
 #include "net/log/net_log_util.h"
+#include "net/nqe/network_quality_estimator.h"
+#include "net/nqe/network_quality_estimator_params.h"
 #include "net/url_request/url_request_context_builder.h"
 #include "services/network/network_context.h"
 #include "services/network/public/cpp/network_switches.h"
@@ -25,6 +32,11 @@
 namespace network {
 
 namespace {
+
+// Field trial for network quality estimator. Seeds RTT and downstream
+// throughput observations with values that correspond to the connection type
+// determined by the operating system.
+const char kNetworkQualityEstimatorFieldTrialName[] = "NetworkQualityEstimator";
 
 std::unique_ptr<net::NetworkChangeNotifier>
 CreateNetworkChangeNotifierIfNeeded() {
@@ -46,6 +58,21 @@ CreateNetworkChangeNotifierIfNeeded() {
     return base::WrapUnique(net::NetworkChangeNotifier::Create());
   }
   return nullptr;
+}
+
+std::unique_ptr<net::HostResolver> CreateHostResolver() {
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
+  if (!command_line.HasSwitch(network::switches::kHostResolverRules))
+    return nullptr;
+
+  std::unique_ptr<net::HostResolver> host_resolver(
+      net::HostResolver::CreateDefaultResolver(nullptr));
+  std::unique_ptr<net::MappedHostResolver> remapped_host_resolver(
+      new net::MappedHostResolver(std::move(host_resolver)));
+  remapped_host_resolver->SetRulesFromString(
+      command_line.GetSwitchValueASCII(switches::kHostResolverRules));
+  return std::move(remapped_host_resolver);
 }
 
 }  // namespace
@@ -102,6 +129,7 @@ NetworkService::NetworkService(
   network_change_manager_ = std::make_unique<NetworkChangeManager>(
       CreateNetworkChangeNotifierIfNeeded());
 
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (net_log) {
     net_log_ = net_log;
   } else {
@@ -109,7 +137,7 @@ NetworkService::NetworkService(
     // Note: The command line switches are only checked when not using the
     // embedder's NetLog, as it may already be writing to the destination log
     // file.
-    owned_net_log_->ProcessCommandLine(*base::CommandLine::ForCurrentProcess());
+    owned_net_log_->ProcessCommandLine(*command_line);
     net_log_ = owned_net_log_.get();
   }
 
@@ -118,6 +146,43 @@ NetworkService::NetworkService(
   // logging the network change before other IO thread consumers respond to it.
   network_change_observer_.reset(
       new net::LoggingNetworkChangeObserver(net_log_));
+
+  std::map<std::string, std::string> network_quality_estimator_params;
+  base::GetFieldTrialParams(kNetworkQualityEstimatorFieldTrialName,
+                            &network_quality_estimator_params);
+
+  if (command_line->HasSwitch(switches::kForceEffectiveConnectionType)) {
+    const std::string force_ect_value = command_line->GetSwitchValueASCII(
+        switches::kForceEffectiveConnectionType);
+
+    if (!force_ect_value.empty()) {
+      // If the effective connection type is forced using command line switch,
+      // it overrides the one set by field trial.
+      network_quality_estimator_params[net::kForceEffectiveConnectionType] =
+          force_ect_value;
+    }
+  }
+
+  // Pass ownership.
+  network_quality_estimator_ = std::make_unique<net::NetworkQualityEstimator>(
+      std::make_unique<net::NetworkQualityEstimatorParams>(
+          network_quality_estimator_params),
+      net_log_);
+
+#if defined(OS_CHROMEOS)
+  // Set a task runner for the get network id call for NetworkQualityEstimator
+  // to workaround https://crbug.com/821607 where AddressTrackerLinux stucks
+  // with a recv() call and blocks IO thread. Using SingleThreadTaskRunner so
+  // that task scheduler does not create too many worker threads when the
+  // problem happens.
+  // TODO(https://crbug.com/821607): Remove after the bug is resolved.
+  network_quality_estimator_->set_get_network_id_task_runner(
+      base::CreateSingleThreadTaskRunnerWithTraits(
+          {base::MayBlock(), base::TaskPriority::BACKGROUND,
+           base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN}));
+#endif
+
+  host_resolver_ = CreateHostResolver();
 }
 
 NetworkService::~NetworkService() {

@@ -14,7 +14,7 @@
 #include "content/public/renderer/render_accessibility.h"
 #include "content/public/renderer/render_frame_observer.h"
 #include "content/renderer/accessibility/blink_ax_tree_source.h"
-#include "third_party/WebKit/public/web/WebAXObject.h"
+#include "third_party/blink/public/web/web_ax_object.h"
 #include "ui/accessibility/ax_relative_bounds.h"
 #include "ui/accessibility/ax_tree.h"
 #include "ui/accessibility/ax_tree_serializer.h"
@@ -61,9 +61,9 @@ class CONTENT_EXPORT RenderAccessibilityImpl
  public:
   // Request a one-time snapshot of the accessibility tree without
   // enabling accessibility if it wasn't already enabled.
-  static void SnapshotAccessibilityTree(
-      RenderFrameImpl* render_frame,
-      AXContentTreeUpdate* response);
+  static void SnapshotAccessibilityTree(RenderFrameImpl* render_frame,
+                                        AXContentTreeUpdate* response,
+                                        ui::AXMode ax_mode);
 
   RenderAccessibilityImpl(RenderFrameImpl* render_frame, ui::AXMode mode);
   ~RenderAccessibilityImpl() override;

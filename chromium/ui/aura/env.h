@@ -18,10 +18,6 @@
 #include "ui/events/system_input_injector.h"
 #include "ui/gfx/geometry/point.h"
 
-#if defined(USE_OZONE)
-#include "ui/ozone/public/client_native_pixmap_factory_ozone.h"
-#endif
-
 namespace base {
 class UnguessableToken;
 }
@@ -112,6 +108,12 @@ class AURA_EXPORT Env : public ui::EventTarget,
   }
   ui::ContextFactory* context_factory() { return context_factory_; }
 
+  // Sets |initial_throttle_input_on_resize| the next time Env is created. This
+  // is only useful in tests that need to disable input resize.
+  static void set_initial_throttle_input_on_resize_for_testing(
+      bool throttle_input) {
+    initial_throttle_input_on_resize_ = throttle_input;
+  }
   void set_throttle_input_on_resize_for_testing(bool throttle_input) {
     throttle_input_on_resize_ = throttle_input;
   }
@@ -215,7 +217,8 @@ class AURA_EXPORT Env : public ui::EventTarget,
   // creating a different WindowPort implementation.
   bool in_mus_shutdown_ = false;
 
-  bool throttle_input_on_resize_ = true;
+  static bool initial_throttle_input_on_resize_;
+  bool throttle_input_on_resize_ = initial_throttle_input_on_resize_;
 
   DISALLOW_COPY_AND_ASSIGN(Env);
 };

@@ -20,7 +20,7 @@
 #include "base/memory/weak_ptr.h"
 #include "content/browser/cache_storage/cache_storage_cache.h"
 #include "content/browser/cache_storage/cache_storage_cache_observer.h"
-#include "third_party/WebKit/public/platform/modules/cache_storage/cache_storage.mojom.h"
+#include "third_party/blink/public/platform/modules/cache_storage/cache_storage.mojom.h"
 #include "url/origin.h"
 
 namespace base {
@@ -58,6 +58,8 @@ class CONTENT_EXPORT CacheStorage : public CacheStorageCacheObserver {
 
   using BoolAndErrorCallback =
       base::OnceCallback<void(bool, blink::mojom::CacheStorageError)>;
+  using ErrorCallback =
+      base::OnceCallback<void(blink::mojom::CacheStorageError)>;
   using CacheAndErrorCallback =
       base::OnceCallback<void(CacheStorageCacheHandle,
                               blink::mojom::CacheStorageError)>;
@@ -95,7 +97,7 @@ class CONTENT_EXPORT CacheStorage : public CacheStorageCacheObserver {
   // existing CacheStorageCacheHandle(s) to the cache will remain valid but
   // future CacheStorage operations won't be able to access the cache. The cache
   // isn't actually erased from disk until the last handle is dropped.
-  void DoomCache(const std::string& cache_name, BoolAndErrorCallback callback);
+  void DoomCache(const std::string& cache_name, ErrorCallback callback);
 
   // Calls the callback with the cache index.
   void EnumerateCaches(IndexCallback callback);
@@ -184,10 +186,9 @@ class CONTENT_EXPORT CacheStorage : public CacheStorageCacheObserver {
                     BoolAndErrorCallback callback);
 
   // The DeleteCache callbacks are below.
-  void DoomCacheImpl(const std::string& cache_name,
-                     BoolAndErrorCallback callback);
+  void DoomCacheImpl(const std::string& cache_name, ErrorCallback callback);
   void DeleteCacheDidWriteIndex(CacheStorageCacheHandle cache_handle,
-                                BoolAndErrorCallback callback,
+                                ErrorCallback callback,
                                 bool success);
   void DeleteCacheFinalize(CacheStorageCache* doomed_cache);
   void DeleteCacheDidGetSize(CacheStorageCache* doomed_cache,
@@ -205,8 +206,7 @@ class CONTENT_EXPORT CacheStorage : public CacheStorageCacheObserver {
   void MatchCacheDidMatch(CacheStorageCacheHandle cache_handle,
                           CacheStorageCache::ResponseCallback callback,
                           blink::mojom::CacheStorageError error,
-                          std::unique_ptr<ServiceWorkerResponse> response,
-                          std::unique_ptr<storage::BlobDataHandle> handle);
+                          std::unique_ptr<ServiceWorkerResponse> response);
 
   // The MatchAllCaches callbacks are below.
   void MatchAllCachesImpl(std::unique_ptr<ServiceWorkerFetchRequest> request,
@@ -217,8 +217,7 @@ class CONTENT_EXPORT CacheStorage : public CacheStorageCacheObserver {
       CacheMatchResponse* out_match_response,
       const base::RepeatingClosure& barrier_closure,
       blink::mojom::CacheStorageError error,
-      std::unique_ptr<ServiceWorkerResponse> service_worker_response,
-      std::unique_ptr<storage::BlobDataHandle> handle);
+      std::unique_ptr<ServiceWorkerResponse> service_worker_response);
   void MatchAllCachesDidMatchAll(
       std::unique_ptr<std::vector<CacheMatchResponse>> match_responses,
       CacheStorageCache::ResponseCallback callback);

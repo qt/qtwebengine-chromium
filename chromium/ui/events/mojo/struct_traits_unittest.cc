@@ -5,7 +5,7 @@
 #include <utility>
 
 #include "base/message_loop/message_loop.h"
-#include "mojo/common/time_struct_traits.h"
+#include "mojo/public/cpp/base/time_mojom_traits.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/event.h"
@@ -247,6 +247,61 @@ TEST_F(StructTraitsTest, GestureEvent) {
     EXPECT_EQ(kTestData[i].unique_touch_event_id(),
               output_ptr_event->unique_touch_event_id());
     EXPECT_EQ(kTestData[i].time_stamp(), output_ptr_event->time_stamp());
+  }
+}
+
+TEST_F(StructTraitsTest, ScrollEvent) {
+  ScrollEvent kTestData[] = {
+      {ET_SCROLL, gfx::Point(10, 20),
+       base::TimeTicks() + base::TimeDelta::FromMicroseconds(501), EF_NONE, 1,
+       2, 3, 4, 5, EventMomentumPhase::NONE, ScrollEventPhase::kNone},
+      {ET_SCROLL, gfx::Point(10, 20),
+       base::TimeTicks() + base::TimeDelta::FromMicroseconds(501), EF_NONE, 1,
+       2, 3, 4, 5, EventMomentumPhase::NONE, ScrollEventPhase::kUpdate},
+      {ET_SCROLL, gfx::Point(10, 20),
+       base::TimeTicks() + base::TimeDelta::FromMicroseconds(501), EF_NONE, 1,
+       2, 3, 4, 5, EventMomentumPhase::NONE, ScrollEventPhase::kBegan},
+      {ET_SCROLL, gfx::Point(10, 20),
+       base::TimeTicks() + base::TimeDelta::FromMicroseconds(501), EF_NONE, 1,
+       2, 3, 4, 5, EventMomentumPhase::NONE, ScrollEventPhase::kEnd},
+      {ET_SCROLL, gfx::Point(10, 20),
+       base::TimeTicks() + base::TimeDelta::FromMicroseconds(501), EF_NONE, 1,
+       2, 3, 4, 5, EventMomentumPhase::BEGAN, ScrollEventPhase::kNone},
+      {ET_SCROLL, gfx::Point(10, 20),
+       base::TimeTicks() + base::TimeDelta::FromMicroseconds(501), EF_NONE, 1,
+       2, 3, 4, 5, EventMomentumPhase::INERTIAL_UPDATE,
+       ScrollEventPhase::kNone},
+      {ET_SCROLL, gfx::Point(10, 20),
+       base::TimeTicks() + base::TimeDelta::FromMicroseconds(501), EF_NONE, 1,
+       2, 3, 4, 5, EventMomentumPhase::END, ScrollEventPhase::kNone},
+      {ET_SCROLL_FLING_START, gfx::Point(10, 20),
+       base::TimeTicks() + base::TimeDelta::FromMicroseconds(502), EF_NONE, 1,
+       2, 3, 4, 5, EventMomentumPhase::MAY_BEGIN, ScrollEventPhase::kNone},
+      {ET_SCROLL_FLING_CANCEL, gfx::Point(10, 20),
+       base::TimeTicks() + base::TimeDelta::FromMicroseconds(502), EF_NONE, 1,
+       2, 3, 4, 5, EventMomentumPhase::END, ScrollEventPhase::kNone},
+  };
+
+  mojom::TraitsTestServicePtr proxy = GetTraitsTestProxy();
+  for (size_t i = 0; i < arraysize(kTestData); i++) {
+    std::unique_ptr<Event> output;
+    proxy->EchoEvent(Event::Clone(kTestData[i]), &output);
+    EXPECT_TRUE(output->IsScrollEvent());
+
+    const ScrollEvent* output_ptr_event = output->AsScrollEvent();
+    EXPECT_EQ(kTestData[i].type(), output_ptr_event->type());
+    EXPECT_EQ(kTestData[i].location(), output_ptr_event->location());
+    EXPECT_EQ(kTestData[i].time_stamp(), output_ptr_event->time_stamp());
+    EXPECT_EQ(kTestData[i].flags(), output_ptr_event->flags());
+    EXPECT_EQ(kTestData[i].x_offset(), output_ptr_event->x_offset());
+    EXPECT_EQ(kTestData[i].y_offset(), output_ptr_event->y_offset());
+    EXPECT_EQ(kTestData[i].x_offset_ordinal(),
+              output_ptr_event->x_offset_ordinal());
+    EXPECT_EQ(kTestData[i].y_offset_ordinal(),
+              output_ptr_event->y_offset_ordinal());
+    EXPECT_EQ(kTestData[i].finger_count(), output_ptr_event->finger_count());
+    EXPECT_EQ(kTestData[i].momentum_phase(),
+              output_ptr_event->momentum_phase());
   }
 }
 

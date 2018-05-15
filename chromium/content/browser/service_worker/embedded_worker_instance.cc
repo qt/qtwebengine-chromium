@@ -8,7 +8,6 @@
 
 #include "base/bind_helpers.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/trace_event/trace_event.h"
 #include "content/browser/bad_message.h"
@@ -19,7 +18,6 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/renderer.mojom.h"
-#include "content/common/service_worker/embedded_worker_messages.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_thread.h"
@@ -29,8 +27,8 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "ipc/ipc_message.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
-#include "third_party/WebKit/public/web/WebConsoleMessage.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/blink/public/web/web_console_message.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -460,11 +458,6 @@ class EmbeddedWorkerInstance::StartTask {
   DISALLOW_COPY_AND_ASSIGN(StartTask);
 };
 
-bool EmbeddedWorkerInstance::Listener::OnMessageReceived(
-    const IPC::Message& message) {
-  return false;
-}
-
 EmbeddedWorkerInstance::~EmbeddedWorkerInstance() {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(status_ == EmbeddedWorkerStatus::STOPPING ||
@@ -682,6 +675,10 @@ void EmbeddedWorkerInstance::RequestTermination() {
   owner_version_->StopWorkerIfIdle(true /* requested_from_renderer */);
 }
 
+void EmbeddedWorkerInstance::CountFeature(blink::mojom::WebFeature feature) {
+  owner_version_->CountFeature(feature);
+}
+
 void EmbeddedWorkerInstance::OnReadyForInspection() {
   if (devtools_proxy_) {
     blink::mojom::DevToolsAgentAssociatedPtrInfo devtools_agent_ptr_info;
@@ -827,8 +824,7 @@ void EmbeddedWorkerInstance::OnStopped() {
 }
 
 void EmbeddedWorkerInstance::Detach() {
-  // Temporary CHECK for debugging https://crbug.com/750267.
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (status() == EmbeddedWorkerStatus::STOPPED)
     return;
   registry_->DetachWorker(process_id(), embedded_worker_id());
@@ -841,14 +837,6 @@ void EmbeddedWorkerInstance::Detach() {
 
 base::WeakPtr<EmbeddedWorkerInstance> EmbeddedWorkerInstance::AsWeakPtr() {
   return weak_factory_.GetWeakPtr();
-}
-
-bool EmbeddedWorkerInstance::OnMessageReceived(const IPC::Message& message) {
-  for (auto& listener : listener_list_) {
-    if (listener.OnMessageReceived(message))
-      return true;
-  }
-  return false;
 }
 
 void EmbeddedWorkerInstance::OnReportException(

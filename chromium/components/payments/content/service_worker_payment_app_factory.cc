@@ -102,6 +102,7 @@ class SelfDeletingServiceWorkerPaymentAppFactory {
       std::unique_ptr<PaymentManifestDownloader> downloader,
       scoped_refptr<PaymentManifestWebDataService> cache,
       const std::vector<mojom::PaymentMethodDataPtr>& requested_method_data,
+      bool may_crawl_for_installable_payment_apps,
       ServiceWorkerPaymentAppFactory::GetAllPaymentAppsCallback callback,
       base::OnceClosure finished_using_resources_callback) {
     DCHECK(!verifier_);
@@ -111,6 +112,11 @@ class SelfDeletingServiceWorkerPaymentAppFactory {
     cache_ = cache;
     verifier_ = std::make_unique<ManifestVerifier>(
         web_contents, downloader_.get(), parser_.get(), cache_.get());
+    if (may_crawl_for_installable_payment_apps) {
+      // Construct crawler in constructor to allow it observe the web_contents.
+      crawler_ = std::make_unique<InstallablePaymentAppCrawler>(
+          web_contents, downloader_.get(), parser_.get(), cache_.get());
+    }
 
     // Method data cannot be copied and is passed in as a const-ref, which
     // cannot be moved, so make a manual copy for using below.
@@ -133,8 +139,7 @@ class SelfDeletingServiceWorkerPaymentAppFactory {
   }
 
  private:
-  void OnGotAllPaymentApps(
-      content::PaymentAppProvider::PaymentApps apps) {
+  void OnGotAllPaymentApps(content::PaymentAppProvider::PaymentApps apps) {
     if (ignore_port_in_app_scope_for_testing_)
       RemovePortNumbersFromScopesForTest(&apps);
 
@@ -161,11 +166,9 @@ class SelfDeletingServiceWorkerPaymentAppFactory {
   }
 
   void OnPaymentAppsVerified(content::PaymentAppProvider::PaymentApps apps) {
-    if (apps.empty()) {
+    if (apps.empty() && crawler_ != nullptr) {
       // Crawls installable web payment apps if no web payment apps have been
       // installed.
-      crawler_ = std::make_unique<InstallablePaymentAppCrawler>(
-          downloader_.get(), parser_.get(), cache_.get());
       is_payment_app_crawler_finished_using_resources_ = false;
       crawler_->Start(
           requested_method_data_,
@@ -177,6 +180,9 @@ class SelfDeletingServiceWorkerPaymentAppFactory {
                          base::Unretained(this)));
       return;
     }
+
+    // Release crawler_ since it will not be used from now on.
+    crawler_.reset();
 
     std::move(callback_).Run(
         std::move(apps),
@@ -244,6 +250,7 @@ void ServiceWorkerPaymentAppFactory::GetAllPaymentApps(
     content::WebContents* web_contents,
     scoped_refptr<PaymentManifestWebDataService> cache,
     const std::vector<mojom::PaymentMethodDataPtr>& requested_method_data,
+    bool may_crawl_for_installable_payment_apps,
     GetAllPaymentAppsCallback callback,
     base::OnceClosure finished_writing_cache_callback_for_testing) {
   SelfDeletingServiceWorkerPaymentAppFactory* self_delete_factory =
@@ -259,7 +266,8 @@ void ServiceWorkerPaymentAppFactory::GetAllPaymentApps(
                     web_contents->GetBrowserContext())
                     ->GetURLRequestContext())
           : std::move(test_downloader_),
-      cache, requested_method_data, std::move(callback),
+      cache, requested_method_data, may_crawl_for_installable_payment_apps,
+      std::move(callback),
       std::move(finished_writing_cache_callback_for_testing));
 }
 

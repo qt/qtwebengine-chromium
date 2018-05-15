@@ -65,8 +65,8 @@ class TestRtpFrameReferenceFinder : public ::testing::Test,
   uint16_t Rand() { return rand_.Rand<uint16_t>(); }
 
   void OnCompleteFrame(std::unique_ptr<EncodedFrame> frame) override {
-    int64_t pid = frame->picture_id;
-    uint16_t sidx = frame->spatial_layer;
+    int64_t pid = frame->id.picture_id;
+    uint16_t sidx = frame->id.spatial_layer;
     auto frame_it = frames_from_callback_.find(std::make_pair(pid, sidx));
     if (frame_it != frames_from_callback_.end()) {
       ADD_FAILURE() << "Already received frame with (pid:sidx): (" << pid << ":"
@@ -1329,6 +1329,22 @@ TEST_F(TestRtpFrameReferenceFinder, Vp9GofPidJump) {
 
   InsertVp9Gof(sn, sn, true, pid, 0, 0, 0, false, &ss);
   InsertVp9Gof(sn + 1, sn + 1, false, pid + 1000, 0, 0, 1);
+}
+
+TEST_F(TestRtpFrameReferenceFinder, Vp9GofTidTooHigh) {
+  // Same as RtpFrameReferenceFinder::kMaxTemporalLayers.
+  const int kMaxTemporalLayers = 5;
+  uint16_t pid = Rand();
+  uint16_t sn = Rand();
+  GofInfoVP9 ss;
+  ss.SetGofInfoVP9(kTemporalStructureMode2);
+  ss.temporal_idx[1] = kMaxTemporalLayers;
+
+  InsertVp9Gof(sn, sn, true, pid, 0, 0, 0, false, &ss);
+  InsertVp9Gof(sn + 1, sn + 1, false, pid + 1, 0, 0, 1);
+
+  ASSERT_EQ(1UL, frames_from_callback_.size());
+  CheckReferencesVp9(0, 0);
 }
 
 }  // namespace video_coding

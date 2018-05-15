@@ -49,6 +49,9 @@ struct Format final : private angle::NonCopyable
     LoadFunctionMap loadFunctions;
 };
 
+bool operator==(const Format &lhs, const Format &rhs);
+bool operator!=(const Format &lhs, const Format &rhs);
+
 class FormatTable final : angle::NonCopyable
 {
   public:
@@ -75,6 +78,8 @@ VkFormat GetNativeVertexFormat(gl::VertexFormatType vertexFormat);
 // of the Vulkan spec. If the vkFormat isn't mandatory, it will return a VkFormatProperties
 // initialized to 0.
 const VkFormatProperties &GetMandatoryFormatSupport(VkFormat vkFormat);
+
+bool HasFullFormatSupport(VkPhysicalDevice physicalDevice, VkFormat vkFormat);
 
 }  // namespace vk
 

@@ -225,6 +225,9 @@ class CONTENT_EXPORT RenderFrameHostManager
   // that contains the inner WebContents.
   FrameTreeNode* GetOuterDelegateNode();
 
+  // Return a proxy for this frame in the parent frame's SiteInstance.  Returns
+  // nullptr if this is a main frame or if such a proxy does not exist (for
+  // example, if this frame is same-site with its parent).
   RenderFrameProxyHost* GetProxyToParent();
 
   // Returns the proxy to inner WebContents in the outer WebContents's
@@ -594,6 +597,27 @@ class CONTENT_EXPORT RenderFrameHostManager
       bool dest_is_view_source_mode,
       bool force_browsing_instance_swap,
       bool was_server_redirect);
+
+  // Returns true if a navigation to |dest_url| that uses the specified
+  // PageTransition in the current frame is allowed to swap BrowsingInstances.
+  // DetermineSiteInstanceForURL() uses this helper to determine when it is
+  // allowed to swap BrowsingInstances to avoid unneeded process sharing.  See
+  // https://crbug.com/803367.
+  //
+  // Note that this is different from
+  // ShouldSwapBrowsingInstancesForNavigation(), which identifies cases in
+  // which a BrowsingInstance swap is *required* (e.g., for security). This
+  // function only identifies cases where a BrowsingInstance swap *may* be
+  // performed to optimize process placement.  In particular, this is true for
+  // certain browser-initiated transitions for main frame navigations.
+  //
+  // Returning true here doesn't imply that DetermineSiteInstanceForURL() will
+  // swap BrowsingInstances.  For example, this swap will not be done for
+  // same-site navigations, for history navigations, or when starting from an
+  // uninitialized SiteInstance.
+  bool IsBrowsingInstanceSwapAllowedForPageTransition(
+      ui::PageTransition transition,
+      const GURL& dest_url);
 
   // Converts a SiteInstanceDescriptor to the actual SiteInstance it describes.
   // If a |candidate_instance| is provided (is not nullptr) and it matches the

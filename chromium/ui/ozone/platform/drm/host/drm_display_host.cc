@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "ui/display/types/display_mode.h"
 #include "ui/display/types/display_snapshot.h"
@@ -56,7 +55,7 @@ void DrmDisplayHost::Configure(const display::DisplayMode* mode,
 void DrmDisplayHost::OnDisplayConfigured(bool status) {
   if (!configure_callback_.is_null()) {
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::Bind(configure_callback_, status));
+        FROM_HERE, base::BindOnce(configure_callback_, status));
   } else {
     LOG(ERROR) << "Got unexpected event for display "
                << snapshot_->display_id();
@@ -76,7 +75,7 @@ void DrmDisplayHost::OnHDCPStateReceived(bool status,
                                          display::HDCPState state) {
   if (!get_hdcp_callback_.is_null()) {
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::Bind(get_hdcp_callback_, status, state));
+        FROM_HERE, base::BindOnce(get_hdcp_callback_, status, state));
   } else {
     LOG(ERROR) << "Got unexpected event for display "
                << snapshot_->display_id();
@@ -96,7 +95,7 @@ void DrmDisplayHost::SetHDCPState(
 void DrmDisplayHost::OnHDCPStateUpdated(bool status) {
   if (!set_hdcp_callback_.is_null()) {
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::Bind(set_hdcp_callback_, status));
+        FROM_HERE, base::BindOnce(set_hdcp_callback_, status));
   } else {
     LOG(ERROR) << "Got unexpected event for display "
                << snapshot_->display_id();

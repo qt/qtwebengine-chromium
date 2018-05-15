@@ -7,7 +7,7 @@
 #include "base/macros.h"
 #include "components/nacl/common/buildflags.h"
 #include "components/safe_browsing/web_ui/constants.h"
-#include "extensions/features/features.h"
+#include "extensions/buildflags/buildflags.h"
 
 namespace chrome {
 
@@ -35,8 +35,6 @@ const char kChromeUIChromeURLsURL[] = "chrome://chrome-urls/";
 const char kChromeUIComponentsHost[] = "components";
 const char kChromeUIConflictsHost[] = "conflicts";
 const char kChromeUIConflictsURL[] = "chrome://conflicts/";
-const char kChromeUIConnectionHelpHost[] = "connection-help";
-const char kChromeUIConnectionHelpURL[] = "chrome://connection-help";
 const char kChromeUIConstrainedHTMLTestURL[] = "chrome://constrained-test/";
 const char kChromeUIContentSettingsURL[] = "chrome://settings/content";
 const char kChromeUICrashHost[] = "crash";
@@ -93,6 +91,9 @@ const char kChromeUIMdUserManagerUrl[] = "chrome://md-user-manager/";
 const char kChromeUIMediaEngagementHost[] = "media-engagement";
 const char kChromeUIMediaRouterHost[] = "media-router";
 const char kChromeUIMediaRouterURL[] = "chrome://media-router/";
+const char kChromeUIMediaRouterInternalsHost[] = "media-router-internals";
+const char kChromeUIMediaRouterInternalsURL[] =
+    "chrome://media-router-internals/";
 const char kChromeUIMemoryInternalsHost[] = "memory-internals";
 const char kChromeUINTPTilesInternalsHost[] = "ntp-tiles-internals";
 const char kChromeUINaClHost[] = "nacl";
@@ -197,6 +198,8 @@ const char kChromeUIKeyboardOverlayHost[] = "keyboardoverlay";
 const char kChromeUIKeyboardOverlayURL[] = "chrome://keyboardoverlay/";
 const char kChromeUIMobileSetupHost[] = "mobilesetup";
 const char kChromeUIMobileSetupURL[] = "chrome://mobilesetup/";
+const char kChromeUIMultiDeviceSetupHost[] = "multidevice-setup";
+const char kChromeUIMultiDeviceSetupUrl[] = "chrome://multidevice-setup";
 const char kChromeUINetworkHost[] = "network";
 const char kChromeUIOSCreditsHost[] = "os-credits";
 const char kChromeUIOSCreditsURL[] = "chrome://os-credits/";
@@ -214,6 +217,8 @@ const char kChromeUISysInternalsHost[] = "sys-internals";
 const char kChromeUITermsOemURL[] = "chrome://terms/oem";
 const char kChromeUIUserImageHost[] = "userimage";
 const char kChromeUIUserImageURL[] = "chrome://userimage/";
+const char kChromeUIAssistantOptInHost[] = "assistant-optin";
+const char kChromeUIAssistantOptInURL[] = "chrome://assistant-optin/";
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_WIN)
@@ -384,6 +389,7 @@ const char* const kChromeHostURLs[] = {
     kChromeUIPowerHost,
     kChromeUIInternetConfigDialogHost,
     kChromeUIInternetDetailDialogHost,
+    kChromeUIAssistantOptInHost,
 #endif
 #if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
     kChromeUIDiscardsHost,

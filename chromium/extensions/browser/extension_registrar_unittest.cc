@@ -11,7 +11,6 @@
 #include "base/optional.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "content/public/browser/browser_context.h"
-#include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_notification_tracker.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
@@ -84,8 +83,7 @@ class TestExtensionRegistrarDelegate : public ExtensionRegistrar::Delegate {
 
 class ExtensionRegistrarTest : public ExtensionsTest {
  public:
-  ExtensionRegistrarTest()
-      : ExtensionsTest(std::make_unique<content::TestBrowserThreadBundle>()) {}
+  ExtensionRegistrarTest() = default;
   ~ExtensionRegistrarTest() override = default;
 
   void SetUp() override {
@@ -323,6 +321,26 @@ class ExtensionRegistrarTest : public ExtensionsTest {
                   ->GetDisableReasons(extension()->id()));
   }
 
+  // Directs ExtensionRegistrar to reload the terminated extension and verifies
+  // the delegate is invoked correctly.
+  void ReloadTerminatedExtension() {
+    SCOPED_TRACE("ReloadTerminatedExtension");
+    EXPECT_CALL(delegate_,
+                LoadExtensionForReload(extension()->id(), extension()->path(),
+                                       LoadErrorBehavior::kNoisy));
+    registrar()->ReloadExtension(extension()->id(), LoadErrorBehavior::kNoisy);
+    VerifyMock();
+
+    // The extension should remain in the terminated set until the reload
+    // completes successfully.
+    ExpectInSet(ExtensionRegistry::TERMINATED);
+    // Unlike when reloading an enabled extension, the extension hasn't been
+    // disabled and shouldn't have the DISABLE_RELOAD disable reason.
+    EXPECT_EQ(disable_reason::DISABLE_NONE,
+              ExtensionPrefs::Get(browser_context())
+                  ->GetDisableReasons(extension()->id()));
+  }
+
   // Verifies that the extension is in the given set in the ExtensionRegistry
   // and not in other sets.
   void ExpectInSet(ExtensionRegistry::IncludeFlag set_id) {
@@ -442,11 +460,13 @@ TEST_F(ExtensionRegistrarTest, AddForceDisabled) {
 TEST_F(ExtensionRegistrarTest, AddBlacklisted) {
   AddBlacklistedExtension();
 
-  // A blacklisted extension cannot be enabled/disabled.
+  // A blacklisted extension cannot be enabled/disabled/reloaded.
   registrar()->EnableExtension(extension()->id());
   ExpectInSet(ExtensionRegistry::BLACKLISTED);
   registrar()->DisableExtension(extension()->id(),
                                 disable_reason::DISABLE_USER_ACTION);
+  ExpectInSet(ExtensionRegistry::BLACKLISTED);
+  registrar()->ReloadExtension(extension()->id(), LoadErrorBehavior::kQuiet);
   ExpectInSet(ExtensionRegistry::BLACKLISTED);
 
   RemoveBlacklistedExtension();
@@ -489,7 +509,7 @@ TEST_F(ExtensionRegistrarTest, DisableTerminatedExtension) {
   RemoveDisabledExtension();
 }
 
-TEST_F(ExtensionRegistrarTest, ReloadTerminatedExtension) {
+TEST_F(ExtensionRegistrarTest, EnableTerminatedExtension) {
   AddEnabledExtension();
   TerminateExtension();
 
@@ -515,6 +535,23 @@ TEST_F(ExtensionRegistrarTest, RemoveReloadedExtension) {
   // Simulate the delegate failing to load the extension and removing it
   // instead.
   RemoveDisabledExtension();
+
+  // Attempting to reload it silently fails.
+  registrar()->ReloadExtension(extension()->id(), LoadErrorBehavior::kQuiet);
+  ExpectInSet(ExtensionRegistry::NONE);
+}
+
+TEST_F(ExtensionRegistrarTest, ReloadTerminatedExtension) {
+  AddEnabledExtension();
+  TerminateExtension();
+
+  // Reload the terminated extension.
+  ReloadTerminatedExtension();
+
+  // Complete the reload by adding the extension. Expect the extension to be
+  // enabled once re-added to the registrar, since ExtensionPrefs shouldn't say
+  // it's disabled.
+  AddEnabledExtension();
 }
 
 }  // namespace extensions

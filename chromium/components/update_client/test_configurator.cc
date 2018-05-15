@@ -8,9 +8,9 @@
 
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/version.h"
-#include "components/patch_service/patch_service.h"
 #include "components/prefs/pref_service.h"
-#include "components/unzip_service/unzip_service.h"
+#include "components/services/patch/patch_service.h"
+#include "components/services/unzip/unzip_service.h"
 #include "components/update_client/activity_data_service.h"
 #include "net/url_request/url_request_test_util.h"
 #include "services/service_manager/public/cpp/connector.h"
@@ -43,7 +43,7 @@ TestConfigurator::TestConfigurator()
   services.insert(
       std::make_pair("patch_service", std::make_unique<patch::PatchService>()));
   services.insert(
-      std::make_pair("unzip_service", std::make_unique<unzip::UnzipService>()));
+      std::make_pair("unzip_service", unzip::UnzipService::CreateService()));
   connector_factory_ = service_manager::TestConnectorFactory::CreateForServices(
       std::move(services));
   connector_ = connector_factory_->CreateConnector();

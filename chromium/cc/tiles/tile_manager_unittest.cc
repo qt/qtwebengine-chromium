@@ -9,7 +9,6 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/test/test_simple_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -18,7 +17,6 @@
 #include "cc/raster/raster_source.h"
 #include "cc/raster/synchronous_task_graph_runner.h"
 #include "cc/resources/resource_pool.h"
-#include "cc/resources/resource_util.h"
 #include "cc/test/fake_impl_task_runner_provider.h"
 #include "cc/test/fake_layer_tree_frame_sink.h"
 #include "cc/test/fake_layer_tree_frame_sink_client.h"
@@ -40,6 +38,7 @@
 #include "cc/tiles/tile_priority.h"
 #include "cc/tiles/tiling_set_raster_queue_all.h"
 #include "cc/trees/layer_tree_impl.h"
+#include "components/viz/common/resources/resource_sizes.h"
 #include "components/viz/test/begin_frame_args_test.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -1370,8 +1369,9 @@ TEST_F(TileManagerTilePriorityQueueTest,
             host_impl()->resource_provider()->best_texture_format());
 
   ManagedMemoryPolicy policy = host_impl()->ActualManagedMemoryPolicy();
-  policy.bytes_limit_when_visible = ResourceUtil::UncheckedSizeInBytes<size_t>(
-      gfx::Size(256, 256), viz::RGBA_8888);
+  policy.bytes_limit_when_visible =
+      viz::ResourceSizes::UncheckedSizeInBytes<size_t>(gfx::Size(256, 256),
+                                                       viz::RGBA_8888);
   host_impl()->SetMemoryPolicy(policy);
 
   EXPECT_FALSE(host_impl()->is_likely_to_require_a_draw());
@@ -1523,6 +1523,62 @@ TEST_F(TileManagerTilePriorityQueueTest, NoRasterTasksforSolidColorTiles) {
   }
 }
 
+class TestSoftwareBacking : public ResourcePool::SoftwareBacking {
+ public:
+  // No tracing is done during these tests.
+  base::UnguessableToken SharedMemoryGuid() override { return {}; }
+
+  std::unique_ptr<uint32_t[]> pixels;
+};
+
+// A RasterBufferProvider that allocates software backings with a standard
+// array as the backing. Overrides Playback() on the RasterBuffer to raster
+// into the pixels in the array.
+class TestSoftwareRasterBufferProvider : public FakeRasterBufferProviderImpl {
+ public:
+  std::unique_ptr<RasterBuffer> AcquireBufferForRaster(
+      const ResourcePool::InUsePoolResource& resource,
+      uint64_t resource_content_id,
+      uint64_t previous_content_id) override {
+    if (!resource.software_backing()) {
+      auto backing = std::make_unique<TestSoftwareBacking>();
+      backing->shared_bitmap_id = viz::SharedBitmap::GenerateId();
+      backing->pixels = std::make_unique<uint32_t[]>(
+          viz::ResourceSizes::CheckedSizeInBytes<size_t>(resource.size(),
+                                                         viz::RGBA_8888));
+      resource.set_software_backing(std::move(backing));
+    }
+    auto* backing =
+        static_cast<TestSoftwareBacking*>(resource.software_backing());
+    return std::make_unique<TestRasterBuffer>(resource.size(),
+                                              backing->pixels.get());
+  }
+
+ private:
+  class TestRasterBuffer : public RasterBuffer {
+   public:
+    TestRasterBuffer(const gfx::Size& size, void* pixels)
+        : size_(size), pixels_(pixels) {}
+
+    void Playback(
+        const RasterSource* raster_source,
+        const gfx::Rect& raster_full_rect,
+        const gfx::Rect& raster_dirty_rect,
+        uint64_t new_content_id,
+        const gfx::AxisTransform2d& transform,
+        const RasterSource::PlaybackSettings& playback_settings) override {
+      RasterBufferProvider::PlaybackToMemory(
+          pixels_, viz::RGBA_8888, size_, /*stride=*/0, raster_source,
+          raster_full_rect, /*playback_rect=*/raster_full_rect, transform,
+          gfx::ColorSpace(), playback_settings);
+    }
+
+   private:
+    gfx::Size size_;
+    void* pixels_;
+  };
+};
+
 class TileManagerTest : public TestLayerTreeHostBase {
  public:
   // MockLayerTreeHostImpl allows us to intercept tile manager callbacks.
@@ -1665,7 +1721,20 @@ TEST_F(TileManagerTest, ActivateAndDrawWhenOOM) {
   }
 }
 
-TEST_F(TileManagerTest, LowResHasNoImage) {
+class PixelInspectTileManagerTest : public TileManagerTest {
+ public:
+  void SetUp() override {
+    TileManagerTest::SetUp();
+    // Use a RasterBufferProvider that will let us inspect pixels.
+    host_impl()->tile_manager()->SetRasterBufferProviderForTesting(
+        &raster_buffer_provider_);
+  }
+
+ private:
+  TestSoftwareRasterBufferProvider raster_buffer_provider_;
+};
+
+TEST_F(PixelInspectTileManagerTest, LowResHasNoImage) {
   gfx::Size size(10, 12);
   TileResolution resolutions[] = {HIGH_RESOLUTION, LOW_RESOLUTION};
 
@@ -1731,10 +1800,10 @@ TEST_F(TileManagerTest, LowResHasNoImage) {
                                            resource_size.height());
     // CreateLayerTreeFrameSink() sets up a software compositing, so the
     // tile resource will be a bitmap.
-    viz::SharedBitmap* shared_bitmap =
-        tile->draw_info().GetResource().shared_bitmap();
+    auto* backing = static_cast<TestSoftwareBacking*>(
+        tile->draw_info().GetResource().software_backing());
     SkBitmap bitmap;
-    bitmap.installPixels(info, shared_bitmap->pixels(), info.minRowBytes());
+    bitmap.installPixels(info, backing->pixels.get(), info.minRowBytes());
 
     for (int x = 0; x < size.width(); ++x) {
       for (int y = 0; y < size.height(); ++y) {
@@ -1933,9 +2002,7 @@ void RunPartialRasterCheck(std::unique_ptr<LayerTreeHostImpl> host_impl,
       host_impl->resource_pool()->AcquireResource(kTileSize, viz::RGBA_8888,
                                                   gfx::ColorSpace());
 
-  resource.set_shared_bitmap(host_impl->layer_tree_frame_sink()
-                                 ->shared_bitmap_manager()
-                                 ->AllocateSharedBitmap(kTileSize));
+  resource.set_software_backing(std::make_unique<TestSoftwareBacking>());
   host_impl->resource_pool()->PrepareForExport(resource);
 
   host_impl->resource_pool()->OnContentReplaced(resource, kInvalidatedId);
@@ -2106,9 +2173,8 @@ class MockReadyToDrawRasterBufferProviderImpl
       const ResourcePool::InUsePoolResource& resource,
       uint64_t resource_content_id,
       uint64_t previous_content_id) override {
-    if (!resource.shared_bitmap())
-      resource.set_shared_bitmap(
-          shared_bitmap_manager_.AllocateSharedBitmap(resource.size()));
+    if (!resource.software_backing())
+      resource.set_software_backing(std::make_unique<TestSoftwareBacking>());
     return std::make_unique<FakeRasterBuffer>();
   }
 
@@ -2123,8 +2189,6 @@ class MockReadyToDrawRasterBufferProviderImpl
         const gfx::AxisTransform2d& transform,
         const RasterSource::PlaybackSettings& playback_settings) override {}
   };
-
-  viz::TestSharedBitmapManager shared_bitmap_manager_;
 };
 
 class TileManagerReadyToDrawTest : public TileManagerTest {

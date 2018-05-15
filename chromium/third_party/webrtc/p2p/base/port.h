@@ -19,10 +19,12 @@
 
 #include "api/candidate.h"
 #include "api/optional.h"
+#include "api/rtcerror.h"
 #include "logging/rtc_event_log/events/rtc_event_ice_candidate_pair.h"
 #include "logging/rtc_event_log/events/rtc_event_ice_candidate_pair_config.h"
 #include "logging/rtc_event_log/icelogger.h"
 #include "p2p/base/candidatepairinterface.h"
+#include "p2p/base/p2pconstants.h"
 #include "p2p/base/packetlossestimator.h"
 #include "p2p/base/packetsocketfactory.h"
 #include "p2p/base/portinterface.h"
@@ -53,32 +55,6 @@ extern const int DISCARD_PORT;
 extern const char TCPTYPE_ACTIVE_STR[];
 extern const char TCPTYPE_PASSIVE_STR[];
 extern const char TCPTYPE_SIMOPEN_STR[];
-
-// The minimum time we will wait before destroying a connection after creating
-// it.
-static const int MIN_CONNECTION_LIFETIME = 10 * 1000;  // 10 seconds.
-
-// A connection will be declared dead if it has not received anything for this
-// long.
-static const int DEAD_CONNECTION_RECEIVE_TIMEOUT = 30 * 1000;  // 30 seconds.
-
-// The timeout duration when a connection does not receive anything.
-static const int WEAK_CONNECTION_RECEIVE_TIMEOUT = 2500;  // 2.5 seconds
-
-// The length of time we wait before timing out writability on a connection.
-static const int CONNECTION_WRITE_TIMEOUT = 15 * 1000;  // 15 seconds
-
-// The length of time we wait before we become unwritable.
-static const int CONNECTION_WRITE_CONNECT_TIMEOUT = 5 * 1000;  // 5 seconds
-
-// This is the length of time that we wait for a ping response to come back.
-// There is no harm to keep this value high other than a small amount
-// of increased memory.  But in some networks (2G),
-// we observe up to 60s RTTs.
-static const int CONNECTION_RESPONSE_TIMEOUT = 60 * 1000;  // 60 seconds
-
-// The number of pings that must fail to respond before we become unwritable.
-static const uint32_t CONNECTION_WRITE_CONNECT_FAILURES = 5;
 
 enum RelayType {
   RELAY_GTURN,   // Legacy google relay service.
@@ -236,6 +212,11 @@ class Port : public PortInterface, public rtc::MessageHandler,
        const std::string& password);
   ~Port() override;
 
+  // Note that the port type does NOT uniquely identify different subclasses of
+  // Port. Use the 2-tuple of the port type AND the protocol (GetProtocol()) to
+  // uniquely identify subclasses. Whenever a new subclass of Port introduces a
+  // conflit in the value of the 2-tuple, make sure that the implementation that
+  // relies on this 2-tuple for RTTI is properly changed.
   const std::string& Type() const override;
   rtc::Network* Network() const override;
 
@@ -570,6 +551,15 @@ class Connection : public CandidatePairInterface,
   // Estimate of the round-trip time over this connection.
   int rtt() const { return rtt_; }
 
+  int unwritable_timeout() const;
+  void set_unwritable_timeout(const rtc::Optional<int>& value_ms) {
+    unwritable_timeout_ = value_ms;
+  }
+  int unwritable_min_checks() const;
+  void set_unwritable_min_checks(const rtc::Optional<int>& value) {
+    unwritable_min_checks_ = value;
+  }
+
   // Gets the |ConnectionInfo| stats, where |best_connection| has not been
   // populated (default value false).
   ConnectionInfo stats();
@@ -633,7 +623,8 @@ class Connection : public CandidatePairInterface,
     remote_ice_mode_ = mode;
   }
 
-  void set_receiving_timeout(int receiving_timeout_ms) {
+  int receiving_timeout() const;
+  void set_receiving_timeout(rtc::Optional<int> receiving_timeout_ms) {
     receiving_timeout_ = receiving_timeout_ms;
   }
 
@@ -812,10 +803,13 @@ class Connection : public CandidatePairInterface,
 
   PacketLossEstimator packet_loss_estimator_;
 
+  rtc::Optional<int> unwritable_timeout_;
+  rtc::Optional<int> unwritable_min_checks_;
+
   bool reported_;
   IceCandidatePairState state_;
   // Time duration to switch from receiving to not receiving.
-  int receiving_timeout_;
+  rtc::Optional<int> receiving_timeout_;
   int64_t time_created_ms_;
   int num_pings_sent_ = 0;
 

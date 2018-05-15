@@ -25,7 +25,7 @@ Dispatcher::DispatcherInTransit::~DispatcherInTransit() {}
 
 MojoResult Dispatcher::WatchDispatcher(scoped_refptr<Dispatcher> dispatcher,
                                        MojoHandleSignals signals,
-                                       MojoWatchCondition condition,
+                                       MojoTriggerCondition condition,
                                        uintptr_t context) {
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
@@ -63,6 +63,10 @@ MojoResult Dispatcher::MapBuffer(
     uint64_t num_bytes,
     MojoMapBufferFlags flags,
     std::unique_ptr<PlatformSharedBufferMapping>* mapping) {
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
+MojoResult Dispatcher::GetBufferInfo(MojoSharedBufferInfo* info) {
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 

@@ -5,16 +5,21 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/memory/ptr_util.h"
 #include "base/path_service.h"
 #include "base/version.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/test/mock_resource_context.h"
+#include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "extensions/browser/content_verifier.h"
 #include "extensions/browser/content_verifier/test_utils.h"
 #include "extensions/browser/extensions_test.h"
+#include "extensions/browser/info_map.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_paths.h"
 #include "extensions/common/file_util.h"
+#include "net/url_request/url_request_job_factory_impl.h"
+#include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/zlib/google/zip.h"
 
@@ -42,8 +47,7 @@ class ContentVerifyJobUnittest : public ExtensionsTest {
  public:
   ContentVerifyJobUnittest()
       // The TestBrowserThreadBundle is needed for ContentVerifyJob::Start().
-      : ExtensionsTest(std::make_unique<content::TestBrowserThreadBundle>(
-            content::TestBrowserThreadBundle::REAL_IO_THREAD)) {}
+      : resource_context_(&test_url_request_context_) {}
   ~ContentVerifyJobUnittest() override {}
 
   // Helper to get files from our subdirectory in the general extensions test
@@ -55,17 +59,38 @@ class ContentVerifyJobUnittest : public ExtensionsTest {
         .AppendASCII(relative_path);
   }
 
+  void SetUp() override {
+    ExtensionsTest::SetUp();
+
+    extension_info_map_ = new InfoMap();
+    net::URLRequestContext* request_context =
+        resource_context_.GetRequestContext();
+    old_factory_ = request_context->job_factory();
+    content_verifier_ = new ContentVerifier(
+        &testing_context_, std::make_unique<MockContentVerifierDelegate>());
+    extension_info_map_->SetContentVerifier(content_verifier_.get());
+  }
+
+  void TearDown() override {
+    net::URLRequestContext* request_context =
+        resource_context_.GetRequestContext();
+    request_context->set_job_factory(old_factory_);
+    content_verifier_->Shutdown();
+
+    ExtensionsTest::TearDown();
+  }
+
+  ContentVerifier* content_verifier() { return content_verifier_.get(); }
+
  protected:
   ContentVerifyJob::FailureReason RunContentVerifyJob(
       const Extension& extension,
       const base::FilePath& resource_path,
       std::string& resource_contents,
       ContentVerifyJobAsyncRunMode run_mode) {
-    TestContentVerifyJobObserver observer(extension.id(), resource_path);
+    TestContentVerifySingleJobObserver observer(extension.id(), resource_path);
     scoped_refptr<ContentVerifyJob> verify_job = new ContentVerifyJob(
         extension.id(), extension.version(), extension.path(), resource_path,
-        ContentVerifierKey(kWebstoreSignaturesPublicKey,
-                           kWebstoreSignaturesPublicKeySize),
         base::DoNothing());
 
     auto run_content_read_step = [](ContentVerifyJob* verify_job,
@@ -78,15 +103,15 @@ class ContentVerifyJobUnittest : public ExtensionsTest {
 
     switch (run_mode) {
       case kNone:
-        verify_job->Start();  // Read hashes asynchronously.
+        StartJob(verify_job);  // Read hashes asynchronously.
         run_content_read_step(verify_job.get(), &resource_contents);
         break;
       case kContentReadBeforeHashesReady:
         run_content_read_step(verify_job.get(), &resource_contents);
-        verify_job->Start();  // Read hashes asynchronously.
+        StartJob(verify_job);  // Read hashes asynchronously.
         break;
       case kHashesReadyBeforeContentRead:
-        verify_job->Start();
+        StartJob(verify_job);
         // Wait for hashes to become ready.
         observer.WaitForOnHashesReady();
         run_content_read_step(verify_job.get(), &resource_contents);
@@ -129,6 +154,21 @@ class ContentVerifyJobUnittest : public ExtensionsTest {
   }
 
  private:
+  void StartJob(scoped_refptr<ContentVerifyJob> job) {
+    content::BrowserThread::PostTask(
+        content::BrowserThread::IO, FROM_HERE,
+        base::BindOnce(&ContentVerifyJob::Start, job,
+                       base::Unretained(content_verifier_.get())));
+  }
+
+  scoped_refptr<InfoMap> extension_info_map_;
+  net::URLRequestJobFactoryImpl job_factory_;
+  const net::URLRequestJobFactory* old_factory_;
+  net::TestURLRequestContext test_url_request_context_;
+  content::MockResourceContext resource_context_;
+  scoped_refptr<ContentVerifier> content_verifier_;
+  content::TestBrowserContext testing_context_;
+
   DISALLOW_COPY_AND_ASSIGN(ContentVerifyJobUnittest);
 };
 

@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "base/json/json_writer.h"
-#include "base/memory/ptr_util.h"
 #include "base/values.h"
 
 namespace extensions {
@@ -26,6 +25,11 @@ std::string DictionaryBuilder::ToJSON() const {
   base::JSONWriter::WriteWithOptions(
       *dict_, base::JSONWriter::OPTIONS_PRETTY_PRINT, &json);
   return json;
+}
+
+DictionaryBuilder& DictionaryBuilder::Set(const std::string& path,
+                                          const char* in_value) {
+  return Set(path, std::string(in_value));
 }
 
 DictionaryBuilder& DictionaryBuilder::Set(const std::string& path,
@@ -80,6 +84,10 @@ ListBuilder& ListBuilder::Append(int in_value) {
 ListBuilder& ListBuilder::Append(double in_value) {
   list_->AppendDouble(in_value);
   return *this;
+}
+
+ListBuilder& ListBuilder::Append(const char* in_value) {
+  return Append(std::string(in_value));
 }
 
 ListBuilder& ListBuilder::Append(const std::string& in_value) {

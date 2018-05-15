@@ -311,6 +311,8 @@ class AppWindow : public content::WebContentsDelegate,
   // HTML API request.
   bool IsHtmlApiFullscreen() const;
 
+  bool IsOsFullscreen() const;
+
   // Transitions window into fullscreen, maximized, minimized or restores based
   // on chrome.app.window API.
   void Fullscreen();
@@ -416,7 +418,7 @@ class AppWindow : public content::WebContentsDelegate,
       content::WebContents* web_contents,
       const content::MediaStreamRequest& request,
       const content::MediaResponseCallback& callback) override;
-  bool CheckMediaAccessPermission(content::WebContents* web_contents,
+  bool CheckMediaAccessPermission(content::RenderFrameHost* render_frame_host,
                                   const GURL& security_origin,
                                   content::MediaStreamType type) override;
   content::WebContents* OpenURLFromTab(

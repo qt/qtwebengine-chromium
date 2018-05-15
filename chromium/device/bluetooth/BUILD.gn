@@ -18,6 +18,9 @@ config("bluetooth_config") {
       "/DELAYLOAD:setupapi.dll",
     ]
   }
+  if (is_linux && is_chromecast) {
+    defines = [ "USE_CAST_BLUETOOTH_ADAPTER" ]
+  }
 }
 
 # Experimental implementation not ready for production use yet. See
@@ -209,6 +212,7 @@ component("bluetooth") {
     "//base",
     "//components/device_event_log",
     "//crypto",
+    "//device/base",
     "//device/bluetooth/strings",
     "//device/bluetooth/uribeacon",
     "//ipc",
@@ -391,9 +395,42 @@ component("bluetooth") {
           "dbus/dbus_thread_manager_linux.h",
         ]
       }
+      if (is_chromeos) {
+        sources += [
+          "chromeos/bluetooth_utils.cc",
+          "chromeos/bluetooth_utils.h",
+        ]
+      }
       deps += [ "//dbus" ]
     } else {  # !use_dbus
-      sources += [ "bluetooth_adapter_stub.cc" ]
+      if (is_chromecast && is_linux) {
+        sources += [
+          "cast/bluetooth_adapter_cast.cc",
+          "cast/bluetooth_adapter_cast.h",
+          "cast/bluetooth_device_cast.cc",
+          "cast/bluetooth_device_cast.h",
+          "cast/bluetooth_remote_gatt_characteristic_cast.cc",
+          "cast/bluetooth_remote_gatt_characteristic_cast.h",
+          "cast/bluetooth_remote_gatt_descriptor_cast.cc",
+          "cast/bluetooth_remote_gatt_descriptor_cast.h",
+          "cast/bluetooth_remote_gatt_service_cast.cc",
+          "cast/bluetooth_remote_gatt_service_cast.h",
+          "cast/bluetooth_utils.cc",
+          "cast/bluetooth_utils.h",
+        ]
+
+        public_deps = [
+          "//chromecast/public",
+        ]
+
+        deps += [
+          "//chromecast/device/bluetooth:util",
+          "//chromecast/device/bluetooth/le",
+        ]
+      } else {
+        sources += [ "bluetooth_adapter_stub.cc" ]
+      }
+
       if (is_linux) {
         defines += [ "LINUX_WITHOUT_DBUS" ]
         sources += [

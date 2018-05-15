@@ -22,6 +22,7 @@
 #include "net/ssl/ssl_private_key.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "services/network/chunked_data_pipe_upload_data_stream.h"
 #include "services/network/data_pipe_element_reader.h"
 #include "services/network/loader_util.h"
 #include "services/network/public/cpp/features.h"
@@ -40,6 +41,7 @@ constexpr size_t kDefaultAllocationSize = 512 * 1024;
 // content/browser/loader/resource_loader.cc
 void PopulateResourceResponse(net::URLRequest* request,
                               bool is_load_timing_enabled,
+                              bool include_ssl_info,
                               ResourceResponse* response) {
   response->head.request_time = request->request_time();
   response->head.response_time = request->response_time();
@@ -54,6 +56,8 @@ void PopulateResourceResponse(net::URLRequest* request,
       response_info.alpn_negotiated_protocol;
   response->head.connection_info = response_info.connection_info;
   response->head.socket_address = response_info.socket_address;
+  response->head.was_fetched_via_proxy = request->was_fetched_via_proxy();
+  response->head.network_accessed = response_info.network_accessed;
 
   response->head.effective_connection_type =
       net::EFFECTIVE_CONNECTION_TYPE_UNKNOWN;
@@ -69,6 +73,9 @@ void PopulateResourceResponse(net::URLRequest* request,
          net::IsCertStatusMinorError(response->head.cert_status)) &&
         net::IsLegacySymantecCert(request->ssl_info().public_key_hashes);
     response->head.cert_status = request->ssl_info().cert_status;
+
+    if (include_ssl_info)
+      response->head.ssl_info = request->ssl_info();
   }
 
   response->head.request_start = request->creation_time();
@@ -150,6 +157,15 @@ class RawFileElementReader : public net::UploadFileElementReader {
 std::unique_ptr<net::UploadDataStream> CreateUploadDataStream(
     ResourceRequestBody* body,
     base::SequencedTaskRunner* file_task_runner) {
+  // In the case of a chunked upload, there will just be one element.
+  if (body->elements()->size() == 1 &&
+      body->elements()->begin()->type() ==
+          DataElement::TYPE_CHUNKED_DATA_PIPE) {
+    return std::make_unique<network::ChunkedDataPipeUploadDataStream>(
+        body, const_cast<DataElement&>(body->elements()->front())
+                  .ReleaseChunkedDataPipeGetter());
+  }
+
   std::vector<std::unique_ptr<net::UploadElementReader>> element_readers;
   for (const auto& element : *body->elements()) {
     switch (element.type()) {
@@ -171,7 +187,13 @@ std::unique_ptr<net::UploadDataStream> CreateUploadDataStream(
       }
       case DataElement::TYPE_DATA_PIPE: {
         element_readers.push_back(std::make_unique<DataPipeElementReader>(
-            body, const_cast<DataElement*>(&element)->ReleaseDataPipeGetter()));
+            body, element.CloneDataPipeGetter()));
+        break;
+      }
+      case DataElement::TYPE_CHUNKED_DATA_PIPE: {
+        // This shouldn't happen, as the traits logic should ensure that if
+        // there's a chunked pipe, there's one and only one element.
+        NOTREACHED();
         break;
       }
       case DataElement::TYPE_UNKNOWN:
@@ -241,6 +263,7 @@ class SSLPrivateKeyInternal : public net::SSLPrivateKey {
 URLLoader::URLLoader(
     scoped_refptr<net::URLRequestContextGetter> url_request_context_getter,
     mojom::NetworkServiceClient* network_service_client,
+    DeleteCallback delete_callback,
     mojom::URLLoaderRequest url_loader_request,
     int32_t options,
     const ResourceRequest& request,
@@ -248,28 +271,34 @@ URLLoader::URLLoader(
     mojom::URLLoaderClientPtr url_loader_client,
     const net::NetworkTrafficAnnotationTag& traffic_annotation,
     uint32_t process_id,
+    uint32_t request_id,
     scoped_refptr<ResourceSchedulerClient> resource_scheduler_client,
     base::WeakPtr<KeepaliveStatisticsRecorder> keepalive_statistics_recorder)
     : url_request_context_getter_(url_request_context_getter),
       network_service_client_(network_service_client),
+      delete_callback_(std::move(delete_callback)),
       options_(options),
       resource_type_(request.resource_type),
       is_load_timing_enabled_(request.enable_load_timing),
       process_id_(process_id),
       render_frame_id_(request.render_frame_id),
+      request_id_(request_id),
       connected_(true),
       keepalive_(request.keepalive),
       binding_(this, std::move(url_loader_request)),
       url_loader_client_(std::move(url_loader_client)),
       writable_handle_watcher_(FROM_HERE,
-                               mojo::SimpleWatcher::ArmingPolicy::MANUAL),
+                               mojo::SimpleWatcher::ArmingPolicy::MANUAL,
+                               base::SequencedTaskRunnerHandle::Get()),
       peer_closed_handle_watcher_(FROM_HERE,
-                                  mojo::SimpleWatcher::ArmingPolicy::MANUAL),
+                                  mojo::SimpleWatcher::ArmingPolicy::MANUAL,
+                                  base::SequencedTaskRunnerHandle::Get()),
       report_raw_headers_(report_raw_headers),
       resource_scheduler_client_(std::move(resource_scheduler_client)),
       keepalive_statistics_recorder_(std::move(keepalive_statistics_recorder)),
       first_auth_attempt_(true),
       weak_ptr_factory_(this) {
+  DCHECK(delete_callback_);
   if (!base::FeatureList::IsEnabled(features::kNetworkService)) {
     CHECK(!url_loader_client_.internal_state()
                     ->handle()
@@ -279,7 +308,10 @@ URLLoader::URLLoader(
         << "disabled, as that skips security checks in ResourceDispatcherHost. "
         << "The only acceptable usage is the browser using SimpleURLLoader.";
   }
-  url_request_context_getter_->AddObserver(this);
+  if (report_raw_headers_) {
+    options_ |= mojom::kURLLoadOptionSendSSLInfoWithResponse |
+                mojom::kURLLoadOptionSendSSLInfoForCertificateError;
+  }
   binding_.set_connection_error_handler(
       base::BindOnce(&URLLoader::OnConnectionError, base::Unretained(this)));
 
@@ -288,6 +320,7 @@ URLLoader::URLLoader(
           GURL(request.url), request.priority, this, traffic_annotation);
   url_request_->set_method(request.method);
   url_request_->set_site_for_cookies(request.site_for_cookies);
+  url_request_->set_attach_same_site_cookies(request.attach_same_site_cookies);
   url_request_->SetReferrer(ComputeReferrer(request.referrer));
   url_request_->set_referrer_policy(request.referrer_policy);
   url_request_->SetExtraRequestHeaders(request.headers);
@@ -346,7 +379,6 @@ URLLoader::URLLoader(
 
 URLLoader::~URLLoader() {
   RecordBodyReadFromNetBeforePausedIfNeeded();
-  url_request_context_getter_->RemoveObserver(this);
 
   if (keepalive_ && keepalive_statistics_recorder_)
     keepalive_statistics_recorder_->OnLoadFinished(process_id_);
@@ -424,8 +456,9 @@ void URLLoader::OnReceivedRedirect(net::URLRequest* url_request,
   *defer_redirect = true;
 
   scoped_refptr<ResourceResponse> response = new ResourceResponse();
-  PopulateResourceResponse(url_request_.get(), is_load_timing_enabled_,
-                           response.get());
+  PopulateResourceResponse(
+      url_request_.get(), is_load_timing_enabled_,
+      options_ & mojom::kURLLoadOptionSendSSLInfoWithResponse, response.get());
   if (report_raw_headers_) {
     response->head.raw_request_response_info = BuildRawRequestResponseInfo(
         *url_request_, raw_request_headers_, raw_response_headers_.get());
@@ -443,8 +476,8 @@ void URLLoader::OnAuthRequired(net::URLRequest* unused,
   }
 
   network_service_client_->OnAuthRequired(
-      process_id_, render_frame_id_, url_request_->url(), first_auth_attempt_,
-      auth_info,
+      process_id_, render_frame_id_, request_id_, resource_type_,
+      url_request_->url(), first_auth_attempt_, auth_info,
       base::BindOnce(&URLLoader::OnAuthRequiredResponse,
                      weak_ptr_factory_.GetWeakPtr()));
 
@@ -460,7 +493,7 @@ void URLLoader::OnCertificateRequested(net::URLRequest* unused,
   }
 
   network_service_client_->OnCertificateRequested(
-      process_id_, render_frame_id_, cert_info,
+      process_id_, render_frame_id_, request_id_, cert_info,
       base::BindOnce(&URLLoader::OnCertificateRequestedResponse,
                      weak_ptr_factory_.GetWeakPtr()));
 }
@@ -473,8 +506,8 @@ void URLLoader::OnSSLCertificateError(net::URLRequest* request,
     return;
   }
   network_service_client_->OnSSLCertificateError(
-      resource_type_, url_request_->url(), process_id_, render_frame_id_,
-      ssl_info, fatal,
+      process_id_, render_frame_id_, request_id_, resource_type_,
+      url_request_->url(), ssl_info, fatal,
       base::Bind(&URLLoader::OnSSLCertificateErrorResponse,
                  weak_ptr_factory_.GetWeakPtr(), ssl_info));
 }
@@ -493,6 +526,9 @@ void URLLoader::OnResponseStarted(net::URLRequest* url_request, int net_error) {
     return;
   }
 
+  // Do not account header bytes when reporting received body bytes to client.
+  reported_total_encoded_bytes_ = url_request_->GetTotalReceivedBytes();
+
   if (resource_scheduler_client_ && url_request->was_fetched_via_proxy() &&
       url_request->was_fetched_via_spdy() &&
       url_request->url().SchemeIs(url::kHttpScheme)) {
@@ -505,8 +541,9 @@ void URLLoader::OnResponseStarted(net::URLRequest* url_request, int net_error) {
   }
 
   response_ = new ResourceResponse();
-  PopulateResourceResponse(url_request_.get(), is_load_timing_enabled_,
-                           response_.get());
+  PopulateResourceResponse(
+      url_request_.get(), is_load_timing_enabled_,
+      options_ & mojom::kURLLoadOptionSendSSLInfoWithResponse, response_.get());
   if (report_raw_headers_) {
     response_->head.raw_request_response_info = BuildRawRequestResponseInfo(
         *url_request_, raw_request_headers_, raw_response_headers_.get());
@@ -587,8 +624,20 @@ void URLLoader::ReadMore() {
 }
 
 void URLLoader::DidRead(int num_bytes, bool completed_synchronously) {
-  if (num_bytes > 0)
+  if (num_bytes > 0) {
     pending_write_buffer_offset_ += num_bytes;
+
+    // Only notify client of download progress in case DevTools are attached
+    // and we're done sniffing and started sending response.
+    if (report_raw_headers_ && !consumer_handle_.is_valid()) {
+      int64_t total_encoded_bytes = url_request_->GetTotalReceivedBytes();
+      int64_t delta = total_encoded_bytes - reported_total_encoded_bytes_;
+      DCHECK_LE(0, delta);
+      if (delta)
+        url_loader_client_->OnTransferSizeUpdated(delta);
+      reported_total_encoded_bytes_ = total_encoded_bytes;
+    }
+  }
   if (update_body_read_before_paused_) {
     update_body_read_before_paused_ = false;
     body_read_before_paused_ = url_request_->GetRawBodyBytes();
@@ -642,20 +691,10 @@ void URLLoader::OnReadCompleted(net::URLRequest* url_request, int bytes_read) {
   // |this| may have been deleted.
 }
 
-void URLLoader::OnContextShuttingDown() {
-  // The associated network context is going away and we have to destroy
-  // net::URLRequest held by this loader.
-  delete this;
-}
-
 net::LoadState URLLoader::GetLoadStateForTesting() const {
   if (!url_request_)
     return net::LOAD_STATE_IDLE;
   return url_request_->GetLoadState().state;
-}
-
-base::WeakPtr<URLLoader> URLLoader::GetWeakPtrForTests() {
-  return weak_ptr_factory_.GetWeakPtr();
 }
 
 void URLLoader::NotifyCompleted(int error_code) {
@@ -672,6 +711,11 @@ void URLLoader::NotifyCompleted(int error_code) {
 
   URLLoaderCompletionStatus status;
   status.error_code = error_code;
+  if (error_code == net::ERR_QUIC_PROTOCOL_ERROR) {
+    net::NetErrorDetails details;
+    url_request_->PopulateNetErrorDetails(&details);
+    status.extended_error_code = details.quic_connection_error;
+  }
   status.exists_in_cache = url_request_->response_info().was_cached;
   status.completion_time = base::TimeTicks::Now();
   status.encoded_data_length = url_request_->GetTotalReceivedBytes();
@@ -727,15 +771,13 @@ void URLLoader::CloseResponseBodyStreamProducer() {
 
 void URLLoader::DeleteIfNeeded() {
   if (!connected_ && !HasDataPipe())
-    delete this;
+    std::move(delete_callback_).Run(this);
 }
 
 void URLLoader::SendResponseToClient() {
   base::Optional<net::SSLInfo> ssl_info;
-  if (options_ & mojom::kURLLoadOptionSendSSLInfoWithResponse)
-    ssl_info = url_request_->ssl_info();
   mojom::DownloadedTempFilePtr downloaded_file_ptr;
-  url_loader_client_->OnReceiveResponse(response_->head, ssl_info,
+  url_loader_client_->OnReceiveResponse(response_->head,
                                         std::move(downloaded_file_ptr));
 
   net::IOBufferWithSize* metadata =

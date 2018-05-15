@@ -11,7 +11,7 @@
 #include "content/common/manifest_observer.mojom.h"
 #include "content/public/browser/web_contents_binding_set.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "third_party/WebKit/public/platform/modules/manifest/manifest_manager.mojom.h"
+#include "third_party/blink/public/platform/modules/manifest/manifest_manager.mojom.h"
 
 namespace content {
 
@@ -30,12 +30,12 @@ class ManifestManagerHost : public WebContentsObserver,
   ~ManifestManagerHost() override;
 
   using GetManifestCallback =
-      base::Callback<void(const GURL&, const Manifest&)>;
+      base::OnceCallback<void(const GURL&, const Manifest&)>;
 
   // Calls the given callback with the manifest associated with the main frame.
   // If the main frame has no manifest or if getting it failed the callback will
   // have an empty manifest.
-  void GetManifest(const GetManifestCallback& callback);
+  void GetManifest(GetManifestCallback callback);
 
   void RequestManifestDebugInfo(
       blink::mojom::ManifestManager::RequestManifestDebugInfoCallback callback);

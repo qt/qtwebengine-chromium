@@ -75,9 +75,11 @@ const AudioCodecSpec kCodecSpecs[] = {
 
 class MockLimitObserver : public BitrateAllocator::LimitObserver {
  public:
-  MOCK_METHOD2(OnAllocationLimitsChanged,
+  MOCK_METHOD4(OnAllocationLimitsChanged,
                void(uint32_t min_send_bitrate_bps,
-                    uint32_t max_padding_bitrate_bps));
+                    uint32_t max_padding_bitrate_bps,
+                    uint32_t total_bitrate_bps,
+                    bool has_packet_feedback));
 };
 
 std::unique_ptr<MockAudioEncoder> SetupAudioEncoderMock(
@@ -115,8 +117,9 @@ rtc::scoped_refptr<MockAudioEncoderFactory> SetupEncoderFactoryMock() {
             }
             return rtc::nullopt;
           }));
-  ON_CALL(*factory.get(), MakeAudioEncoderMock(_, _, _))
+  ON_CALL(*factory.get(), MakeAudioEncoderMock(_, _, _, _))
       .WillByDefault(Invoke([](int payload_type, const SdpAudioFormat& format,
+                               rtc::Optional<AudioCodecPairId> codec_pair_id,
                                std::unique_ptr<AudioEncoder>* return_value) {
         *return_value = SetupAudioEncoderMock(payload_type, format);
       }));
@@ -225,9 +228,6 @@ struct ConfigHelper {
     EXPECT_CALL(*channel_proxy_, SetRtcEventLog(testing::NotNull())).Times(1);
     EXPECT_CALL(*channel_proxy_, SetRtcEventLog(testing::IsNull()))
         .Times(1);  // Destructor resets the event log
-    EXPECT_CALL(*channel_proxy_, SetRtcpRttStats(&rtcp_rtt_stats_)).Times(1);
-    EXPECT_CALL(*channel_proxy_, SetRtcpRttStats(testing::IsNull()))
-        .Times(1);  // Destructor resets the rtt stats.
   }
 
   void SetupMockForSetupSendCodec(bool expect_set_encoder_call) {
@@ -421,9 +421,10 @@ TEST(AudioSendStreamTest, SendCodecAppliesAudioNetworkAdaptor) {
 
   helper.config().audio_network_adaptor_config = kAnaConfigString;
 
-  EXPECT_CALL(helper.mock_encoder_factory(), MakeAudioEncoderMock(_, _, _))
+  EXPECT_CALL(helper.mock_encoder_factory(), MakeAudioEncoderMock(_, _, _, _))
       .WillOnce(Invoke([&kAnaConfigString, &kAnaReconfigString](
                            int payload_type, const SdpAudioFormat& format,
+                           rtc::Optional<AudioCodecPairId> codec_pair_id,
                            std::unique_ptr<AudioEncoder>* return_value) {
         auto mock_encoder = SetupAudioEncoderMock(payload_type, format);
         EXPECT_CALL(*mock_encoder,

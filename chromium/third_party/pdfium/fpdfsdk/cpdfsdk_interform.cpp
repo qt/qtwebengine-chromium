@@ -21,14 +21,14 @@
 #include "core/fpdfdoc/cpdf_interform.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
-#include "fpdfsdk/cba_annotiterator.h"
+#include "fpdfsdk/cpdfsdk_actionhandler.h"
 #include "fpdfsdk/cpdfsdk_annot.h"
+#include "fpdfsdk/cpdfsdk_annotiterator.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
+#include "fpdfsdk/cpdfsdk_helpers.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
 #include "fpdfsdk/cpdfsdk_widget.h"
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
-#include "fpdfsdk/fsdk_actionhandler.h"
-#include "fpdfsdk/fsdk_define.h"
 #include "fpdfsdk/ipdfsdk_annothandler.h"
 #include "fxjs/ijs_event_context.h"
 #include "fxjs/ijs_runtime.h"
@@ -45,6 +45,8 @@
 #endif  // PDF_ENABLE_XFA
 
 namespace {
+
+constexpr uint32_t kWhiteBGR = FXSYS_BGR(255, 255, 255);
 
 bool IsFormFieldTypeComboOrText(FormFieldType fieldType) {
   switch (fieldType) {
@@ -104,7 +106,7 @@ bool CPDFSDK_InterForm::HighlightWidgets() {
 
 CPDFSDK_Widget* CPDFSDK_InterForm::GetSibling(CPDFSDK_Widget* pWidget,
                                               bool bNext) const {
-  auto pIterator = pdfium::MakeUnique<CBA_AnnotIterator>(
+  auto pIterator = pdfium::MakeUnique<CPDFSDK_AnnotIterator>(
       pWidget->GetPageView(), CPDF_Annot::Subtype::WIDGET);
 
   if (bNext)
@@ -378,7 +380,7 @@ bool CPDFSDK_InterForm::OnKeyStrokeCommit(CPDF_FormField* pFormField,
     return true;
 
   CPDFSDK_ActionHandler* pActionHandler = m_pFormFillEnv->GetActionHandler();
-  PDFSDK_FieldAction fa;
+  CPDFSDK_FieldAction fa;
   fa.bModifier = false;
   fa.bShift = false;
   fa.sValue = csValue;
@@ -398,7 +400,7 @@ bool CPDFSDK_InterForm::OnValidate(CPDF_FormField* pFormField,
     return true;
 
   CPDFSDK_ActionHandler* pActionHandler = m_pFormFillEnv->GetActionHandler();
-  PDFSDK_FieldAction fa;
+  CPDFSDK_FieldAction fa;
   fa.bModifier = false;
   fa.bShift = false;
   fa.sValue = csValue;
@@ -519,12 +521,7 @@ bool CPDFSDK_InterForm::FDFToURLEncodedData(uint8_t*& pBuf, size_t& nBufSize) {
     ByteString csBValue = pField->GetStringFor("V");
     WideString csWValue = PDF_DecodeText(csBValue);
     ByteString csValue_b = ByteString::FromUnicode(csWValue);
-
-    fdfEncodedData << name_b.GetBuffer(name_b.GetLength());
-    name_b.ReleaseBuffer(name_b.GetStringLength());
-    fdfEncodedData << "=";
-    fdfEncodedData << csValue_b.GetBuffer(csValue_b.GetLength());
-    csValue_b.ReleaseBuffer(csValue_b.GetStringLength());
+    fdfEncodedData << name_b.c_str() << "=" << csValue_b.c_str();
     if (i != pFields->GetCount() - 1)
       fdfEncodedData << "&";
   }
@@ -592,19 +589,21 @@ ByteString CPDFSDK_InterForm::ExportFormToFDFTextBuf() {
   return pFDF ? pFDF->WriteToString() : ByteString();
 }
 
-bool CPDFSDK_InterForm::DoAction_ResetForm(const CPDF_Action& action) {
+void CPDFSDK_InterForm::DoAction_ResetForm(const CPDF_Action& action) {
   ASSERT(action.GetDict());
 
   CPDF_Dictionary* pActionDict = action.GetDict();
-  if (!pActionDict->KeyExist("Fields"))
-    return m_pInterForm->ResetForm(true);
+  if (!pActionDict->KeyExist("Fields")) {
+    m_pInterForm->ResetForm(true);
+    return;
+  }
 
   CPDF_ActionFields af(&action);
   uint32_t dwFlags = action.GetFlags();
 
   std::vector<CPDF_Object*> fieldObjects = af.GetAllFields();
   std::vector<CPDF_FormField*> fields = GetFieldFromObjects(fieldObjects);
-  return m_pInterForm->ResetForm(fields, !(dwFlags & 0x01), true);
+  m_pInterForm->ResetForm(fields, !(dwFlags & 0x01), true);
 }
 
 std::vector<CPDF_FormField*> CPDFSDK_InterForm::GetFieldFromObjects(
@@ -622,16 +621,14 @@ std::vector<CPDF_FormField*> CPDFSDK_InterForm::GetFieldFromObjects(
   return fields;
 }
 
-int CPDFSDK_InterForm::BeforeValueChange(CPDF_FormField* pField,
-                                         const WideString& csValue) {
+bool CPDFSDK_InterForm::BeforeValueChange(CPDF_FormField* pField,
+                                          const WideString& csValue) {
   FormFieldType fieldType = pField->GetFieldType();
   if (!IsFormFieldTypeComboOrText(fieldType))
-    return 0;
+    return true;
   if (!OnKeyStrokeCommit(pField, csValue))
-    return -1;
-  if (!OnValidate(pField, csValue))
-    return -1;
-  return 1;
+    return false;
+  return OnValidate(pField, csValue);
 }
 
 void CPDFSDK_InterForm::AfterValueChange(CPDF_FormField* pField) {
@@ -650,15 +647,13 @@ void CPDFSDK_InterForm::AfterValueChange(CPDF_FormField* pField) {
   UpdateField(pField);
 }
 
-int CPDFSDK_InterForm::BeforeSelectionChange(CPDF_FormField* pField,
-                                             const WideString& csValue) {
+bool CPDFSDK_InterForm::BeforeSelectionChange(CPDF_FormField* pField,
+                                              const WideString& csValue) {
   if (pField->GetFieldType() != FormFieldType::kListBox)
-    return 0;
+    return true;
   if (!OnKeyStrokeCommit(pField, csValue))
-    return -1;
-  if (!OnValidate(pField, csValue))
-    return -1;
-  return 1;
+    return false;
+  return OnValidate(pField, csValue);
 }
 
 void CPDFSDK_InterForm::AfterSelectionChange(CPDF_FormField* pField) {
@@ -680,19 +675,7 @@ void CPDFSDK_InterForm::AfterCheckedStatusChange(CPDF_FormField* pField) {
   UpdateField(pField);
 }
 
-int CPDFSDK_InterForm::BeforeFormReset(CPDF_InterForm* pForm) {
-  return 0;
-}
-
 void CPDFSDK_InterForm::AfterFormReset(CPDF_InterForm* pForm) {
-  OnCalculate(nullptr);
-}
-
-int CPDFSDK_InterForm::BeforeFormImportData(CPDF_InterForm* pForm) {
-  return 0;
-}
-
-void CPDFSDK_InterForm::AfterFormImportData(CPDF_InterForm* pForm) {
   OnCalculate(nullptr);
 }
 
@@ -713,7 +696,7 @@ bool CPDFSDK_InterForm::IsNeedHighLight(FormFieldType fieldType) {
 
 void CPDFSDK_InterForm::RemoveAllHighLights() {
   std::fill(m_HighlightColor, m_HighlightColor + kFormFieldTypeCount,
-            FXSYS_RGB(255, 255, 255));
+            kWhiteBGR);
   std::fill(m_NeedsHighlight, m_NeedsHighlight + kFormFieldTypeCount, false);
 }
 
@@ -735,7 +718,7 @@ void CPDFSDK_InterForm::SetAllHighlightColors(FX_COLORREF clr) {
 
 FX_COLORREF CPDFSDK_InterForm::GetHighlightColor(FormFieldType fieldType) {
   if (fieldType == FormFieldType::kUnknown)
-    return FXSYS_RGB(255, 255, 255);
+    return kWhiteBGR;
 
 #ifdef PDF_ENABLE_XFA
   // For the XFA fields, we need to return the specific field type highlight

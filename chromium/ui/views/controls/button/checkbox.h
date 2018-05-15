@@ -39,6 +39,15 @@ class VIEWS_EXPORT Checkbox : public LabelButton {
 
   void SetMultiLine(bool multi_line);
 
+  // If the accessible name should be the same as the labelling view's text,
+  // use this. It will set the accessible label relationship and copy the
+  // accessible name from the labelling views's accessible name. Any view with
+  // an accessible name can be used, e.g. a Label, StyledLabel or Link.
+  void SetAssociatedLabel(View* labelling_view);
+
+  // LabelButton:
+  void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
+
  protected:
   // Returns whether MD is enabled. Returns true if |force_md| in the
   // constructor or --secondary-ui-md flag is set.
@@ -46,7 +55,6 @@ class VIEWS_EXPORT Checkbox : public LabelButton {
 
   // LabelButton:
   const char* GetClassName() const override;
-  void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
   void OnFocus() override;
   void OnBlur() override;
   void OnNativeThemeChanged(const ui::NativeTheme* theme) override;
@@ -94,6 +102,9 @@ class VIEWS_EXPORT Checkbox : public LabelButton {
 
   // The images for each button node_data.
   gfx::ImageSkia images_[2][2][STATE_COUNT];
+
+  // The unique id for the associated label's accessible object.
+  int32_t label_ax_id_;
 
   bool use_md_;
 

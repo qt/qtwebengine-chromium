@@ -6,7 +6,6 @@
 
 #include <stdint.h>
 
-#include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/system/core.h"
 #include "mojo/public/c/system/buffer.h"
 #include "mojo/public/c/system/data_pipe.h"
@@ -14,10 +13,16 @@
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/c/system/platform_handle.h"
 
-using mojo::edk::internal::g_core;
+namespace {
 
-// Definitions of the system functions.
+mojo::edk::Core* g_core;
+
 extern "C" {
+
+MojoResult MojoInitializeImpl(const struct MojoInitializeOptions* options) {
+  NOTREACHED() << "Do not call MojoInitialize() as an EDK embedder!";
+  return MOJO_RESULT_OK;
+}
 
 MojoTimeTicks MojoGetTimeTicksNowImpl() {
   return g_core->GetTimeTicksNow();
@@ -33,96 +38,90 @@ MojoResult MojoQueryHandleSignalsStateImpl(
   return g_core->QueryHandleSignalsState(handle, signals_state);
 }
 
-MojoResult MojoCreateWatcherImpl(MojoWatcherCallback callback,
-                                 MojoHandle* watcher_handle) {
-  return g_core->CreateWatcher(callback, watcher_handle);
+MojoResult MojoCreateTrapImpl(MojoTrapEventHandler handler,
+                              const MojoCreateTrapOptions* options,
+                              MojoHandle* trap_handle) {
+  return g_core->CreateTrap(handler, options, trap_handle);
 }
 
-MojoResult MojoArmWatcherImpl(MojoHandle watcher_handle,
-                              uint32_t* num_ready_contexts,
-                              uintptr_t* ready_contexts,
-                              MojoResult* ready_results,
-                              MojoHandleSignalsState* ready_signals_states) {
-  return g_core->ArmWatcher(watcher_handle, num_ready_contexts, ready_contexts,
-                            ready_results, ready_signals_states);
+MojoResult MojoArmTrapImpl(MojoHandle trap_handle,
+                           const MojoArmTrapOptions* options,
+                           uint32_t* num_ready_triggers,
+                           uintptr_t* ready_triggers,
+                           MojoResult* ready_results,
+                           MojoHandleSignalsState* ready_signals_states) {
+  return g_core->ArmTrap(trap_handle, options, num_ready_triggers,
+                         ready_triggers, ready_results, ready_signals_states);
 }
 
-MojoResult MojoWatchImpl(MojoHandle watcher_handle,
-                         MojoHandle handle,
-                         MojoHandleSignals signals,
-                         MojoWatchCondition condition,
-                         uintptr_t context) {
-  return g_core->Watch(watcher_handle, handle, signals, condition, context);
+MojoResult MojoAddTriggerImpl(MojoHandle trap_handle,
+                              MojoHandle handle,
+                              MojoHandleSignals signals,
+                              MojoTriggerCondition condition,
+                              uintptr_t context,
+                              const MojoAddTriggerOptions* options) {
+  return g_core->AddTrigger(trap_handle, handle, signals, condition, context,
+                            options);
 }
 
-MojoResult MojoCancelWatchImpl(MojoHandle watcher_handle, uintptr_t context) {
-  return g_core->CancelWatch(watcher_handle, context);
+MojoResult MojoRemoveTriggerImpl(MojoHandle trap_handle,
+                                 uintptr_t context,
+                                 const MojoRemoveTriggerOptions* options) {
+  return g_core->RemoveTrigger(trap_handle, context, options);
 }
 
-MojoResult MojoCreateMessageImpl(MojoMessageHandle* message) {
-  return g_core->CreateMessage(message);
+MojoResult MojoCreateMessageImpl(const MojoCreateMessageOptions* options,
+                                 MojoMessageHandle* message) {
+  return g_core->CreateMessage(options, message);
+}
+
+MojoResult MojoSerializeMessageImpl(
+    MojoMessageHandle message,
+    const MojoSerializeMessageOptions* options) {
+  return g_core->SerializeMessage(message, options);
 }
 
 MojoResult MojoDestroyMessageImpl(MojoMessageHandle message) {
   return g_core->DestroyMessage(message);
 }
 
-MojoResult MojoSerializeMessageImpl(MojoMessageHandle message) {
-  return g_core->SerializeMessage(message);
-}
-
-MojoResult MojoAttachSerializedMessageBufferImpl(MojoMessageHandle message,
-                                                 uint32_t payload_size,
-                                                 const MojoHandle* handles,
-                                                 uint32_t num_handles,
-                                                 void** buffer,
-                                                 uint32_t* buffer_size) {
-  return g_core->AttachSerializedMessageBuffer(
-      message, payload_size, handles, num_handles, buffer, buffer_size);
-}
-
-MojoResult MojoExtendSerializedMessagePayloadImpl(MojoMessageHandle message,
-                                                  uint32_t new_payload_size,
-                                                  const MojoHandle* handles,
-                                                  uint32_t num_handles,
-                                                  void** new_buffer,
-                                                  uint32_t* new_buffer_size) {
-  return g_core->ExtendSerializedMessagePayload(message, new_payload_size,
-                                                handles, num_handles,
-                                                new_buffer, new_buffer_size);
-}
-
-MojoResult MojoCommitSerializedMessageContentsImpl(MojoMessageHandle message,
-                                                   uint32_t final_payload_size,
-                                                   void** buffer,
-                                                   uint32_t* buffer_size) {
-  return g_core->CommitSerializedMessageContents(message, final_payload_size,
-                                                 buffer, buffer_size);
-}
-
-MojoResult MojoGetSerializedMessageContentsImpl(
+MojoResult MojoAppendMessageDataImpl(
     MojoMessageHandle message,
+    uint32_t additional_payload_size,
+    const MojoHandle* handles,
+    uint32_t num_handles,
+    const MojoAppendMessageDataOptions* options,
     void** buffer,
-    uint32_t* num_bytes,
-    MojoHandle* handles,
-    uint32_t* num_handles,
-    MojoGetSerializedMessageContentsFlags flags) {
-  return g_core->GetSerializedMessageContents(message, buffer, num_bytes,
-                                              handles, num_handles, flags);
+    uint32_t* buffer_size) {
+  return g_core->AppendMessageData(message, additional_payload_size, handles,
+                                   num_handles, options, buffer, buffer_size);
 }
 
-MojoResult MojoAttachMessageContextImpl(
+MojoResult MojoGetMessageDataImpl(MojoMessageHandle message,
+                                  const MojoGetMessageDataOptions* options,
+                                  void** buffer,
+                                  uint32_t* num_bytes,
+                                  MojoHandle* handles,
+                                  uint32_t* num_handles) {
+  return g_core->GetMessageData(message, options, buffer, num_bytes, handles,
+                                num_handles);
+}
+
+MojoResult MojoSetMessageContextImpl(
     MojoMessageHandle message,
     uintptr_t context,
     MojoMessageContextSerializer serializer,
-    MojoMessageContextDestructor destructor) {
-  return g_core->AttachMessageContext(message, context, serializer, destructor);
+    MojoMessageContextDestructor destructor,
+    const MojoSetMessageContextOptions* options) {
+  return g_core->SetMessageContext(message, context, serializer, destructor,
+                                   options);
 }
 
-MojoResult MojoGetMessageContextImpl(MojoMessageHandle message,
-                                     uintptr_t* context,
-                                     MojoGetMessageContextFlags flags) {
-  return g_core->GetMessageContext(message, context, flags);
+MojoResult MojoGetMessageContextImpl(
+    MojoMessageHandle message,
+    const MojoGetMessageContextOptions* options,
+    uintptr_t* context) {
+  return g_core->GetMessageContext(message, options, context);
 }
 
 MojoResult MojoCreateMessagePipeImpl(
@@ -199,7 +198,7 @@ MojoResult MojoEndReadDataImpl(MojoHandle data_pipe_consumer_handle,
 }
 
 MojoResult MojoCreateSharedBufferImpl(
-    const struct MojoCreateSharedBufferOptions* options,
+    const MojoCreateSharedBufferOptions* options,
     uint64_t num_bytes,
     MojoHandle* shared_buffer_handle) {
   return g_core->CreateSharedBuffer(options, num_bytes, shared_buffer_handle);
@@ -207,7 +206,7 @@ MojoResult MojoCreateSharedBufferImpl(
 
 MojoResult MojoDuplicateBufferHandleImpl(
     MojoHandle buffer_handle,
-    const struct MojoDuplicateBufferHandleOptions* options,
+    const MojoDuplicateBufferHandleOptions* options,
     MojoHandle* new_buffer_handle) {
   return g_core->DuplicateBufferHandle(buffer_handle, options,
                                        new_buffer_handle);
@@ -223,6 +222,12 @@ MojoResult MojoMapBufferImpl(MojoHandle buffer_handle,
 
 MojoResult MojoUnmapBufferImpl(void* buffer) {
   return g_core->UnmapBuffer(buffer);
+}
+
+MojoResult MojoGetBufferInfoImpl(MojoHandle buffer_handle,
+                                 const MojoSharedBufferOptions* options,
+                                 MojoSharedBufferInfo* info) {
+  return g_core->GetBufferInfo(buffer_handle, options, info);
 }
 
 MojoResult MojoWrapPlatformHandleImpl(const MojoPlatformHandle* platform_handle,
@@ -267,49 +272,61 @@ MojoResult MojoGetPropertyImpl(MojoPropertyType type, void* value) {
 
 }  // extern "C"
 
+MojoSystemThunks g_thunks = {sizeof(MojoSystemThunks),
+                             MojoInitializeImpl,
+                             MojoGetTimeTicksNowImpl,
+                             MojoCloseImpl,
+                             MojoQueryHandleSignalsStateImpl,
+                             MojoCreateMessagePipeImpl,
+                             MojoWriteMessageImpl,
+                             MojoReadMessageImpl,
+                             MojoCreateDataPipeImpl,
+                             MojoWriteDataImpl,
+                             MojoBeginWriteDataImpl,
+                             MojoEndWriteDataImpl,
+                             MojoReadDataImpl,
+                             MojoBeginReadDataImpl,
+                             MojoEndReadDataImpl,
+                             MojoCreateSharedBufferImpl,
+                             MojoDuplicateBufferHandleImpl,
+                             MojoMapBufferImpl,
+                             MojoUnmapBufferImpl,
+                             MojoGetBufferInfoImpl,
+                             MojoCreateTrapImpl,
+                             MojoAddTriggerImpl,
+                             MojoRemoveTriggerImpl,
+                             MojoArmTrapImpl,
+                             MojoFuseMessagePipesImpl,
+                             MojoCreateMessageImpl,
+                             MojoDestroyMessageImpl,
+                             MojoSerializeMessageImpl,
+                             MojoAppendMessageDataImpl,
+                             MojoGetMessageDataImpl,
+                             MojoSetMessageContextImpl,
+                             MojoGetMessageContextImpl,
+                             MojoWrapPlatformHandleImpl,
+                             MojoUnwrapPlatformHandleImpl,
+                             MojoWrapPlatformSharedBufferHandleImpl,
+                             MojoUnwrapPlatformSharedBufferHandleImpl,
+                             MojoNotifyBadMessageImpl,
+                             MojoGetPropertyImpl};
+
+}  // namespace
+
 namespace mojo {
 namespace edk {
 
-MojoSystemThunks MakeSystemThunks() {
-  MojoSystemThunks system_thunks = {sizeof(MojoSystemThunks),
-                                    MojoGetTimeTicksNowImpl,
-                                    MojoCloseImpl,
-                                    MojoQueryHandleSignalsStateImpl,
-                                    MojoCreateMessagePipeImpl,
-                                    MojoWriteMessageImpl,
-                                    MojoReadMessageImpl,
-                                    MojoCreateDataPipeImpl,
-                                    MojoWriteDataImpl,
-                                    MojoBeginWriteDataImpl,
-                                    MojoEndWriteDataImpl,
-                                    MojoReadDataImpl,
-                                    MojoBeginReadDataImpl,
-                                    MojoEndReadDataImpl,
-                                    MojoCreateSharedBufferImpl,
-                                    MojoDuplicateBufferHandleImpl,
-                                    MojoMapBufferImpl,
-                                    MojoUnmapBufferImpl,
-                                    MojoCreateWatcherImpl,
-                                    MojoWatchImpl,
-                                    MojoCancelWatchImpl,
-                                    MojoArmWatcherImpl,
-                                    MojoFuseMessagePipesImpl,
-                                    MojoCreateMessageImpl,
-                                    MojoDestroyMessageImpl,
-                                    MojoSerializeMessageImpl,
-                                    MojoAttachSerializedMessageBufferImpl,
-                                    MojoExtendSerializedMessagePayloadImpl,
-                                    MojoCommitSerializedMessageContentsImpl,
-                                    MojoGetSerializedMessageContentsImpl,
-                                    MojoAttachMessageContextImpl,
-                                    MojoGetMessageContextImpl,
-                                    MojoWrapPlatformHandleImpl,
-                                    MojoUnwrapPlatformHandleImpl,
-                                    MojoWrapPlatformSharedBufferHandleImpl,
-                                    MojoUnwrapPlatformSharedBufferHandleImpl,
-                                    MojoNotifyBadMessageImpl,
-                                    MojoGetPropertyImpl};
-  return system_thunks;
+// static
+Core* Core::Get() {
+  return g_core;
+}
+
+void InitializeCore() {
+  g_core = new Core;
+}
+
+const MojoSystemThunks& GetSystemThunks() {
+  return g_thunks;
 }
 
 }  // namespace edk

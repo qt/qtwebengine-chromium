@@ -11,7 +11,6 @@
 
 #include "base/auto_reset.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
@@ -1268,12 +1267,11 @@ class LayerTreeHostTestEarlyDamageCheckStops : public LayerTreeHostTest {
   int damaged_frame_limit_;
 };
 
-// Flaky on Win7 Tests (dbg)(1). https://crbug.com/813578
-#if !defined(OS_WIN)
 // This behavior is specific to Android WebView, which only uses
 // multi-threaded compositor.
-MULTI_THREAD_TEST_F(LayerTreeHostTestEarlyDamageCheckStops);
-#endif
+// Flaky on Win7 Tests (dbg)(1). https://crbug.com/813578
+// Flaky on linux_chromium_tsan_rel_ng. https://crbug.com/822473
+// MULTI_THREAD_TEST_F(LayerTreeHostTestEarlyDamageCheckStops);
 
 // Verify CanDraw() is false until first commit.
 class LayerTreeHostTestCantDrawBeforeCommit : public LayerTreeHostTest {
@@ -5327,7 +5325,8 @@ class TestSwapPromise : public SwapPromise {
     result_->did_activate_called = true;
   }
 
-  void WillSwap(viz::CompositorFrameMetadata* metadata) override {
+  void WillSwap(viz::CompositorFrameMetadata* metadata,
+                FrameTokenAllocator* frame_token_allocator) override {
     base::AutoLock lock(result_->lock);
     EXPECT_FALSE(result_->did_swap_called);
     EXPECT_FALSE(result_->did_not_swap_called);
@@ -8086,7 +8085,7 @@ class GpuRasterizationSucceedsWithLargeImage : public LayerTreeHostTest {
 
     GrContext* gr_context = context_provider->GrContext();
     ASSERT_TRUE(gr_context);
-    const uint32_t max_texture_size = gr_context->caps()->maxTextureSize();
+    const uint32_t max_texture_size = gr_context->maxTextureSize();
     ASSERT_GT(static_cast<uint32_t>(large_image_size_.width()),
               max_texture_size);
   }
@@ -8483,10 +8482,6 @@ class LayerTreeHostTestImageAnimation : public LayerTreeHostTest {
  public:
   void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  void InitializeSettings(LayerTreeSettings* settings) override {
-    settings->enable_image_animations = true;
-  }
-
   virtual void AddImageOp(const PaintImage& image) = 0;
 
   void SetupTree() override {
@@ -8596,6 +8591,20 @@ class LayerTreeHostTestImageAnimationDrawRecordShader
 };
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestImageAnimationDrawRecordShader);
+
+class LayerTreeHostTestImageAnimationPaintFilter
+    : public LayerTreeHostTestImageAnimation {
+  void AddImageOp(const PaintImage& image) override {
+    auto record = sk_make_sp<PaintOpBuffer>();
+    record->push<DrawImageOp>(image, 0.f, 0.f, nullptr);
+    PaintFlags flags;
+    flags.setImageFilter(
+        sk_make_sp<RecordPaintFilter>(record, SkRect::MakeWH(500, 500)));
+    content_layer_client_.add_draw_rect(gfx::Rect(500, 500), flags);
+  }
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestImageAnimationPaintFilter);
 
 class LayerTreeHostTestImageAnimationSynchronousScheduling
     : public LayerTreeHostTestImageAnimationDrawImage {

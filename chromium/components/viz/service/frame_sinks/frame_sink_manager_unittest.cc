@@ -6,6 +6,9 @@
 
 #include <stddef.h>
 
+#include <tuple>
+
+#include "base/run_loop.h"
 #include "components/viz/common/constants.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
@@ -52,7 +55,7 @@ struct RootCompositorFrameSinkData {
 class FrameSinkManagerTest : public testing::Test {
  public:
   FrameSinkManagerTest()
-      : manager_(kDefaultActivationDeadlineInFrames, &provider) {}
+      : manager_(kDefaultActivationDeadlineInFrames, &display_provider_) {}
   ~FrameSinkManagerTest() override = default;
 
   std::unique_ptr<CompositorFrameSinkSupport> CreateCompositorFrameSinkSupport(
@@ -81,7 +84,7 @@ class FrameSinkManagerTest : public testing::Test {
   }
 
  protected:
-  TestDisplayProvider provider;
+  TestDisplayProvider display_provider_;
   FrameSinkManagerImpl manager_;
 };
 
@@ -113,6 +116,33 @@ TEST_F(FrameSinkManagerTest, CreateCompositorFrameSink) {
   // Invalidating should destroy the CompositorFrameSinkImpl.
   manager_.InvalidateFrameSinkId(kFrameSinkIdA);
   EXPECT_FALSE(CompositorFrameSinkExists(kFrameSinkIdA));
+}
+
+TEST_F(FrameSinkManagerTest, CompositorFrameSinkConnectionLost) {
+  manager_.RegisterFrameSinkId(kFrameSinkIdA);
+
+  // Create a CompositorFrameSinkImpl.
+  MockCompositorFrameSinkClient compositor_frame_sink_client;
+  mojom::CompositorFrameSinkPtr compositor_frame_sink;
+  manager_.CreateCompositorFrameSink(
+      kFrameSinkIdA, MakeRequest(&compositor_frame_sink),
+      compositor_frame_sink_client.BindInterfacePtr());
+  EXPECT_TRUE(CompositorFrameSinkExists(kFrameSinkIdA));
+
+  // Close the connection from the renderer.
+  compositor_frame_sink.reset();
+
+  // Closing the connection will destroy the CompositorFrameSinkImpl along with
+  // the mojom::CompositorFrameSinkClient binding.
+  base::RunLoop run_loop;
+  compositor_frame_sink_client.set_connection_error_handler(
+      run_loop.QuitClosure());
+  run_loop.Run();
+
+  // Check that the CompositorFrameSinkImpl was destroyed.
+  EXPECT_FALSE(CompositorFrameSinkExists(kFrameSinkIdA));
+
+  manager_.InvalidateFrameSinkId(kFrameSinkIdA);
 }
 
 TEST_F(FrameSinkManagerTest, SingleClients) {
@@ -529,7 +559,7 @@ class FrameSinkManagerOrderingTest : public FrameSinkManagerTest {
 class FrameSinkManagerOrderingParamTest
     : public FrameSinkManagerOrderingTest,
       public ::testing::WithParamInterface<
-          std::tr1::tuple<RegisterOrder, UnregisterOrder, BFSOrder>> {};
+          std::tuple<RegisterOrder, UnregisterOrder, BFSOrder>> {};
 
 TEST_P(FrameSinkManagerOrderingParamTest, Ordering) {
   // Test the four permutations of client/hierarchy setting/unsetting and test
@@ -537,9 +567,9 @@ TEST_P(FrameSinkManagerOrderingParamTest, Ordering) {
   // client/hierarchy are less related, so BFS is tested independently instead
   // of every permutation of BFS setting and unsetting.
   // The register/unregister functions themselves test most of the state.
-  RegisterOrder register_order = std::tr1::get<0>(GetParam());
-  UnregisterOrder unregister_order = std::tr1::get<1>(GetParam());
-  BFSOrder bfs_order = std::tr1::get<2>(GetParam());
+  RegisterOrder register_order = std::get<0>(GetParam());
+  UnregisterOrder unregister_order = std::get<1>(GetParam());
+  BFSOrder bfs_order = std::get<2>(GetParam());
 
   // Attach everything up in the specified order.
   if (bfs_order == BFS_FIRST)

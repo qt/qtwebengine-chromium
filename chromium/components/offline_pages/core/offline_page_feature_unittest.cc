@@ -113,4 +113,48 @@ TEST(OfflinePageFeatureTest, OfflinePagesLimitlessPrefetching) {
   }
 }
 
+TEST(OfflinePageFeatureTest, OfflinePagesInDownloadHomeOpenInCct) {
+  // Disabled by default.
+  EXPECT_FALSE(offline_pages::ShouldOfflinePagesInDownloadHomeOpenInCct());
+
+  // Check if helper method works correctly when the features is enabled.
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      kOfflinePagesInDownloadHomeOpenInCctFeature);
+  EXPECT_TRUE(offline_pages::ShouldOfflinePagesInDownloadHomeOpenInCct());
+}
+
+TEST(OfflinePageFeatureTest, OfflinePagesDescriptiveFailStatus) {
+  // Disabled by default.
+  EXPECT_FALSE(offline_pages::IsOfflinePagesDescriptiveFailStatusEnabled());
+
+  // Check if helper method works correctly when the features is enabled.
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      kOfflinePagesDescriptiveFailStatusFeature);
+  EXPECT_TRUE(offline_pages::IsOfflinePagesDescriptiveFailStatusEnabled());
+}
+
+TEST(OfflinePageFeatureTest, OfflinePagesDescriptivePendingStatus) {
+  // Disabled by default.
+  EXPECT_FALSE(offline_pages::IsOfflinePagesDescriptivePendingStatusEnabled());
+
+  // Check if helper method works correctly when the features is enabled.
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      kOfflinePagesDescriptivePendingStatusFeature);
+  EXPECT_TRUE(offline_pages::IsOfflinePagesDescriptivePendingStatusEnabled());
+}
+
+TEST(OfflinePageFeatureTest, AlternateDinoPage) {
+  // Disabled by default.
+  EXPECT_FALSE(offline_pages::ShouldShowAlternateDinoPage());
+
+  // Check if helper method works correctly when the features is enabled.
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      kOfflinePagesShowAlternateDinoPageFeature);
+  EXPECT_TRUE(offline_pages::ShouldShowAlternateDinoPage());
+}
+
 }  // namespace offline_pages

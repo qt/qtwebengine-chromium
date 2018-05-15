@@ -5,13 +5,12 @@
 #include "content/browser/android/overscroll_controller_android.h"
 #include <memory>
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "cc/layers/layer.h"
 #include "content/public/common/use_zoom_for_dsf_policy.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebGestureEvent.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/blink/public/platform/web_gesture_event.h"
+#include "third_party/blink/public/platform/web_input_event.h"
 #include "ui/android/overscroll_glow.h"
 #include "ui/android/overscroll_refresh.h"
 #include "ui/android/resources/resource_manager_impl.h"
@@ -35,7 +34,11 @@ namespace {
 class MockCompositor : public WindowAndroidCompositor {
  public:
   ~MockCompositor() override {}
-  void AttachLayerForReadback(scoped_refptr<cc::Layer>) override {}
+  base::WeakPtr<ui::WindowAndroidCompositor> GetWeakPtr() override {
+    return nullptr;
+  }
+  void IncrementReadbackRequestCount() override {}
+  void DecrementReadbackRequestCount() override {}
   void RequestCopyOfOutputOnRootLayer(
       std::unique_ptr<viz::CopyOutputRequest>) override {}
   void SetNeedsAnimate() override {}

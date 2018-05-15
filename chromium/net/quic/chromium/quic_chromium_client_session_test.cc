@@ -7,7 +7,6 @@
 #include "base/base64.h"
 #include "base/files/file_path.h"
 #include "base/memory/ptr_util.h"
-#include "base/rand_util.h"
 #include "base/run_loop.h"
 #include "base/test/histogram_tester.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -36,14 +35,16 @@
 #include "net/quic/core/quic_packet_writer.h"
 #include "net/quic/core/tls_client_handshaker.h"
 #include "net/quic/platform/api/quic_flags.h"
-#include "net/quic/platform/impl/quic_test_impl.h"
+#include "net/quic/platform/api/quic_test.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/quic_client_promised_info_peer.h"
+#include "net/quic/test_tools/quic_connection_peer.h"
 #include "net/quic/test_tools/quic_stream_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/quic/test_tools/simple_quic_framer.h"
 #include "net/socket/datagram_client_socket.h"
 #include "net/socket/socket_test_util.h"
+#include "net/spdy/chromium/spdy_test_util_common.h"
 #include "net/spdy/core/spdy_test_utils.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/gtest_util.h"
@@ -111,7 +112,8 @@ class QuicChromiumClientSessionTest
                       &clock_,
                       kServerHostname,
                       Perspective::IS_SERVER,
-                      false) {
+                      false),
+        migrate_session_early_v2_(false) {
     // Advance the time, because timers do not like uninitialized times.
     clock_.AdvanceTime(QuicTime::Delta::FromSeconds(1));
   }
@@ -129,7 +131,6 @@ class QuicChromiumClientSessionTest
       socket_factory_.AddSocketDataProvider(socket_data_.get());
     std::unique_ptr<DatagramClientSocket> socket =
         socket_factory_.CreateDatagramClientSocket(DatagramSocket::DEFAULT_BIND,
-                                                   base::Bind(&base::RandInt),
                                                    &net_log_, NetLogSource());
     socket->Connect(kIpEndPoint);
     QuicChromiumPacketWriter* writer = new net::QuicChromiumPacketWriter(
@@ -144,10 +145,9 @@ class QuicChromiumClientSessionTest
         /*stream_factory=*/nullptr, &crypto_client_stream_factory_, &clock_,
         &transport_security_state_,
         base::WrapUnique(static_cast<QuicServerInfo*>(nullptr)), session_key_,
-        /*require_confirmation=*/false, /*migrate_session_early*/ false,
-        /*migrate_session_on_network_change*/ false,
-        /*migrate_session_early_v2*/ false,
-        /*migrate_session_on_network_change_v2*/ false,
+        /*require_confirmation=*/false, /*migrate_session_early=*/false,
+        /*migrate_session_on_network_change=*/false, migrate_session_early_v2_,
+        /*migrate_session_on_network_change_v2=*/false,
         base::TimeDelta::FromSeconds(kMaxTimeOnNonDefaultNetworkSecs),
         kMaxMigrationsToNonDefaultNetworkOnPathDegrading,
         kQuicYieldAfterPacketsRead,
@@ -219,6 +219,7 @@ class QuicChromiumClientSessionTest
   QuicTestPacketMaker client_maker_;
   QuicTestPacketMaker server_maker_;
   ProofVerifyDetailsChromium verify_details_;
+  bool migrate_session_early_v2_;
 };
 
 INSTANTIATE_TEST_CASE_P(
@@ -1236,15 +1237,9 @@ TEST_P(QuicChromiumClientSessionTest, MigrateToSocket) {
   char data[] = "ABCD";
   std::unique_ptr<QuicEncryptedPacket> client_ping;
   std::unique_ptr<QuicEncryptedPacket> ack_and_data_out;
-  if (session_->use_control_frame_manager()) {
     client_ping = client_maker_.MakeAckAndPingPacket(2, false, 1, 1, 1);
     ack_and_data_out = client_maker_.MakeDataPacket(3, 5, false, false, 0,
                                                     QuicStringPiece(data));
-  } else {
-    client_ping = client_maker_.MakePingPacket(2, /*include_version=*/false);
-    ack_and_data_out = client_maker_.MakeAckAndDataPacket(
-        3, false, 5, 1, 1, 1, false, 0, QuicStringPiece(data));
-  }
   std::unique_ptr<QuicEncryptedPacket> server_ping(
       server_maker_.MakePingPacket(1, /*include_version=*/false));
   MockRead reads[] = {
@@ -1260,7 +1255,6 @@ TEST_P(QuicChromiumClientSessionTest, MigrateToSocket) {
   // Create connected socket.
   std::unique_ptr<DatagramClientSocket> new_socket =
       socket_factory_.CreateDatagramClientSocket(DatagramSocket::DEFAULT_BIND,
-                                                 base::Bind(&base::RandInt),
                                                  &net_log_, NetLogSource());
   EXPECT_THAT(new_socket->Connect(kIpEndPoint), IsOk());
 
@@ -1319,7 +1313,6 @@ TEST_P(QuicChromiumClientSessionTest, MigrateToSocketMaxReaders) {
     // Create connected socket.
     std::unique_ptr<DatagramClientSocket> new_socket =
         socket_factory_.CreateDatagramClientSocket(DatagramSocket::DEFAULT_BIND,
-                                                   base::Bind(&base::RandInt),
                                                    &net_log_, NetLogSource());
     EXPECT_THAT(new_socket->Connect(kIpEndPoint), IsOk());
 
@@ -1355,11 +1348,7 @@ TEST_P(QuicChromiumClientSessionTest, MigrateToSocketReadError) {
   std::unique_ptr<QuicEncryptedPacket> settings_packet(
       client_maker_.MakeInitialSettingsPacket(1, nullptr));
   std::unique_ptr<QuicEncryptedPacket> client_ping;
-  if (FLAGS_quic_reloadable_flag_quic_use_control_frame_manager) {
     client_ping = client_maker_.MakeAckAndPingPacket(2, false, 1, 1, 1);
-  } else {
-    client_ping = client_maker_.MakePingPacket(2, /*include_version=*/false);
-  }
   std::unique_ptr<QuicEncryptedPacket> server_ping(
       server_maker_.MakePingPacket(1, /*include_version=*/false));
   MockWrite old_writes[] = {
@@ -1386,7 +1375,6 @@ TEST_P(QuicChromiumClientSessionTest, MigrateToSocketReadError) {
   // Create connected socket.
   std::unique_ptr<DatagramClientSocket> new_socket =
       socket_factory_.CreateDatagramClientSocket(DatagramSocket::DEFAULT_BIND,
-                                                 base::Bind(&base::RandInt),
                                                  &net_log_, NetLogSource());
   EXPECT_THAT(new_socket->Connect(kIpEndPoint), IsOk());
 
@@ -1423,6 +1411,53 @@ TEST_P(QuicChromiumClientSessionTest, MigrateToSocketReadError) {
   EXPECT_TRUE(socket_data_->AllWriteDataConsumed());
   EXPECT_TRUE(new_socket_data.AllReadDataConsumed());
   EXPECT_TRUE(new_socket_data.AllWriteDataConsumed());
+}
+
+TEST_P(QuicChromiumClientSessionTest, RetransmittableOnWireTimeout) {
+  migrate_session_early_v2_ = true;
+
+  MockQuicData quic_data;
+  quic_data.AddWrite(client_maker_.MakeInitialSettingsPacket(1, nullptr));
+  quic_data.AddWrite(client_maker_.MakePingPacket(2, true));
+  quic_data.AddRead(server_maker_.MakeAckPacket(1, 2, 1, 1, false));
+
+  quic_data.AddWrite(client_maker_.MakePingPacket(3, false));
+  quic_data.AddRead(ASYNC, ERR_IO_PENDING);
+  quic_data.AddRead(ASYNC, OK);  // EOF
+  quic_data.AddSocketDataToFactory(&socket_factory_);
+
+  Initialize();
+  CompleteCryptoHandshake();
+
+  EXPECT_EQ(QuicTime::Delta::FromMilliseconds(100),
+            session_->connection()->retransmittable_on_wire_timeout());
+
+  // Open a stream since the connection only sends PINGs to keep a
+  // retransmittable packet on the wire if there's an open stream.
+  EXPECT_TRUE(QuicChromiumClientSessionPeer::CreateOutgoingDynamicStream(
+      session_.get()));
+
+  QuicAlarm* alarm =
+      QuicConnectionPeer::GetRetransmittableOnWireAlarm(session_->connection());
+  EXPECT_FALSE(alarm->IsSet());
+
+  // Send PING, which will be ACKed by the server. After the ACK, there will be
+  // no retransmittable packets on the wire, so the alarm should be set.
+  session_->SendPing();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(alarm->IsSet());
+  EXPECT_EQ(clock_.ApproximateNow() + QuicTime::Delta::FromMilliseconds(100),
+            alarm->deadline());
+
+  // Advance clock and simulate the alarm firing. This should cause a PING to be
+  // sent.
+  clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(100));
+  alarm_factory_.FireAlarm(alarm);
+  base::RunLoop().RunUntilIdle();
+
+  quic_data.Resume();
+  EXPECT_TRUE(quic_data.AllReadDataConsumed());
+  EXPECT_TRUE(quic_data.AllWriteDataConsumed());
 }
 
 }  // namespace

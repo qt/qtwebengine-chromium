@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "api/audio_codecs/audio_codec_pair_id.h"
 #include "api/audio_codecs/audio_encoder.h"
 #include "api/audio_codecs/audio_encoder_factory.h"
 #include "api/audio_codecs/audio_format.h"
@@ -73,6 +74,10 @@ class AudioSendStream {
       // Sender SSRC.
       uint32_t ssrc = 0;
 
+      // The value to send in the MID RTP header extension if the extension is
+      // included in the list of extensions.
+      std::string mid;
+
       // RTP header extensions used for the sent stream.
       std::vector<RtpExtension> extensions;
 
@@ -120,6 +125,7 @@ class AudioSendStream {
 
     rtc::Optional<SendCodecSpec> send_codec_spec;
     rtc::scoped_refptr<AudioEncoderFactory> encoder_factory;
+    rtc::Optional<AudioCodecPairId> codec_pair_id;
 
     // Track ID as specified during track creation.
     std::string track_id;

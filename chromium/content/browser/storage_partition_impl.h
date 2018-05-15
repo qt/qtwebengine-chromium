@@ -50,6 +50,7 @@ class BackgroundFetchContext;
 class BlobRegistryWrapper;
 class BlobURLLoaderFactory;
 class PrefetchURLLoaderService;
+class WebPackageContextImpl;
 
 class CONTENT_EXPORT StoragePartitionImpl
     : public StoragePartition,
@@ -91,8 +92,10 @@ class CONTENT_EXPORT StoragePartitionImpl
   net::URLRequestContextGetter* GetURLRequestContext() override;
   net::URLRequestContextGetter* GetMediaURLRequestContext() override;
   network::mojom::NetworkContext* GetNetworkContext() override;
-  scoped_refptr<SharedURLLoaderFactory> GetURLLoaderFactoryForBrowserProcess()
-      override;
+  scoped_refptr<network::SharedURLLoaderFactory>
+  GetURLLoaderFactoryForBrowserProcess() override;
+  std::unique_ptr<network::SharedURLLoaderFactoryInfo>
+  GetURLLoaderFactoryForBrowserProcessIOThread() override;
   network::mojom::CookieManager* GetCookieManagerForBrowserProcess() override;
   storage::QuotaManager* GetQuotaManager() override;
   ChromeAppCacheService* GetAppCacheService() override;
@@ -110,6 +113,7 @@ class CONTENT_EXPORT StoragePartitionImpl
   ZoomLevelDelegate* GetZoomLevelDelegate() override;
 #endif  // !defined(OS_ANDROID)
   PlatformNotificationContextImpl* GetPlatformNotificationContext() override;
+  WebPackageContext* GetWebPackageContext() override;
   void ClearDataForOrigin(uint32_t remove_mask,
                           uint32_t quota_storage_remove_mask,
                           const GURL& storage_origin) override;
@@ -301,6 +305,7 @@ class CONTENT_EXPORT StoragePartitionImpl
   scoped_refptr<HostZoomLevelContext> host_zoom_level_context_;
 #endif  // !defined(OS_ANDROID)
   scoped_refptr<PlatformNotificationContextImpl> platform_notification_context_;
+  std::unique_ptr<WebPackageContextImpl> web_package_context_;
   scoped_refptr<BackgroundFetchContext> background_fetch_context_;
   scoped_refptr<BackgroundSyncContext> background_sync_context_;
   scoped_refptr<PaymentAppContextImpl> payment_app_context_;

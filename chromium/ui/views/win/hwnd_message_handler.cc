@@ -31,7 +31,6 @@
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/base/view_prop.h"
-#include "ui/base/win/direct_manipulation.h"
 #include "ui/base/win/internal_constants.h"
 #include "ui/base/win/lock_state.h"
 #include "ui/base/win/mouse_wheel_util.h"
@@ -369,6 +368,8 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       left_button_down_on_caption_(false),
       background_fullscreen_hack_(false),
       pointer_events_for_touch_(features::IsUsingWMPointerForTouch()),
+      precision_touchpad_scroll_phase_enabled_(base::FeatureList::IsEnabled(
+          features::kPrecisionTouchpadScrollPhase)),
       autohide_factory_(this),
       weak_factory_(this) {}
 
@@ -411,13 +412,6 @@ void HWNDMessageHandler::Init(HWND parent, const gfx::Rect& bounds) {
   DCHECK(delegate_->GetHWNDMessageDelegateInputMethod());
   delegate_->GetHWNDMessageDelegateInputMethod()->AddObserver(this);
 
-  // Direct Manipulation is enabled on Windows 10+. The CreateInstance function
-  // returns NULL if Direct Manipulation is not available.
-  direct_manipulation_helper_ =
-      ui::win::DirectManipulationHelper::CreateInstance();
-  if (direct_manipulation_helper_)
-    direct_manipulation_helper_->Initialize(hwnd());
-
   // Disable pen flicks (http://crbug.com/506977)
   base::win::DisableFlicks(hwnd());
 }
@@ -456,8 +450,8 @@ void HWNDMessageHandler::Close() {
     // dereference us when the callback returns).
     waiting_for_close_now_ = true;
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE,
-        base::Bind(&HWNDMessageHandler::CloseNow, weak_factory_.GetWeakPtr()));
+        FROM_HERE, base::BindOnce(&HWNDMessageHandler::CloseNow,
+                                  weak_factory_.GetWeakPtr()));
   }
 }
 
@@ -601,8 +595,6 @@ void HWNDMessageHandler::Show() {
       ShowWindowWithState(ui::SHOW_STATE_INACTIVE);
     }
   }
-  if (direct_manipulation_helper_)
-    direct_manipulation_helper_->Activate(hwnd());
 }
 
 void HWNDMessageHandler::ShowWindowWithState(ui::WindowShowState show_state) {
@@ -1068,6 +1060,119 @@ void HWNDMessageHandler::HandleParentChanged() {
   touch_ids_.clear();
 }
 
+void HWNDMessageHandler::ApplyPinchZoomScale(float scale) {
+  POINT cursor_pos = {0};
+  ::GetCursorPos(&cursor_pos);
+  ScreenToClient(hwnd(), &cursor_pos);
+
+  ui::GestureEventDetails event_details(ui::ET_GESTURE_PINCH_UPDATE);
+  event_details.set_device_type(ui::GestureDeviceType::DEVICE_TOUCHPAD);
+  event_details.set_scale(scale);
+
+  ui::GestureEvent event(cursor_pos.x, cursor_pos.y, ui::EF_NONE,
+                         base::TimeTicks::Now(), event_details);
+  delegate_->HandleGestureEvent(&event);
+}
+
+void HWNDMessageHandler::ApplyPinchZoomBegin() {
+  POINT cursor_pos = {0};
+  ::GetCursorPos(&cursor_pos);
+  ScreenToClient(hwnd(), &cursor_pos);
+
+  ui::GestureEventDetails event_details(ui::ET_GESTURE_PINCH_BEGIN);
+  event_details.set_device_type(ui::GestureDeviceType::DEVICE_TOUCHPAD);
+
+  ui::GestureEvent event(cursor_pos.x, cursor_pos.y, ui::EF_NONE,
+                         base::TimeTicks::Now(), event_details);
+  delegate_->HandleGestureEvent(&event);
+}
+
+void HWNDMessageHandler::ApplyPinchZoomEnd() {
+  POINT cursor_pos = {0};
+  ::GetCursorPos(&cursor_pos);
+  ScreenToClient(hwnd(), &cursor_pos);
+
+  ui::GestureEventDetails event_details(ui::ET_GESTURE_PINCH_END);
+  event_details.set_device_type(ui::GestureDeviceType::DEVICE_TOUCHPAD);
+
+  ui::GestureEvent event(cursor_pos.x, cursor_pos.y, ui::EF_NONE,
+                         base::TimeTicks::Now(), event_details);
+  delegate_->HandleGestureEvent(&event);
+}
+
+void HWNDMessageHandler::ApplyPanGestureEvent(
+    int scroll_x,
+    int scroll_y,
+    ui::EventMomentumPhase momentum_phase,
+    ui::ScrollEventPhase phase) {
+  gfx::Vector2d offset{scroll_x, scroll_y};
+
+  POINT root_location = {0};
+  ::GetCursorPos(&root_location);
+
+  POINT location = {root_location.x, root_location.y};
+  ScreenToClient(hwnd(), &location);
+
+  gfx::Point cursor_location(location);
+  gfx::Point cursor_root_location(root_location);
+
+  int modifiers = ui::GetModifiersFromKeyState();
+
+  if (precision_touchpad_scroll_phase_enabled_) {
+    ui::ScrollEvent event(ui::ET_SCROLL, cursor_location, ui::EventTimeForNow(),
+                          modifiers, scroll_x, scroll_y, scroll_x, scroll_y, 2,
+                          momentum_phase, phase);
+    delegate_->HandleScrollEvent(&event);
+  } else {
+    ui::MouseWheelEvent wheel_event(
+        offset, cursor_location, cursor_root_location, base::TimeTicks::Now(),
+        modifiers | ui::EF_PRECISION_SCROLLING_DELTA, ui::EF_NONE);
+    delegate_->HandleMouseEvent(&wheel_event);
+  }
+}
+
+void HWNDMessageHandler::ApplyPanGestureScroll(int scroll_x, int scroll_y) {
+  ApplyPanGestureEvent(scroll_x, scroll_y, ui::EventMomentumPhase::NONE,
+                       ui::ScrollEventPhase::kUpdate);
+}
+
+void HWNDMessageHandler::ApplyPanGestureFling(int scroll_x, int scroll_y) {
+  ApplyPanGestureEvent(scroll_x, scroll_y,
+                       ui::EventMomentumPhase::INERTIAL_UPDATE,
+                       ui::ScrollEventPhase::kNone);
+}
+
+void HWNDMessageHandler::ApplyPanGestureScrollBegin(int scroll_x,
+                                                    int scroll_y) {
+  // Phase information will be ingored in ApplyPanGestureEvent().
+  ApplyPanGestureEvent(scroll_x, scroll_y, ui::EventMomentumPhase::NONE,
+                       ui::ScrollEventPhase::kBegan);
+}
+
+void HWNDMessageHandler::ApplyPanGestureScrollEnd() {
+  if (!precision_touchpad_scroll_phase_enabled_)
+    return;
+
+  ApplyPanGestureEvent(0, 0, ui::EventMomentumPhase::NONE,
+                       ui::ScrollEventPhase::kEnd);
+}
+
+void HWNDMessageHandler::ApplyPanGestureFlingBegin() {
+  if (!precision_touchpad_scroll_phase_enabled_)
+    return;
+
+  ApplyPanGestureEvent(0, 0, ui::EventMomentumPhase::BEGAN,
+                       ui::ScrollEventPhase::kNone);
+}
+
+void HWNDMessageHandler::ApplyPanGestureFlingEnd() {
+  if (!precision_touchpad_scroll_phase_enabled_)
+    return;
+
+  ApplyPanGestureEvent(0, 0, ui::EventMomentumPhase::END,
+                       ui::ScrollEventPhase::kNone);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // HWNDMessageHandler, private:
 
@@ -1334,8 +1439,9 @@ void HWNDMessageHandler::ForceRedrawWindow(int attempts) {
     if (--attempts <= 0)
       return;
     base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-        FROM_HERE, base::Bind(&HWNDMessageHandler::ForceRedrawWindow,
-                              weak_factory_.GetWeakPtr(), attempts),
+        FROM_HERE,
+        base::BindOnce(&HWNDMessageHandler::ForceRedrawWindow,
+                       weak_factory_.GetWeakPtr(), attempts),
         base::TimeDelta::FromMilliseconds(500));
     return;
   }
@@ -2127,7 +2233,7 @@ LRESULT HWNDMessageHandler::OnScrollMessage(UINT message,
   MSG msg = {
       hwnd(), message, w_param, l_param, static_cast<DWORD>(GetMessageTime())};
   ui::ScrollEvent event(msg);
-  delegate_->HandleScrollEvent(event);
+  delegate_->HandleScrollEvent(&event);
   return 0;
 }
 
@@ -2347,8 +2453,9 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
                            event_time, &touch_events);
         touch_down_contexts_++;
         base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-            FROM_HERE, base::Bind(&HWNDMessageHandler::ResetTouchDownContext,
-                                  weak_factory_.GetWeakPtr()),
+            FROM_HERE,
+            base::BindOnce(&HWNDMessageHandler::ResetTouchDownContext,
+                           weak_factory_.GetWeakPtr()),
             base::TimeDelta::FromMilliseconds(kTouchDownContextResetTimeout));
       } else {
         if (input[i].dwFlags & TOUCHEVENTF_MOVE) {
@@ -2381,8 +2488,8 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
     // events on windows don't fire if we enter a modal loop in the context of
     // a touch event.
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::Bind(&HWNDMessageHandler::HandleTouchEvents,
-                              weak_factory_.GetWeakPtr(), touch_events));
+        FROM_HERE, base::BindOnce(&HWNDMessageHandler::HandleTouchEvents,
+                                  weak_factory_.GetWeakPtr(), touch_events));
   }
   CloseTouchInputHandle(reinterpret_cast<HTOUCHINPUT>(l_param));
   SetMsgHandled(FALSE);
@@ -2487,8 +2594,9 @@ void HWNDMessageHandler::OnWindowPosChanging(WINDOWPOS* window_pos) {
         // and send us further updates.
         ignore_window_pos_changes_ = true;
         base::ThreadTaskRunnerHandle::Get()->PostTask(
-            FROM_HERE, base::Bind(&HWNDMessageHandler::StopIgnoringPosChanges,
-                                  weak_factory_.GetWeakPtr()));
+            FROM_HERE,
+            base::BindOnce(&HWNDMessageHandler::StopIgnoringPosChanges,
+                           weak_factory_.GetWeakPtr()));
       }
       last_monitor_ = monitor;
       last_monitor_rect_ = monitor_rect;
@@ -2540,13 +2648,9 @@ void HWNDMessageHandler::OnWindowPosChanged(WINDOWPOS* window_pos) {
     SetDwmFrameExtension(DwmFrameState::ON);
   if (window_pos->flags & SWP_SHOWWINDOW) {
     delegate_->HandleVisibilityChanged(true);
-    if (direct_manipulation_helper_)
-      direct_manipulation_helper_->Activate(hwnd());
     SetDwmFrameExtension(DwmFrameState::ON);
   } else if (window_pos->flags & SWP_HIDEWINDOW) {
     delegate_->HandleVisibilityChanged(false);
-    if (direct_manipulation_helper_)
-      direct_manipulation_helper_->Deactivate(hwnd());
   }
 
   SetMsgHandled(FALSE);
@@ -2575,8 +2679,10 @@ void HWNDMessageHandler::OnSessionChange(WPARAM status_code) {
 
 void HWNDMessageHandler::HandleTouchEvents(const TouchEvents& touch_events) {
   base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
-  for (size_t i = 0; i < touch_events.size() && ref; ++i)
-    delegate_->HandleTouchEvent(touch_events[i]);
+  for (size_t i = 0; i < touch_events.size() && ref; ++i) {
+    ui::TouchEvent* touch_event = const_cast<ui::TouchEvent*>(&touch_events[i]);
+    delegate_->HandleTouchEvent(touch_event);
+  }
 }
 
 void HWNDMessageHandler::ResetTouchDownContext() {
@@ -2686,24 +2792,21 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
     // OnMouseEvent.
     active_mouse_tracking_flags_ = 0;
   } else if (event.type() == ui::ET_MOUSEWHEEL) {
+    ui::MouseWheelEvent mouse_wheel_event(msg);
     // Reroute the mouse wheel to the window under the pointer if applicable.
     return (ui::RerouteMouseWheel(hwnd(), w_param, l_param) ||
-            delegate_->HandleMouseEvent(ui::MouseWheelEvent(msg))) ? 0 : 1;
+            delegate_->HandleMouseEvent(&mouse_wheel_event))
+               ? 0
+               : 1;
   }
 
   // There are cases where the code handling the message destroys the window,
   // so use the weak ptr to check if destruction occured or not.
   base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
-  bool handled = delegate_->HandleMouseEvent(event);
+  bool handled = delegate_->HandleMouseEvent(&event);
 
   if (!ref.get())
     return 0;
-
-  if (direct_manipulation_helper_ && track_mouse &&
-      (message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL)) {
-    direct_manipulation_helper_->HandleMouseWheel(hwnd(), message, w_param,
-        l_param);
-  }
 
   if (!handled && message == WM_NCLBUTTONDOWN && w_param != HTSYSMENU &&
       w_param != HTCAPTION &&
@@ -2799,7 +2902,7 @@ LRESULT HWNDMessageHandler::HandlePointerEventTypeTouch(UINT message,
   // There are cases where the code handling the message destroys the
   // window, so use the weak ptr to check if destruction occurred or not.
   base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
-  delegate_->HandleTouchEvent(event);
+  delegate_->HandleTouchEvent(&event);
 
   if (event_type == ui::ET_TOUCH_RELEASED)
     id_generator_.ReleaseNumber(pointer_id);
@@ -2835,9 +2938,9 @@ LRESULT HWNDMessageHandler::HandlePointerEventTypePen(UINT message,
   base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
   if (event) {
     if (event->IsTouchEvent()) {
-      delegate_->HandleTouchEvent(*event->AsTouchEvent());
+      delegate_->HandleTouchEvent(event->AsTouchEvent());
     } else if (event->IsMouseEvent()) {
-      delegate_->HandleMouseEvent(*event->AsMouseEvent());
+      delegate_->HandleMouseEvent(event->AsMouseEvent());
     } else {
       NOTREACHED();
     }
@@ -3031,9 +3134,6 @@ void HWNDMessageHandler::SetBoundsInternal(const gfx::Rect& bounds_in_pixels,
     delegate_->HandleClientSizeChanged(GetClientAreaBounds().size());
     ResetWindowRegion(false, true);
   }
-
-  if (direct_manipulation_helper_)
-    direct_manipulation_helper_->SetBounds(bounds_in_pixels);
 }
 
 void HWNDMessageHandler::CheckAndHandleBackgroundFullscreenOnMonitor(

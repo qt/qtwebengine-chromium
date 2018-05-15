@@ -14,8 +14,8 @@
 #include "base/strings/nullable_string16.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
-#include "third_party/WebKit/public/platform/WebDisplayMode.h"
-#include "third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationLockType.h"
+#include "third_party/blink/public/platform/modules/screen_orientation/web_screen_orientation_lock_type.h"
+#include "third_party/blink/public/platform/web_display_mode.h"
 #include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
 
@@ -66,8 +66,8 @@ struct CONTENT_EXPORT Manifest {
     ~ShareTarget();
 
     // The URL template that contains placeholders to be replaced with shared
-    // data. Null if the parsing failed.
-    base::NullableString16 url_template;
+    // data. Empty if the parsing failed.
+    GURL url_template;
   };
 
   // Structure representing a related application.

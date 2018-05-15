@@ -26,14 +26,15 @@ enum class HeaderOutcome {
   DISCARDED_NO_REPORTING_SERVICE = 0,
   DISCARDED_INVALID_SSL_INFO = 1,
   DISCARDED_CERT_STATUS_ERROR = 2,
-  DISCARDED_INVALID_JSON = 3,
-  PARSED = 4,
+  DISCARDED_JSON_TOO_BIG = 3,
+  DISCARDED_JSON_INVALID = 4,
+  PARSED = 5,
 
   MAX
 };
 
 void RecordHeaderOutcome(HeaderOutcome outcome) {
-  UMA_HISTOGRAM_ENUMERATION("Reporting.HeaderOutcome", outcome,
+  UMA_HISTOGRAM_ENUMERATION("Net.Reporting.HeaderOutcome", outcome,
                             HeaderOutcome::MAX);
 }
 
@@ -45,38 +46,30 @@ enum class HeaderEndpointGroupOutcome {
   DISCARDED_TTL_NEGATIVE = 4,
   DISCARDED_ENDPOINTS_MISSING = 5,
   DISCARDED_ENDPOINTS_NOT_LIST = 6,
+
   PARSED = 7,
 
   MAX
 };
 
 void RecordHeaderEndpointGroupOutcome(HeaderEndpointGroupOutcome outcome) {
-  UMA_HISTOGRAM_ENUMERATION("Reporting.HeaderEndpointGroupOutcome", outcome,
+  UMA_HISTOGRAM_ENUMERATION("Net.Reporting.HeaderEndpointGroupOutcome", outcome,
                             HeaderEndpointGroupOutcome::MAX);
 }
 
 enum class HeaderEndpointOutcome {
   DISCARDED_NOT_DICTIONARY = 0,
-  DISCARDED_ENDPOINT_MISSING = 1,     // obsolete
-  DISCARDED_ENDPOINT_NOT_STRING = 2,  // obsolete
-  DISCARDED_ENDPOINT_INVALID = 3,     // obsolete
-  DISCARDED_ENDPOINT_INSECURE = 4,    // obsolete
-  DISCARDED_TTL_MISSING = 5,          // obsolete
-  DISCARDED_TTL_NOT_INTEGER = 6,      // obsolete
-  DISCARDED_TTL_NEGATIVE = 7,         // obsolete
-  DISCARDED_GROUP_NOT_STRING = 8,     // obsolete
-  REMOVED = 9,
-  SET_REJECTED_BY_DELEGATE = 10,
-  SET = 11,
+  DISCARDED_URL_MISSING = 1,
+  DISCARDED_URL_NOT_STRING = 2,
+  DISCARDED_URL_INVALID = 3,
+  DISCARDED_URL_INSECURE = 4,
+  DISCARDED_PRIORITY_NOT_INTEGER = 5,
+  DISCARDED_WEIGHT_NOT_INTEGER = 6,
+  DISCARDED_WEIGHT_NOT_POSITIVE = 7,
 
-  DISCARDED_PRIORITY_NOT_INTEGER = 12,
-  DISCARDED_WEIGHT_NOT_INTEGER = 13,
-  DISCARDED_WEIGHT_NOT_POSITIVE = 14,
-
-  DISCARDED_URL_MISSING = 15,
-  DISCARDED_URL_NOT_STRING = 16,
-  DISCARDED_URL_INVALID = 17,
-  DISCARDED_URL_INSECURE = 18,
+  REMOVED = 8,
+  SET_REJECTED_BY_DELEGATE = 9,
+  SET = 10,
 
   MAX
 };
@@ -88,7 +81,7 @@ bool EndpointParsedSuccessfully(HeaderEndpointOutcome outcome) {
 }
 
 void RecordHeaderEndpointOutcome(HeaderEndpointOutcome outcome) {
-  UMA_HISTOGRAM_ENUMERATION("Reporting.HeaderEndpointOutcome", outcome,
+  UMA_HISTOGRAM_ENUMERATION("Net.Reporting.HeaderEndpointOutcome", outcome,
                             HeaderEndpointOutcome::MAX);
 }
 
@@ -239,8 +232,13 @@ void ReportingHeaderParser::RecordHeaderDiscardedForCertStatusError() {
 }
 
 // static
-void ReportingHeaderParser::RecordHeaderDiscardedForInvalidJson() {
-  RecordHeaderOutcome(HeaderOutcome::DISCARDED_INVALID_JSON);
+void ReportingHeaderParser::RecordHeaderDiscardedForJsonInvalid() {
+  RecordHeaderOutcome(HeaderOutcome::DISCARDED_JSON_INVALID);
+}
+
+// static
+void ReportingHeaderParser::RecordHeaderDiscardedForJsonTooBig() {
+  RecordHeaderOutcome(HeaderOutcome::DISCARDED_JSON_TOO_BIG);
 }
 
 // static
@@ -278,6 +276,8 @@ void ReportingHeaderParser::ParseHeader(ReportingContext* context,
     if (new_endpoints.count(old_endpoint) == 0u)
       cache->RemoveClientForOriginAndEndpoint(origin, old_endpoint);
   }
+
+  RecordHeaderOutcome(HeaderOutcome::PARSED);
 }
 
 }  // namespace net

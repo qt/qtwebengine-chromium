@@ -254,14 +254,9 @@ TEST_P(QuicSimpleServerSessionTest, CloseStreamDueToReset) {
   QuicRstStreamFrame rst1(kInvalidControlFrameId, GetNthClientInitiatedId(0),
                           QUIC_ERROR_PROCESSING_STREAM, 0);
   EXPECT_CALL(owner_, OnRstStreamReceived(_)).Times(1);
-  if (session_->use_control_frame_manager()) {
-    EXPECT_CALL(*connection_, SendControlFrame(_));
-    EXPECT_CALL(*connection_, OnStreamReset(GetNthClientInitiatedId(0),
-                                            QUIC_RST_ACKNOWLEDGEMENT));
-  } else {
-    EXPECT_CALL(*connection_, SendRstStream(GetNthClientInitiatedId(0),
-                                            QUIC_RST_ACKNOWLEDGEMENT, 0));
-  }
+  EXPECT_CALL(*connection_, SendControlFrame(_));
+  EXPECT_CALL(*connection_, OnStreamReset(GetNthClientInitiatedId(0),
+                                          QUIC_RST_ACKNOWLEDGEMENT));
   visitor_->OnRstStream(rst1);
   EXPECT_EQ(0u, session_->GetNumOpenIncomingStreams());
 
@@ -278,14 +273,9 @@ TEST_P(QuicSimpleServerSessionTest, NeverOpenStreamDueToReset) {
   QuicRstStreamFrame rst1(kInvalidControlFrameId, GetNthClientInitiatedId(0),
                           QUIC_ERROR_PROCESSING_STREAM, 0);
   EXPECT_CALL(owner_, OnRstStreamReceived(_)).Times(1);
-  if (session_->use_control_frame_manager()) {
-    EXPECT_CALL(*connection_, SendControlFrame(_));
-    EXPECT_CALL(*connection_, OnStreamReset(GetNthClientInitiatedId(0),
-                                            QUIC_RST_ACKNOWLEDGEMENT));
-  } else {
-    EXPECT_CALL(*connection_, SendRstStream(GetNthClientInitiatedId(0),
-                                            QUIC_RST_ACKNOWLEDGEMENT, 0));
-  }
+  EXPECT_CALL(*connection_, SendControlFrame(_));
+  EXPECT_CALL(*connection_, OnStreamReset(GetNthClientInitiatedId(0),
+                                          QUIC_RST_ACKNOWLEDGEMENT));
   visitor_->OnRstStream(rst1);
   EXPECT_EQ(0u, session_->GetNumOpenIncomingStreams());
 
@@ -313,14 +303,9 @@ TEST_P(QuicSimpleServerSessionTest, AcceptClosedStream) {
   QuicRstStreamFrame rst(kInvalidControlFrameId, GetNthClientInitiatedId(0),
                          QUIC_ERROR_PROCESSING_STREAM, 0);
   EXPECT_CALL(owner_, OnRstStreamReceived(_)).Times(1);
-  if (session_->use_control_frame_manager()) {
-    EXPECT_CALL(*connection_, SendControlFrame(_));
-    EXPECT_CALL(*connection_, OnStreamReset(GetNthClientInitiatedId(0),
-                                            QUIC_RST_ACKNOWLEDGEMENT));
-  } else {
-    EXPECT_CALL(*connection_, SendRstStream(GetNthClientInitiatedId(0),
-                                            QUIC_RST_ACKNOWLEDGEMENT, 0));
-  }
+  EXPECT_CALL(*connection_, SendControlFrame(_));
+  EXPECT_CALL(*connection_, OnStreamReset(GetNthClientInitiatedId(0),
+                                          QUIC_RST_ACKNOWLEDGEMENT));
   visitor_->OnRstStream(rst);
 
   // If we were tracking, we'd probably want to reject this because it's data
@@ -399,12 +384,22 @@ TEST_P(QuicSimpleServerSessionTest, CreateOutgoingDynamicStreamUptoLimit) {
   EXPECT_EQ(1u, session_->GetNumOpenIncomingStreams());
   EXPECT_EQ(0u, session_->GetNumOpenOutgoingStreams());
 
+  if (GetQuicReloadableFlag(quic_register_streams_early2) &&
+      GetQuicReloadableFlag(quic_register_static_streams)) {
+    session_->UnregisterStreamPriority(kHeadersStreamId, /*is_static=*/true);
+  }
   // Assume encryption already established.
+  QuicSimpleServerSessionPeer::SetCryptoStream(session_.get(), nullptr);
   MockQuicCryptoServerStream* crypto_stream =
       new MockQuicCryptoServerStream(&crypto_config_, &compressed_certs_cache_,
                                      session_.get(), &stream_helper_);
   crypto_stream->set_encryption_established(true);
   QuicSimpleServerSessionPeer::SetCryptoStream(session_.get(), crypto_stream);
+  if (GetQuicReloadableFlag(quic_register_streams_early2) &&
+      GetQuicReloadableFlag(quic_register_static_streams)) {
+    session_->RegisterStreamPriority(kHeadersStreamId, /*is_static=*/true,
+                                     QuicStream::kDefaultPriority);
+  }
 
   // Create push streams till reaching the upper limit of allowed open streams.
   for (size_t i = 0; i < kMaxStreamsForTest; ++i) {
@@ -487,6 +482,11 @@ class QuicSimpleServerSessionServerPushTest
 
     visitor_ = QuicConnectionPeer::GetVisitor(connection_);
 
+    if (GetQuicReloadableFlag(quic_register_streams_early2) &&
+        GetQuicReloadableFlag(quic_register_static_streams)) {
+      session_->UnregisterStreamPriority(kHeadersStreamId, /*is_static=*/true);
+    }
+    QuicSimpleServerSessionPeer::SetCryptoStream(session_.get(), nullptr);
     // Assume encryption already established.
     MockQuicCryptoServerStream* crypto_stream = new MockQuicCryptoServerStream(
         &crypto_config_, &compressed_certs_cache_, session_.get(),
@@ -494,6 +494,11 @@ class QuicSimpleServerSessionServerPushTest
 
     crypto_stream->set_encryption_established(true);
     QuicSimpleServerSessionPeer::SetCryptoStream(session_.get(), crypto_stream);
+    if (GetQuicReloadableFlag(quic_register_streams_early2) &&
+        GetQuicReloadableFlag(quic_register_static_streams)) {
+      session_->RegisterStreamPriority(kHeadersStreamId, /*is_static=*/true,
+                                       QuicStream::kDefaultPriority);
+    }
   }
 
   // Given |num_resources|, create this number of fake push resources and push
@@ -522,24 +527,21 @@ class QuicSimpleServerSessionServerPushTest
       string body(body_size, 'a');
       response_cache_.AddSimpleResponse(resource_host, path, 200, body);
       push_resources.push_back(QuicHttpResponseCache::ServerPushInfo(
-          resource_url, SpdyHeaderBlock(), kDefaultPriority, body));
+          resource_url, SpdyHeaderBlock(), QuicStream::kDefaultPriority, body));
       // PUSH_PROMISED are sent for all the resources.
       EXPECT_CALL(*session_, WritePushPromiseMock(GetNthClientInitiatedId(0),
                                                   stream_id, _));
       if (i <= kMaxStreamsForTest) {
         // |kMaxStreamsForTest| promised responses should be sent.
         EXPECT_CALL(*session_,
-                    WriteHeadersMock(stream_id, _, false, kDefaultPriority, _));
+                    WriteHeadersMock(stream_id, _, false,
+                                     QuicStream::kDefaultPriority, _));
         // Since flow control window is smaller than response body, not the
         // whole body will be sent.
         EXPECT_CALL(*connection_, SendStreamData(stream_id, _, 0, NO_FIN))
             .WillOnce(
                 Return(QuicConsumedData(kStreamFlowControlWindowSize, false)));
-        if (session_->use_control_frame_manager()) {
-          EXPECT_CALL(*session_, SendBlocked(stream_id));
-        } else {
-          EXPECT_CALL(*connection_, SendBlocked(stream_id));
-        }
+        EXPECT_CALL(*session_, SendBlocked(stream_id));
       }
     }
     session_->PromisePushResources(request_url, push_resources,
@@ -573,15 +575,11 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
   // After an open stream is marked draining, a new stream is expected to be
   // created and a response sent on the stream.
   EXPECT_CALL(*session_, WriteHeadersMock(next_out_going_stream_id, _, false,
-                                          kDefaultPriority, _));
+                                          QuicStream::kDefaultPriority, _));
   EXPECT_CALL(*connection_,
               SendStreamData(next_out_going_stream_id, _, 0, NO_FIN))
       .WillOnce(Return(QuicConsumedData(kStreamFlowControlWindowSize, false)));
-  if (session_->use_control_frame_manager()) {
-    EXPECT_CALL(*session_, SendBlocked(next_out_going_stream_id));
-  } else {
-    EXPECT_CALL(*connection_, SendBlocked(next_out_going_stream_id));
-  }
+  EXPECT_CALL(*session_, SendBlocked(next_out_going_stream_id));
   session_->StreamDraining(2);
   // Number of open outgoing streams should still be the same, because a new
   // stream is opened. And the queue should be empty.
@@ -604,16 +602,11 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
   QuicRstStreamFrame rst(kInvalidControlFrameId, stream_got_reset,
                          QUIC_STREAM_CANCELLED, 0);
   EXPECT_CALL(owner_, OnRstStreamReceived(_)).Times(1);
-  if (session_->use_control_frame_manager()) {
-    EXPECT_CALL(*connection_, SendControlFrame(_))
-        .WillOnce(Invoke(
-            this, &QuicSimpleServerSessionServerPushTest::ClearControlFrame));
-    EXPECT_CALL(*connection_,
-                OnStreamReset(stream_got_reset, QUIC_RST_ACKNOWLEDGEMENT));
-  } else {
-    EXPECT_CALL(*connection_,
-                SendRstStream(stream_got_reset, QUIC_RST_ACKNOWLEDGEMENT, 0));
-  }
+  EXPECT_CALL(*connection_, SendControlFrame(_))
+      .WillOnce(Invoke(
+          this, &QuicSimpleServerSessionServerPushTest::ClearControlFrame));
+  EXPECT_CALL(*connection_,
+              OnStreamReset(stream_got_reset, QUIC_RST_ACKNOWLEDGEMENT));
   visitor_->OnRstStream(rst);
 
   // When the first 2 streams becomes draining, the two queued up stream could
@@ -622,16 +615,12 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
   QuicStreamId stream_not_reset = GetNthServerInitiatedId(kMaxStreamsForTest);
   InSequence s;
   EXPECT_CALL(*session_, WriteHeadersMock(stream_not_reset, _, false,
-                                          kDefaultPriority, _));
+                                          QuicStream::kDefaultPriority, _));
   EXPECT_CALL(*connection_, SendStreamData(stream_not_reset, _, 0, NO_FIN))
       .WillOnce(Return(QuicConsumedData(kStreamFlowControlWindowSize, false)));
-  if (session_->use_control_frame_manager()) {
-    EXPECT_CALL(*session_, SendBlocked(stream_not_reset));
-  } else {
-    EXPECT_CALL(*connection_, SendBlocked(stream_not_reset));
-  }
-  EXPECT_CALL(*session_,
-              WriteHeadersMock(stream_got_reset, _, false, kDefaultPriority, _))
+  EXPECT_CALL(*session_, SendBlocked(stream_not_reset));
+  EXPECT_CALL(*session_, WriteHeadersMock(stream_got_reset, _, false,
+                                          QuicStream::kDefaultPriority, _))
       .Times(0);
 
   session_->StreamDraining(GetNthServerInitiatedId(0));
@@ -649,24 +638,15 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
   // Resetting 1st open stream will close the stream and give space for extra
   // stream to be opened.
   QuicStreamId stream_got_reset = GetNthServerInitiatedId(0);
-  if (session_->use_control_frame_manager()) {
     EXPECT_CALL(*connection_, SendControlFrame(_));
     EXPECT_CALL(*connection_,
                 OnStreamReset(stream_got_reset, QUIC_RST_ACKNOWLEDGEMENT));
-  } else {
-    EXPECT_CALL(*connection_,
-                SendRstStream(stream_got_reset, QUIC_RST_ACKNOWLEDGEMENT, _));
-  }
-  EXPECT_CALL(*session_,
-              WriteHeadersMock(stream_to_open, _, false, kDefaultPriority, _));
+  EXPECT_CALL(*session_, WriteHeadersMock(stream_to_open, _, false,
+                                          QuicStream::kDefaultPriority, _));
   EXPECT_CALL(*connection_, SendStreamData(stream_to_open, _, 0, NO_FIN))
       .WillOnce(Return(QuicConsumedData(kStreamFlowControlWindowSize, false)));
 
-  if (session_->use_control_frame_manager()) {
-    EXPECT_CALL(*session_, SendBlocked(stream_to_open));
-  } else {
-    EXPECT_CALL(*connection_, SendBlocked(stream_to_open));
-  }
+  EXPECT_CALL(*session_, SendBlocked(stream_to_open));
   EXPECT_CALL(owner_, OnRstStreamReceived(_)).Times(1);
   QuicRstStreamFrame rst(kInvalidControlFrameId, stream_got_reset,
                          QUIC_STREAM_CANCELLED, 0);

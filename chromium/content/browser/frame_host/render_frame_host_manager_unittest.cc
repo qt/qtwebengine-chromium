@@ -14,7 +14,6 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/histogram_tester.h"
@@ -62,8 +61,8 @@
 #include "content/test/test_web_contents.h"
 #include "net/base/load_flags.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/common/frame/frame_policy.h"
-#include "third_party/WebKit/public/platform/WebInsecureRequestPolicy.h"
+#include "third_party/blink/public/common/frame/frame_policy.h"
+#include "third_party/blink/public/platform/web_insecure_request_policy.h"
 #include "ui/base/page_transition_types.h"
 
 namespace content {
@@ -2198,12 +2197,12 @@ TEST_F(RenderFrameHostManagerTest, TraverseComplexOpenerChain) {
                   TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
                   blink::WebTreeScopeType::kDocument, std::string(),
                   "uniqueName0", false, base::UnguessableToken::Create(),
-                  blink::FramePolicy(), FrameOwnerProperties());
+                  blink::FramePolicy(), FrameOwnerProperties(), false);
   tree1->AddFrame(root1, process_id, 13,
                   TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
                   blink::WebTreeScopeType::kDocument, std::string(),
                   "uniqueName1", false, base::UnguessableToken::Create(),
-                  blink::FramePolicy(), FrameOwnerProperties());
+                  blink::FramePolicy(), FrameOwnerProperties(), false);
 
   std::unique_ptr<TestWebContents> tab2(
       TestWebContents::Create(browser_context(), nullptr));
@@ -2215,12 +2214,12 @@ TEST_F(RenderFrameHostManagerTest, TraverseComplexOpenerChain) {
                   TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
                   blink::WebTreeScopeType::kDocument, std::string(),
                   "uniqueName2", false, base::UnguessableToken::Create(),
-                  blink::FramePolicy(), FrameOwnerProperties());
+                  blink::FramePolicy(), FrameOwnerProperties(), false);
   tree2->AddFrame(root2, process_id, 23,
                   TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
                   blink::WebTreeScopeType::kDocument, std::string(),
                   "uniqueName3", false, base::UnguessableToken::Create(),
-                  blink::FramePolicy(), FrameOwnerProperties());
+                  blink::FramePolicy(), FrameOwnerProperties(), false);
 
   std::unique_ptr<TestWebContents> tab3(
       TestWebContents::Create(browser_context(), nullptr));
@@ -2237,7 +2236,7 @@ TEST_F(RenderFrameHostManagerTest, TraverseComplexOpenerChain) {
                   TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
                   blink::WebTreeScopeType::kDocument, std::string(),
                   "uniqueName4", false, base::UnguessableToken::Create(),
-                  blink::FramePolicy(), FrameOwnerProperties());
+                  blink::FramePolicy(), FrameOwnerProperties(), false);
 
   root1->child_at(1)->SetOpener(root1->child_at(1));
   root1->SetOpener(root2->child_at(1));
@@ -3096,12 +3095,11 @@ TEST_F(RenderFrameHostManagerTest,
   EXPECT_EQ(kFooUrl, initial_instance->GetSiteURL());
 
   // Simulate a browser-initiated navigation to an app URL, which should swap
-  // processes and create a new related SiteInstance in the same
-  // BrowsingInstance.  This new SiteInstance should have correct site URL and
-  // |original_url()|.
+  // processes and create a new SiteInstance in a new BrowsingInstance.
+  // This new SiteInstance should have correct site URL and |original_url()|.
   NavigationSimulator::NavigateAndCommitFromBrowser(contents(), kOriginalUrl);
   EXPECT_NE(initial_instance.get(), main_test_rfh()->GetSiteInstance());
-  EXPECT_TRUE(initial_instance->IsRelatedSiteInstance(
+  EXPECT_FALSE(initial_instance->IsRelatedSiteInstance(
       main_test_rfh()->GetSiteInstance()));
   EXPECT_EQ(kOriginalUrl, main_test_rfh()->GetSiteInstance()->original_url());
   EXPECT_EQ(kTranslatedUrl, main_test_rfh()->GetSiteInstance()->GetSiteURL());

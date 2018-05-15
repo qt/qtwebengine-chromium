@@ -12,7 +12,6 @@
 #include <utility>
 
 #include "base/lazy_instance.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/user_metrics.h"
 #include "base/strings/stringprintf.h"
@@ -724,7 +723,7 @@ void WebViewGuest::SetUserAgentOverride(
   if (is_overriding_user_agent_) {
     base::RecordAction(UserMetricsAction("WebView.Guest.OverrideUA"));
   }
-  web_contents()->SetUserAgentOverride(user_agent_override);
+  web_contents()->SetUserAgentOverride(user_agent_override, false);
 }
 
 void WebViewGuest::Stop() {
@@ -735,9 +734,10 @@ void WebViewGuest::Terminate() {
   base::RecordAction(UserMetricsAction("WebView.Guest.Terminate"));
   base::ProcessHandle process_handle =
       web_contents()->GetMainFrame()->GetProcess()->GetHandle();
-  if (process_handle)
+  if (process_handle) {
     web_contents()->GetMainFrame()->GetProcess()->Shutdown(
-        content::RESULT_CODE_KILLED, false);
+        content::RESULT_CODE_KILLED);
+  }
 }
 
 bool WebViewGuest::ClearData(base::Time remove_since,
@@ -979,11 +979,12 @@ void WebViewGuest::RequestMediaAccessPermission(
                                                             callback);
 }
 
-bool WebViewGuest::CheckMediaAccessPermission(WebContents* source,
-                                              const GURL& security_origin,
-                                              content::MediaStreamType type) {
+bool WebViewGuest::CheckMediaAccessPermission(
+    content::RenderFrameHost* render_frame_host,
+    const GURL& security_origin,
+    content::MediaStreamType type) {
   return web_view_permission_helper_->CheckMediaAccessPermission(
-      source, security_origin, type);
+      render_frame_host, security_origin, type);
 }
 
 void WebViewGuest::CanDownload(

@@ -45,7 +45,7 @@
     </template>
     <template id="doNotTrackDialogIf" is="dom-if"
         if="[[showDoNotTrackDialog_]]" notify-dom-change>
-      <dialog is="cr-dialog" id="confirmDoNotTrackDialog"
+      <cr-dialog id="confirmDoNotTrackDialog"
           close-text="$i18n{close}" on-cancel="onDoNotTrackDialogCancel_"
           on-close="onDoNotTrackDialogClosed_">
         <div slot="title">$i18n{doNotTrackDialogTitle}</div>
@@ -60,7 +60,7 @@
             $i18n{confirm}
           </paper-button>
         </div>
-      </dialog>
+      </cr-dialog>
     </template>
     <settings-animated-pages id="pages" section="privacy"
         focus-config="[[focusConfig_]]">
@@ -101,7 +101,7 @@
             on-settings-boolean-control-change="onMetricsReportingChange_"
             no-set-pref>
           <template is="dom-if" if="[[showRestart_]]" restamp>
-            <paper-button on-tap="onRestartTap_" id="restart"
+            <paper-button on-click="onRestartTap_" id="restart"
                 slot="more-actions">
               $i18n{restart}
             </paper-button>
@@ -141,14 +141,16 @@
             </div>
           </div>
 <if expr="use_nss_certs">
-          <button is="paper-icon-button-light" class="subpage-arrow"
-              aria-label="$i18n{manageCertificates}"
-              aria-describedby="manageCertificatesSecondary"></button>
+          <paper-icon-button-light class="subpage-arrow">
+            <button aria-label="$i18n{manageCertificates}"
+                aria-describedby="manageCertificatesSecondary"></button>
+          </paper-icon-button-light>
 </if>
 <if expr="not use_nss_certs">
-          <button is="paper-icon-button-light" class="icon-external"
-              aria-label="$i18n{manageCertificates}"
-              aria-describedby="manageCertificatesSecondary"></button>
+          <paper-icon-button-light class="icon-external">
+            <button aria-label="$i18n{manageCertificates}"
+                aria-describedby="manageCertificatesSecondary"></button>
+          </paper-icon-button-light>
 </if>
         </div>
 </if>
@@ -161,9 +163,10 @@
               $i18n{siteSettingsDescription}
             </div>
           </div>
-          <button class="subpage-arrow" is="paper-icon-button-light"
-              aria-label$="[[siteSettingsPageTitle_()]]"
-              aria-describedby="siteSettingsSecondary"></button>
+          <paper-icon-button-light class="subpage-arrow">
+            <button aria-label$="[[siteSettingsPageTitle_()]]"
+                aria-describedby="siteSettingsSecondary"></button>
+          </paper-icon-button-light>
         </div>
         <div class="settings-box two-line" id="clearBrowsingData"
             on-click="onClearBrowsingDataTap_" actionable>
@@ -173,9 +176,11 @@
               $i18n{clearBrowsingDataDescription}
             </div>
           </div>
-          <button is="paper-icon-button-light" id="clearBrowsingDataTrigger"
-              class="subpage-arrow" aria-label="$i18n{clearBrowsingData}"
-              aria-describedby="clearBrowsingDataSecondary"></button>
+          <paper-icon-button-light class="subpage-arrow">
+            <button id="clearBrowsingDataTrigger"
+                aria-label="$i18n{clearBrowsingData}"
+                aria-describedby="clearBrowsingDataSecondary"></button>
+          </paper-icon-button-light>
         </div>
       </neon-animatable>
 <if expr="use_nss_certs">
@@ -261,9 +266,9 @@
              <div class="start" id="cookiesLink">
                $i18n{siteSettingsCookieLink}
              </div>
-             <button class="subpage-arrow" is="paper-icon-button-light"
-                 aria-labelledby="cookiesLink">
-             </button>
+             <paper-icon-button-light class="subpage-arrow">
+               <button aria-labelledby="cookiesLink"></button>
+             </paper-icon-button-light>
           </div>
           <category-setting-exceptions
               category="{{ContentSettingsTypes.COOKIES}}"
@@ -406,8 +411,9 @@
               target="_blank"
               href="https://www.macromedia.com/support/documentation/en/flashplayer/help/settings_manager07.html">
             <div class="start">$i18n{adobeFlashStorage}</div>
-            <button class="icon-external" is="paper-icon-button-light"
-                actionable aria-label="$i18n{adobeFlashStorage}"></button>
+            <paper-icon-button-light actionable class="icon-external">
+              <button aria-label="$i18n{adobeFlashStorage}"></button>
+            </paper-icon-button-light>
           </a>
 </if>
           <category-setting-exceptions
@@ -475,6 +481,12 @@
       </template>
       <template is="dom-if" route-path="/content/usbDevices" no-search>
         <settings-subpage page-title="$i18n{siteSettingsUsbDevices}">
+          <category-default-setting
+              toggle-off-label="$i18n{siteSettingsUsbDevicesBlock}"
+              toggle-on-label=
+                  "$i18n{siteSettingsUsbDevicesAskRecommended}"
+              category="{{ContentSettingsTypes.USB_DEVICES}}">
+          </category-default-setting>
           <usb-devices></usb-devices>
         </settings-subpage>
       </template>
@@ -523,8 +535,7 @@
 </if>
         </settings-subpage>
       </template>
-      <template is="dom-if" if="[[enableClipboardContentSetting_]]"
-          no-search>
+      <template is="dom-if" if="[[enableClipboardContentSetting_]]">
         <template is="dom-if" route-path="/content/clipboard" no-search>
           <settings-subpage page-title="$i18n{siteSettingsClipboard}">
             <category-default-setting
@@ -535,6 +546,21 @@
             <category-setting-exceptions
                 category="{{ContentSettingsTypes.CLIPBOARD}}"
                 block-header="$i18n{siteSettingsBlock}">
+            </category-setting-exceptions>
+          </settings-subpage>
+       </template>
+      </template>
+      <template is="dom-if" if="[[enablePaymentHandlerContentSetting_]]">
+        <template is="dom-if" route-path="/content/paymentHandler" no-search>
+          <settings-subpage page-title="$i18n{siteSettingsPaymentHandler}">
+            <category-default-setting
+                toggle-off-label="$i18n{siteSettingsPaymentHandlerBlock}"
+                toggle-on-label="$i18n{siteSettingsPaymentHandlerAllowRecommended}"
+                category="[[ContentSettingsTypes.PAYMENT_HANDLER]]">
+            </category-default-setting>
+            <category-setting-exceptions
+                category="[[ContentSettingsTypes.PAYMENT_HANDLER]]"
+                block-header="$i18n{siteSettingsBlocked}">
             </category-setting-exceptions>
           </settings-subpage>
        </template>

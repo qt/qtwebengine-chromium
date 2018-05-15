@@ -16,7 +16,9 @@
 #include "base/metrics/field_trial_params.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
+#include "build/build_config.h"
 #include "components/subresource_filter/core/browser/subresource_filter_features_test_support.h"
+#include "components/subresource_filter/core/common/common_features.h"
 #include "components/variations/variations_associated_data.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -105,7 +107,22 @@ void ExpectParamsGeneratePreset(
 
 }  // namespace
 
-TEST(SubresourceFilterFeaturesTest, ActivationLevel) {
+class SubresourceFilterFeaturesTest : public ::testing::Test {
+ public:
+  SubresourceFilterFeaturesTest() {}
+  ~SubresourceFilterFeaturesTest() override {}
+
+  void SetUp() override {
+    // Reset the global configuration at the start so tests start without a
+    // cached value from a previous in-process test run.
+    testing::GetAndSetActivateConfigurations(nullptr);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(SubresourceFilterFeaturesTest);
+};
+
+TEST_F(SubresourceFilterFeaturesTest, ActivationLevel) {
   const struct {
     bool feature_enabled;
     const char* activation_level_param;
@@ -148,7 +165,7 @@ TEST(SubresourceFilterFeaturesTest, ActivationLevel) {
   }
 }
 
-TEST(SubresourceFilterFeaturesTest, ActivationScope) {
+TEST_F(SubresourceFilterFeaturesTest, ActivationScope) {
   const struct {
     bool feature_enabled;
     const char* activation_scope_param;
@@ -191,7 +208,7 @@ TEST(SubresourceFilterFeaturesTest, ActivationScope) {
   }
 }
 
-TEST(SubresourceFilterFeaturesTest, ActivationLevelAndScope) {
+TEST_F(SubresourceFilterFeaturesTest, ActivationLevelAndScope) {
   const struct {
     bool feature_enabled;
     const char* activation_level_param;
@@ -254,7 +271,7 @@ TEST(SubresourceFilterFeaturesTest, ActivationLevelAndScope) {
   }
 }
 
-TEST(SubresourceFilterFeaturesTest, ActivationList) {
+TEST_F(SubresourceFilterFeaturesTest, ActivationList) {
   const std::string activation_soc_eng(
       kActivationListSocialEngineeringAdsInterstitial);
   const std::string activation_phishing(kActivationListPhishingInterstitial);
@@ -314,7 +331,7 @@ TEST(SubresourceFilterFeaturesTest, ActivationList) {
   }
 }
 
-TEST(SubresourceFilterFeaturesTest, ActivationPriority) {
+TEST_F(SubresourceFilterFeaturesTest, ActivationPriority) {
   const struct {
     bool feature_enabled;
     const char* activation_priority_param;
@@ -357,7 +374,7 @@ TEST(SubresourceFilterFeaturesTest, ActivationPriority) {
   }
 }
 
-TEST(SubresourceFilterFeaturesTest, PerfMeasurementRate) {
+TEST_F(SubresourceFilterFeaturesTest, PerfMeasurementRate) {
   const struct {
     bool feature_enabled;
     const char* perf_measurement_param;
@@ -399,7 +416,7 @@ TEST(SubresourceFilterFeaturesTest, PerfMeasurementRate) {
   }
 }
 
-TEST(SubresourceFilterFeaturesTest, SuppressNotifications) {
+TEST_F(SubresourceFilterFeaturesTest, SuppressNotifications) {
   const struct {
     bool feature_enabled;
     const char* suppress_notifications_param;
@@ -438,7 +455,7 @@ TEST(SubresourceFilterFeaturesTest, SuppressNotifications) {
   }
 }
 
-TEST(SubresourceFilterFeaturesTest, WhitelistSiteOnReload) {
+TEST_F(SubresourceFilterFeaturesTest, WhitelistSiteOnReload) {
   const struct {
     bool feature_enabled;
     const char* whitelist_site_on_reload_param;
@@ -477,7 +494,7 @@ TEST(SubresourceFilterFeaturesTest, WhitelistSiteOnReload) {
   }
 }
 
-TEST(SubresourceFilterFeaturesTest, RulesetFlavor) {
+TEST_F(SubresourceFilterFeaturesTest, RulesetFlavor) {
   const struct {
     bool feature_enabled;
     const char* ruleset_flavor_param;
@@ -507,7 +524,7 @@ TEST(SubresourceFilterFeaturesTest, RulesetFlavor) {
   }
 }
 
-TEST(SubresourceFilterFeaturesTest, LexicographicallyGreatestRulesetFlavor) {
+TEST_F(SubresourceFilterFeaturesTest, LexicographicallyGreatestRulesetFlavor) {
   const struct {
     const char* expected_ruleset_flavor_selected;
     std::vector<std::string> ruleset_flavors;
@@ -548,7 +565,7 @@ TEST(SubresourceFilterFeaturesTest, LexicographicallyGreatestRulesetFlavor) {
   }
 }
 
-TEST(SubresourceFilterFeaturesTest, EnabledConfigurations_FeatureDisabled) {
+TEST_F(SubresourceFilterFeaturesTest, EnabledConfigurations_FeatureDisabled) {
   ScopedExperimentalStateToggle scoped_experimental_state(
       base::FeatureList::OVERRIDE_DISABLE_FEATURE,
       std::map<std::string, std::string>());
@@ -560,8 +577,8 @@ TEST(SubresourceFilterFeaturesTest, EnabledConfigurations_FeatureDisabled) {
             config_list->lexicographically_greatest_ruleset_flavor());
 }
 
-TEST(SubresourceFilterFeaturesTest,
-     EnabledConfigurations_FeatureEnabledWithNoParameters) {
+TEST_F(SubresourceFilterFeaturesTest,
+       EnabledConfigurations_FeatureEnabledWithNoParameters) {
   ScopedExperimentalStateToggle scoped_experimental_state(
       base::FeatureList::OVERRIDE_ENABLE_FEATURE,
       std::map<std::string, std::string>());
@@ -576,8 +593,8 @@ TEST(SubresourceFilterFeaturesTest,
             config_list->lexicographically_greatest_ruleset_flavor());
 }
 
-TEST(SubresourceFilterFeaturesTest,
-     PresetForPerformanceTestingDryRunOnAllSites) {
+TEST_F(SubresourceFilterFeaturesTest,
+       PresetForPerformanceTestingDryRunOnAllSites) {
   ExpectPresetCanBeEnabledByName(
       Configuration::MakePresetForPerformanceTestingDryRunOnAllSites(),
       kPresetPerformanceTestingDryRunOnAllSites);
@@ -589,7 +606,7 @@ TEST(SubresourceFilterFeaturesTest,
        {kPerformanceMeasurementRateParameterName, "1.0"}});
 }
 
-TEST(SubresourceFilterFeaturesTest, PresetForLiveRunOnBetterAdsSites) {
+TEST_F(SubresourceFilterFeaturesTest, PresetForLiveRunOnBetterAdsSites) {
   const Configuration config =
       Configuration::MakePresetForLiveRunForBetterAds();
   EXPECT_EQ(ActivationList::BETTER_ADS,
@@ -605,7 +622,7 @@ TEST(SubresourceFilterFeaturesTest, PresetForLiveRunOnBetterAdsSites) {
   EXPECT_FALSE(config.activation_options.should_whitelist_site_on_reload);
 }
 
-TEST(SubresourceFilterFeaturesTest, ConfigurationPriorities) {
+TEST_F(SubresourceFilterFeaturesTest, ConfigurationPriorities) {
   const std::vector<Configuration> expected_order_by_decreasing_priority = {
       Configuration::MakePresetForLiveRunOnPhishingSites(),
       Configuration::MakePresetForLiveRunForBetterAds(),
@@ -625,7 +642,7 @@ TEST(SubresourceFilterFeaturesTest, ConfigurationPriorities) {
       ::testing::ElementsAreArray(expected_order_by_decreasing_priority));
 }
 
-TEST(SubresourceFilterFeaturesTest, EnableDisableMultiplePresets) {
+TEST_F(SubresourceFilterFeaturesTest, EnableDisableMultiplePresets) {
   const std::string kPhishing(kPresetLiveRunOnPhishingSites);
   const std::string kPerfTest(kPresetPerformanceTestingDryRunOnAllSites);
   const std::string kBAS(kPresetLiveRunForBetterAds);
@@ -678,8 +695,8 @@ TEST(SubresourceFilterFeaturesTest, EnableDisableMultiplePresets) {
   }
 }
 
-TEST(SubresourceFilterFeaturesTest,
-     EnableMultiplePresetsAndExperimentalConfig) {
+TEST_F(SubresourceFilterFeaturesTest,
+       EnableMultiplePresetsAndExperimentalConfig) {
   const std::string kPhishing(kPresetLiveRunOnPhishingSites);
   const std::string kPerfTest(kPresetPerformanceTestingDryRunOnAllSites);
   const std::string kBAS(kPresetLiveRunForBetterAds);
@@ -712,7 +729,7 @@ TEST(SubresourceFilterFeaturesTest,
             config_list->lexicographically_greatest_ruleset_flavor());
 }
 
-TEST(SubresourceFilterFeaturesTest, ForcedActivation_NotConfigurable) {
+TEST_F(SubresourceFilterFeaturesTest, ForcedActivation_NotConfigurable) {
   ScopedExperimentalStateToggle scoped_experimental_state(
       base::FeatureList::OVERRIDE_ENABLE_FEATURE,
       {{kActivationLevelParameterName, kActivationLevelEnabled},
@@ -729,7 +746,7 @@ TEST(SubresourceFilterFeaturesTest, ForcedActivation_NotConfigurable) {
   EXPECT_FALSE(actual_configuration.activation_conditions.forced_activation);
 }
 
-TEST(SubresourceFilterFeaturesTest, AdTagging_EnablesDryRun) {
+TEST_F(SubresourceFilterFeaturesTest, AdTagging_EnablesDryRun) {
   const Configuration dryrun =
       Configuration::MakePresetForPerformanceTestingDryRunOnAllSites();
   base::test::ScopedFeatureList scoped_feature;
@@ -738,7 +755,7 @@ TEST(SubresourceFilterFeaturesTest, AdTagging_EnablesDryRun) {
       GetEnabledConfigurations()->configs_by_decreasing_priority(), dryrun));
 }
 
-TEST(SubresourceFilterFeaturesTest, AdTaggingDisabled_DisablesDryRun) {
+TEST_F(SubresourceFilterFeaturesTest, AdTaggingDisabled_DisablesDryRun) {
   const Configuration dryrun =
       Configuration::MakePresetForPerformanceTestingDryRunOnAllSites();
   base::test::ScopedFeatureList scoped_feature;

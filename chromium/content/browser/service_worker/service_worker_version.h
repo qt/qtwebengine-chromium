@@ -19,7 +19,6 @@
 #include "base/containers/id_map.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
 #include "base/optional.h"
@@ -30,6 +29,7 @@
 #include "base/timer/timer.h"
 #include "content/browser/service_worker/embedded_worker_instance.h"
 #include "content/browser/service_worker/embedded_worker_status.h"
+#include "content/browser/service_worker/service_worker_client_utils.h"
 #include "content/browser/service_worker/service_worker_context_request_handler.h"
 #include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_script_cache_map.h"
@@ -41,11 +41,11 @@
 #include "ipc/ipc_message.h"
 #include "mojo/public/cpp/bindings/interface_ptr.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
-#include "third_party/WebKit/public/common/origin_trials/trial_token_validator.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_client.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_event_status.mojom.h"
-#include "ui/base/mojo/window_open_disposition.mojom.h"
+#include "third_party/blink/public/common/origin_trials/trial_token_validator.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_client.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom.h"
+#include "third_party/blink/public/platform/web_feature.mojom.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -323,7 +323,9 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   // This must be called when the worker is running.
   mojom::ServiceWorkerEventDispatcher* event_dispatcher() {
-    DCHECK(event_dispatcher_.is_bound());
+    // Temporarily CHECK for debugging https://crbug.com/817981.
+    CHECK(event_dispatcher_.is_bound());
+    CHECK(event_dispatcher_.get());
     return event_dispatcher_.get();
   }
 
@@ -435,7 +437,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void SimulatePingTimeoutForTesting();
 
   // Used to allow tests to change time for testing.
-  void SetTickClockForTesting(base::TickClock* tick_clock);
+  void SetTickClockForTesting(const base::TickClock* tick_clock);
 
   // Used to allow tests to change wall clock for testing.
   void SetClockForTesting(base::Clock* clock);
@@ -463,11 +465,13 @@ class CONTENT_EXPORT ServiceWorkerVersion
     return max_request_expiration_time_ - tick_clock_->NowTicks();
   }
 
-  void CountFeature(uint32_t feature);
-  void set_used_features(const std::set<uint32_t>& used_features) {
-    used_features_ = used_features;
+  void CountFeature(blink::mojom::WebFeature feature);
+  void set_used_features(std::set<blink::mojom::WebFeature> used_features) {
+    used_features_ = std::move(used_features);
   }
-  const std::set<uint32_t>& used_features() const { return used_features_; }
+  const std::set<blink::mojom::WebFeature>& used_features() const {
+    return used_features_;
+  }
 
   static bool IsInstalled(ServiceWorkerVersion::Status status);
 
@@ -615,7 +619,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
                               const base::string16& message,
                               int line_number,
                               const GURL& source_url) override;
-  bool OnMessageReceived(const IPC::Message& message) override;
 
   void OnStartSentAndScriptEvaluated(ServiceWorkerStatusCode status);
 
@@ -632,6 +635,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void OpenPaymentHandlerWindow(
       const GURL& url,
       OpenPaymentHandlerWindowCallback callback) override;
+  void PostMessageToClient(const std::string& client_uuid,
+                           blink::TransferableMessage message) override;
   void FocusClient(const std::string& client_uuid,
                    FocusClientCallback callback) override;
   void NavigateClient(const std::string& client_uuid,
@@ -644,15 +649,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
                                    int result);
   void OnClearCachedMetadataFinished(int64_t callback_id, int result);
   void OpenWindow(GURL url,
-                  WindowOpenDisposition disposition,
+                  service_worker_client_utils::WindowType type,
                   OpenNewTabCallback callback);
-
-  // Message handlers.
-
-  void OnPostMessageToClient(
-      const std::string& client_uuid,
-      const scoped_refptr<base::RefCountedData<blink::TransferableMessage>>&
-          message);
 
   void OnPongFromWorker();
 
@@ -836,7 +834,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   ServiceWorkerStatusCode start_worker_status_ = SERVICE_WORKER_OK;
 
   // The clock used to vend tick time.
-  base::TickClock* tick_clock_;
+  const base::TickClock* tick_clock_;
 
   // The clock used for actual (wall clock) time
   base::Clock* clock_;
@@ -855,9 +853,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
   base::Optional<ServiceWorkerMetrics::EventType> start_worker_first_purpose_;
 
   // This is the set of features that were used up until installation of this
-  // version completed, or used during the lifetime of |this|. The values must
-  // be from blink::UseCounter::Feature enum.
-  std::set<uint32_t> used_features_;
+  // version completed, or used during the lifetime of |this|.
+  std::set<blink::mojom::WebFeature> used_features_;
 
   std::unique_ptr<blink::TrialTokenValidator> validator_;
 

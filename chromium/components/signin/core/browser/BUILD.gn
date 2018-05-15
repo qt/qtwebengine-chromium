@@ -9,8 +9,8 @@ if (is_android) {
   import("//build/config/android/rules.gni")
 }
 
-buildflag_header("signin_features") {
-  header = "signin_features.h"
+buildflag_header("signin_buildflags") {
+  header = "signin_buildflags.h"
   flags = [
     "ENABLE_DICE_SUPPORT=$enable_dice_support",
     "ENABLE_MIRROR=$enable_mirror",
@@ -25,6 +25,20 @@ static_library("account_info") {
   sources = [
     "account_info.cc",
     "account_info.h",
+  ]
+}
+
+# Split into its own target to allow browser clients of the Identity Service to
+# record browser-specific signin metrics without having to depend on all of
+# //components/signin/core/browser.
+static_library("signin_metrics") {
+  sources = [
+    "signin_metrics.cc",
+    "signin_metrics.h",
+  ]
+  public_deps = [
+    "//base",
+    "//google_apis",
   ]
 }
 
@@ -54,6 +68,8 @@ static_library("browser") {
     "child_account_info_fetcher_impl.h",
     "chrome_connected_header_helper.cc",
     "chrome_connected_header_helper.h",
+    "cookie_settings_util.cc",
+    "cookie_settings_util.h",
     "dice_account_reconcilor_delegate.cc",
     "dice_account_reconcilor_delegate.h",
     "dice_header_helper.cc",
@@ -84,8 +100,6 @@ static_library("browser") {
     "signin_manager.h",
     "signin_manager_base.cc",
     "signin_manager_base.h",
-    "signin_metrics.cc",
-    "signin_metrics.h",
     "signin_pref_names.cc",
     "signin_pref_names.h",
     "signin_status_metrics_provider.cc",
@@ -108,6 +122,8 @@ static_library("browser") {
 
   public_deps = [
     ":account_info",
+    ":signin_buildflags",
+    ":signin_metrics",
     "//base",
     "//components/content_settings/core/browser",
     "//components/content_settings/core/common",
@@ -115,7 +131,6 @@ static_library("browser") {
     "//components/keyed_service/core",
     "//components/prefs",
     "//components/signin/core/account_id",
-    "//components/signin/core/browser:signin_features",
     "//google_apis",
     "//net",
     "//ui/gfx",
@@ -214,18 +229,19 @@ source_set("unit_tests") {
     "signin_header_helper_unittest.cc",
     "signin_investigator_unittest.cc",
     "signin_manager_unittest.cc",
+    "signin_metrics_unittest.cc",
     "signin_status_metrics_provider_unittest.cc",
     "webdata/token_service_table_unittest.cc",
   ]
 
   deps = [
+    ":signin_buildflags",
     ":test_support",
     "//base/test:test_support",
     "//components/content_settings/core/browser",
     "//components/os_crypt:test_support",
     "//components/pref_registry:pref_registry",
     "//components/prefs",
-    "//components/signin/core/browser:signin_features",
     "//components/sync_preferences",
     "//components/sync_preferences:test_support",
     "//testing/gmock",

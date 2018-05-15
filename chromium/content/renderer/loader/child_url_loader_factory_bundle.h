@@ -9,6 +9,7 @@
 #include "content/common/content_export.h"
 #include "content/common/possibly_associated_interface_ptr.h"
 #include "content/common/url_loader_factory_bundle.h"
+#include "content/public/common/transferrable_url_loader.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 
 namespace content {
@@ -22,6 +23,8 @@ class CONTENT_EXPORT ChildURLLoaderFactoryBundleInfo
       PossiblyAssociatedInterfacePtrInfo<network::mojom::URLLoaderFactory>;
 
   ChildURLLoaderFactoryBundleInfo();
+  explicit ChildURLLoaderFactoryBundleInfo(
+      std::unique_ptr<URLLoaderFactoryBundleInfo> base_info);
   ChildURLLoaderFactoryBundleInfo(
       network::mojom::URLLoaderFactoryPtrInfo default_factory_info,
       std::map<std::string, network::mojom::URLLoaderFactoryPtrInfo>
@@ -35,7 +38,7 @@ class CONTENT_EXPORT ChildURLLoaderFactoryBundleInfo
 
  protected:
   // URLLoaderFactoryBundleInfo overrides.
-  scoped_refptr<SharedURLLoaderFactory> CreateFactory() override;
+  scoped_refptr<network::SharedURLLoaderFactory> CreateFactory() override;
 
   PossiblyAssociatedURLLoaderFactoryPtrInfo direct_network_factory_info_;
 
@@ -78,11 +81,13 @@ class CONTENT_EXPORT ChildURLLoaderFactoryBundle
                             const net::MutableNetworkTrafficAnnotationTag&
                                 traffic_annotation) override;
 
-  std::unique_ptr<SharedURLLoaderFactoryInfo> Clone() override;
+  std::unique_ptr<network::SharedURLLoaderFactoryInfo> Clone() override;
 
   std::unique_ptr<ChildURLLoaderFactoryBundleInfo> PassInterface();
 
-  void Update(std::unique_ptr<ChildURLLoaderFactoryBundleInfo> info);
+  void Update(std::unique_ptr<ChildURLLoaderFactoryBundleInfo> info,
+              base::Optional<std::vector<mojom::TransferrableURLLoaderPtr>>
+                  subresource_overrides);
 
   virtual bool IsHostChildURLLoaderFactoryBundle() const;
 
@@ -95,6 +100,8 @@ class CONTENT_EXPORT ChildURLLoaderFactoryBundle
 
   PossiblyAssociatedFactoryGetterCallback direct_network_factory_getter_;
   PossiblyAssociatedURLLoaderFactoryPtr direct_network_factory_;
+
+  std::map<GURL, mojom::TransferrableURLLoaderPtr> subresource_overrides_;
 
   FactoryGetterCallback default_blob_factory_getter_;
 };

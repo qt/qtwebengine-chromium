@@ -22,14 +22,24 @@ aggregate_vector_icons("views_vector_icons") {
   icons = [
     "checkbox_active.icon",
     "checkbox_normal.icon",
-    "menu_check.1x.icon",
+    "close.icon",
+    "ic_close.icon",
+    "info.icon",
+    "launch.icon",
     "menu_check.icon",
     "menu_radio_empty.icon",
     "menu_radio_selected.icon",
+    "new_incognito_window.icon",
+    "new_tab.icon",
+    "new_window.icon",
+    "open.icon",
+    "options.icon",
+    "pin.icon",
     "radio_button_active.icon",
     "radio_button_normal.icon",
-    "submenu_arrow.1x.icon",
     "submenu_arrow.icon",
+    "uninstall.icon",
+    "unpin.icon",
   ]
 }
 
@@ -110,6 +120,7 @@ jumbo_component("views") {
     "controls/label.h",
     "controls/link.h",
     "controls/link_listener.h",
+    "controls/menu/menu_closure_animation_mac.h",
     "controls/menu/menu_config.h",
     "controls/menu/menu_controller.h",
     "controls/menu/menu_controller_delegate.h",
@@ -307,6 +318,7 @@ jumbo_component("views") {
     "controls/label.cc",
     "controls/link.cc",
     "controls/menu/display_change_listener_mac.cc",
+    "controls/menu/menu_closure_animation_mac.mm",
     "controls/menu/menu_config.cc",
     "controls/menu/menu_config_chromeos.cc",
     "controls/menu/menu_config_linux.cc",
@@ -626,6 +638,7 @@ jumbo_component("views") {
     deps += [
       "//services/ui/public/interfaces",
       "//ui/aura",
+      "//ui/platform_window",
       "//ui/touch_selection",
       "//ui/wm",
       "//ui/wm/public",
@@ -683,6 +696,11 @@ jumbo_component("views") {
         ]
       }
     }
+  }
+
+  if (is_linux) {
+    sources += [ "widget/desktop_aura/desktop_window_tree_host_platform.cc" ]
+    public += [ "widget/desktop_aura/desktop_window_tree_host_platform.h" ]
   }
 
   if (is_mac) {
@@ -783,6 +801,8 @@ jumbo_source_set("test_support_internal") {
     "test/views_test_helper_mac.mm",
     "test/widget_test.cc",
     "test/widget_test.h",
+    "test/widget_test_api.cc",
+    "test/widget_test_api.h",
     "test/widget_test_mac.mm",
     "test/x11_property_change_waiter.cc",
     "test/x11_property_change_waiter.h",
@@ -803,7 +823,7 @@ jumbo_source_set("test_support_internal") {
     "//base/test:test_support",
     "//gpu/ipc/service",
     "//ipc:test_support",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//skia",
     "//testing/gtest",
     "//ui/base",
@@ -915,6 +935,7 @@ source_set("views_unittests_sources") {
     "cocoa/drag_drop_client_mac_unittest.mm",
     "controls/button/blue_button_unittest.cc",
     "controls/button/button_unittest.cc",
+    "controls/button/checkbox_unittest.cc",
     "controls/button/image_button_factory_unittest.cc",
     "controls/button/image_button_unittest.cc",
     "controls/button/label_button_label_unittest.cc",
@@ -1117,7 +1138,7 @@ test("views_unittests") {
 
   deps = [
     ":views_unittests_sources",
-    "//mojo/edk/system",
+    "//mojo/edk",
   ]
 }
 
@@ -1135,7 +1156,7 @@ source_set("views_interactive_ui_tests") {
     ":views",
     "//base",
     "//base/test:test_support",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//skia",
     "//testing/gtest",
     "//ui/base:test_support",
@@ -1194,13 +1215,13 @@ test("views_perftests") {
     ":test_support",
     "//base/test:test_support",
     "//cc/base:base",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//testing/perf",
     "//ui/resources:ui_test_pak",
   ]
 
   data_deps = [
     "//ui/resources:ui_test_pak_data",
-    "//testing:run_gtest_perf_test",
+    "//testing:run_perf_test",
   ]
 }

@@ -1,6 +1,7 @@
 <?xml version="1.0" ?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="no">
+<translation id="1005145902654145231">Kunne ikke gi økten nytt navn.</translation>
 <translation id="1008557486741366299">Ikke nå</translation>
 <translation id="1015730422737071372">Oppgi flere detaljer</translation>
 <translation id="1021110881106174305">Godkjente kort</translation>
@@ -21,13 +22,13 @@
 <translation id="1113869188872983271">&amp;Angre omorganiseringen</translation>
 <translation id="1126551341858583091">Størrelsen på den lokale lagringsplassen er <ph name="CRASH_SIZE" />.</translation>
 <translation id="112840717907525620">Bufferen for enhetsinnstillinger er OK</translation>
-<translation id="1132774398110320017">Innstillinger for autofyll i Chrome</translation>
 <translation id="1150979032973867961">Denne tjeneren kunne ikke bevise at den er <ph name="DOMAIN" />. Sikkerhetssertifikatet til tjeneren er ikke klarert av datamaskinens operativsystem. Dette kan være forårsaket av en feilkonfigurering eller en angriper som avskjærer tilkoblingen din.</translation>
 <translation id="1151972924205500581">Passord er påkrevd</translation>
 <translation id="1152921474424827756">Åpne en <ph name="BEGIN_LINK" />bufret kopi<ph name="END_LINK" /> av <ph name="URL" /></translation>
 <translation id="1158211211994409885"><ph name="HOST_NAME" /> avsluttet tilkoblingen uventet.</translation>
 <translation id="1161325031994447685">Koble til Wi-Fi på nytt</translation>
 <translation id="1165039591588034296">Feil</translation>
+<translation id="1173894706177603556">Gi nytt navn</translation>
 <translation id="1175364870820465910">&amp;Skriv ut...</translation>
 <translation id="1181037720776840403">Fjern</translation>
 <translation id="1184214524891303587"><ph name="BEGIN_WHITEPAPER_LINK" />Rapportér<ph name="END_WHITEPAPER_LINK" /> automatisk detaljer om mulige sikkerhetsbrudd til Google. <ph name="PRIVACY_PAGE_LINK" /></translation>
@@ -42,13 +43,22 @@
 <translation id="1228893227497259893">Feil enhetsidentifikator</translation>
 <translation id="1232569758102978740">Uten tittel</translation>
 <translation id="1253921432148366685"><ph name="TYPE_1" /> og <ph name="TYPE_2" /> (synkronisert)</translation>
+<translation id="1256368399071562588">&lt;p&gt;Hvis du prøver å gå til et nettsted og det ikke åpnes, bør du først prøve å løse feilen med disse feilsøkingstrinnene:&lt;/p&gt;
+    &lt;ol&gt;
+    &lt;li&gt;Sjekk at nettadressen er skrevet riktig.&lt;/li&gt;
+    &lt;li&gt;Sjekk at Internett-tilkoblingen din fungerer som den skal.&lt;/li&gt;
+    &lt;li&gt;Kontakt eieren av nettstedet.&lt;/li&gt;
+    &lt;/ol&gt;</translation>
 <translation id="1263231323834454256">Leseliste</translation>
 <translation id="1264126396475825575">Programstopprapport fra <ph name="CRASH_TIME" /> (ignorert eller ikke lastet opp ennå)</translation>
 <translation id="1270502636509132238">Hentemåte</translation>
 <translation id="1285320974508926690">Oversett aldri dette nettstedet</translation>
+<translation id="1292701964462482250">«Det er programvare på datamaskinen din som hindrer Chrome i å koble trygt til Internett» (bare på Windows-datamaskiner)</translation>
 <translation id="1294154142200295408">Variasjoner i kommandolinjen</translation>
 <translation id="129553762522093515">Nylig lukket</translation>
 <translation id="129863573139666797"><ph name="BEGIN_LINK" />Prøv å slette informasjonskapslene dine<ph name="END_LINK" /></translation>
+<translation id="1314614906530272393">Den valgte økten finnes ikke.</translation>
+<translation id="1323433172918577554">Vis mer</translation>
 <translation id="1333989956347591814">Aktiviteten din <ph name="BEGIN_EMPHASIS" />kan fortsatt være synlig<ph name="END_EMPHASIS" /> for
         <ph name="BEGIN_LIST" />
           <ph name="LIST_ITEM" />nettsteder du besøker
@@ -57,10 +67,10 @@
         <ph name="END_LIST" /></translation>
 <translation id="1339601241726513588">Registreringsdomene:</translation>
 <translation id="1340482604681802745">Henteadresse</translation>
-<translation id="1344588688991793829">Innstillinger for autofyll i Chromium</translation>
 <translation id="1348198688976932919">Nettstedet du er på vei til, inneholder farlige apper</translation>
 <translation id="1374468813861204354">forslagene</translation>
 <translation id="1375198122581997741">Om versjon</translation>
+<translation id="1376836354785490390">Vis mindre</translation>
 <translation id="1377321085342047638">Kortnummer</translation>
 <translation id="139305205187523129"><ph name="HOST_NAME" /> sendte ingen data.</translation>
 <translation id="1407135791313364759">Åpne alle</translation>
@@ -70,6 +80,8 @@
 <translation id="1430915738399379752">Skriv ut</translation>
 <translation id="1484290072879560759">Velg leveringsadresse</translation>
 <translation id="1506687042165942984">Vis en lagret kopi av denne siden (dvs. en kopi du vet at er utdatert).</translation>
+<translation id="1507202001669085618">&lt;p&gt;Du ser denne feilmeldingen hvis du bruker en Wi-Fi-portal hvor du må logge på før du kommer deg på nettet.&lt;/p&gt;
+    &lt;p&gt;For å fikse feilen, klikk på &lt;strong&gt;Koble til&lt;/strong&gt; på siden du prøver å åpne.&lt;/p&gt;</translation>
 <translation id="1517433312004943670">Det kreves et telefonnummer</translation>
 <translation id="1517500485252541695">Godkjente kreditt- og debetkort</translation>
 <translation id="1519264250979466059">Versjonsdato</translation>
@@ -133,15 +145,18 @@
 <translation id="1898423065542865115">Filtrering</translation>
 <translation id="1916770123977586577">Last inn denne siden på nytt for å ta i bruk de oppdaterte innstillingene dine på dette nettstedet.</translation>
 <translation id="1919345977826869612">Annonser</translation>
+<translation id="1919367280705858090">Få hjelp med spesifikke feilmeldinger</translation>
 <translation id="192020519938775529">{COUNT,plural, =0{Ingen}=1{1 nettsted}other{# nettsteder}}</translation>
 <translation id="1927235823738766038">Godkjente kreditt- og debetkort</translation>
 <translation id="194030505837763158">Gå til <ph name="LINK" /></translation>
+<translation id="1945968466830820669">Du kan miste tilgangen til organisasjonskontoen din eller bli utsatt for identitetstyveri. Chromium anbefaler at du endrer passordet ditt nå.</translation>
 <translation id="1948773908305951926">Godkjente forhåndsbetalte kort</translation>
 <translation id="1962204205936693436"><ph name="DOMAIN" />-bokmerker</translation>
 <translation id="1973335181906896915">Serialiseringsfeil</translation>
 <translation id="1974060860693918893">Avansert</translation>
 <translation id="1978555033938440688">Fastvareversjon</translation>
 <translation id="2001146170449793414">{COUNT,plural, =1{og 1 til}other{og # til}}</translation>
+<translation id="2003709556000175978">Tilbakestill passordet ditt nå</translation>
 <translation id="2025186561304664664">Mellomtjeneren er innstilt på automatisk konfigurasjon.</translation>
 <translation id="2030481566774242610">Mener du <ph name="LINK" />?</translation>
 <translation id="2032962459168915086"><ph name="BEGIN_LINK" />Sjekk proxy-tjeneren og brannmuren<ph name="END_LINK" /></translation>
@@ -149,6 +164,7 @@
 <translation id="2064691555167957331">{COUNT,plural, =1{1 forslag}other{# forslag}}</translation>
 <translation id="2079545284768500474">Angre</translation>
 <translation id="20817612488360358">Innstillinger for systemmellomtjener er stilt inn på å brukes, men en uttrykkelig mellomtjenerkonfigurasjon er også angitt.</translation>
+<translation id="2084558088529668945">Du har skrevet inn passordet ditt på et nettsted som ikke administreres av <ph name="ORG_NAME" />. For å beskytte kontoen din må du ikke bruke det samme passordet i andre apper og på andre nettsteder.</translation>
 <translation id="2091887806945687916">Lyd</translation>
 <translation id="2094505752054353250">Domenene samsvarer ikke</translation>
 <translation id="2096368010154057602">Avdeling</translation>
@@ -283,7 +299,6 @@
 <translation id="301521992641321250">Automatisk blokkert</translation>
 <translation id="3024663005179499861">Feil type enhetsinnstillinger</translation>
 <translation id="3037605927509011580">Æsj!</translation>
-<translation id="3039538478787849737">Vil du lagre kortet i Google?</translation>
 <translation id="3041612393474885105">Sertifikatinformasjon</translation>
 <translation id="3063697135517575841">Chrome kunne ikke bekrefte kortet ditt akkurat nå. Prøv igjen senere.</translation>
 <translation id="3064966200440839136">Går ut av inkognitomodus for å betale via en ekstern app. Vil du fortsette?</translation>
@@ -370,51 +385,6 @@
 <translation id="3583757800736429874">&amp;Flytt likevel</translation>
 <translation id="3586931643579894722">Skjul detaljer</translation>
 <translation id="3600246354004376029"><ph name="TITLE" />, <ph name="DOMAIN" />, <ph name="TIME" /></translation>
-<translation id="3602137825010714926">&lt;h1&gt;Fiks tilkoblingsfeil&lt;/h1&gt;
-    &lt;p&gt;Hvis du får en feilmelding når du prøver å besøke et nettsted, kan du prøve disse løsningene.&lt;/p&gt;
-    &lt;h2&gt;Fiks de fleste tilkoblingsfeil&lt;/h2&gt;
-    &lt;p&gt;Hvis du prøver å gå til et nettsted og det ikke åpnes, bør du først prøve å løse feilen med disse feilsøkingstrinnene:&lt;/p&gt;
-    &lt;ol&gt;
-    &lt;li&gt;Sjekk at nettadressen er skrevet riktig.&lt;/li&gt;
-    &lt;li&gt;Sjekk at Internett-tilkoblingen din fungerer som den skal.&lt;/li&gt;
-    &lt;li&gt;Kontakt eieren av nettstedet.&lt;/li&gt;
-    &lt;/ol&gt;
-    &lt;h2&gt;Få hjelp med spesifikke feilmeldinger&lt;/h2&gt;
-    &lt;h3&gt;«Tilkoblingen din er ikke privat», «NET::ERR_CERT_AUTHORITY_INVALID», «ERR_CERT_COMMON_NAME_INVALID», «NET::ERR_CERT_WEAK_SIGNATURE_ALGORITHM» eller «Feil i SSL-sertifikatet»&lt;/h3&gt;
-    &lt;h4&gt;Trinn 1: Logg på portalen&lt;/h4&gt;
-    &lt;p&gt;Wi-Fi-nettverk på steder som kaféer eller flyplasser krever at du logger på. For å se påloggingssiden, åpne en side som bruker &lt;code&gt;http://&lt;/code&gt;.&lt;/p&gt;
-    &lt;ol&gt;
-    &lt;li&gt;Gå til et nettsted som begynner på &lt;code&gt;http://&lt;/code&gt; – for eksempel &lt;a href="http://example.com" target="_blank"&gt;http://example.com&lt;/a&gt;.&lt;/li&gt;
-    &lt;li&gt;Logg på via påloggingssiden som åpnes, for å bruke Internett.&lt;/li&gt;
-    &lt;/ol&gt;
-    &lt;h4&gt;Trinn 2: Åpne siden i inkognitomodus (bare på datamaskiner)&lt;/h4&gt;
-    &lt;p&gt;Åpne siden du besøkte, i et inkognitovindu.&lt;/p&gt;
-    &lt;p&gt;Hvis siden åpnes, har du en Chrome-utvidelse som ikke fungerer som den skal. Du kan fikse feilen ved å slå av utvidelsen.&lt;/p&gt;
-    &lt;h4&gt;Trinn 3: Oppdater operativsystemet&lt;/h4&gt;
-    &lt;p&gt;Sørg for at enheten din er oppdatert.&lt;/p&gt;
-    &lt;h4&gt;Trinn 4: Slå av antivirusprogramvaren midlertidig&lt;/h4&gt;
-    &lt;p&gt;Du ser denne feilmeldingen hvis du har antivirusprogramvare som tilbyr «HTTPS-beskyttelse» eller «HTTPS-skanning», noe som gjør at sikkerhetsfunksjonene i Chrome ikke fungerer.&lt;/p&gt;
-    &lt;p&gt;For å fikse dette problemet, slå av antivirusprogramvaren. Hvis siden fungerer når du har slått av programvaren, bør du slå den av når du bruker sikre nettsteder.&lt;/p&gt;
-    &lt;p&gt;Husk å slå på antivirusprogramvaren igjen når du er ferdig.&lt;/p&gt;
-    &lt;h4&gt;Trinn 5: Få mer hjelp&lt;/h4&gt;
-    &lt;p&gt;Hvis du fortsatt får feilmeldingen, bør du kontakte eieren av nettstedet.&lt;/p&gt;
-    &lt;h3&gt;«Koble til nettverket»&lt;/h3&gt;
-    &lt;p&gt;Du ser denne feilmeldingen hvis du bruker en Wi-Fi-portal hvor du må logge på før du kommer deg på nettet.&lt;/p&gt;
-    &lt;p&gt;For å fikse feilen, klikk på &lt;strong&gt;Koble til&lt;/strong&gt; på siden du prøver å åpne.&lt;/p&gt;
-    &lt;h3&gt;«Klokken går for sent», «Klokken går for fort» eller «NET::ERR_CERT_DATE_INVALID»&lt;/h3&gt;
-    &lt;p&gt;Du ser denne feilmeldingen hvis datoen og klokkeslettet på datamaskinen eller mobilenheten din er unøyaktig.&lt;/p&gt;
-    &lt;p&gt;For å fikse feilen, åpne klokken på enheten, og sørg for at klokkeslettet og datoen er riktig.&lt;/p&gt;
-    &lt;h3&gt;«Det er programvare på datamaskinen din som hindrer Chrome i å koble trygt til Internett» (bare på Windows-datamaskiner)&lt;/h3&gt;
-    &lt;p&gt;Du ser denne feilen hvis du har Superfish-programvare på Windows-datamaskinen din.&lt;/p&gt;
-    &lt;p&gt;Følg disse trinnene for å deaktivere programvaren midlertidig, sånn at du kan komme deg på nettet. Du må ha administratorrettigheter.&lt;/p&gt;
-    &lt;ol&gt;
-    &lt;li&gt;Klikk på &lt;strong&gt;Start&lt;/strong&gt;, og søk etter og velg &lt;strong&gt;«Vis lokale tjenester»&lt;/strong&gt;
-    &lt;li&gt;Velg &lt;strong&gt;VisualDiscovery&lt;/strong&gt;
-    &lt;li&gt;Gå til &lt;strong&gt;Oppstartstype&lt;/strong&gt;, og velg &lt;strong&gt;Deaktivert&lt;/strong&gt;
-    &lt;li&gt;Gå til &lt;strong&gt;Tjenestestatus&lt;/strong&gt;, og klikk på &lt;strong&gt;Stopp&lt;/strong&gt;
-    &lt;li&gt;Klikk på &lt;strong&gt;Bruk&lt;/strong&gt; og deretter på &lt;strong&gt;OK&lt;/strong&gt;
-    &lt;li&gt;Gå til &lt;a href="https://support.google.com/chrome/answer/6098869"&gt;brukerstøtten for Google Chrome&lt;/a&gt; for å finne ut hvordan du fjerner programvaren fra datamaskinen permanent
-    &lt;/ol&gt;</translation>
 <translation id="3615877443314183785">Angi en gyldig utløpsdato</translation>
 <translation id="36224234498066874">Slett nettlesingsdata...</translation>
 <translation id="362276910939193118">Vis fullstendig logg</translation>
@@ -458,6 +428,7 @@
 <translation id="3901925938762663762">Kortet er utløpt</translation>
 <translation id="3909695131102177774"><ph name="LABEL" /> <ph name="ERROR" /></translation>
 <translation id="3945915738023014686">ID-en for den opplastede programstopprapporten: <ph name="CRASH_ID" /> (lokal kræsj-ID: <ph name="CRASH_LOCAL_ID" />)</translation>
+<translation id="3946209740501886391">Spør alltid på dette nettstedet</translation>
 <translation id="3949571496842715403">Denne tjeneren kunne ikke bevise at den er <ph name="DOMAIN" />. Det er ikke angitt noen alternative emnenavn i tjenerens sikkerhetssertifikat. Dette kan være forårsaket av en feilkonfigurering eller en angriper som avskjærer tilkoblingen din.</translation>
 <translation id="3949601375789751990">Nettleserloggen din vises her</translation>
 <translation id="3950820424414687140">Logg på</translation>
@@ -465,6 +436,7 @@
 <translation id="3964661563329879394">{COUNT,plural, =0{Ingen}=1{Fra 1 nettsted }other{Fra # nettsteder }}</translation>
 <translation id="397105322502079400">Beregner …</translation>
 <translation id="3973234410852337861"><ph name="HOST_NAME" /> er blokkert</translation>
+<translation id="3984550557525787191">Dette øktnavnet finnes allerede.</translation>
 <translation id="3987940399970879459">Under 1 MB</translation>
 <translation id="40103911065039147">{URL_count,plural, =1{1 Like ved-nettside}other{# Like ved-nettsider}}</translation>
 <translation id="4030383055268325496">&amp;Angre tilleggingen</translation>
@@ -490,10 +462,28 @@
 <translation id="4171400957073367226">Ugyldig bekreftelsessignatur</translation>
 <translation id="4173827307318847180">{MORE_ITEMS,plural, =1{<ph name="ITEM_COUNT" /> element til}other{<ph name="ITEM_COUNT" /> elementer til}}</translation>
 <translation id="4179515394835346607"><ph name="ROW_NAME" /> <ph name="ROW_CONTENT" /></translation>
+<translation id="4192549185358213268">Chrome anbefaler at du tilbakestiller passordet ditt for <ph name="ORG_NAME" /> hvis du også har brukt det på andre nettsteder.</translation>
 <translation id="4196861286325780578">&amp;Flytt likevel</translation>
 <translation id="4203896806696719780"><ph name="BEGIN_LINK" />Sjekk brannmur- og antiviruskonfigurasjonen<ph name="END_LINK" /></translation>
 <translation id="4220128509585149162">Kræsj</translation>
 <translation id="422022731706691852">Angripere på <ph name="BEGIN_BOLD" /><ph name="SITE" /><ph name="END_BOLD" /> kan prøve å lure deg til å installere programmer som påvirker surfeopplevelsen din (for eksempel ved å endre startsiden eller vise ekstra annonser på nettsteder du går til). <ph name="BEGIN_LEARN_MORE_LINK" />Finn ut mer<ph name="END_LEARN_MORE_LINK" /></translation>
+<translation id="4221630205957821124">&lt;h4&gt;Trinn 1: Logg på portalen&lt;/h4&gt;
+    &lt;p&gt;Wi-Fi-nettverk på steder som kaféer eller flyplasser krever at du logger på. For å se påloggingssiden, åpne en side som bruker &lt;code&gt;http://&lt;/code&gt;.&lt;/p&gt;
+    &lt;ol&gt;
+    &lt;li&gt;Gå til et nettsted som begynner på &lt;code&gt;http://&lt;/code&gt;, for eksempel &lt;a href="http://example.com" target="_blank"&gt;http://example.com&lt;/a&gt;.&lt;/li&gt;
+    &lt;li&gt;Logg på via påloggingssiden som åpnes, for å bruke Internett.&lt;/li&gt;
+    &lt;/ol&gt;
+    &lt;h4&gt;Trinn 2: Åpne siden i inkognitomodus (bare på datamaskiner)&lt;/h4&gt;
+    &lt;p&gt;Åpne siden du besøkte, i et inkognitovindu.&lt;/p&gt;
+    &lt;p&gt;Hvis siden åpnes, har du en Chrome-utvidelse som ikke fungerer som den skal. For å fikse feilen, slå av utvidelsen.&lt;/p&gt;
+    &lt;h4&gt;Trinn 3: Oppdater operativsystemet&lt;/h4&gt;
+    &lt;p&gt;Sørg for at enheten din er oppdatert.&lt;/p&gt;
+    &lt;h4&gt;Trinn 4: Slå av antivirusprogramvaren midlertidig&lt;/h4&gt;
+    &lt;p&gt;Du ser denne feilmeldingen hvis du har antivirusprogramvare som tilbyr «HTTPS-beskyttelse» eller «HTTPS-skanning», noe som gjør at sikkerhetsfunksjonene i Chrome ikke fungerer.&lt;/p&gt;
+    &lt;p&gt;For å fikse dette problemet, slå av antivirusprogramvaren. Hvis siden fungerer når du har slått av programvaren, bør du slå den av når du bruker sikre nettsteder.&lt;/p&gt;
+    &lt;p&gt;Husk å slå på antivirusprogramvaren igjen når du er ferdig.&lt;/p&gt;
+    &lt;h4&gt;Trinn 5: Få mer hjelp&lt;/h4&gt;
+    &lt;p&gt;Hvis du fortsatt får feilmeldingen, bør du kontakte eieren av nettstedet.&lt;/p&gt;</translation>
 <translation id="4226937834893929579"><ph name="BEGIN_LINK" />Prøv å kjøre Nettverksdiagnose<ph name="END_LINK" />.</translation>
 <translation id="4235360514405112390">Gyldig</translation>
 <translation id="4250431568374086873">Tilkoblingen til dette nettstedet er ikke helt sikker</translation>
@@ -503,11 +493,13 @@
 <translation id="4265872034478892965">Tillatt av administratoren din</translation>
 <translation id="4269787794583293679">(Uten brukernavn)</translation>
 <translation id="4275830172053184480">Start enheten din på nytt</translation>
+<translation id="4277028893293644418">Tilbakestill passordet</translation>
 <translation id="4280429058323657511">, utløper <ph name="EXPIRATION_DATE_ABBR" /></translation>
 <translation id="4312866146174492540">Blokkér (standard)</translation>
 <translation id="4325863107915753736">Artikkelen ble ikke funnet</translation>
 <translation id="4326324639298822553">Kontrollér utløpsdatoen, og prøv igjen</translation>
 <translation id="4331708818696583467">Ikke sikker</translation>
+<translation id="4340982228985273705">Denne datamaskinen er ikke registrert som administrert av en bedrift, så regelen kan bare automatisk installere utvidelser som finnes på Chrome Nettmarked. Nettadressen for Chrome Nettmarked-oppdateringen er «<ph name="CWS_UPDATE_URL" />».</translation>
 <translation id="4346197816712207223">Godkjente kredittkort</translation>
 <translation id="4356973930735388585">Angripere på dette nettstedet kan prøve å installere farlige programmer på datamaskinen din. Disse kan stjele eller slette informasjonen din (for eksempel bilder, passord, e-post og kredittkortinformasjon).</translation>
 <translation id="4372948949327679948">Forventet <ph name="VALUE_TYPE" />-verdi.</translation>
@@ -600,6 +592,7 @@
 <translation id="5141240743006678641">Kryptér synkroniserte passord med Google-legitimasjonen din</translation>
 <translation id="5145883236150621069">Feilkode i responsen for enhetsinnstillinger</translation>
 <translation id="5159010409087891077">Åpne siden i et nytt inkognitovindu (⇧ + ⌘ + N)</translation>
+<translation id="5169827969064885044">Du kan miste tilgangen til organisasjonskontoen din eller bli utsatt for identitetstyveri. Chrome anbefaler at du endrer passordet ditt nå.</translation>
 <translation id="5171045022955879922">Søk, eller skriv inn en nettadresse</translation>
 <translation id="5172758083709347301">Datamaskin</translation>
 <translation id="5179510805599951267">Er ikke dette <ph name="ORIGINAL_LANGUAGE" />? Rapportér denne feilen</translation>
@@ -609,6 +602,7 @@
 <translation id="5222812217790122047">E-post er obligatorisk</translation>
 <translation id="522700295135997067">Dette nettstedet stjal muligens nettopp passordet ditt</translation>
 <translation id="5230733896359313003">Leveringsadresse</translation>
+<translation id="5250209940322997802">«Koble til nettverk»</translation>
 <translation id="5251803541071282808">Nettsky</translation>
 <translation id="5281113152797308730"><ph name="BEGIN_PARAGRAPH" />Følg disse trinnene for å deaktivere programvaren midlertidig, sånn at du kan komme deg på nettet. Du må ha administratorrettigheter.<ph name="END_PARAGRAPH" />
 
@@ -632,6 +626,7 @@
 <translation id="5332219387342487447">Leveringsmetode</translation>
 <translation id="5355557959165512791">Du kan ikke gå til <ph name="SITE" /> akkurat nå, siden sertifikatet for nettstedet er trukket tilbake. Nettverksfeil- og angrep er vanligvis midlertidige, så denne siden fungerer sannsynligvis senere.</translation>
 <translation id="536296301121032821">Kunne ikke lagre angivelsen for enhetsinnstillinger</translation>
+<translation id="5377026284221673050">«Klokken går for sent», «Klokken går for fort» eller «&lt;span class="error-code"&gt;NET::ERR_CERT_DATE_INVALID&lt;/span&gt;»</translation>
 <translation id="5386426401304769735">Sertifikatkjeden for dette nettstedet inneholder et sertifikat som er signert med SHA-1.</translation>
 <translation id="5402410679244714488">Utløper: <ph name="EXPIRATION_DATE_ABBR" />. Sist brukt for over et år siden</translation>
 <translation id="540969355065856584">Denne tjeneren kunne ikke bevise at den er <ph name="DOMAIN" />. Sikkerhetssertifikatet til tjeneren er ikke gyldig for øyeblikket. Dette kan være forårsaket av en feilkonfigurasjon eller en angriper som lytter på tilkoblingen din.</translation>
@@ -699,6 +694,7 @@
 <translation id="5869405914158311789">Dette nettstedet er ikke tilgjengelig</translation>
 <translation id="5869522115854928033">Lagrede passord</translation>
 <translation id="5893752035575986141">Kredittkort godtas.</translation>
+<translation id="5898382028489516745">Chromium anbefaler at du tilbakestiller passordet ditt for <ph name="ORG_NAME" /> hvis du også har brukt det på andre nettsteder.</translation>
 <translation id="5908541034548427511"><ph name="TYPE_1" /> (synkronisert)</translation>
 <translation id="5920262536204764679">{NUM_COOKIES,plural, =1{1 er i bruk}other{# er i bruk}}</translation>
 <translation id="5939518447894949180">Tilbakestill</translation>
@@ -712,6 +708,7 @@
 <translation id="5989320800837274978">Verken statiske proxytjenere eller en nettadresse med .pac-skript er angitt.</translation>
 <translation id="5990559369517809815">Forespørsler til tjeneren har blitt blokkert av en utvidelse.</translation>
 <translation id="6008256403891681546">JCB</translation>
+<translation id="6015796118275082299">År</translation>
 <translation id="6016158022840135739">{COUNT,plural, =1{Side 1}other{Side #}}</translation>
 <translation id="6017850046339264347">Angripere på <ph name="BEGIN_BOLD" /><ph name="SITE" /><ph name="END_BOLD" /> kan installere villedende apper som ser ut til å være noe annet, eller samle inn data som kan brukes til å spore deg. <ph name="BEGIN_LEARN_MORE_LINK" />Finn ut mer<ph name="END_LEARN_MORE_LINK" /></translation>
 <translation id="6025416945513303461"><ph name="TYPE_1" />, <ph name="TYPE_2" /> og <ph name="TYPE_3" /> (synkronisert)</translation>
@@ -721,6 +718,7 @@
 <translation id="6047233362582046994">Hvis du forstår sikkerhetsrisikoen, kan du <ph name="BEGIN_LINK" />gå til dette nettstedet<ph name="END_LINK" /> før de skadelige appene er fjernet.</translation>
 <translation id="6047927260846328439">Dette innholdet kan prøve å lure deg til å installere programvare eller oppgi personopplysninger. <ph name="BEGIN_LINK" />Vis det likevel<ph name="END_LINK" /></translation>
 <translation id="6051221802930200923">Du kan ikke gå til <ph name="SITE" /> akkurat nå, siden nettstedet bruker sertifikatfesting. Nettverksfeil og -angrep er vanligvis midlertidige, så denne siden fungerer sannsynligvis senere.</translation>
+<translation id="6059925163896151826">USB-enheter</translation>
 <translation id="6080696365213338172">Du har åpnet innhold via et administratorlevert sertifikat. Data du sender til <ph name="DOMAIN" /> kan stoppes av administratoren din.</translation>
 <translation id="610911394827799129">Det kan hende Google-kontoen din har andre typer nettlesingslogger på <ph name="BEGIN_LINK" />myactivity.google.com<ph name="END_LINK" />.</translation>
 <translation id="6144381551823904650">{COUNT,plural, =0{Ingen}=1{1 passord (synkronisert)}other{# passord (synkronisert)}}</translation>
@@ -742,6 +740,7 @@
 <translation id="6263376278284652872"><ph name="DOMAIN" />-bokmerker</translation>
 <translation id="6264485186158353794">Tilbake til trygg grunn</translation>
 <translation id="6276112860590028508">Sider fra leselisten din vises her</translation>
+<translation id="627746635834430766">For å betale raskere neste gang, lagre kortet ditt og faktureringsadressen i Google-kontoen din.</translation>
 <translation id="6280223929691119688">Kan ikke levere til denne adressen. Velg en annen adresse.</translation>
 <translation id="6282194474023008486">Postnummer</translation>
 <translation id="6290238015253830360">De foreslåtte artiklene dine vises her</translation>
@@ -756,6 +755,7 @@
 <translation id="6355080345576803305">Offentlig økt-overstyring</translation>
 <translation id="6358450015545214790">Hva innebærer dette?</translation>
 <translation id="6386120369904791316">{COUNT,plural, =1{1 annet forslag}other{# andre forslag}}</translation>
+<translation id="6387754724289022810">For å betale raskere neste gang, lagre kortet ditt og faktureringsadressen i Google-kontoen din og på denne enheten.</translation>
 <translation id="6397451950548600259">Det er programvare på datamaskinen din som hindrer Chrome i å koble trygt til Internett</translation>
 <translation id="6404511346730675251">Rediger bokmerket</translation>
 <translation id="6410264514553301377">Skriv inn utløpsdatoen og verifiseringskoden for <ph name="CREDIT_CARD" /></translation>
@@ -769,6 +769,7 @@
 <translation id="647261751007945333">Enhetsinnstillinger</translation>
 <translation id="6477321094435799029">Chrome har oppdaget uvanlig kode på denne siden og blokkert den for å beskytte personopplysningene dine (for eksempel passord, telefonnumre og kredittkortinformasjon).</translation>
 <translation id="6489534406876378309">Start opplastingen av krasj</translation>
+<translation id="6499038740797743453">Vil du tilbakestille passordet?</translation>
 <translation id="6507833130742554667">Kreditt- og debetkort godtas.</translation>
 <translation id="6508722015517270189">Start Chrome på nytt</translation>
 <translation id="6529602333819889595">&amp;Slett likevel</translation>
@@ -854,12 +855,23 @@
 <translation id="7334320624316649418">&amp;Omorganiser likevel</translation>
 <translation id="733923710415886693">Tjenerens sertifikat er ikke vist i henhold til regelen for sertifikatåpenhet.</translation>
 <translation id="7353601530677266744">Kommandolinje </translation>
+<translation id="7365061714576910172">Eksportér til Linux</translation>
 <translation id="7372973238305370288">søkeresultat</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE" /> – <ph name="FULL_DATE" /></translation>
 <translation id="7378627244592794276">Nei takk</translation>
 <translation id="7378810950367401542">/</translation>
 <translation id="7390545607259442187">Bekreft kortet</translation>
 <translation id="7400418766976504921">Nettadresse</translation>
+<translation id="7407424307057130981">&lt;p&gt;Du ser denne feilen hvis du har Superfish-programvare på Windows-datamaskinen din.&lt;/p&gt;
+      &lt;p&gt;Følg disse trinnene for å deaktivere programvaren midlertidig, sånn at du kan komme deg på nettet. Du må ha administratorrettigheter.&lt;/p&gt;
+      &lt;ol&gt;
+      &lt;li&gt;Klikk på &lt;strong&gt;Start&lt;/strong&gt;, og søk etter og velg &lt;strong&gt;«Vis lokale tjenester»&lt;/strong&gt;.
+      &lt;li&gt;Velg &lt;strong&gt;VisualDiscovery&lt;/strong&gt;.
+      &lt;li&gt;Velg &lt;strong&gt;Deaktivert&lt;/strong&gt; under &lt;strong&gt;Oppstartstype&lt;/strong&gt;.
+      &lt;li&gt;Klikk på &lt;strong&gt;Stopp&lt;/strong&gt; under &lt;strong&gt;Tjenestestatus&lt;/strong&gt;.
+      &lt;li&gt;Klikk på &lt;strong&gt;Bruk&lt;/strong&gt; og deretter på &lt;strong&gt;OK&lt;/strong&gt;.
+      &lt;li&gt;Gå til &lt;a href="https://support.google.com/chrome/answer/6098869"&gt;brukerstøtten for Chrome&lt;/a&gt; for å finne ut hvordan du fjerner programvaren fra datamaskinen permanent.
+      &lt;/ol&gt;</translation>
 <translation id="7419106976560586862">Profilbane</translation>
 <translation id="7437289804838430631">Legg til kontaktinformasjon</translation>
 <translation id="7441627299479586546">Feil emne for innstillinger</translation>
@@ -881,12 +893,15 @@
 <translation id="7542403920425041731">Når du bekrefter, deles kortinformasjonen din med dette nettstedet.</translation>
 <translation id="7542995811387359312">Automatisk utfylling av kredittkort er deaktivert fordi dette skjemaet ikke bruker en sikker tilkobling.</translation>
 <translation id="7543525346216957623">Spør forelderen din</translation>
+<translation id="7548892272833184391">Fiks tilkoblingsfeil</translation>
 <translation id="7549584377607005141">Denne nettsiden krever data som du har skrevet inn tidligere for å vises korrekt. Du kan sende inn dataene på nytt, men hvis du gjør det, gjentas eventuelle handlinger denne siden utførte.</translation>
 <translation id="7552846755917812628">Prøv følgende tips:</translation>
 <translation id="7554791636758816595">Ny fane</translation>
+<translation id="7564049878696755256">Du kan miste tilgangen til <ph name="ORG_NAME" />-kontoen din eller bli utsatt for identitetstyveri. Chrome anbefaler at du endrer passordet ditt nå.</translation>
 <translation id="7567204685887185387">Denne tjeneren kunne ikke bevise at den er <ph name="DOMAIN" />. Tjenerens sikkerhetssertifikat kan ha blitt utstedt på uredelig vis. Dette kan være forårsaket av en feilkonfigurering eller en angriper som avskjærer tilkoblingen din.</translation>
 <translation id="7568593326407688803">Denne siden er på<ph name="ORIGINAL_LANGUAGE" />Vil du ha den oversatt?</translation>
 <translation id="7569952961197462199">Vil du fjerne kredittkortet fra Chrome?</translation>
+<translation id="7575800019233204241">«Tilkoblingen din er ikke privat», «&lt;span class="error-code"&gt;NET::ERR_CERT_AUTHORITY_INVALID&lt;/span&gt;», «&lt;span class="error-code"&gt;ERR_CERT_COMMON_NAME_INVALID&lt;/span&gt;», «&lt;span class="error-code"&gt;NET::ERR_CERT_WEAK_SIGNATURE_ALGORITHM&lt;/span&gt;» eller «SSL-sertifikatfeil»</translation>
 <translation id="7578104083680115302">Når du lagrer kort med Google, kan du bruke dem til å betale raskt på nettsteder og i apper – uansett hvilken enhet du bruker.</translation>
 <translation id="7588950540487816470">Fysisk nett</translation>
 <translation id="7592362899630581445">Tjenerens sertifikat bryter navnereglene.</translation>
@@ -1039,6 +1054,7 @@
 <translation id="8761567432415473239">Google Safe Browsing oppdaget nylig <ph name="BEGIN_LINK" />skadelige programmer<ph name="END_LINK" /> på <ph name="SITE" />.</translation>
 <translation id="8763927697961133303">USB-enhet</translation>
 <translation id="8790007591277257123">&amp;Slett likevel</translation>
+<translation id="8792621596287649091">Du kan miste tilgangen til <ph name="ORG_NAME" />-kontoen din eller bli utsatt for identitetstyveri. Chromium anbefaler at du endrer passordet ditt nå.</translation>
 <translation id="8800988563907321413">Forslagene dine om ting like ved vises her</translation>
 <translation id="8820817407110198400">Bokmerker</translation>
 <translation id="883848425547221593">Andre bokmerker</translation>
@@ -1059,6 +1075,7 @@
 <translation id="8957210676456822347">Captive Portal-autorisasjon</translation>
 <translation id="8971063699422889582">Tjenerens sertifikat er utløpt.</translation>
 <translation id="8978053250194585037">Google Safe Browsing <ph name="BEGIN_LINK" />oppdaget nylig nettfisking<ph name="END_LINK" /> på <ph name="SITE" />. Nettsteder for nettfisking er laget for å ligne på andre nettsteder, for å prøve å lure deg.</translation>
+<translation id="8987927404178983737">Måned</translation>
 <translation id="8989148748219918422"><ph name="ORGANIZATION" /> [<ph name="COUNTRY" />]</translation>
 <translation id="8996941253935762404">Nettstedet du er i ferd med å åpne, inneholder skadelige programmer</translation>
 <translation id="8997023839087525404">Tjeneren har presentert et sertifikat som ikke er offentlig vist i henhold til regelen om sertifikatåpenhet. Dette er et krav for enkelte sertifikater for å sikre at de er pålitelige, og bidrar til å beskytte mot angrep.</translation>
@@ -1106,6 +1123,8 @@
 <translation id="973773823069644502">Legg til leveringsadresse</translation>
 <translation id="975560348586398090">{COUNT,plural, =0{Ingen}=1{1 element}other{# elementer}}</translation>
 <translation id="981121421437150478">Uten nett</translation>
+<translation id="985199708454569384">&lt;p&gt;Du ser denne feilen hvis du har feil dato eller klokkeslett på datamaskinen eller mobilenheten din.&lt;/p&gt;
+    &lt;p&gt;For å fikse feilen, åpne klokken på enheten, og sørg for at klokkeslettet og datoen er riktig.&lt;/p&gt;</translation>
 <translation id="988159990683914416">Utviklerversjon</translation>
 <translation id="989988560359834682">Rediger adresse</translation>
 <translation id="992115559265932548"><ph name="MICROSOFT_ACTIVE_DIRECTORY" /></translation>

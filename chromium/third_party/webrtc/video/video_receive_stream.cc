@@ -49,7 +49,6 @@ VideoCodec CreateDecoderVideoCodec(const VideoReceiveStream::Decoder& decoder) {
   memset(&codec, 0, sizeof(codec));
 
   codec.plType = decoder.payload_type;
-  strncpy(codec.plName, decoder.payload_name.c_str(), sizeof(codec.plName));
   codec.codecType = PayloadStringToCodecType(decoder.payload_name);
 
   if (codec.codecType == kVideoCodecVP8) {
@@ -65,8 +64,6 @@ VideoCodec CreateDecoderVideoCodec(const VideoReceiveStream::Decoder& decoder) {
     associated_decoder.payload_name = CodecTypeToPayloadString(kVideoCodecVP9);
     VideoCodec associated_codec = CreateDecoderVideoCodec(associated_decoder);
     associated_codec.codecType = kVideoCodecMultiplex;
-    strncpy(associated_codec.plName, decoder.payload_name.c_str(),
-            sizeof(associated_codec.plName));
     return associated_codec;
   }
 
@@ -104,16 +101,15 @@ VideoReceiveStream::VideoReceiveStream(
       video_receiver_(clock_, nullptr, this, timing_.get(), this, this),
       stats_proxy_(&config_, clock_),
       rtp_video_stream_receiver_(&transport_adapter_,
-                                 call_stats_->rtcp_rtt_stats(),
+                                 call_stats,
                                  packet_router,
                                  &config_,
                                  rtp_receive_statistics_.get(),
                                  &stats_proxy_,
                                  process_thread_,
-                                 this,  // NackSender
-                                 this,  // KeyFrameRequestSender
-                                 this,  // OnCompleteFrameCallback
-                                 timing_.get()),
+                                 this,   // NackSender
+                                 this,   // KeyFrameRequestSender
+                                 this),  // OnCompleteFrameCallback
       rtp_stream_sync_(this) {
   RTC_LOG(LS_INFO) << "VideoReceiveStream: " << config_.ToString();
 
@@ -184,8 +180,6 @@ void VideoReceiveStream::Start() {
                           rtp_video_stream_receiver_.IsUlpfecEnabled();
 
   frame_buffer_->Start();
-  call_stats_->RegisterStatsObserver(&rtp_video_stream_receiver_);
-  call_stats_->RegisterStatsObserver(this);
 
   if (rtp_video_stream_receiver_.IsRetransmissionsEnabled() &&
       protected_by_fec) {
@@ -220,8 +214,10 @@ void VideoReceiveStream::Start() {
       &rtp_video_stream_receiver_,
       rtp_video_stream_receiver_.IsRetransmissionsEnabled(), protected_by_fec,
       &stats_proxy_, renderer));
-  // Register the channel to receive stats updates.
-  call_stats_->RegisterStatsObserver(video_stream_decoder_.get());
+
+  // Make sure we register as a stats observer *after* we've prepared the
+  // |video_stream_decoder_|.
+  call_stats_->RegisterStatsObserver(this);
 
   process_thread_->RegisterModule(&video_receiver_, RTC_FROM_HERE);
 
@@ -241,7 +237,6 @@ void VideoReceiveStream::Stop() {
 
   frame_buffer_->Stop();
   call_stats_->DeregisterStatsObserver(this);
-  call_stats_->DeregisterStatsObserver(&rtp_video_stream_receiver_);
   process_thread_->DeRegisterModule(&video_receiver_);
 
   if (decode_thread_.IsRunning()) {
@@ -261,7 +256,6 @@ void VideoReceiveStream::Stop() {
       video_receiver_.RegisterExternalDecoder(nullptr, decoder.payload_type);
   }
 
-  call_stats_->DeregisterStatsObserver(video_stream_decoder_.get());
   video_stream_decoder_.reset();
   incoming_video_stream_.reset();
   transport_adapter_.Disable();
@@ -366,7 +360,10 @@ void VideoReceiveStream::OnCompleteFrame(
 }
 
 void VideoReceiveStream::OnRttUpdate(int64_t avg_rtt_ms, int64_t max_rtt_ms) {
+  RTC_DCHECK_CALLED_SEQUENTIALLY(&module_process_sequence_checker_);
   frame_buffer_->UpdateRtt(max_rtt_ms);
+  rtp_video_stream_receiver_.UpdateRtt(max_rtt_ms);
+  video_stream_decoder_->UpdateRtt(max_rtt_ms);
 }
 
 int VideoReceiveStream::id() const {
@@ -438,7 +435,7 @@ bool VideoReceiveStream::Decode() {
         decode_result == WEBRTC_VIDEO_CODEC_OK_REQUEST_KEYFRAME) {
       keyframe_required_ = false;
       frame_decoded_ = true;
-      rtp_video_stream_receiver_.FrameDecoded(frame->picture_id);
+      rtp_video_stream_receiver_.FrameDecoded(frame->id.picture_id);
 
       if (decode_result == WEBRTC_VIDEO_CODEC_OK_REQUEST_KEYFRAME)
         RequestKeyFrame();

@@ -7,8 +7,8 @@
 #include "base/run_loop.h"
 #include "base/test/scoped_feature_list.h"
 #include "content/browser/frame_host/navigation_request_info.h"
+#include "content/browser/loader/navigation_loader_interceptor.h"
 #include "content/browser/loader/navigation_url_loader.h"
-#include "content/browser/loader/url_loader_request_handler.h"
 #include "content/common/navigation_params.h"
 #include "content/common/navigation_params.mojom.h"
 #include "content/common/service_manager/service_manager_connection_impl.h"
@@ -32,15 +32,15 @@
 #include "services/network/url_loader.h"
 #include "services/network/url_request_context_owner.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
+#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
 
 namespace content {
 
 namespace {
 
-class TestURLLoaderRequestHandler : public URLLoaderRequestHandler {
+class TestNavigationLoaderInterceptor : public NavigationLoaderInterceptor {
  public:
-  explicit TestURLLoaderRequestHandler(
+  explicit TestNavigationLoaderInterceptor(
       base::Optional<network::ResourceRequest>* most_recent_resource_request)
       : most_recent_resource_request_(most_recent_resource_request),
         resource_scheduler_(false) {
@@ -57,7 +57,8 @@ class TestURLLoaderRequestHandler : public URLLoaderRequestHandler {
             context_->GetURLRequestContext()->network_quality_estimator());
   }
 
-  ~TestURLLoaderRequestHandler() override {
+  ~TestNavigationLoaderInterceptor() override {
+    url_loader_ = nullptr;
     resource_scheduler_client_ = nullptr;
     context_->NotifyContextShuttingDown();
   }
@@ -66,7 +67,7 @@ class TestURLLoaderRequestHandler : public URLLoaderRequestHandler {
                          ResourceContext* resource_context,
                          LoaderCallback callback) override {
     std::move(callback).Run(
-        base::BindOnce(&TestURLLoaderRequestHandler::StartLoader,
+        base::BindOnce(&TestNavigationLoaderInterceptor::StartLoader,
                        base::Unretained(this), resource_request));
   }
 
@@ -74,12 +75,14 @@ class TestURLLoaderRequestHandler : public URLLoaderRequestHandler {
                    network::mojom::URLLoaderRequest request,
                    network::mojom::URLLoaderClientPtr client) {
     *most_recent_resource_request_ = resource_request;
-    // The URLLoader will delete itself upon completion.
-    new network::URLLoader(context_, nullptr, std::move(request),
-                           0 /* options */, resource_request,
-                           false /* report_raw_headers */, std::move(client),
-                           TRAFFIC_ANNOTATION_FOR_TESTS, 0 /* process_id */,
-                           resource_scheduler_client_, nullptr);
+    url_loader_ = std::make_unique<network::URLLoader>(
+        context_, nullptr, base::BindOnce([](network::URLLoader*) {
+          // Ignore self-deletion requests, for simplicity.
+        }),
+        std::move(request), 0 /* options */, resource_request,
+        false /* report_raw_headers */, std::move(client),
+        TRAFFIC_ANNOTATION_FOR_TESTS, 0 /* process_id */, 0, /* request_id */
+        resource_scheduler_client_, nullptr);
   }
 
   bool MaybeCreateLoaderForResponse(
@@ -96,6 +99,7 @@ class TestURLLoaderRequestHandler : public URLLoaderRequestHandler {
   network::ResourceScheduler resource_scheduler_;
   scoped_refptr<network::NetworkURLRequestContextGetter> context_;
   scoped_refptr<network::ResourceSchedulerClient> resource_scheduler_client_;
+  std::unique_ptr<network::URLLoader> url_loader_;
 };
 
 }  // namespace
@@ -140,7 +144,7 @@ class NavigationURLLoaderNetworkServiceTest : public testing::Test {
             false /* is_form_submission */, GURL() /* searchable_form_url */,
             std::string() /* searchable_form_encoding */,
             url::Origin::Create(url), GURL() /* client_side_redirect_url */,
-            nullptr /* devtools_initiator_info */);
+            base::nullopt /* devtools_initiator_info */);
 
     CommonNavigationParams common_params;
     common_params.url = url;
@@ -152,10 +156,11 @@ class NavigationURLLoaderNetworkServiceTest : public testing::Test {
             common_params, std::move(begin_params), url, is_main_frame,
             false /* parent_is_main_frame */, false /* are_ancestors_secure */,
             -1 /* frame_tree_node_id */, false /* is_for_guests_only */,
-            false /* report_raw_headers */, false /* is_prerenering */));
-    std::vector<std::unique_ptr<URLLoaderRequestHandler>> handlers;
+            false /* report_raw_headers */, false /* is_prerenering */,
+            nullptr /* blob_url_loader_factory */));
+    std::vector<std::unique_ptr<NavigationLoaderInterceptor>> interceptors;
     most_recent_resource_request_ = base::nullopt;
-    handlers.push_back(std::make_unique<TestURLLoaderRequestHandler>(
+    interceptors.push_back(std::make_unique<TestNavigationLoaderInterceptor>(
         &most_recent_resource_request_));
 
     return std::make_unique<NavigationURLLoaderNetworkService>(
@@ -163,7 +168,7 @@ class NavigationURLLoaderNetworkServiceTest : public testing::Test {
         BrowserContext::GetDefaultStoragePartition(browser_context_.get()),
         std::move(request_info), nullptr /* navigation_ui_data */,
         nullptr /* service_worker_handle */, nullptr /* appcache_handle */,
-        delegate, std::move(handlers));
+        delegate, std::move(interceptors));
   }
 
   // Requests |redirect_url|, which must return a HTTP 3xx redirect. It's also

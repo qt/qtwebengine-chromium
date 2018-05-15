@@ -9,7 +9,6 @@
 #include "gpu/config/gpu_info.h"
 #include "gpu/ipc/common/dx_diag_node_struct_traits.h"
 #include "gpu/ipc/common/gpu_info.mojom.h"
-#include "mojo/common/common_custom_types_struct_traits.h"
 #include "ui/gfx/geometry/mojo/geometry_struct_traits.h"
 
 namespace mojo {
@@ -242,6 +241,13 @@ struct StructTraits<gpu::mojom::GpuInfoDataView, gpu::GPUInfo> {
 #if defined(OS_WIN)
   static const gpu::DxDiagNode& dx_diagnostics(const gpu::GPUInfo& input) {
     return input.dx_diagnostics;
+  }
+
+  static bool supports_dx12(const gpu::GPUInfo& input) {
+    return input.supports_dx12;
+  }
+  static bool supports_vulkan(const gpu::GPUInfo& input) {
+    return input.supports_vulkan;
   }
 #endif
 

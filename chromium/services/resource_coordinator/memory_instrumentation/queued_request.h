@@ -25,7 +25,7 @@ using OSMemDumpMap =
 
 // Holds data for pending requests enqueued via RequestGlobalMemoryDump().
 struct QueuedRequest {
-  using RequestGlobalMemoryDumpInternalCallback = base::Callback<
+  using RequestGlobalMemoryDumpInternalCallback = base::OnceCallback<
       void(bool, uint64_t, memory_instrumentation::mojom::GlobalMemoryDumpPtr)>;
 
   struct Args {
@@ -69,23 +69,16 @@ struct QueuedRequest {
 
   QueuedRequest(const Args& args,
                 uint64_t dump_guid,
-                const RequestGlobalMemoryDumpInternalCallback& callback);
+                RequestGlobalMemoryDumpInternalCallback callback);
   ~QueuedRequest();
 
   base::trace_event::MemoryDumpRequestArgs GetRequestArgs();
 
-  bool wants_mmaps() const {
-    return args.level_of_detail == base::trace_event::MemoryDumpLevelOfDetail::
-                                       VM_REGIONS_ONLY_FOR_HEAP_PROFILER ||
-           args.level_of_detail ==
-               base::trace_event::MemoryDumpLevelOfDetail::DETAILED;
-  }
-
-  // We always want to return chrome dumps, with exception of the special
-  // case below for the heap profiler, which cares only about mmaps.
-  bool wants_chrome_dumps() const {
-    return args.level_of_detail != base::trace_event::MemoryDumpLevelOfDetail::
-                                       VM_REGIONS_ONLY_FOR_HEAP_PROFILER;
+  mojom::MemoryMapOption memory_map_option() const {
+    return args.level_of_detail ==
+                   base::trace_event::MemoryDumpLevelOfDetail::DETAILED
+               ? mojom::MemoryMapOption::FULL
+               : mojom::MemoryMapOption::NONE;
   }
 
   bool should_return_summaries() const {
@@ -94,7 +87,7 @@ struct QueuedRequest {
 
   const Args args;
   const uint64_t dump_guid;
-  const RequestGlobalMemoryDumpInternalCallback callback;
+  RequestGlobalMemoryDumpInternalCallback callback;
 
   // When a dump, requested via RequestGlobalMemoryDump(), is in progress this
   // set contains a |PendingResponse| for each |RequestChromeMemoryDump| and
@@ -118,11 +111,10 @@ struct QueuedRequest {
 struct QueuedVmRegionRequest {
   QueuedVmRegionRequest(
       uint64_t dump_guid,
-      const mojom::HeapProfilerHelper::GetVmRegionsForHeapProfilerCallback&
-          callback);
+      mojom::HeapProfilerHelper::GetVmRegionsForHeapProfilerCallback callback);
   ~QueuedVmRegionRequest();
   const uint64_t dump_guid;
-  const mojom::HeapProfilerHelper::GetVmRegionsForHeapProfilerCallback callback;
+  mojom::HeapProfilerHelper::GetVmRegionsForHeapProfilerCallback callback;
 
   struct Response {
     Response();

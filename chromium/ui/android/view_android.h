@@ -167,6 +167,11 @@ class UI_ANDROID_EXPORT ViewAndroid {
   void AddObserver(ViewAndroidObserver* observer);
   void RemoveObserver(ViewAndroidObserver* observer);
 
+  void RequestDisallowInterceptTouchEvent();
+  void RequestUnbufferedDispatch(const MotionEventAndroid& event);
+
+  ViewAndroid* parent() const { return parent_; }
+
  protected:
   ViewAndroid* parent_;
 

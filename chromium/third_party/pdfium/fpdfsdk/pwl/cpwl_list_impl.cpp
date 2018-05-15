@@ -608,7 +608,7 @@ int32_t CPWL_ListCtrl::FindNext(int32_t nIndex, wchar_t nChar) const {
       nCircleIndex = 0;
 
     if (Item* pListItem = m_ListItems[nCircleIndex].get()) {
-      if (FXSYS_toupper(pListItem->GetFirstChar()) == FXSYS_toupper(nChar))
+      if (FXSYS_towupper(pListItem->GetFirstChar()) == FXSYS_towupper(nChar))
         return nCircleIndex;
     }
   }

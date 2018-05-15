@@ -60,13 +60,13 @@ void Surface::Reset(base::WeakPtr<SurfaceClient> client) {
   active_frame_data_.reset();
 }
 
-bool Surface::InheritActivationDeadlineFrom(Surface* surface) {
+void Surface::InheritActivationDeadlineFrom(Surface* surface) {
   TRACE_EVENT1("viz", "Surface::InheritActivationDeadlineFrom", "FrameSinkId",
                surface_id().frame_sink_id().ToString());
   if (!deadline_ || !surface->deadline_)
-    return false;
+    return;
 
-  return deadline_->InheritFrom(*surface->deadline_);
+  deadline_->InheritFrom(*surface->deadline_);
 }
 
 void Surface::SetPreviousFrameSurface(Surface* surface) {
@@ -438,6 +438,26 @@ void Surface::TakeCopyOutputRequests(Surface::CopyRequestsMap* copy_requests) {
   }
 }
 
+void Surface::TakeCopyOutputRequestsFromClient() {
+  if (!surface_client_)
+    return;
+  for (std::unique_ptr<CopyOutputRequest>& request :
+       surface_client_->TakeCopyOutputRequests(
+           surface_id().local_surface_id())) {
+    RequestCopyOfOutput(std::move(request));
+  }
+}
+
+bool Surface::HasCopyOutputRequests() {
+  if (!active_frame_data_)
+    return false;
+  for (const auto& render_pass : active_frame_data_->frame.render_pass_list) {
+    if (!render_pass->copy_requests.empty())
+      return true;
+  }
+  return false;
+}
+
 const CompositorFrame& Surface::GetActiveFrame() const {
   DCHECK(active_frame_data_);
   return active_frame_data_->frame;
@@ -467,13 +487,16 @@ void Surface::RunDrawCallback() {
     std::move(active_frame_data_->draw_callback).Run();
 }
 
-void Surface::NotifyAggregatedDamage(const gfx::Rect& damage_rect) {
+void Surface::NotifyAggregatedDamage(const gfx::Rect& damage_rect,
+                                     base::TimeTicks expected_display_time) {
   if (!active_frame_data_ ||
       active_frame_data_->aggregated_damage_callback.is_null())
     return;
 
   active_frame_data_->aggregated_damage_callback.Run(
-      surface_id().local_surface_id(), damage_rect, active_frame_data_->frame);
+      surface_id().local_surface_id(),
+      active_frame_data_->frame.size_in_pixels(), damage_rect,
+      expected_display_time);
 }
 
 void Surface::OnDeadline(base::TimeDelta duration) {
@@ -528,10 +551,17 @@ void Surface::TakeLatencyInfoFromFrame(
     frame->metadata.latency_info.swap(*latency_info);
     return;
   }
-  std::copy(frame->metadata.latency_info.begin(),
-            frame->metadata.latency_info.end(),
-            std::back_inserter(*latency_info));
+  if (ui::LatencyInfo::Verify(*latency_info,
+                              "Surface::TakeLatencyInfoFromFrame")) {
+    std::copy(frame->metadata.latency_info.begin(),
+              frame->metadata.latency_info.end(),
+              std::back_inserter(*latency_info));
+  }
   frame->metadata.latency_info.clear();
+}
+
+void Surface::OnWillBeDrawn() {
+  surface_manager_->SurfaceWillBeDrawn(this);
 }
 
 }  // namespace viz

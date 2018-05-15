@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "core/fxge/cfx_pathdata.h"
-#include "core/fxge/ifx_renderdevicedriver.h"
+#include "core/fxge/renderdevicedriver_iface.h"
 
 class FXTEXT_CHARPOS;
 class SkCanvas;
@@ -22,7 +22,7 @@ class SkPictureRecorder;
 class SkiaState;
 struct SkIRect;
 
-class CFX_SkiaDeviceDriver : public IFX_RenderDeviceDriver {
+class CFX_SkiaDeviceDriver : public RenderDeviceDriverIface {
  public:
   CFX_SkiaDeviceDriver(const RetainPtr<CFX_DIBitmap>& pBitmap,
                        bool bRgbByteOrder,
@@ -64,7 +64,7 @@ class CFX_SkiaDeviceDriver : public IFX_RenderDeviceDriver {
                 int fill_mode,
                 int blend_type) override;
 
-  bool FillRectWithBlend(const FX_RECT* pRect,
+  bool FillRectWithBlend(const FX_RECT& rect,
                          uint32_t fill_color,
                          int blend_type) override;
 
@@ -121,7 +121,7 @@ class CFX_SkiaDeviceDriver : public IFX_RenderDeviceDriver {
                    int blend_type) override;
 
   bool ContinueDIBits(CFX_ImageRenderer* handle,
-                      IFX_PauseIndicator* pPause) override;
+                      PauseIndicatorIface* pPause) override;
 
   bool DrawBitsWithMask(const RetainPtr<CFX_DIBSource>& pBitmap,
                         const RetainPtr<CFX_DIBSource>& pMask,

@@ -32,6 +32,7 @@ class AutofillHandlerProxy : public AutofillHandler {
   void OnHidePopup() override;
   void OnSetDataList(const std::vector<base::string16>& values,
                      const std::vector<base::string16>& labels) override;
+  void SelectFieldOptionsDidChange(const FormData& form) override;
 
   void Reset() override;
 
@@ -62,6 +63,10 @@ class AutofillHandlerProxy : public AutofillHandler {
   void OnFocusOnFormFieldImpl(const FormData& form,
                               const FormFieldData& field,
                               const gfx::RectF& bounding_box) override;
+
+  void OnSelectControlDidChangeImpl(const FormData& form,
+                                    const FormFieldData& field,
+                                    const gfx::RectF& bounding_box) override;
 
  private:
   AutofillProvider* provider_;

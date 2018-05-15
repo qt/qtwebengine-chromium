@@ -6,8 +6,8 @@ import("//build/config/ui.gni")
 import("//chrome/common/features.gni")
 import("//chromeos/assistant/assistant.gni")
 import("//components/nacl/features.gni")
-import("//ppapi/features/features.gni")
-import("//printing/features/features.gni")
+import("//ppapi/buildflags/buildflags.gni")
+import("//printing/buildflags/buildflags.gni")
 import("//services/catalog/public/tools/catalog.gni")
 import("//services/service_manager/public/service_manifest.gni")
 import("//tools/grit/grit_rule.gni")
@@ -51,7 +51,7 @@ source_set("chrome_dll_resources") {
       # toggle off of the enable-basic-printing flag in the .rc file.
       defines = [ "ENABLE_BASIC_PRINTING_FOR_RC" ]
     }
-    deps += [ "//printing/features" ]
+    deps += [ "//printing/buildflags" ]
   }
 }
 
@@ -334,8 +334,8 @@ static_library("test_support") {
     "//content/public/common",
     "//content/public/common:service_names",
     "//pdf",
-    "//ppapi/features",
-    "//printing/features",
+    "//ppapi/buildflags",
+    "//printing/buildflags",
     "//services/service_manager/embedder",
     "//ui/base",
     "//v8:v8_headers",
@@ -365,10 +365,7 @@ static_library("test_support") {
   }
 
   if (is_chromeos) {
-    deps += [
-      "//chrome/browser/chromeos",
-      "//components/metrics/leak_detector:leak_detector",
-    ]
+    deps += [ "//chrome/browser/chromeos" ]
   }
 
   if (enable_plugins && enable_nacl) {
@@ -389,9 +386,8 @@ static_library("test_support") {
 
 chrome_packaged_services = [
   ":chrome_manifest",
-  "//chrome/profiling:manifest",
-  "//components/patch_service:manifest",
-  "//components/unzip_service:manifest",
+  "//components/services/patch:manifest",
+  "//components/services/unzip:manifest",
   "//chrome/services/file_util:manifest",
   "//services/proxy_resolver:proxy_resolver_manifest",
   "//services/preferences:local_state_manifest",
@@ -447,7 +443,7 @@ service_manifest("chrome_content_packaged_services_manifest_overlay") {
       "//ash/components/quick_launch:manifest",
       "//ash/components/touch_hud:manifest",
       "//ash:manifest",
-      "//components/font_service:manifest",
+      "//components/services/font:manifest",
     ]
   }
 }
@@ -460,6 +456,9 @@ service_manifest("chrome_content_browser_manifest_overlay") {
   ]
   if (enable_cros_assistant) {
     packaged_services += [ "//chromeos/services/assistant:manifest" ]
+  }
+  if (is_chromeos) {
+    packaged_services += [ "//chromeos/services/multidevice_setup:manifest" ]
   }
 }
 

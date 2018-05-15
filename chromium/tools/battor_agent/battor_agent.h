@@ -103,7 +103,7 @@ class BattOrAgent : public BattOrConnection::Listener,
   std::unique_ptr<BattOrConnection> connection_;
 
   // A source of TimeTicks. Protected so that it can be faked in testing.
-  std::unique_ptr<base::TickClock> tick_clock_;
+  const base::TickClock* tick_clock_;
 
   // Timeout for when an action isn't completed within the allotted time. This
   // is virtual and protected so that timeouts can be disabled in testing. The
@@ -185,6 +185,10 @@ class BattOrAgent : public BattOrConnection::Listener,
 
   // Sets and restarts the action timeout timer.
   void SetActionTimeout(uint16_t timeout_seconds);
+
+  // Returns the first action for the specified command (excluding connection
+  // actions).
+  Action GetFirstAction(Command command);
 
   // The listener that handles the commands' results. It must outlive the agent.
   Listener* listener_;

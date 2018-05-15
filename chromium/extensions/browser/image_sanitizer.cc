@@ -29,8 +29,9 @@ std::tuple<std::vector<uint8_t>, bool, bool> ReadAndDeleteBinaryFile(
   int64_t file_size;
   if (base::GetFileSize(path, &file_size)) {
     contents.resize(file_size);
-    read_success = base::ReadFile(
-        path, reinterpret_cast<char*>(contents.data()), file_size);
+    read_success =
+        base::ReadFile(path, reinterpret_cast<char*>(contents.data()),
+                       file_size) == file_size;
   }
   bool delete_success = base::DeleteFile(path, /*recursive=*/false);
   return std::make_tuple(std::move(contents), read_success, delete_success);
@@ -90,6 +91,9 @@ void ImageSanitizer::Start(service_manager::Connector* connector,
   }
 
   connector->BindInterface(identity, &image_decoder_ptr_);
+  image_decoder_ptr_.set_connection_error_handler(
+      base::BindOnce(&ImageSanitizer::ReportError, weak_factory_.GetWeakPtr(),
+                     Status::kServiceError, base::FilePath()));
 
   std::set<base::FilePath> normalized_image_paths;
   for (const base::FilePath& path : image_paths_) {

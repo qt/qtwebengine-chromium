@@ -5,7 +5,7 @@
 #include "media/base/key_system_properties.h"
 
 #include "base/logging.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 
 namespace media {
 
@@ -17,13 +17,6 @@ SupportedCodecs KeySystemProperties::GetSupportedSecureCodecs() const {
 
 bool KeySystemProperties::UseAesDecryptor() const {
   return false;
-}
-
-std::string KeySystemProperties::GetPepperType() const {
-#if !BUILDFLAG(ENABLE_LIBRARY_CDMS)
-  NOTREACHED();
-#endif
-  return "";
 }
 
 }  // namespace media

@@ -5,10 +5,11 @@
 import("//build/config/features.gni")
 import("//chrome/common/features.gni")
 import("//components/nacl/features.gni")
+import("//components/offline_pages/buildflags/features.gni")
 import("//components/spellcheck/spellcheck_build_features.gni")
-import("//extensions/features/features.gni")
+import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
-import("//ppapi/features/features.gni")
+import("//ppapi/buildflags/buildflags.gni")
 import("//tools/grit/grit_rule.gni")
 
 grit("resources") {
@@ -93,6 +94,8 @@ static_library("renderer") {
     "security_filter_peer.h",
     "ssl/ssl_certificate_error_page_controller.cc",
     "ssl/ssl_certificate_error_page_controller.h",
+    "supervised_user/supervised_user_error_page_controller.cc",
+    "supervised_user/supervised_user_error_page_controller.h",
     "tts_dispatcher.cc",
     "tts_dispatcher.h",
     "url_loader_throttle_provider_impl.cc",
@@ -127,7 +130,7 @@ static_library("renderer") {
     "//components/safe_browsing/renderer:throttles",
     "//components/security_interstitials/core:",
     "//components/security_interstitials/core/common/interfaces:",
-    "//components/spellcheck:build_features",
+    "//components/spellcheck:buildflags",
     "//components/startup_metric_utils/common:interfaces",
     "//components/subresource_filter/content/renderer",
     "//components/task_scheduler_util/common",
@@ -140,22 +143,22 @@ static_library("renderer") {
     "//content/app/strings",
     "//content/public/common",
     "//content/public/renderer",
-    "//extensions/features",
+    "//extensions/buildflags",
     "//media",
-    "//media:media_features",
+    "//media:media_buildflags",
     "//media/capture",
     "//mojo/public/cpp/bindings",
     "//net",
-    "//ppapi/features",
-    "//printing/features",
+    "//ppapi/buildflags",
+    "//printing/buildflags",
     "//services/metrics/public/cpp:metrics_cpp",
     "//services/metrics/public/mojom",
     "//services/service_manager/public/cpp",
     "//skia",
     "//storage/common",
-    "//third_party/WebKit/public:blink",
-    "//third_party/WebKit/public:resources",
-    "//third_party/WebKit/public:scaled_resources",
+    "//third_party/blink/public:blink",
+    "//third_party/blink/public:resources",
+    "//third_party/blink/public:scaled_resources",
     "//third_party/icu",
     "//third_party/re2",
     "//third_party/widevine/cdm:headers",
@@ -203,7 +206,7 @@ static_library("renderer") {
     deps += [
       "//components/pdf/renderer",
       "//components/strings",
-      "//media:media_features",
+      "//media:media_buildflags",
       "//ppapi/host",
       "//ppapi/proxy",
       "//ppapi/proxy:ipc",
@@ -313,7 +316,6 @@ static_library("renderer") {
       "resources/extensions/declarative_content_custom_bindings.js",
       "resources/extensions/easy_unlock_proximity_required.js",
       "resources/extensions/enterprise_platform_keys_custom_bindings.js",
-      "resources/extensions/feedback_private_custom_bindings.js",
       "resources/extensions/gcm_custom_bindings.js",
       "resources/extensions/identity_custom_bindings.js",
       "resources/extensions/image_writer_private_custom_bindings.js",
@@ -389,7 +391,6 @@ static_library("renderer") {
   }
 
   if (is_chromeos) {
-    deps += [ "//chrome/renderer/leak_detector:leak_detector" ]
     sources += [
       "extensions/file_browser_handler_custom_bindings.cc",
       "extensions/file_browser_handler_custom_bindings.h",
@@ -433,7 +434,7 @@ static_library("test_support") {
     ":renderer",
     "//chrome/common:search_mojom",
     "//content/test:test_support",
-    "//extensions/features",
+    "//extensions/buildflags",
     "//testing/gmock",
     "//testing/gtest",
   ]

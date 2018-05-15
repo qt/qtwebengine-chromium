@@ -9,7 +9,9 @@
 
 #include <memory>
 
+#include "base/callback.h"
 #include "base/component_export.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
 #include "mojo/public/cpp/bindings/binding.h"
@@ -19,7 +21,6 @@
 #include "net/http/http_raw_request_headers.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/url_request.h"
-#include "net/url_request/url_request_context_getter_observer.h"
 #include "services/network/keepalive_statistics_recorder.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
@@ -40,12 +41,15 @@ struct ResourceResponse;
 
 class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
     : public mojom::URLLoader,
-      public net::URLRequest::Delegate,
-      public net::URLRequestContextGetterObserver {
+      public net::URLRequest::Delegate {
  public:
+  using DeleteCallback = base::OnceCallback<void(URLLoader* url_loader)>;
+
+  // |delete_callback| tells the URLLoader's owner to destroy the URLLoader.
   URLLoader(
       scoped_refptr<net::URLRequestContextGetter> url_request_context_getter,
       mojom::NetworkServiceClient* network_service_client,
+      DeleteCallback delete_callback,
       mojom::URLLoaderRequest url_loader_request,
       int32_t options,
       const ResourceRequest& request,
@@ -53,6 +57,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
       mojom::URLLoaderClientPtr url_loader_client,
       const net::NetworkTrafficAnnotationTag& traffic_annotation,
       uint32_t process_id,
+      uint32_t request_id,
       scoped_refptr<ResourceSchedulerClient> resource_scheduler_client,
       base::WeakPtr<KeepaliveStatisticsRecorder> keepalive_statistics_recorder);
   ~URLLoader() override;
@@ -79,12 +84,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   void OnResponseStarted(net::URLRequest* url_request, int net_error) override;
   void OnReadCompleted(net::URLRequest* url_request, int bytes_read) override;
 
-  // net::URLRequestContextGetterObserver implementation:
-  void OnContextShuttingDown() override;
   net::LoadState GetLoadStateForTesting() const;
-
-  // Returns a WeakPtr so tests can validate that the object was destroyed.
-  base::WeakPtr<URLLoader> GetWeakPtrForTests();
 
  private:
   void ReadMore();
@@ -115,11 +115,14 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
 
   scoped_refptr<net::URLRequestContextGetter> url_request_context_getter_;
   mojom::NetworkServiceClient* network_service_client_;
+  DeleteCallback delete_callback_;
+
   int32_t options_;
   int resource_type_;
   bool is_load_timing_enabled_;
   uint32_t process_id_;
   uint32_t render_frame_id_;
+  uint32_t request_id_;
   bool connected_;
   const bool keepalive_;
   std::unique_ptr<net::URLRequest> url_request_;
@@ -161,6 +164,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   // -1, we still need to check whether it is from network before reporting it
   // as BodyReadFromNetBeforePaused.
   int64_t body_read_before_paused_ = -1;
+
+  // This is used to compute the delta since last time received
+  // encoded body size was reported to the client.
+  int64_t reported_total_encoded_bytes_ = 0;
 
   scoped_refptr<ResourceSchedulerClient> resource_scheduler_client_;
 

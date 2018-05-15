@@ -19,7 +19,7 @@
 #include "core/fxcrt/observable.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxge/fx_freetype.h"
-#include "core/fxge/ifx_systemfontinfo.h"
+#include "core/fxge/systemfontinfo_iface.h"
 #include "xfa/fgas/font/cfgas_pdffontmgr.h"
 
 class CFGAS_GEFont;
@@ -71,9 +71,9 @@ class CFX_FontDescriptor {
   ~CFX_FontDescriptor();
 
   int32_t m_nFaceIndex;
+  uint32_t m_dwFontStyles;
   WideString m_wsFaceName;
   std::vector<WideString> m_wsFamilyNames;
-  uint32_t m_dwFontStyles;
   uint32_t m_dwUsb[4];
   uint32_t m_dwCsb[2];
 };
@@ -179,7 +179,7 @@ class CFGAS_FontMgr : public Observable<CFGAS_FontMgr> {
                      int32_t iFaceIndex);
   RetainPtr<IFX_SeekableReadStream> CreateFontStream(
       CFX_FontMapper* pFontMapper,
-      IFX_SystemFontInfo* pSystemFontInfo,
+      SystemFontInfoIface* pSystemFontInfo,
       uint32_t index);
   RetainPtr<IFX_SeekableReadStream> CreateFontStream(
       const ByteString& bsFaceName);

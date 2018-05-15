@@ -15,11 +15,9 @@
 
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "components/cast_channel/cast_channel_enum.h"
-#include "components/cast_channel/cast_channel_util.h"
 #include "components/cast_channel/cast_message_util.h"
 #include "components/cast_channel/cast_socket.h"
 #include "components/cast_channel/cast_socket_service.h"
@@ -111,11 +109,17 @@ bool IsValidConnectInfoPort(const ConnectInfo& connect_info) {
 }
 
 bool IsValidConnectInfoIpAddress(const ConnectInfo& connect_info) {
-  return cast_channel::IsValidCastIPAddressString(connect_info.ip_address);
+  // Note: this isn't technically correct since policy or feature might allow
+  // public IPs, but this code path is no longer used. see TODO below.
+  net::IPAddress ip_address;
+  return ip_address.AssignFromIPLiteral(connect_info.ip_address) &&
+         !ip_address.IsPubliclyRoutable();
 }
 
 }  // namespace
 
+// TODO(https://crbug.com/752604): Remove unused cast.channel API functions now
+// that in-browser Cast discovery has launched in M64.
 CastChannelAPI::CastChannelAPI(content::BrowserContext* context)
     : browser_context_(context),
       cast_socket_service_(cast_channel::CastSocketService::GetInstance()) {

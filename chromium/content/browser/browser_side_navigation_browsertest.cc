@@ -15,6 +15,7 @@
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/frame_messages.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
@@ -490,13 +491,13 @@ IN_PROC_BROWSER_TEST_F(BrowserSideNavigationBrowserDisableWebSecurityTest,
           false /* is_form_submission */, GURL() /* searchable_form_url */,
           std::string() /* searchable_form_encoding */,
           url::Origin::Create(data_url), GURL() /* client_side_redirect_url */,
-          nullptr /* devtools_initiator_info */);
+          base::nullopt /* devtools_initiator_info */);
 
   // Receiving the invalid IPC message should lead to renderer process
   // termination.
   RenderProcessHostKillWaiter process_kill_waiter(rfh->GetProcess());
   rfh->frame_host_binding_for_testing().impl()->BeginNavigation(
-      common_params, std::move(begin_params));
+      common_params, std::move(begin_params), nullptr);
   EXPECT_EQ(bad_message::RFH_BASE_URL_FOR_DATA_URL_SPECIFIED,
             process_kill_waiter.Wait());
 
@@ -595,13 +596,6 @@ IN_PROC_BROWSER_TEST_F(BrowserSideNavigationBaseBrowserTest,
 // properly.
 IN_PROC_BROWSER_TEST_F(BrowserSideNavigationBaseBrowserTest,
                        CancelRequestAfterReadyToCommit) {
-// TODO(https://crbug.com/820959). Test temporarily disabled on Windows with
-// NavigationMojoResponse.
-#if defined(OS_WIN)
-  if (IsNavigationMojoResponseEnabled())
-    return;
-#endif
-
   // This test cancels the request using the ResourceDispatchHost. With the
   // NetworkService, it is not used so the request is not canceled.
   // TODO(arthursonzogni): Find a way to cancel a request from the browser

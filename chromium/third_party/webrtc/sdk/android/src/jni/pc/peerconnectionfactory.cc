@@ -13,7 +13,6 @@
 #include <memory>
 #include <utility>
 
-#include "api/peerconnectioninterface.h"
 #include "api/video_codecs/video_decoder_factory.h"
 #include "api/video_codecs/video_encoder_factory.h"
 #include "media/base/mediaengine.h"
@@ -52,6 +51,8 @@ JavaToNativePeerConnectionFactoryOptions(JNIEnv* jni,
   bool disable_encryption = Java_Options_getDisableEncryption(jni, options);
   bool disable_network_monitor =
       Java_Options_getDisableNetworkMonitor(jni, options);
+  bool enable_aes128_sha1_32_crypto_cipher =
+      Java_Options_getEnableAes128Sha1_32CryptoCipher(jni, options);
 
   PeerConnectionFactoryInterface::Options native_options;
 
@@ -60,6 +61,9 @@ JavaToNativePeerConnectionFactoryOptions(JNIEnv* jni,
   native_options.network_ignore_mask = network_ignore_mask;
   native_options.disable_encryption = disable_encryption;
   native_options.disable_network_monitor = disable_network_monitor;
+
+  native_options.crypto_options.enable_aes128_sha1_32_crypto_cipher =
+      enable_aes128_sha1_32_crypto_cipher;
   return native_options;
 }
 }  // namespace
@@ -95,10 +99,28 @@ void PeerConnectionFactorySignalingThreadReady() {
   Java_PeerConnectionFactory_onSignalingThreadReady(env);
 }
 
+jobject NativeToJavaPeerConnectionFactory(
+    JNIEnv* jni,
+    rtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface> pcf,
+    std::unique_ptr<rtc::Thread> network_thread,
+    std::unique_ptr<rtc::Thread> worker_thread,
+    std::unique_ptr<rtc::Thread> signaling_thread,
+    rtc::NetworkMonitorFactory* network_monitor_factory) {
+  jni::OwnedFactoryAndThreads* owned_factory = new jni::OwnedFactoryAndThreads(
+      std::move(network_thread), std::move(worker_thread),
+      std::move(signaling_thread), nullptr /* legacy_encoder_factory */,
+      nullptr /* legacy_decoder_factory */, network_monitor_factory,
+      pcf.release());
+  owned_factory->InvokeJavaCallbacksOnFactoryThreads();
+
+  return Java_PeerConnectionFactory_Constructor(
+             jni, NativeToJavaPointer(owned_factory))
+      .Release();
+}
+
 static void JNI_PeerConnectionFactory_InitializeAndroidGlobals(
     JNIEnv* jni,
     const JavaParamRef<jclass>&,
-    const JavaParamRef<jobject>& context,
     jboolean video_hw_acceleration) {
   video_hw_acceleration_enabled = video_hw_acceleration;
   if (!factory_static_initialized) {
@@ -169,7 +191,9 @@ static void JNI_PeerConnectionFactory_ShutdownInternalTracer(
 
 jlong CreatePeerConnectionFactoryForJava(
     JNIEnv* jni,
+    const JavaParamRef<jobject>& jcontext,
     const JavaParamRef<jobject>& joptions,
+    rtc::scoped_refptr<AudioDeviceModule> audio_device_module,
     const JavaParamRef<jobject>& jencoder_factory,
     const JavaParamRef<jobject>& jdecoder_factory,
     rtc::scoped_refptr<AudioProcessing> audio_processor,
@@ -211,7 +235,6 @@ jlong CreatePeerConnectionFactoryForJava(
     rtc::NetworkMonitorFactory::SetFactory(network_monitor_factory);
   }
 
-  AudioDeviceModule* adm = nullptr;
   rtc::scoped_refptr<AudioMixer> audio_mixer = nullptr;
   std::unique_ptr<CallFactoryInterface> call_factory(CreateCallFactory());
   std::unique_ptr<RtcEventLogFactoryInterface> rtc_event_log_factory(
@@ -229,7 +252,7 @@ jlong CreatePeerConnectionFactoryForJava(
       legacy_video_decoder_factory = CreateLegacyVideoDecoderFactory();
     }
     media_engine.reset(CreateMediaEngine(
-        adm, audio_encoder_factory, audio_decoder_factory,
+        audio_device_module, audio_encoder_factory, audio_decoder_factory,
         legacy_video_encoder_factory, legacy_video_decoder_factory, audio_mixer,
         audio_processor));
 #endif
@@ -259,9 +282,8 @@ jlong CreatePeerConnectionFactoryForJava(
           CreateVideoDecoderFactory(jni, jdecoder_factory));
     }
 
-    rtc::scoped_refptr<AudioDeviceModule> adm_scoped = nullptr;
     media_engine.reset(CreateMediaEngine(
-        adm_scoped, audio_encoder_factory, audio_decoder_factory,
+        audio_device_module, audio_encoder_factory, audio_decoder_factory,
         std::move(video_encoder_factory), std::move(video_decoder_factory),
         audio_mixer, audio_processor));
   }
@@ -289,7 +311,9 @@ jlong CreatePeerConnectionFactoryForJava(
 static jlong JNI_PeerConnectionFactory_CreatePeerConnectionFactory(
     JNIEnv* jni,
     const JavaParamRef<jclass>&,
+    const JavaParamRef<jobject>& jcontext,
     const JavaParamRef<jobject>& joptions,
+    jlong native_audio_device_module,
     const JavaParamRef<jobject>& jencoder_factory,
     const JavaParamRef<jobject>& jdecoder_factory,
     jlong native_audio_processor,
@@ -300,7 +324,9 @@ static jlong JNI_PeerConnectionFactory_CreatePeerConnectionFactory(
       reinterpret_cast<FecControllerFactoryInterface*>(
           native_fec_controller_factory));
   return CreatePeerConnectionFactoryForJava(
-      jni, joptions, jencoder_factory, jdecoder_factory,
+      jni, jcontext, joptions,
+      reinterpret_cast<AudioDeviceModule*>(native_audio_device_module),
+      jencoder_factory, jdecoder_factory,
       audio_processor ? audio_processor : CreateAudioProcessing(),
       std::move(fec_controller_factory));
 }

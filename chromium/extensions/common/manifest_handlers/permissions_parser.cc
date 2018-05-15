@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "base/command_line.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
@@ -29,10 +28,10 @@
 
 namespace extensions {
 
-namespace {
-
 namespace keys = manifest_keys;
 namespace errors = manifest_errors;
+
+namespace {
 
 struct ManifestPermissions : public Extension::ManifestData {
   ManifestPermissions(std::unique_ptr<const PermissionSet> permissions);

@@ -10,7 +10,6 @@
 #include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
@@ -93,16 +92,16 @@ void ExtensionLoaderHandler::RegisterMessages() {
 
   web_ui()->RegisterMessageCallback(
       "extensionLoaderRetry",
-      base::Bind(&ExtensionLoaderHandler::HandleRetry,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::BindRepeating(&ExtensionLoaderHandler::HandleRetry,
+                          weak_ptr_factory_.GetWeakPtr()));
   web_ui()->RegisterMessageCallback(
       "extensionLoaderIgnoreFailure",
-      base::Bind(&ExtensionLoaderHandler::HandleIgnoreFailure,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::BindRepeating(&ExtensionLoaderHandler::HandleIgnoreFailure,
+                          weak_ptr_factory_.GetWeakPtr()));
   web_ui()->RegisterMessageCallback(
       "extensionLoaderDisplayFailures",
-      base::Bind(&ExtensionLoaderHandler::HandleDisplayFailures,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::BindRepeating(&ExtensionLoaderHandler::HandleDisplayFailures,
+                          weak_ptr_factory_.GetWeakPtr()));
 }
 
 // static

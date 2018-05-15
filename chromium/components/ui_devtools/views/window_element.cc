@@ -5,7 +5,7 @@
 #include "components/ui_devtools/views/window_element.h"
 
 #include "components/ui_devtools/Protocol.h"
-#include "components/ui_devtools/views/ui_element_delegate.h"
+#include "components/ui_devtools/ui_element_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/wm/core/window_util.h"
 
@@ -110,6 +110,22 @@ std::pair<gfx::NativeWindow, gfx::Rect> WindowElement::GetNodeWindowAndBounds()
 aura::Window* WindowElement::From(const UIElement* element) {
   DCHECK_EQ(UIElementType::WINDOW, element->type());
   return static_cast<const WindowElement*>(element)->window_;
+}
+
+template <>
+int UIElement::FindUIElementIdForBackendElement<aura::Window>(
+    aura::Window* element) const {
+  if (type_ == UIElementType::WINDOW &&
+      UIElement::GetBackingElement<aura::Window, WindowElement>(this) ==
+          element) {
+    return node_id_;
+  }
+  for (auto* child : children_) {
+    int ui_element_id = child->FindUIElementIdForBackendElement(element);
+    if (ui_element_id)
+      return ui_element_id;
+  }
+  return 0;
 }
 
 }  // namespace ui_devtools

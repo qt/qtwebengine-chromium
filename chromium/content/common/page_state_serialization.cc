@@ -16,10 +16,10 @@
 #include "content/common/unique_name_helper.h"
 #include "content/public/common/referrer_struct_traits.h"
 #include "ipc/ipc_message_utils.h"
-#include "mojo/common/time_struct_traits.h"
 #include "mojo/public/cpp/base/string16_mojom_traits.h"
+#include "mojo/public/cpp/base/time_mojom_traits.h"
 #include "services/network/public/cpp/resource_request_body.h"
-#include "third_party/WebKit/public/platform/WebHistoryScrollRestorationType.h"
+#include "third_party/blink/public/platform/web_history_scroll_restoration_type.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/geometry/mojo/geometry_struct_traits.h"
@@ -706,8 +706,11 @@ void WriteResourceRequestBody(const network::ResourceRequestBody& request_body,
       case network::DataElement::TYPE_BLOB:
         data_element->set_blob_uuid(element.blob_uuid());
         break;
-      case network::DataElement::TYPE_RAW_FILE:
       case network::DataElement::TYPE_DATA_PIPE:
+        NOTIMPLEMENTED();
+        break;
+      case network::DataElement::TYPE_RAW_FILE:
+      case network::DataElement::TYPE_CHUNKED_DATA_PIPE:
       case network::DataElement::TYPE_UNKNOWN:
         NOTREACHED();
         continue;

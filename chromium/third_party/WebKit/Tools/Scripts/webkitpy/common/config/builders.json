@@ -31,13 +31,13 @@
         "port_name": "mac-mac10.11",
         "specifiers": ["Mac10.11", "Debug"]
     },
-    "WebKit Mac10.11 (retina)": {
-        "port_name": "mac-retina",
-        "specifiers": ["Retina", "Release"]
-    },
     "WebKit Mac10.12": {
         "port_name": "mac-mac10.12",
         "specifiers": ["Mac10.12", "Release"]
+    },
+    "WebKit Mac10.12 (retina)": {
+        "port_name": "mac-retina",
+        "specifiers": ["Retina", "Release"]
     },
     "WebKit Android (Nexus4)": {
         "port_name": "android-kitkat",
@@ -62,19 +62,25 @@
         "specifiers": ["Mac10.11", "Release"],
         "is_try_builder": true
     },
-    "mac10.11_retina_blink_rel": {
-        "port_name": "mac-retina",
-        "specifiers": ["Retina", "Release"],
-        "is_try_builder": true
-    },
     "mac10.12_blink_rel": {
+        "port_name": "mac-mac10.12",
+        "specifiers": ["Mac10.12", "Release"]
+    },
+    "mac_chromium_rel_ng": {
+        "bucket": "luci.chromium.try",
         "port_name": "mac-mac10.12",
         "specifiers": ["Mac10.12", "Release"],
         "is_try_builder": true
     },
+    "mac10.12_retina_blink_rel": {
+        "port_name": "mac-retina",
+        "specifiers": ["Retina", "Release"],
+        "is_try_builder": true
+    },
     "mac10.13_blink_rel": {
         "port_name": "mac-mac10.13",
-        "specifiers": ["Mac10.13", "Release"]
+        "specifiers": ["Mac10.13", "Release"],
+        "is_try_builder": true
     },
     "win7_blink_rel": {
         "port_name": "win-win7",
@@ -87,6 +93,7 @@
         "is_try_builder": true
     },
     "android_blink_rel": {
+        "bucket": "master.tryserver.chromium.android",
         "port_name": "android-kitkat",
         "specifiers": ["KitKat", "Release"],
         "is_try_builder": true

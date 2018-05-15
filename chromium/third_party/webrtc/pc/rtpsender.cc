@@ -65,11 +65,11 @@ AudioRtpSender::AudioRtpSender(rtc::Thread* worker_thread,
 
 AudioRtpSender::AudioRtpSender(rtc::Thread* worker_thread,
                                rtc::scoped_refptr<AudioTrackInterface> track,
-                               const std::vector<std::string>& stream_labels,
+                               const std::vector<std::string>& stream_ids,
                                StatsCollector* stats)
     : worker_thread_(worker_thread),
       id_(track ? track->id() : rtc::CreateRandomUuid()),
-      stream_ids_(stream_labels),
+      stream_ids_(stream_ids),
       stats_(stats),
       track_(track),
       dtmf_sender_proxy_(DtmfSenderProxy::Create(
@@ -79,9 +79,6 @@ AudioRtpSender::AudioRtpSender(rtc::Thread* worker_thread,
       sink_adapter_(new LocalAudioSinkAdapter()),
       attachment_id_(track ? GenerateUniqueId() : 0) {
   RTC_DCHECK(worker_thread);
-  // TODO(bugs.webrtc.org/7932): Remove once zero or multiple streams are
-  // supported.
-  RTC_DCHECK_EQ(stream_labels.size(), 1u);
   if (track_) {
     track_->RegisterObserver(this);
     track_->AddSink(sink_adapter_.get());
@@ -307,20 +304,17 @@ VideoRtpSender::VideoRtpSender(rtc::Thread* worker_thread)
 
 VideoRtpSender::VideoRtpSender(rtc::Thread* worker_thread,
                                rtc::scoped_refptr<VideoTrackInterface> track,
-                               const std::vector<std::string>& stream_labels)
+                               const std::vector<std::string>& stream_ids)
     : worker_thread_(worker_thread),
       id_(track ? track->id() : rtc::CreateRandomUuid()),
-      stream_ids_(stream_labels),
+      stream_ids_(stream_ids),
       track_(track),
       cached_track_enabled_(track ? track->enabled() : false),
-      cached_track_content_hint_(
-          track ? track->content_hint()
-                : VideoTrackInterface::ContentHint::kNone),
+      cached_track_content_hint_(track
+                                     ? track->content_hint()
+                                     : VideoTrackInterface::ContentHint::kNone),
       attachment_id_(track ? GenerateUniqueId() : 0) {
   RTC_DCHECK(worker_thread);
-  // TODO(bugs.webrtc.org/7932): Remove once zero or multiple streams are
-  // supported.
-  RTC_DCHECK_EQ(stream_labels.size(), 1u);
   if (track_) {
     track_->RegisterObserver(this);
   }

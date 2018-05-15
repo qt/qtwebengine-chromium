@@ -123,7 +123,10 @@ def _LaunchUrl(devices, package_name, argv=None, command_line_flags_file=None,
         flags = []
         if argv:
           flags = shlex.split(argv)
-        changer.ReplaceFlags(flags)
+        try:
+          changer.ReplaceFlags(flags)
+        except device_errors.AdbShellCommandFailedError:
+          logging.exception('Failed to set flags')
 
     if url is None:
       # Simulate app icon click if no url is present.
@@ -164,13 +167,11 @@ def _RunGdb(device, package_name, debug_process_name, pid, output_directory,
             target_cpu, extra_args, verbose):
   if not pid:
     debug_process_name = _NormalizeProcessName(debug_process_name, package_name)
-    pids_by_process_name = _GetPackagePids(device, package_name)
-    pid = pids_by_process_name.get(debug_process_name, [0])[0]
+    pid = device.GetApplicationPids(debug_process_name, at_most_one=True)
   if not pid:
     logging.warning('App not running. Sending launch intent.')
     _LaunchUrl([device], package_name)
-    pids_by_process_name = _GetPackagePids(device, package_name)
-    pid = pids_by_process_name.get(debug_process_name, [0])[0]
+    pid = device.GetApplicationPids(debug_process_name, at_most_one=True)
     if not pid:
       raise Exception('Unable to find process "%s"' % debug_process_name)
 
@@ -212,11 +213,9 @@ def _PrintPerDeviceOutput(devices, results, single_line=False):
 def _RunMemUsage(devices, package_name):
   def mem_usage_helper(d):
     ret = []
-    proc_map = _GetPackagePids(d, package_name)
-    for name in sorted(proc_map.iterkeys()):
-      for pid in proc_map[name]:
-        ret.append(
-            (name, '\n'.join(d.RunShellCommand(['dumpsys', 'meminfo', pid]))))
+    for process in sorted(_GetPackageProcesses(d, package_name)):
+      meminfo = d.RunShellCommand(['dumpsys', 'meminfo', str(process.pid)])
+      ret.append((process.name, '\n'.join(meminfo)))
     return ret
 
   parallel_devices = device_utils.DeviceUtils.parallel(devices)
@@ -254,7 +253,8 @@ def _DuHelper(device, path_spec, run_as=None):
   # du: .*: No such file or directory
 
   # The -d flag works differently across android version, so use -s instead.
-  cmd_str = 'du -s -k ' + path_spec
+  # Without the explicit 2>&1, stderr and stdout get combined at random :(.
+  cmd_str = 'du -s -k ' + path_spec + ' 2>&1'
   lines = device.RunShellCommand(cmd_str, run_as=run_as, shell=True,
                                  check_return=False)
   output = '\n'.join(lines)
@@ -273,7 +273,9 @@ def _DuHelper(device, path_spec, run_as=None):
       ret[subpath] = int(size)
     return ret
   except ValueError:
+    logging.error('du command was: %s', cmd_str)
     logging.error('Failed to parse du output:\n%s', output)
+    raise
 
 
 def _RunDiskUsage(devices, package_name, verbose):
@@ -439,11 +441,16 @@ class _LogcatProcessor(object):
     self._UpdateMyPids()
 
   def _UpdateMyPids(self):
-    package_pids = _GetPackagePids(self._device, self._package_name)
-    for name, pids in package_pids.iteritems():
-      if ':' not in name:
-        self._primary_pid = int(pids[0])
-      self._my_pids.update(int(p) for p in pids)
+    # We intentionally do not clear self._my_pids to make sure that the
+    # ProcessLine method below also includes lines from processes which may
+    # have already exited.
+    self._primary_pid = None
+    for process in _GetPackageProcesses(self._device, self._package_name):
+      # We take only the first "main" process found in order to account for
+      # possibly forked() processes.
+      if ':' not in process.name and self._primary_pid is None:
+        self._primary_pid = process.pid
+      self._my_pids.add(process.pid)
 
   def _GetPidStyle(self, pid, dim=False):
     if pid == self._primary_pid:
@@ -570,19 +577,23 @@ def _RunLogcat(device, package_name, mapping_path, verbose):
       deobfuscate.Close()
 
 
-def _GetPackagePids(device, package_name):
-  return dict((k, v) for k, v in device.GetPids(package_name).iteritems()
-              if k == package_name or k.startswith(package_name + ':'))
+def _GetPackageProcesses(device, package_name):
+  return [
+      p for p in device.ListProcesses(package_name)
+      if p.name == package_name or p.name.startswith(package_name + ':')]
 
 
 def _RunPs(devices, package_name):
   parallel_devices = device_utils.DeviceUtils.parallel(devices)
-  all_pids = parallel_devices.pMap(
-      lambda d: _GetPackagePids(d, package_name)).pGet(None)
-  for proc_map in _PrintPerDeviceOutput(devices, all_pids):
-    if not proc_map:
+  all_processes = parallel_devices.pMap(
+      lambda d: _GetPackageProcesses(d, package_name)).pGet(None)
+  for processes in _PrintPerDeviceOutput(devices, all_processes):
+    if not processes:
       print 'No processes found.'
     else:
+      proc_map = collections.defaultdict(list)
+      for p in processes:
+        proc_map[p.name].append(str(p.pid))
       for name, pids in sorted(proc_map.items()):
         print name, ','.join(pids)
 

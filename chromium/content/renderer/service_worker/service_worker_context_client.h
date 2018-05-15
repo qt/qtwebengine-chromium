@@ -27,15 +27,15 @@
 #include "content/common/service_worker/service_worker_types.h"
 #include "ipc/ipc_listener.h"
 #include "mojo/public/cpp/bindings/binding.h"
-#include "third_party/WebKit/public/mojom/blob/blob_registry.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_client.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_event_status.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
-#include "third_party/WebKit/public/platform/modules/payments/payment_app.mojom.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerError.h"
-#include "third_party/WebKit/public/web/modules/serviceworker/WebServiceWorkerContextClient.h"
-#include "third_party/WebKit/public/web/modules/serviceworker/WebServiceWorkerContextProxy.h"
+#include "third_party/blink/public/mojom/blob/blob_registry.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_client.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/platform/modules/payments/payment_app.mojom.h"
+#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_error.h"
+#include "third_party/blink/public/web/modules/serviceworker/web_service_worker_context_client.h"
+#include "third_party/blink/public/web/modules/serviceworker/web_service_worker_context_proxy.h"
 #include "v8/include/v8.h"
 
 namespace base {
@@ -64,7 +64,6 @@ class EmbeddedWorkerInstanceClientImpl;
 class ServiceWorkerNetworkProvider;
 class ServiceWorkerProviderContext;
 class ServiceWorkerTimeoutTimer;
-class ThreadSafeSender;
 class WebWorkerFetchContext;
 
 // ServiceWorkerContextClient is a "client" of a service worker execution
@@ -98,7 +97,7 @@ class CONTENT_EXPORT ServiceWorkerContextClient
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       std::unique_ptr<EmbeddedWorkerInstanceClientImpl> embedded_worker_client,
-      scoped_refptr<ThreadSafeSender> sender,
+      scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> io_thread_task_runner);
   ~ServiceWorkerContextClient() override;
 
@@ -133,11 +132,11 @@ class CONTENT_EXPORT ServiceWorkerContextClient
   void WorkerScriptLoaded() override;
   void WorkerContextStarted(
       blink::WebServiceWorkerContextProxy* proxy) override;
-  void DidEvaluateWorkerScript(bool success) override;
+  void DidEvaluateClassicScript(bool success) override;
   void DidInitializeWorkerContext(v8::Local<v8::Context> context) override;
   void WillDestroyWorkerContext(v8::Local<v8::Context> context) override;
   void WorkerContextDestroyed() override;
-  void CountFeature(uint32_t feature) override;
+  void CountFeature(blink::mojom::WebFeature feature) override;
   void ReportException(const blink::WebString& error_message,
                        int line_number,
                        int column_number,
@@ -394,7 +393,6 @@ class CONTENT_EXPORT ServiceWorkerContextClient
   const GURL service_worker_scope_;
   const GURL script_url_;
 
-  scoped_refptr<ThreadSafeSender> sender_;
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> io_thread_task_runner_;
   scoped_refptr<base::TaskRunner> worker_task_runner_;

@@ -63,6 +63,79 @@ _kind_to_codec_type = {
   mojom.NULLABLE_STRING:       "codec.NullableString",
 }
 
+_kind_to_closure_type = {
+  mojom.BOOL:                  "boolean",
+  mojom.INT8:                  "number",
+  mojom.UINT8:                 "number",
+  mojom.INT16:                 "number",
+  mojom.UINT16:                "number",
+  mojom.INT32:                 "number",
+  mojom.UINT32:                "number",
+  mojom.FLOAT:                 "number",
+  mojom.INT64:                 "number",
+  mojom.UINT64:                "number",
+  mojom.DOUBLE:                "number",
+  mojom.STRING:                "string",
+  mojom.NULLABLE_STRING:       "string",
+  mojom.HANDLE:                "mojo.MojoHandle",
+  mojom.DCPIPE:                "mojo.MojoHandle",
+  mojom.DPPIPE:                "mojo.MojoHandle",
+  mojom.MSGPIPE:               "mojo.MojoHandle",
+  mojom.SHAREDBUFFER:          "mojo.MojoHandle",
+  mojom.NULLABLE_HANDLE:       "mojo.MojoHandle",
+  mojom.NULLABLE_DCPIPE:       "mojo.MojoHandle",
+  mojom.NULLABLE_DPPIPE:       "mojo.MojoHandle",
+  mojom.NULLABLE_MSGPIPE:      "mojo.MojoHandle",
+  mojom.NULLABLE_SHAREDBUFFER: "mojo.MojoHandle",
+}
+
+_js_reserved_keywords = [
+    'arguments',
+    'await',
+    'break'
+    'case',
+    'catch',
+    'class',
+    'const',
+    'continue',
+    'debugger',
+    'default',
+    'delete',
+    'do',
+    'else',
+    'enum',
+    'export',
+    'extends',
+    'finally',
+    'for',
+    'function',
+    'if',
+    'implements',
+    'import',
+    'in',
+    'instanceof',
+    'interface',
+    'let',
+    'new',
+    'package',
+    'private',
+    'protected',
+    'public',
+    'return',
+    'static',
+    'super',
+    'switch',
+    'this',
+    'throw',
+    'try',
+    'typeof',
+    'var',
+    'void',
+    'while',
+    'with',
+    'yield',
+]
+
 
 def JavaScriptPayloadSize(packed):
   packed_fields = packed.packed_fields
@@ -142,6 +215,7 @@ class Generator(generator.Generator):
 
   def GetFilters(self):
     js_filters = {
+      "closure_type": self._ClosureType,
       "decode_snippet": self._JavaScriptDecodeSnippet,
       "default_value": self._JavaScriptDefaultValue,
       "encode_snippet": self._JavaScriptEncodeSnippet,
@@ -166,6 +240,8 @@ class Generator(generator.Generator):
       "is_union_kind": mojom.IsUnionKind,
       "js_type": self._JavaScriptType,
       "method_passes_associated_kinds": mojom.MethodPassesAssociatedKinds,
+      "namespace_declarations": self._NamespaceDeclarations,
+      "closure_type_with_nullability": self._ClosureTypeWithNullability,
       "payload_size": JavaScriptPayloadSize,
       "to_camel": generator.ToCamel,
       "union_decode_snippet": self._JavaScriptUnionDecodeSnippet,
@@ -176,11 +252,16 @@ class Generator(generator.Generator):
       "validate_nullable_params": self._JavaScriptNullableParam,
       "validate_struct_params": self._JavaScriptValidateStructParams,
       "validate_union_params": self._JavaScriptValidateUnionParams,
+      "sanitize_identifier": self._JavaScriptSanitizeIdentifier,
     }
     return js_filters
 
   @UseJinja("module.amd.tmpl")
   def _GenerateAMDModule(self):
+    return self._GetParameters()
+
+  @UseJinja("externs/module.externs.tmpl")
+  def _GenerateExterns(self):
     return self._GetParameters()
 
   def GenerateFiles(self, args):
@@ -195,6 +276,7 @@ class Generator(generator.Generator):
     self._SetUniqueNameForImports()
 
     self.Write(self._GenerateAMDModule(), "%s.js" % self.module.path)
+    self.Write(self._GenerateExterns(), "%s.externs.js" % self.module.path)
 
   def _SetUniqueNameForImports(self):
     used_names = set()
@@ -212,6 +294,44 @@ class Generator(generator.Generator):
       used_names.add(unique_name)
       each_import.unique_name = unique_name + "$"
       counter += 1
+
+  def _ClosureType(self, kind):
+    if kind in mojom.PRIMITIVES:
+      return _kind_to_closure_type[kind]
+    if (mojom.IsStructKind(kind) or mojom.IsInterfaceKind(kind) or
+        mojom.IsEnumKind(kind)):
+      return kind.module.namespace + "." + kind.name
+    # TODO(calamity): Support unions properly.
+    if mojom.IsUnionKind(kind):
+      return "Object"
+    if mojom.IsArrayKind(kind):
+      return "Array<%s>" % self._ClosureType(kind.kind)
+    if mojom.IsMapKind(kind):
+      return "Map<%s, %s>" % (
+          self._ClosureType(kind.key_kind), self._ClosureType(kind.value_kind))
+    if mojom.IsInterfaceRequestKind(kind):
+      return "mojo.InterfaceRequest"
+    # TODO(calamity): Support associated interfaces properly.
+    if mojom.IsAssociatedInterfaceKind(kind):
+      return "mojo.AssociatedInterfacePtrInfo"
+    # TODO(calamity): Support associated interface requests properly.
+    if mojom.IsAssociatedInterfaceRequestKind(kind):
+      return "mojo.AssociatedInterfaceRequest"
+    # TODO(calamity): Support enums properly.
+
+    raise Exception("No valid closure type: %s" % kind)
+
+  def _ClosureTypeWithNullability(self, kind):
+    return ("" if mojom.IsNullableKind(kind) else "!") + self._ClosureType(kind)
+
+  def _NamespaceDeclarations(self, namespace):
+    pieces = namespace.split('.')
+    declarations = []
+    declaration = []
+    for p in pieces:
+      declaration.append(p)
+      declarations.append('.'.join(declaration))
+    return declarations
 
   def _JavaScriptType(self, kind):
     name = []
@@ -377,6 +497,12 @@ class Generator(generator.Generator):
     values_nullable = "true" if mojom.IsNullableKind(values_kind) else "false"
     return "%s, %s, %s, %s" % \
         (nullable, keys_type, values_type, values_nullable)
+
+  def _JavaScriptSanitizeIdentifier(self, identifier):
+    if identifier in _js_reserved_keywords:
+      return identifier + '_'
+
+    return identifier
 
   def _TranslateConstants(self, token):
     if isinstance(token, (mojom.EnumValue, mojom.NamedValue)):

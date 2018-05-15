@@ -10,8 +10,8 @@
 
 #include "build/build_config.h"
 #include "chrome/common/buildflags.h"
-#include "ppapi/features/features.h"
-#include "printing/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
+#include "printing/buildflags/buildflags.h"
 #include "ui/base/ui_features.h"
 
 // Don't add more switch files here. This is linked into some places like the
@@ -80,7 +80,6 @@ extern const char kDisableExtensionsFileAccessCheck[];
 extern const char kDisableExtensionsHttpThrottling[];
 extern const char kDisableOfflineAutoReload[];
 extern const char kDisableOfflineAutoReloadVisibleOnly[];
-extern const char kDisablePermissionActionReporting[];
 extern const char kDisablePopupBlocking[];
 extern const char kDisablePrintPreview[];
 extern const char kDisablePromptOnRepost[];
@@ -98,7 +97,6 @@ extern const char kEnableCloudPrintProxy[];
 extern const char kEnableDeviceDiscoveryNotifications[];
 extern const char kEnableDevToolsExperiments[];
 extern const char kEnableDomainReliability[];
-extern const char kEnableExperimentalFullscreenExitUI[];
 extern const char kEnableExtensionActivityLogging[];
 extern const char kEnableExtensionActivityLogTesting[];
 extern const char kEnableFastUnload[];
@@ -107,25 +105,23 @@ extern const char kEnableNavigationTracing[];
 extern const char kEnableNetBenchmarking[];
 extern const char kEnableOfflineAutoReload[];
 extern const char kEnableOfflineAutoReloadVisibleOnly[];
-extern const char kEnablePermissionActionReporting[];
 extern const char kEnablePotentiallyAnnoyingSecurityFeatures[];
 extern const char kEnablePowerOverlay[];
 extern const char kEnablePrintPreviewRegisterPromos[];
 extern const char kEnablePushApiBackgroundMode[];
 extern const char kEnableSiteSettings[];
 extern const char kEnableTabAudioMuting[];
+extern const char kEnableUiDevTools[];
 extern const char kExtensionContentVerification[];
 extern const char kExtensionContentVerificationBootstrap[];
 extern const char kExtensionContentVerificationEnforce[];
 extern const char kExtensionContentVerificationEnforceStrict[];
 extern const char kExtensionsInstallVerification[];
 extern const char kExtensionsNotWebstore[];
-extern const char kExtensionsUpdateFrequency[];
 extern const char kFastStart[];
 extern const char kForceAndroidAppMode[];
 extern const char kForceAppMode[];
 extern const char kForceDesktopIOSPromotion[];
-extern const char kForceEffectiveConnectionType[];
 extern const char kForceEnableMetricsReporting[];
 extern const char kForceFirstRun[];
 extern const char kForceFirstRunDialog[];
@@ -143,22 +139,6 @@ extern const char kKioskModePrinting[];
 extern const char kLoadMediaRouterComponentExtension[];
 extern const char kMakeDefaultBrowser[];
 extern const char kMediaCacheSize[];
-extern const char kMemlog[];
-extern const char kMemlogKeepSmallAllocations[];
-extern const char kMemlogModeAll[];
-extern const char kMemlogModeAllRenderers[];
-extern const char kMemlogModeBrowser[];
-extern const char kMemlogModeGpu[];
-extern const char kMemlogModeManual[];
-extern const char kMemlogModeMinimal[];
-extern const char kMemlogModeRendererSampling[];
-extern const char kMemlogSampling[];
-extern const char kMemlogSamplingRate[];
-extern const char kMemlogStackMode[];
-extern const char kMemlogStackModeMixed[];
-extern const char kMemlogStackModeNative[];
-extern const char kMemlogStackModeNativeWithThreadNames[];
-extern const char kMemlogStackModePseudo[];
 extern const char kMonitoringDestinationID[];
 extern const char kNetLogCaptureMode[];
 extern const char kNoDefaultBrowserCheck[];
@@ -217,6 +197,9 @@ extern const char kUserAgent[];
 extern const char kUserDataDir[];
 extern const char kValidateCrx[];
 extern const char kVersion[];
+extern const char kWebRtcRemoteEventLog[];
+extern const char kWebRtcRemoteEventLogProactivePruningDelta[];
+extern const char kWebRtcRemoteEventLogUploadNoSuppression[];
 extern const char kWindowPosition[];
 extern const char kWindowSize[];
 extern const char kWindowWorkspace[];
@@ -243,6 +226,7 @@ extern const char kForceShowUpdateMenuItem[];
 extern const char kForceShowUpdateMenuItemCustomSummary[];
 extern const char kMarketUrlForTesting[];
 extern const char kProgressBarAnimation[];
+extern const char kTrustedCDNBaseURLForTests[];
 extern const char kWebApkServerUrl[];
 #endif  // defined(OS_ANDROID)
 
@@ -288,13 +272,13 @@ extern const char kEnableCloudPrintXps[];
 extern const char kEnableProfileShortcutManager[];
 extern const char kHideIcons[];
 extern const char kNoNetworkProfileWarning[];
+extern const char kNotificationInlineReply[];
 extern const char kNotificationLaunchId[];
 extern const char kPrefetchArgumentBrowserBackground[];
 extern const char kPrefetchArgumentWatcher[];
 extern const char kShowIcons[];
 extern const char kUninstall[];
 extern const char kWatcherProcess[];
-extern const char kWindows10CustomTitlebar[];
 #endif  // defined(OS_WIN)
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW) && !defined(OFFICIAL_BUILD)
@@ -305,10 +289,6 @@ extern const char kDebugPrint[];
 extern const char kAllowNaClCrxFsAPI[];
 extern const char kAllowNaClFileHandleAPI[];
 extern const char kAllowNaClSocketAPI[];
-#endif
-
-#if BUILDFLAG(ENABLE_WAYLAND_SERVER)
-extern const char kEnableWaylandServer[];
 #endif
 
 #if defined(OS_WIN) || defined(OS_LINUX)

@@ -10,7 +10,7 @@
 #include "base/macros.h"
 #include "cc/input/scrollbar.h"
 #include "cc/paint/paint_canvas.h"
-#include "third_party/WebKit/public/platform/WebScrollbarThemePainter.h"
+#include "third_party/blink/public/platform/web_scrollbar_theme_painter.h"
 
 namespace blink {
 class WebScrollbar;
@@ -37,6 +37,7 @@ class ScrollbarImpl : public cc::Scrollbar {
   gfx::Rect TrackRect() const override;
   float ThumbOpacity() const override;
   bool NeedsPaintPart(cc::ScrollbarPart part) const override;
+  bool HasTickmarks() const override;
   void PaintPart(cc::PaintCanvas* canvas,
                  cc::ScrollbarPart part,
                  const gfx::Rect& content_rect) override;

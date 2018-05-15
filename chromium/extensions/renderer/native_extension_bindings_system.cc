@@ -6,7 +6,6 @@
 
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/timer/elapsed_timer.h"
 #include "content/public/common/console_message_level.h"
@@ -39,8 +38,8 @@
 #include "gin/converter.h"
 #include "gin/handle.h"
 #include "gin/per_context_data.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_local_frame.h"
 
 namespace extensions {
 
@@ -405,8 +404,10 @@ void NativeExtensionBindingsSystem::WillReleaseScriptContext(
     ScriptContext* context) {
   v8::HandleScope handle_scope(context->isolate());
   v8::Local<v8::Context> v8_context = context->v8_context();
-  JSRunner::ClearInstanceForContext(v8_context);
   api_system_.WillReleaseContext(v8_context);
+  // Clear the JSRunner only after everything else has been notified that the
+  // context is being released.
+  JSRunner::ClearInstanceForContext(v8_context);
 }
 
 void NativeExtensionBindingsSystem::UpdateBindingsForContext(
@@ -572,6 +573,12 @@ void NativeExtensionBindingsSystem::BindingAccessor(
   v8::Isolate* isolate = info.GetIsolate();
   v8::HandleScope handle_scope(isolate);
   v8::Local<v8::Context> context = info.Holder()->CreationContext();
+
+  // Force binding creation in the owning context (even if another context is
+  // calling in). This is also important to ensure that objects created through
+  // the initialization process are all instantiated for the owning context.
+  // See https://crbug.com/819968.
+  v8::Context::Scope context_scope(context);
 
   // We use info.Data() to store a real name here instead of using the provided
   // one to handle any weirdness from the caller (non-existent strings, etc).

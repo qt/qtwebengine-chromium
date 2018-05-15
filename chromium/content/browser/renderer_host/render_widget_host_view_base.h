@@ -9,7 +9,6 @@
 #include <stdint.h>
 
 #include <memory>
-#include <string>
 #include <vector>
 
 #include "base/callback_forward.h"
@@ -19,18 +18,20 @@
 #include "base/strings/string16.h"
 #include "build/build_config.h"
 #include "components/viz/common/quads/compositor_frame.h"
+#include "components/viz/common/surfaces/scoped_surface_id_allocator.h"
 #include "components/viz/common/surfaces/surface_id.h"
 #include "content/browser/renderer_host/event_with_latency_info.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/render_frame_metadata_provider.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/common/input_event_ack_state.h"
 #include "content/public/common/screen_info.h"
 #include "ipc/ipc_listener.h"
 #include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
 #include "services/viz/public/interfaces/hit_test/hit_test_region_list.mojom.h"
-#include "third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationType.h"
-#include "third_party/WebKit/public/web/WebPopupType.h"
-#include "third_party/WebKit/public/web/WebTextDirection.h"
+#include "third_party/blink/public/platform/modules/screen_orientation/web_screen_orientation_type.h"
+#include "third_party/blink/public/web/web_popup_type.h"
+#include "third_party/blink/public/web/web_text_direction.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
 #include "ui/accessibility/ax_tree_id_registry.h"
 #include "ui/base/ime/text_input_mode.h"
@@ -87,8 +88,10 @@ class WebCursor;
 struct TextInputState;
 
 // Basic implementation shared by concrete RenderWidgetHostView subclasses.
-class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
-                                                public IPC::Listener {
+class CONTENT_EXPORT RenderWidgetHostViewBase
+    : public RenderWidgetHostView,
+      public IPC::Listener,
+      public RenderFrameMetadataProvider::Observer {
  public:
   using CreateCompositorFrameSinkCallback =
       base::OnceCallback<void(const viz::FrameSinkId&)>;
@@ -111,6 +114,9 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   void SetIsInVR(bool is_in_vr) override;
   base::string16 GetSelectedText() override;
   bool IsMouseLocked() override;
+  bool LockKeyboard(base::Optional<base::flat_set<int>> keys) override;
+  void UnlockKeyboard() override;
+  bool IsKeyboardLocked() override;
   gfx::Size GetVisibleViewportSize() const override;
   void SetInsets(const gfx::Insets& insets) override;
   bool IsSurfaceAvailableForCopy() const override;
@@ -118,9 +124,13 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
       const gfx::Rect& src_rect,
       const gfx::Size& output_size,
       base::OnceCallback<void(const SkBitmap&)> callback) override;
-  void FocusedNodeTouched(const gfx::Point& location_dips_screen,
-                          bool editable) override;
+  viz::mojom::FrameSinkVideoCapturerPtr CreateVideoCapturer() override;
+  void FocusedNodeTouched(bool editable) override;
   void GetScreenInfo(ScreenInfo* screen_info) const override;
+  void EnableAutoResize(const gfx::Size& min_size,
+                        const gfx::Size& max_size) override;
+  void DisableAutoResize(const gfx::Size& new_size) override;
+  bool IsScrollOffsetAtTop() const override;
   float GetDeviceScaleFactor() const final;
   TouchSelectionControllerClientManager*
   GetTouchSelectionControllerClientManager() override;
@@ -134,6 +144,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
 
   // IPC::Listener implementation:
   bool OnMessageReceived(const IPC::Message& msg) override;
+
+  // RenderFrameMetadataProvider::Observer
+  void OnRenderFrameMetadataChanged() override;
+  void OnRenderFrameSubmission() override;
 
   void SetPopupType(blink::WebPopupType popup_type);
 
@@ -162,8 +176,11 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
 
   // Informs the view that the renderer has resized to |new_size| because auto-
   // resize is enabled.
-  virtual void ResizeDueToAutoResize(const gfx::Size& new_size,
-                                     uint64_t sequence_number);
+  virtual viz::ScopedSurfaceIdAllocator ResizeDueToAutoResize(
+      const gfx::Size& new_size,
+      uint64_t sequence_number);
+
+  virtual bool IsLocalSurfaceIdAllocationSuppressed() const;
 
   base::WeakPtr<RenderWidgetHostViewBase> GetWeakPtr();
 
@@ -237,13 +254,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // Informs that the focused DOM node has changed.
   virtual void FocusedNodeChanged(bool is_editable_node,
                                   const gfx::Rect& node_bounds_in_screen) {}
-
-  // This method is called by RenderWidgetHostImpl when the renderer has
-  // requested a CompositorFrameSink. The callback takes a FrameSinkId and
-  // fullfills the request. The default implementation will immediately run the
-  // callback with GetFrameSinkId().
-  virtual void CreateCompositorFrameSink(
-      CreateCompositorFrameSinkCallback callback);
 
   // This method is called by RenderWidgetHostImpl when a new
   // RendererCompositorFrameSink is created in the renderer. The view is
@@ -432,11 +442,14 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
                                  int error_code) = 0;
 
   // Tells the View to destroy itself.
-  virtual void Destroy() = 0;
+  virtual void Destroy();
 
   // Tells the View that the tooltip text for the current mouse position over
   // the page has changed.
   virtual void SetTooltipText(const base::string16& tooltip_text) = 0;
+
+  // Displays the requested tooltip on the screen.
+  virtual void DisplayTooltipText(const base::string16& tooltip_text) {}
 
   // Returns the offset of the view from the origin of the browser compositor's
   // surface. This is in DIP.
@@ -460,7 +473,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual void SetShowingContextMenu(bool showing) {}
 
   // Returns the associated RenderWidgetHostImpl.
-  virtual RenderWidgetHostImpl* GetRenderWidgetHostImpl() const;
+  RenderWidgetHostImpl* host() const { return host_; }
 
   // Process swap messages sent before |frame_token| in RenderWidgetHostImpl.
   void OnFrameTokenChangedForView(uint32_t frame_token);
@@ -493,6 +506,14 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
     web_contents_accessibility_ = wcax;
   }
 
+  void set_is_currently_scrolling_viewport(
+      bool is_currently_scrolling_viewport) {
+    is_currently_scrolling_viewport_ = is_currently_scrolling_viewport;
+  }
+
+  bool is_currently_scrolling_viewport() {
+    return is_currently_scrolling_viewport_;
+  }
 #if defined(USE_AURA)
   void EmbedChildFrameRendererWindowTreeClient(
       RenderWidgetHostViewBase* root_view,
@@ -507,14 +528,13 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual bool ShouldContinueToPauseForFrame();
 #endif
 
-  virtual void DidNavigate() {}
+  virtual void DidNavigate();
 
   // Called when the RenderWidgetHostImpl has be initialized.
   virtual void OnRenderWidgetInit() {}
 
  protected:
-  // Interface class only, do not construct.
-  RenderWidgetHostViewBase();
+  explicit RenderWidgetHostViewBase(RenderWidgetHost* host);
 
   void NotifyObserversAboutShutdown();
 
@@ -526,6 +546,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   ui::mojom::WindowTreeClientPtr GetWindowTreeClientFromRenderer();
 #endif
 
+  // The model object. Members will become private when
+  // RenderWidgetHostViewGuest is removed.
+  RenderWidgetHostImpl* host_;
+
   // Is this a fullscreen view?
   bool is_fullscreen_;
 
@@ -533,12 +557,19 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // autofill...).
   blink::WebPopupType popup_type_;
 
+  // Indicates whether keyboard lock is active for this view.
+  bool keyboard_locked_ = false;
+
   // While the mouse is locked, the cursor is hidden from the user. Mouse events
   // are still generated. However, the position they report is the last known
   // mouse position just as mouse lock was entered; the movement they report
   // indicates what the change in position of the mouse would be had it not been
   // locked.
-  bool mouse_locked_;
+  bool mouse_locked_ = false;
+
+  // Indicates whether the scroll offset of the root layer is at top, i.e.,
+  // whether scroll_offset.y() == 0.
+  bool is_scroll_offset_at_top_ = true;
 
   // The scale factor of the display the renderer is currently on.
   float current_device_scale_factor_;
@@ -559,6 +590,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
 
   WebContentsAccessibility* web_contents_accessibility_;
 
+  bool is_currently_scrolling_viewport_;
+
  private:
 #if defined(USE_AURA)
   void OnDidScheduleEmbed(int routing_id,
@@ -571,6 +604,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // RenderWidgetHostImpl in order to allow the view to allocate a new
   // LocalSurfaceId.
   virtual void OnSynchronizedDisplayPropertiesChanged() {}
+
+  void OnResizeDueToAutoResizeComplete(uint64_t sequence_number);
 
   gfx::Rect current_display_area_;
 

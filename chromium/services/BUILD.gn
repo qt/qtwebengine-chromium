@@ -6,6 +6,7 @@ import("//build/config/ui.gni")
 import("//services/catalog/public/tools/catalog.gni")
 import("//services/service_manager/public/tools/test/service_test.gni")
 import("//testing/test.gni")
+import("//tools/v8_context_snapshot/v8_context_snapshot.gni")
 
 # One Big Target for services to register their unit test sources. This exists
 # to avoid having to maintain a separate test binary for every service.
@@ -24,10 +25,6 @@ service_test("services_unittests") {
     "//services/network/public/cpp:tests",
   ]
 
-  data_deps = [
-    "//testing/buildbot/filters:services_unittests_filters",
-  ]
-
   if (!is_ios) {
     deps += [
       "//services/audio:tests",
@@ -37,6 +34,7 @@ service_test("services_unittests") {
       "//services/proxy_resolver:tests",
       "//services/resource_coordinator:tests",
       "//services/shape_detection:tests",
+      "//services/tracing:tests",
       "//services/viz",
       "//services/viz/privileged/interfaces:unit_tests",
       "//services/viz/public/cpp/compositing:tests",
@@ -68,10 +66,14 @@ service_test("services_unittests") {
 
       # Some tests make network requests.
       "//net/android:net_java",
-
-      # Some tests need to initialize V8.
-      "//v8:v8_external_startup_data_assets",
     ]
+
+    # Some tests need to initialize V8.
+    if (use_v8_context_snapshot) {
+      deps += [ "//tools/v8_context_snapshot:v8_context_snapshot_assets" ]
+    } else {
+      deps += [ "//v8:v8_external_startup_data_assets" ]
+    }
   }
 
   if (!is_android && !is_ios) {
@@ -106,6 +108,7 @@ catalog("services_unittests_catalog") {
       "//services/device:tests_catalog",
       "//services/preferences:tests_catalog",
       "//services/resource_coordinator:tests_catalog",
+      "//services/tracing:tests_catalog",
       "//services/video_capture:tests_catalog",
       "//services/viz:tests_catalog",
     ]

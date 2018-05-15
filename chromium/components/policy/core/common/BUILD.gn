@@ -46,6 +46,8 @@ source_set("internal") {
     "cloud/cloud_policy_service.h",
     "cloud/cloud_policy_store.cc",
     "cloud/cloud_policy_store.h",
+    "cloud/cloud_policy_util.cc",
+    "cloud/cloud_policy_util.h",
     "cloud/cloud_policy_validator.cc",
     "cloud/cloud_policy_validator.h",
     "cloud/component_cloud_policy_service.cc",
@@ -62,6 +64,10 @@ source_set("internal") {
     "cloud/external_policy_data_fetcher.h",
     "cloud/external_policy_data_updater.cc",
     "cloud/external_policy_data_updater.h",
+    "cloud/machine_level_user_cloud_policy_manager.cc",
+    "cloud/machine_level_user_cloud_policy_manager.h",
+    "cloud/machine_level_user_cloud_policy_store.cc",
+    "cloud/machine_level_user_cloud_policy_store.h",
     "cloud/policy_header_io_helper.cc",
     "cloud/policy_header_io_helper.h",
     "cloud/policy_header_service.cc",
@@ -144,7 +150,9 @@ source_set("internal") {
     "//components/data_use_measurement/core",
     "//components/json_schema",
     "//components/prefs",
-    "//extensions/features",
+    "//components/signin/core/account_id",
+    "//components/version_info",
+    "//extensions/buildflags",
     "//google_apis",
     "//net",
     "//third_party/re2",
@@ -200,6 +208,10 @@ source_set("internal") {
     sources -= [
       "cloud/cloud_policy_client_registration_helper.cc",
       "cloud/cloud_policy_client_registration_helper.h",
+      "cloud/machine_level_user_cloud_policy_manager.cc",
+      "cloud/machine_level_user_cloud_policy_manager.h",
+      "cloud/machine_level_user_cloud_policy_store.cc",
+      "cloud/machine_level_user_cloud_policy_store.h",
       "cloud/user_cloud_policy_manager.cc",
       "cloud/user_cloud_policy_manager.h",
       "cloud/user_cloud_policy_store.cc",
@@ -269,6 +281,7 @@ static_library("test_support") {
     # build, it will be hidden inside the policy component.
     "//components/policy:generated",
     "//components/policy/proto",
+    "//components/signin/core/account_id",
     "//crypto",
     "//net",
     "//testing/gmock",
@@ -279,7 +292,7 @@ static_library("test_support") {
 source_set("unit_tests") {
   testonly = true
   sources = [
-    "//extensions/features",
+    "//extensions/buildflags",
     "cloud/cloud_policy_client_unittest.cc",
     "cloud/cloud_policy_core_unittest.cc",
     "cloud/cloud_policy_manager_unittest.cc",
@@ -318,6 +331,8 @@ source_set("unit_tests") {
     ]
   } else {
     sources += [
+      "cloud/machine_level_user_cloud_policy_manager_unittest.cc",
+      "cloud/machine_level_user_cloud_policy_store_unittest.cc",
       "cloud/user_cloud_policy_manager_unittest.cc",
       "cloud/user_cloud_policy_store_unittest.cc",
     ]
@@ -352,7 +367,8 @@ source_set("unit_tests") {
     "//base/test:test_support",
     "//components/policy:generated",
     "//components/prefs:test_support",
-    "//extensions/features",
+    "//components/signin/core/account_id",
+    "//extensions/buildflags",
     "//google_apis",
     "//net:test_support",
     "//testing/gmock",

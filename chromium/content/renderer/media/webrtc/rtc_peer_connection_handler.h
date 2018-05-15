@@ -26,10 +26,10 @@
 #include "content/renderer/media/webrtc/webrtc_media_stream_adapter_map.h"
 #include "content/renderer/media/webrtc/webrtc_media_stream_track_adapter_map.h"
 #include "ipc/ipc_platform_file.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
-#include "third_party/WebKit/public/platform/WebRTCPeerConnectionHandler.h"
-#include "third_party/WebKit/public/platform/WebRTCStatsRequest.h"
-#include "third_party/WebKit/public/platform/WebRTCStatsResponse.h"
+#include "third_party/blink/public/platform/web_media_stream_source.h"
+#include "third_party/blink/public/platform/web_rtc_peer_connection_handler.h"
+#include "third_party/blink/public/platform/web_rtc_stats_request.h"
+#include "third_party/blink/public/platform/web_rtc_stats_response.h"
 
 namespace blink {
 class WebLocalFrame;
@@ -153,6 +153,7 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
       const blink::WebString& label,
       const blink::WebRTCDataChannelInit& init) override;
   void Stop() override;
+  blink::WebString Id() const override;
 
   // Delegate functions to allow for mocking of WebKit interfaces.
   // getStats takes ownership of request parameter.
@@ -243,6 +244,9 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
 
   void RunSynchronousClosureOnSignalingThread(const base::Closure& closure,
                                               const char* trace_event_name);
+
+  // Corresponds to the experimental RTCPeerConnection.id read-only attribute.
+  const std::string id_;
 
   // Initialize() is never expected to be called more than once, even if the
   // first call fails.

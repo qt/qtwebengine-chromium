@@ -45,8 +45,10 @@
  *   LANGUAGES: (undefined|!settings.Route),
  *   LOCK_SCREEN: (undefined|!settings.Route),
  *   MANAGE_ACCESSIBILITY: (undefined|!settings.Route),
+ *   MANAGE_GOOGLE_TTS_ENGINE_SETTINGS: (undefined|!settings.Route),
  *   MANAGE_PASSWORDS: (undefined|!settings.Route),
  *   MANAGE_PROFILE: (undefined|!settings.Route),
+ *   MANAGE_TTS_SETTINGS: (undefined|!settings.Route),
  *   MULTIDEVICE: (undefined|!settings.Route),
  *   NETWORK_DETAIL: (undefined|!settings.Route),
  *   ON_STARTUP: (undefined|!settings.Route),
@@ -80,6 +82,7 @@
  *   SITE_SETTINGS_MICROPHONE: (undefined|!settings.Route),
  *   SITE_SETTINGS_MIDI_DEVICES: (undefined|!settings.Route),
  *   SITE_SETTINGS_NOTIFICATIONS: (undefined|!settings.Route),
+ *   SITE_SETTINGS_PAYMENT_HANDLER: (undefined|!settings.Route),
  *   SITE_SETTINGS_PDF_DOCUMENTS: (undefined|!settings.Route),
  *   SITE_SETTINGS_POPUPS: (undefined|!settings.Route),
  *   SITE_SETTINGS_PROTECTED_CONTENT: (undefined|!settings.Route),
@@ -88,6 +91,7 @@
  *   SITE_SETTINGS_UNSANDBOXED_PLUGINS: (undefined|!settings.Route),
  *   SITE_SETTINGS_USB_DEVICES: (undefined|!settings.Route),
  *   SITE_SETTINGS_ZOOM_LEVELS: (undefined|!settings.Route),
+ *   SMB_SHARES: (undefined|!settings.Route),
  *   STORAGE: (undefined|!settings.Route),
  *   STYLUS: (undefined|!settings.Route),
  *   SYNC: (undefined|!settings.Route),
@@ -335,6 +339,10 @@ cr.define('settings', function() {
           r.SITE_SETTINGS.createChild('pdfDocuments');
       r.SITE_SETTINGS_PROTECTED_CONTENT =
           r.SITE_SETTINGS.createChild('protectedContent');
+      if (loadTimeData.getBoolean('enablePaymentHandlerContentSetting')) {
+        r.SITE_SETTINGS_PAYMENT_HANDLER =
+            r.SITE_SETTINGS.createChild('paymentHandler');
+      }
 
       // <if expr="chromeos">
       if (pageVisibility.dateTime !== false) {
@@ -361,6 +369,9 @@ cr.define('settings', function() {
 
       if (pageVisibility.downloads !== false) {
         r.DOWNLOADS = r.ADVANCED.createSection('/downloads', 'downloads');
+        // <if expr="chromeos">
+        r.SMB_SHARES = r.DOWNLOADS.createChild('/smbShares');
+        // </if>
       }
 
       r.PRINTING = r.ADVANCED.createSection('/printing', 'printing');
@@ -375,6 +386,10 @@ cr.define('settings', function() {
       // <if expr="chromeos">
       r.MANAGE_ACCESSIBILITY =
           r.ACCESSIBILITY.createChild('/manageAccessibility');
+      r.MANAGE_TTS_SETTINGS =
+          r.MANAGE_ACCESSIBILITY.createChild('/manageAccessibility/tts');
+      r.MANAGE_GOOGLE_TTS_ENGINE_SETTINGS = r.MANAGE_TTS_SETTINGS.createChild(
+          '/manageAccessibility/tts/googleTtsEngine');
       // </if>
 
       r.SYSTEM = r.ADVANCED.createSection('/system', 'system');

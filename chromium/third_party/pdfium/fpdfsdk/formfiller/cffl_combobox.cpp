@@ -6,11 +6,11 @@
 
 #include "fpdfsdk/formfiller/cffl_combobox.h"
 
+#include "fpdfsdk/cpdfsdk_common.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_widget.h"
 #include "fpdfsdk/formfiller/cba_fontmap.h"
 #include "fpdfsdk/formfiller/cffl_interactiveformfiller.h"
-#include "fpdfsdk/fsdk_common.h"
 #include "fpdfsdk/pwl/cpwl_combo_box.h"
 #include "third_party/base/ptr_util.h"
 
@@ -123,7 +123,7 @@ void CFFL_ComboBox::SaveData(CPDFSDK_PageView* pPageView) {
 
 void CFFL_ComboBox::GetActionData(CPDFSDK_PageView* pPageView,
                                   CPDF_AAction::AActionType type,
-                                  PDFSDK_FieldAction& fa) {
+                                  CPDFSDK_FieldAction& fa) {
   switch (type) {
     case CPDF_AAction::KeyStroke:
       if (CPWL_ComboBox* pComboBox =
@@ -164,7 +164,7 @@ void CFFL_ComboBox::GetActionData(CPDFSDK_PageView* pPageView,
 
 void CFFL_ComboBox::SetActionData(CPDFSDK_PageView* pPageView,
                                   CPDF_AAction::AActionType type,
-                                  const PDFSDK_FieldAction& fa) {
+                                  const CPDFSDK_FieldAction& fa) {
   switch (type) {
     case CPDF_AAction::KeyStroke:
       if (CPWL_ComboBox* pComboBox =
@@ -181,8 +181,8 @@ void CFFL_ComboBox::SetActionData(CPDFSDK_PageView* pPageView,
 }
 
 bool CFFL_ComboBox::IsActionDataChanged(CPDF_AAction::AActionType type,
-                                        const PDFSDK_FieldAction& faOld,
-                                        const PDFSDK_FieldAction& faNew) {
+                                        const CPDFSDK_FieldAction& faOld,
+                                        const CPDFSDK_FieldAction& faNew) {
   switch (type) {
     case CPDF_AAction::KeyStroke:
       return (!faOld.bFieldFull && faOld.nSelEnd != faNew.nSelEnd) ||

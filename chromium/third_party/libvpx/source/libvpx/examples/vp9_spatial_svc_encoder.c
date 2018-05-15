@@ -503,10 +503,8 @@ static void printout_rate_control_summary(struct RateControlStats *rc,
   printf("Average, rms-variance, and percent-fluct: %f %f %f \n",
          rc->avg_st_encoding_bitrate, sqrt(rc->variance_st_encoding_bitrate),
          perc_fluctuation);
-  if (frame_cnt != tot_num_frames)
-    die("Error: Number of input frames not equal to output encoded frames != "
-        "%d tot_num_frames = %d\n",
-        frame_cnt, tot_num_frames);
+  printf("Num of input, num of encoded (super) frames: %d %d \n", frame_cnt,
+         tot_num_frames);
 }
 
 vpx_codec_err_t parse_superframe_index(const uint8_t *data, size_t data_sz,
@@ -562,9 +560,10 @@ vpx_codec_err_t parse_superframe_index(const uint8_t *data, size_t data_sz,
 // bypass/flexible mode. The pattern corresponds to the pattern
 // VP9E_TEMPORAL_LAYERING_MODE_0101 (temporal_layering_mode == 2) used in
 // non-flexible mode.
-void set_frame_flags_bypass_mode(int sl, int tl, int num_spatial_layers,
+void set_frame_flags_bypass_mode(int tl, int num_spatial_layers,
                                  int is_key_frame,
                                  vpx_svc_ref_frame_config_t *ref_frame_config) {
+  int sl;
   for (sl = 0; sl < num_spatial_layers; ++sl) {
     if (!tl) {
       if (!sl) {
@@ -633,7 +632,7 @@ int main(int argc, const char **argv) {
   int end_of_stream = 0;
   int frames_received = 0;
 #if OUTPUT_RC_STATS
-  VpxVideoWriter *outfile[VPX_TS_MAX_LAYERS] = { NULL };
+  VpxVideoWriter *outfile[VPX_SS_MAX_LAYERS] = { NULL };
   struct RateControlStats rc;
   vpx_svc_layer_id_t layer_id;
   vpx_svc_ref_frame_config_t ref_frame_config;
@@ -645,7 +644,8 @@ int main(int argc, const char **argv) {
   struct vpx_usec_timer timer;
   int64_t cx_time = 0;
   memset(&svc_ctx, 0, sizeof(svc_ctx));
-  svc_ctx.log_print = 1;
+  memset(&app_input, 0, sizeof(AppInput));
+  memset(&info, 0, sizeof(VpxVideoInfo));
   exec_name = argv[0];
   parse_command_line(argc, argv, &app_input, &svc_ctx, &enc_cfg);
 
@@ -672,6 +672,10 @@ int main(int argc, const char **argv) {
     die("Failed to initialize encoder\n");
 
 #if OUTPUT_RC_STATS
+  rc.window_count = 1;
+  rc.window_size = 15;  // Silence a static analysis warning.
+  rc.avg_st_encoding_bitrate = 0.0;
+  rc.variance_st_encoding_bitrate = 0.0;
   if (svc_ctx.output_rc_stat) {
     set_rate_control_stats(&rc, &enc_cfg);
     framerate = enc_cfg.g_timebase.den / enc_cfg.g_timebase.num;
@@ -690,16 +694,16 @@ int main(int argc, const char **argv) {
       die("Failed to open %s for writing\n", app_input.output_filename);
   }
 #if OUTPUT_RC_STATS
-  // For now, just write temporal layer streams.
-  // TODO(marpan): do spatial by re-writing superframe.
+  // Write out spatial layer stream.
+  // TODO(marpan/jianj): allow for writing each spatial and temporal stream.
   if (svc_ctx.output_rc_stat) {
-    for (tl = 0; tl < enc_cfg.ts_number_layers; ++tl) {
+    for (sl = 0; sl < enc_cfg.ss_number_layers; ++sl) {
       char file_name[PATH_MAX];
 
-      snprintf(file_name, sizeof(file_name), "%s_t%d.ivf",
-               app_input.output_filename, tl);
-      outfile[tl] = vpx_video_writer_open(file_name, kContainerIVF, &info);
-      if (!outfile[tl]) die("Failed to open %s for writing", file_name);
+      snprintf(file_name, sizeof(file_name), "%s_s%d.ivf",
+               app_input.output_filename, sl);
+      outfile[sl] = vpx_video_writer_open(file_name, kContainerIVF, &info);
+      if (!outfile[sl]) die("Failed to open %s for writing", file_name);
     }
   }
 #endif
@@ -710,7 +714,7 @@ int main(int argc, const char **argv) {
   if (svc_ctx.speed != -1)
     vpx_codec_control(&codec, VP8E_SET_CPUUSED, svc_ctx.speed);
   if (svc_ctx.threads) {
-    vpx_codec_control(&codec, VP9E_SET_TILE_COLUMNS, (svc_ctx.threads >> 1));
+    vpx_codec_control(&codec, VP9E_SET_TILE_COLUMNS, get_msb(svc_ctx.threads));
     if (svc_ctx.threads > 1)
       vpx_codec_control(&codec, VP9E_SET_ROW_MT, 1);
     else
@@ -721,6 +725,10 @@ int main(int argc, const char **argv) {
   if (svc_ctx.speed >= 5)
     vpx_codec_control(&codec, VP8E_SET_STATIC_THRESHOLD, 1);
   vpx_codec_control(&codec, VP8E_SET_MAX_INTRA_BITRATE_PCT, 900);
+
+  vpx_codec_control(&codec, VP9E_SET_SVC_INTER_LAYER_PRED, 0);
+
+  vpx_codec_control(&codec, VP9E_SET_NOISE_SENSITIVITY, 0);
 
   // Encode frames
   while (!end_of_stream) {
@@ -751,7 +759,7 @@ int main(int argc, const char **argv) {
       vpx_codec_control(&codec, VP9E_SET_SVC_LAYER_ID, &layer_id);
       // TODO(jianj): Fix the parameter passing for "is_key_frame" in
       // set_frame_flags_bypass_model() for case of periodic key frames.
-      set_frame_flags_bypass_mode(sl, layer_id.temporal_layer_id,
+      set_frame_flags_bypass_mode(layer_id.temporal_layer_id,
                                   svc_ctx.spatial_layers, frame_cnt == 0,
                                   &ref_frame_config);
       vpx_codec_control(&codec, VP9E_SET_SVC_REF_FRAME_CONFIG,
@@ -762,6 +770,17 @@ int main(int argc, const char **argv) {
         ++rc.layer_input_frames[sl * enc_cfg.ts_number_layers +
                                 layer_id.temporal_layer_id];
       }
+    } else {
+      // For the fixed pattern SVC, temporal layer is given by superframe count.
+      unsigned int tl = 0;
+      if (enc_cfg.ts_number_layers == 2)
+        tl = (frame_cnt % 2 != 0);
+      else if (enc_cfg.ts_number_layers == 3) {
+        if (frame_cnt % 2 != 0) tl = 2;
+        if ((frame_cnt > 1) && ((frame_cnt - 2) % 4 == 0)) tl = 1;
+      }
+      for (sl = 0; sl < enc_cfg.ss_number_layers; ++sl)
+        ++rc.layer_input_frames[sl * enc_cfg.ts_number_layers + tl];
     }
 
     vpx_usec_timer_start(&timer);
@@ -771,7 +790,6 @@ int main(int argc, const char **argv) {
     vpx_usec_timer_mark(&timer);
     cx_time += vpx_usec_timer_elapsed(&timer);
 
-    printf("%s", vpx_svc_get_message(&svc_ctx));
     fflush(stdout);
     if (res != VPX_CODEC_OK) {
       die_codec(&codec, "Failed to encode frame");
@@ -784,7 +802,10 @@ int main(int argc, const char **argv) {
           if (cx_pkt->data.frame.sz > 0) {
 #if OUTPUT_RC_STATS
             uint64_t sizes[8];
+            uint64_t sizes_parsed[8];
             int count = 0;
+            vp9_zero(sizes);
+            vp9_zero(sizes_parsed);
 #endif
             vpx_video_writer_write_frame(writer, cx_pkt->data.frame.buf,
                                          cx_pkt->data.frame.sz,
@@ -794,42 +815,50 @@ int main(int argc, const char **argv) {
             if (svc_ctx.output_rc_stat) {
               vpx_codec_control(&codec, VP9E_GET_SVC_LAYER_ID, &layer_id);
               parse_superframe_index(cx_pkt->data.frame.buf,
-                                     cx_pkt->data.frame.sz, sizes, &count);
+                                     cx_pkt->data.frame.sz, sizes_parsed,
+                                     &count);
               if (enc_cfg.ss_number_layers == 1)
                 sizes[0] = cx_pkt->data.frame.sz;
-              // Note computing input_layer_frames here won't account for frame
-              // drops in rate control stats.
-              // TODO(marpan): Fix this for non-bypass mode so we can get stats
-              // for dropped frames.
               if (svc_ctx.temporal_layering_mode !=
                   VP9E_TEMPORAL_LAYERING_MODE_BYPASS) {
+                int num_layers_encoded = 0;
                 for (sl = 0; sl < enc_cfg.ss_number_layers; ++sl) {
-                  ++rc.layer_input_frames[sl * enc_cfg.ts_number_layers +
-                                          layer_id.temporal_layer_id];
+                  sizes[sl] = 0;
+                  if (cx_pkt->data.frame.spatial_layer_encoded[sl]) {
+                    sizes[sl] = sizes_parsed[num_layers_encoded];
+                    num_layers_encoded++;
+                  }
+                }
+                for (sl = 0; sl < enc_cfg.ss_number_layers; ++sl) {
+                  unsigned int sl2;
+                  uint64_t tot_size = 0;
+                  for (sl2 = 0; sl2 <= sl; ++sl2) {
+                    if (cx_pkt->data.frame.spatial_layer_encoded[sl2])
+                      tot_size += sizes[sl2];
+                  }
+                  if (tot_size > 0)
+                    vpx_video_writer_write_frame(
+                        outfile[sl], cx_pkt->data.frame.buf, (size_t)(tot_size),
+                        cx_pkt->data.frame.pts);
                 }
               }
-              for (tl = layer_id.temporal_layer_id;
-                   tl < enc_cfg.ts_number_layers; ++tl) {
-                vpx_video_writer_write_frame(
-                    outfile[tl], cx_pkt->data.frame.buf, cx_pkt->data.frame.sz,
-                    cx_pkt->data.frame.pts);
-              }
-
               for (sl = 0; sl < enc_cfg.ss_number_layers; ++sl) {
-                for (tl = layer_id.temporal_layer_id;
-                     tl < enc_cfg.ts_number_layers; ++tl) {
-                  const int layer = sl * enc_cfg.ts_number_layers + tl;
-                  ++rc.layer_tot_enc_frames[layer];
-                  rc.layer_encoding_bitrate[layer] += 8.0 * sizes[sl];
-                  // Keep count of rate control stats per layer, for non-key
-                  // frames.
-                  if (tl == (unsigned int)layer_id.temporal_layer_id &&
-                      !(cx_pkt->data.frame.flags & VPX_FRAME_IS_KEY)) {
-                    rc.layer_avg_frame_size[layer] += 8.0 * sizes[sl];
-                    rc.layer_avg_rate_mismatch[layer] +=
-                        fabs(8.0 * sizes[sl] - rc.layer_pfb[layer]) /
-                        rc.layer_pfb[layer];
-                    ++rc.layer_enc_frames[layer];
+                if (cx_pkt->data.frame.spatial_layer_encoded[sl]) {
+                  for (tl = layer_id.temporal_layer_id;
+                       tl < enc_cfg.ts_number_layers; ++tl) {
+                    const int layer = sl * enc_cfg.ts_number_layers + tl;
+                    ++rc.layer_tot_enc_frames[layer];
+                    rc.layer_encoding_bitrate[layer] += 8.0 * sizes[sl];
+                    // Keep count of rate control stats per layer, for non-key
+                    // frames.
+                    if (tl == (unsigned int)layer_id.temporal_layer_id &&
+                        !(cx_pkt->data.frame.flags & VPX_FRAME_IS_KEY)) {
+                      rc.layer_avg_frame_size[layer] += 8.0 * sizes[sl];
+                      rc.layer_avg_rate_mismatch[layer] +=
+                          fabs(8.0 * sizes[sl] - rc.layer_pfb[layer]) /
+                          rc.layer_pfb[layer];
+                      ++rc.layer_enc_frames[layer];
+                    }
                   }
                 }
               }
@@ -838,9 +867,9 @@ int main(int argc, const char **argv) {
               // window of size rc->window, shifted by rc->window / 2.
               // Ignore first window segment, due to key frame.
               if (frame_cnt > (unsigned int)rc.window_size) {
-                tl = layer_id.temporal_layer_id;
                 for (sl = 0; sl < enc_cfg.ss_number_layers; ++sl) {
-                  sum_bitrate += 0.001 * 8.0 * sizes[sl] * framerate;
+                  if (cx_pkt->data.frame.spatial_layer_encoded[sl])
+                    sum_bitrate += 0.001 * 8.0 * sizes[sl] * framerate;
                 }
                 if (frame_cnt % rc.window_size == 0) {
                   rc.window_count += 1;
@@ -855,7 +884,6 @@ int main(int argc, const char **argv) {
               // Second shifted window.
               if (frame_cnt >
                   (unsigned int)(rc.window_size + rc.window_size / 2)) {
-                tl = layer_id.temporal_layer_id;
                 for (sl = 0; sl < enc_cfg.ss_number_layers; ++sl) {
                   sum_bitrate2 += 0.001 * 8.0 * sizes[sl] * framerate;
                 }
@@ -922,8 +950,8 @@ int main(int argc, const char **argv) {
   }
 #if OUTPUT_RC_STATS
   if (svc_ctx.output_rc_stat) {
-    for (tl = 0; tl < enc_cfg.ts_number_layers; ++tl) {
-      vpx_video_writer_close(outfile[tl]);
+    for (sl = 0; sl < enc_cfg.ss_number_layers; ++sl) {
+      vpx_video_writer_close(outfile[sl]);
     }
   }
 #endif
@@ -932,7 +960,7 @@ int main(int argc, const char **argv) {
          1000000 * (double)frame_cnt / (double)cx_time);
   vpx_img_free(&raw);
   // display average size, psnr
-  printf("%s", vpx_svc_dump_statistics(&svc_ctx));
+  vpx_svc_dump_statistics(&svc_ctx);
   vpx_svc_release(&svc_ctx);
   return EXIT_SUCCESS;
 }

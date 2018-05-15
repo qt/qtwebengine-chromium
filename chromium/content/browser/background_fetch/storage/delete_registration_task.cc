@@ -68,12 +68,13 @@ void DeleteRegistrationTask::DidGetRegistration(
 #if DCHECK_IS_ON()
   if (ToDatabaseStatus(status) == DatabaseStatus::kOk) {
     DCHECK_EQ(1u, data.size());
-    proto::BackgroundFetchRegistration registration_proto;
-    if (registration_proto.ParseFromString(data[0]) &&
-        registration_proto.has_developer_id()) {
+    proto::BackgroundFetchMetadata metadata_proto;
+    if (metadata_proto.ParseFromString(data[0]) &&
+        metadata_proto.registration().has_developer_id()) {
       service_worker_context()->GetRegistrationUserData(
           service_worker_registration_id_,
-          {ActiveRegistrationUniqueIdKey(registration_proto.developer_id())},
+          {ActiveRegistrationUniqueIdKey(
+              metadata_proto.registration().developer_id())},
           base::BindOnce(&DCheckRegistrationNotActive, unique_id_));
     } else {
       NOTREACHED()
@@ -87,8 +88,8 @@ void DeleteRegistrationTask::DidGetRegistration(
   service_worker_context()->ClearRegistrationUserDataByKeyPrefixes(
       service_worker_registration_id_,
       {RegistrationKey(unique_id_), RequestKeyPrefix(unique_id_)},
-      base::Bind(&DeleteRegistrationTask::DidDeleteRegistration,
-                 weak_factory_.GetWeakPtr()));
+      base::BindOnce(&DeleteRegistrationTask::DidDeleteRegistration,
+                     weak_factory_.GetWeakPtr()));
 }
 
 void DeleteRegistrationTask::DidDeleteRegistration(

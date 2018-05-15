@@ -233,6 +233,38 @@ TEST_F(TextfieldModelTest, EditString_ComplexScript) {
   EXPECT_TRUE(model.Backspace());
   EXPECT_EQ(base::WideToUTF16(L"\x002C\x0020\x05D1\x05BC\x05B7\x05E9"),
             model.text());
+
+  // Halfwidth katakana ﾀﾞ:
+  // "HALFWIDTH KATAKANA LETTER TA" + "HALFWIDTH KATAKANA VOICED SOUND MARK"
+  // ("ABC" prefix as sanity check that the entire string isn't deleted).
+  model.SetText(base::WideToUTF16(L"ABC\xFF80\xFF9E"));
+  MoveCursorTo(model, model.text().length());
+  model.Backspace();
+#if defined(OS_MACOSX)
+  // On Mac, the entire cluster should be deleted to match
+  // NSTextField behavior.
+  EXPECT_EQ(base::WideToUTF16(L"ABC"), model.text());
+  EXPECT_EQ(3U, model.GetCursorPosition());
+#else
+  EXPECT_EQ(base::WideToUTF16(L"ABC\xFF80"), model.text());
+  EXPECT_EQ(4U, model.GetCursorPosition());
+#endif
+
+  // Emoji with Fitzpatrick modifier:
+  // 'BOY' + 'EMOJI MODIFIER FITZPATRICK TYPE-5'
+  model.SetText(base::WideToUTF16(L"\U0001F466\U0001F3FE"));
+  MoveCursorTo(model, model.text().length());
+  model.Backspace();
+#if defined(OS_MACOSX)
+  // On Mac, the entire emoji should be deleted to match NSTextField
+  // behavior.
+  EXPECT_EQ(base::WideToUTF16(L""), model.text());
+  EXPECT_EQ(0U, model.GetCursorPosition());
+#else
+  // https://crbug.com/829040
+  EXPECT_EQ(base::WideToUTF16(L"\U0001F466"), model.text());
+  EXPECT_EQ(2U, model.GetCursorPosition());
+#endif
 }
 
 TEST_F(TextfieldModelTest, EmptyString) {
@@ -973,7 +1005,8 @@ TEST_F(TextfieldModelTest, CompositionTextTest) {
 
   ui::CompositionText composition;
   composition.text = base::ASCIIToUTF16("678");
-  composition.ime_text_spans.push_back(ui::ImeTextSpan(0, 3, 0, false));
+  composition.ime_text_spans.push_back(
+      ui::ImeTextSpan(0, 3, ui::ImeTextSpan::Thickness::kThin));
 
   // Cursor should be at the end of composition when characters are just typed.
   composition.selection = gfx::Range(3, 3);
@@ -988,8 +1021,10 @@ TEST_F(TextfieldModelTest, CompositionTextTest) {
   // Restart composition with targeting "67" in "678".
   composition.selection = gfx::Range(1, 3);
   composition.ime_text_spans.clear();
-  composition.ime_text_spans.push_back(ui::ImeTextSpan(0, 2, 0, true));
-  composition.ime_text_spans.push_back(ui::ImeTextSpan(2, 3, 0, false));
+  composition.ime_text_spans.push_back(
+      ui::ImeTextSpan(0, 2, ui::ImeTextSpan::Thickness::kThick));
+  composition.ime_text_spans.push_back(
+      ui::ImeTextSpan(2, 3, ui::ImeTextSpan::Thickness::kThin));
   model.SetCompositionText(composition);
   EXPECT_TRUE(model.HasCompositionText());
   EXPECT_TRUE(model.HasSelection());
@@ -1581,7 +1616,8 @@ TEST_F(TextfieldModelTest, UndoRedo_CompositionText) {
 
   ui::CompositionText composition;
   composition.text = base::ASCIIToUTF16("abc");
-  composition.ime_text_spans.push_back(ui::ImeTextSpan(0, 3, 0, false));
+  composition.ime_text_spans.push_back(
+      ui::ImeTextSpan(0, 3, ui::ImeTextSpan::Thickness::kThin));
   composition.selection = gfx::Range(2, 3);
 
   model.SetText(base::ASCIIToUTF16("ABCDE"));

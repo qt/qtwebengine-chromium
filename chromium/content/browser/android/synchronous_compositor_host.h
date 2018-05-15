@@ -51,10 +51,6 @@ class SynchronousCompositorHost : public SynchronousCompositor,
   ~SynchronousCompositorHost() override;
 
   // SynchronousCompositor overrides.
-  SynchronousCompositor::Frame DemandDrawHw(
-      const gfx::Size& viewport_size,
-      const gfx::Rect& viewport_rect_for_tile_priority,
-      const gfx::Transform& transform_for_tile_priority) override;
   scoped_refptr<FrameFuture> DemandDrawHwAsync(
       const gfx::Size& viewport_size,
       const gfx::Rect& viewport_rect_for_tile_priority,
@@ -93,6 +89,8 @@ class SynchronousCompositorHost : public SynchronousCompositor,
   void UpdateState(const SyncCompositorCommonRendererParams& params) override;
   void SetNeedsBeginFrames(bool needs_begin_frames) override;
 
+  bool on_compute_scroll_called() { return on_compute_scroll_called_; }
+
  private:
   class ScopedSendZeroMemory;
   struct SharedMemoryWithSize;
@@ -101,6 +99,10 @@ class SynchronousCompositorHost : public SynchronousCompositor,
 
   SynchronousCompositorHost(RenderWidgetHostViewAndroid* rwhva,
                             bool use_in_proc_software_draw);
+  SynchronousCompositor::Frame DemandDrawHw(
+      const gfx::Size& viewport_size,
+      const gfx::Rect& viewport_rect_for_tile_priority,
+      const gfx::Transform& transform_for_tile_priority);
   bool DemandDrawSwInProc(SkCanvas* canvas);
   void SetSoftwareDrawSharedMemoryIfNeeded(size_t stride, size_t buffer_size);
   void SendZeroMemory();
@@ -124,6 +126,13 @@ class SynchronousCompositorHost : public SynchronousCompositor,
   size_t bytes_limit_;
   std::unique_ptr<SharedMemoryWithSize> software_draw_shm_;
 
+  // Make sure to send a synchronous IPC that succeeds first before sending
+  // asynchronous ones. This shouldn't be needed. However we may have come
+  // to rely on sending a synchronous message first on initialization. So
+  // with an abundance of caution, keep that behavior until we are sure this
+  // isn't required.
+  bool allow_async_draw_ = false;
+
   // Indicates the next draw needs to be synchronous
   bool compute_scroll_needs_synchronous_draw_ = false;
 
@@ -132,6 +141,11 @@ class SynchronousCompositorHost : public SynchronousCompositor,
 
   // Updated by both renderer and browser.
   gfx::ScrollOffset root_scroll_offset_;
+
+  // Indicates that whether OnComputeScroll is called or overridden. The
+  // fling_controller should advance the fling only when OnComputeScroll is not
+  // overridden.
+  bool on_compute_scroll_called_ = false;
 
   // From renderer.
   uint32_t renderer_param_version_;

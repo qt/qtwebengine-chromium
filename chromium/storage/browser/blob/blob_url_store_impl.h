@@ -8,7 +8,7 @@
 #include <memory>
 #include "storage/browser/blob/blob_registry_impl.h"
 #include "storage/browser/storage_browser_export.h"
-#include "third_party/WebKit/public/mojom/blob/blob_url_store.mojom.h"
+#include "third_party/blink/public/mojom/blob/blob_url_store.mojom.h"
 
 namespace storage {
 
@@ -28,6 +28,8 @@ class STORAGE_EXPORT BlobURLStoreImpl : public blink::mojom::BlobURLStore {
   void ResolveAsURLLoaderFactory(
       const GURL& url,
       network::mojom::URLLoaderFactoryRequest request) override;
+  void ResolveForNavigation(const GURL& url,
+                            blink::mojom::BlobURLTokenRequest token) override;
 
  private:
   void RegisterWithUUID(blink::mojom::BlobPtr blob,

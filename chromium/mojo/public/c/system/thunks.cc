@@ -4,35 +4,118 @@
 
 #include "mojo/public/c/system/thunks.h"
 
-#include <assert.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+
+#include "base/logging.h"
+#include "base/macros.h"
+#include "base/no_destructor.h"
+#include "build/build_config.h"
+#include "mojo/public/c/system/core.h"
+
+#if defined(OS_CHROMEOS) || defined(OS_LINUX)
+#include "base/environment.h"
+#include "base/files/file_path.h"
+#include "base/optional.h"
+#include "base/scoped_native_library.h"
+#include "base/threading/thread_restrictions.h"
+#endif
+
+namespace {
+
+MojoSystemThunks g_thunks = {0};
+
+}  // namespace
+
+namespace mojo {
+
+// NOTE: This is defined within the global mojo namespace so that it can be
+// referenced as a friend to base::ScopedAllowBlocking when library support is
+// enabled.
+class CoreLibraryInitializer {
+ public:
+  typedef void (*MojoGetSystemThunksFunction)(MojoSystemThunks* thunks);
+
+  CoreLibraryInitializer() {
+#if defined(OS_CHROMEOS) || defined(OS_LINUX)
+    auto environment = base::Environment::Create();
+
+    base::FilePath library_path;
+    std::string library_path_value;
+    const char kLibraryPathEnvironmentVar[] = "MOJO_CORE_LIBRARY_PATH";
+    if (environment->GetVar(kLibraryPathEnvironmentVar, &library_path_value)) {
+      library_path = base::FilePath::FromUTF8Unsafe(library_path_value);
+    } else {
+      // Default to looking for the library in the current working directory.
+      const base::FilePath::CharType kDefaultLibraryPathValue[] =
+          FILE_PATH_LITERAL("./libmojo_core.so");
+      library_path = base::FilePath(kDefaultLibraryPathValue);
+    }
+
+    base::ScopedAllowBlocking allow_blocking;
+    library_.emplace(library_path);
+    CHECK(library_->is_valid())
+        << "Unable to load the mojo_core library. Make sure the library is in "
+        << "the working directory or is correctly pointed to by the "
+        << "MOJO_CORE_LIBRARY_PATH environment variable.";
+
+    const char kGetThunksFunctionName[] = "MojoGetSystemThunks";
+    MojoGetSystemThunksFunction get_thunks =
+        reinterpret_cast<MojoGetSystemThunksFunction>(
+            library_->GetFunctionPointer(kGetThunksFunctionName));
+    CHECK(get_thunks) << "Invalid mojo_core library";
+
+    DCHECK_EQ(g_thunks.size, 0u);
+    g_thunks.size = sizeof(g_thunks);
+    get_thunks(&g_thunks);
+
+    CHECK_GT(g_thunks.size, 0u) << "Invalid mojo_core library";
+#else   // defined(OS_CHROMEOS) || defined(OS_LINUX)
+    NOTREACHED()
+        << "Dynamic mojo_core loading is not supported on this platform.";
+#endif  // defined(OS_CHROMEOS) || defined(OS_LINUX)
+  }
+
+  ~CoreLibraryInitializer() = default;
+
+ private:
+#if defined(OS_CHROMEOS) || defined(OS_LINUX)
+  base::Optional<base::ScopedNativeLibrary> library_;
+#endif
+
+  DISALLOW_COPY_AND_ASSIGN(CoreLibraryInitializer);
+};
+
+}  // namespace mojo
 
 extern "C" {
 
-static MojoSystemThunks g_thunks = {0};
+MojoResult MojoInitialize(const struct MojoInitializeOptions* options) {
+  static base::NoDestructor<mojo::CoreLibraryInitializer> initializer;
+  ALLOW_UNUSED_LOCAL(initializer);
+  DCHECK(g_thunks.Initialize);
+
+  return g_thunks.Initialize(options);
+}
 
 MojoTimeTicks MojoGetTimeTicksNow() {
-  assert(g_thunks.GetTimeTicksNow);
   return g_thunks.GetTimeTicksNow();
 }
 
 MojoResult MojoClose(MojoHandle handle) {
-  assert(g_thunks.Close);
   return g_thunks.Close(handle);
 }
 
 MojoResult MojoQueryHandleSignalsState(
     MojoHandle handle,
     struct MojoHandleSignalsState* signals_state) {
-  assert(g_thunks.QueryHandleSignalsState);
   return g_thunks.QueryHandleSignalsState(handle, signals_state);
 }
 
 MojoResult MojoCreateMessagePipe(const MojoCreateMessagePipeOptions* options,
                                  MojoHandle* message_pipe_handle0,
                                  MojoHandle* message_pipe_handle1) {
-  assert(g_thunks.CreateMessagePipe);
   return g_thunks.CreateMessagePipe(options, message_pipe_handle0,
                                     message_pipe_handle1);
 }
@@ -40,7 +123,6 @@ MojoResult MojoCreateMessagePipe(const MojoCreateMessagePipeOptions* options,
 MojoResult MojoWriteMessage(MojoHandle message_pipe_handle,
                             MojoMessageHandle message_handle,
                             MojoWriteMessageFlags flags) {
-  assert(g_thunks.WriteMessage);
   return g_thunks.WriteMessage(message_pipe_handle, message_handle, flags);
 }
 
@@ -54,7 +136,6 @@ MojoResult MojoReadMessage(MojoHandle message_pipe_handle,
 MojoResult MojoCreateDataPipe(const MojoCreateDataPipeOptions* options,
                               MojoHandle* data_pipe_producer_handle,
                               MojoHandle* data_pipe_consumer_handle) {
-  assert(g_thunks.CreateDataPipe);
   return g_thunks.CreateDataPipe(options, data_pipe_producer_handle,
                                  data_pipe_consumer_handle);
 }
@@ -63,7 +144,6 @@ MojoResult MojoWriteData(MojoHandle data_pipe_producer_handle,
                          const void* elements,
                          uint32_t* num_elements,
                          MojoWriteDataFlags flags) {
-  assert(g_thunks.WriteData);
   return g_thunks.WriteData(data_pipe_producer_handle, elements, num_elements,
                             flags);
 }
@@ -72,14 +152,12 @@ MojoResult MojoBeginWriteData(MojoHandle data_pipe_producer_handle,
                               void** buffer,
                               uint32_t* buffer_num_elements,
                               MojoWriteDataFlags flags) {
-  assert(g_thunks.BeginWriteData);
   return g_thunks.BeginWriteData(data_pipe_producer_handle, buffer,
                                  buffer_num_elements, flags);
 }
 
 MojoResult MojoEndWriteData(MojoHandle data_pipe_producer_handle,
                             uint32_t num_elements_written) {
-  assert(g_thunks.EndWriteData);
   return g_thunks.EndWriteData(data_pipe_producer_handle, num_elements_written);
 }
 
@@ -87,7 +165,6 @@ MojoResult MojoReadData(MojoHandle data_pipe_consumer_handle,
                         void* elements,
                         uint32_t* num_elements,
                         MojoReadDataFlags flags) {
-  assert(g_thunks.ReadData);
   return g_thunks.ReadData(data_pipe_consumer_handle, elements, num_elements,
                            flags);
 }
@@ -96,14 +173,12 @@ MojoResult MojoBeginReadData(MojoHandle data_pipe_consumer_handle,
                              const void** buffer,
                              uint32_t* buffer_num_elements,
                              MojoReadDataFlags flags) {
-  assert(g_thunks.BeginReadData);
   return g_thunks.BeginReadData(data_pipe_consumer_handle, buffer,
                                 buffer_num_elements, flags);
 }
 
 MojoResult MojoEndReadData(MojoHandle data_pipe_consumer_handle,
                            uint32_t num_elements_read) {
-  assert(g_thunks.EndReadData);
   return g_thunks.EndReadData(data_pipe_consumer_handle, num_elements_read);
 }
 
@@ -111,7 +186,6 @@ MojoResult MojoCreateSharedBuffer(
     const struct MojoCreateSharedBufferOptions* options,
     uint64_t num_bytes,
     MojoHandle* shared_buffer_handle) {
-  assert(g_thunks.CreateSharedBuffer);
   return g_thunks.CreateSharedBuffer(options, num_bytes, shared_buffer_handle);
 }
 
@@ -119,7 +193,6 @@ MojoResult MojoDuplicateBufferHandle(
     MojoHandle buffer_handle,
     const struct MojoDuplicateBufferHandleOptions* options,
     MojoHandle* new_buffer_handle) {
-  assert(g_thunks.DuplicateBufferHandle);
   return g_thunks.DuplicateBufferHandle(buffer_handle, options,
                                         new_buffer_handle);
 }
@@ -129,135 +202,115 @@ MojoResult MojoMapBuffer(MojoHandle buffer_handle,
                          uint64_t num_bytes,
                          void** buffer,
                          MojoMapBufferFlags flags) {
-  assert(g_thunks.MapBuffer);
   return g_thunks.MapBuffer(buffer_handle, offset, num_bytes, buffer, flags);
 }
 
 MojoResult MojoUnmapBuffer(void* buffer) {
-  assert(g_thunks.UnmapBuffer);
   return g_thunks.UnmapBuffer(buffer);
 }
 
-MojoResult MojoCreateWatcher(MojoWatcherCallback callback,
-                             MojoHandle* watcher_handle) {
-  assert(g_thunks.CreateWatcher);
-  return g_thunks.CreateWatcher(callback, watcher_handle);
+MojoResult MojoGetBufferInfo(MojoHandle buffer_handle,
+                             const struct MojoSharedBufferOptions* options,
+                             struct MojoSharedBufferInfo* info) {
+  assert(g_thunks.GetBufferInfo);
+  return g_thunks.GetBufferInfo(buffer_handle, options, info);
 }
 
-MojoResult MojoWatch(MojoHandle watcher_handle,
-                     MojoHandle handle,
-                     MojoHandleSignals signals,
-                     MojoWatchCondition condition,
-                     uintptr_t context) {
-  assert(g_thunks.Watch);
-  return g_thunks.Watch(watcher_handle, handle, signals, condition, context);
+MojoResult MojoCreateTrap(MojoTrapEventHandler handler,
+                          const MojoCreateTrapOptions* options,
+                          MojoHandle* trap_handle) {
+  return g_thunks.CreateTrap(handler, options, trap_handle);
 }
 
-MojoResult MojoCancelWatch(MojoHandle watcher_handle, uintptr_t context) {
-  assert(g_thunks.CancelWatch);
-  return g_thunks.CancelWatch(watcher_handle, context);
+MojoResult MojoAddTrigger(MojoHandle trap_handle,
+                          MojoHandle handle,
+                          MojoHandleSignals signals,
+                          MojoTriggerCondition condition,
+                          uintptr_t context,
+                          const MojoAddTriggerOptions* options) {
+  return g_thunks.AddTrigger(trap_handle, handle, signals, condition, context,
+                             options);
 }
 
-MojoResult MojoArmWatcher(MojoHandle watcher_handle,
-                          uint32_t* num_ready_contexts,
-                          uintptr_t* ready_contexts,
-                          MojoResult* ready_results,
-                          MojoHandleSignalsState* ready_signals_states) {
-  assert(g_thunks.ArmWatcher);
-  return g_thunks.ArmWatcher(watcher_handle, num_ready_contexts, ready_contexts,
-                             ready_results, ready_signals_states);
+MojoResult MojoRemoveTrigger(MojoHandle trap_handle,
+                             uintptr_t context,
+                             const MojoRemoveTriggerOptions* options) {
+  return g_thunks.RemoveTrigger(trap_handle, context, options);
+}
+
+MojoResult MojoArmTrap(MojoHandle trap_handle,
+                       const MojoArmTrapOptions* options,
+                       uint32_t* num_ready_triggers,
+                       uintptr_t* ready_triggers,
+                       MojoResult* ready_results,
+                       MojoHandleSignalsState* ready_signals_states) {
+  return g_thunks.ArmTrap(trap_handle, options, num_ready_triggers,
+                          ready_triggers, ready_results, ready_signals_states);
 }
 
 MojoResult MojoFuseMessagePipes(MojoHandle handle0, MojoHandle handle1) {
-  assert(g_thunks.FuseMessagePipes);
   return g_thunks.FuseMessagePipes(handle0, handle1);
 }
 
-MojoResult MojoCreateMessage(MojoMessageHandle* message) {
-  assert(g_thunks.CreateMessage);
-  return g_thunks.CreateMessage(message);
+MojoResult MojoCreateMessage(const MojoCreateMessageOptions* options,
+                             MojoMessageHandle* message) {
+  return g_thunks.CreateMessage(options, message);
 }
 
 MojoResult MojoDestroyMessage(MojoMessageHandle message) {
-  assert(g_thunks.DestroyMessage);
   return g_thunks.DestroyMessage(message);
 }
 
-MojoResult MojoSerializeMessage(MojoMessageHandle message) {
-  assert(g_thunks.SerializeMessage);
-  return g_thunks.SerializeMessage(message);
+MojoResult MojoSerializeMessage(MojoMessageHandle message,
+                                const MojoSerializeMessageOptions* options) {
+  return g_thunks.SerializeMessage(message, options);
 }
 
-MojoResult MojoAttachSerializedMessageBuffer(MojoMessageHandle message,
-                                             uint32_t payload_size,
-                                             const MojoHandle* handles,
-                                             uint32_t num_handles,
-                                             void** buffer,
-                                             uint32_t* buffer_size) {
-  assert(g_thunks.AttachSerializedMessageBuffer);
-  return g_thunks.AttachSerializedMessageBuffer(
-      message, payload_size, handles, num_handles, buffer, buffer_size);
+MojoResult MojoAppendMessageData(MojoMessageHandle message,
+                                 uint32_t payload_size,
+                                 const MojoHandle* handles,
+                                 uint32_t num_handles,
+                                 const MojoAppendMessageDataOptions* options,
+                                 void** buffer,
+                                 uint32_t* buffer_size) {
+  return g_thunks.AppendMessageData(message, payload_size, handles, num_handles,
+                                    options, buffer, buffer_size);
 }
 
-MojoResult MojoExtendSerializedMessagePayload(MojoMessageHandle message,
-                                              uint32_t new_payload_size,
-                                              const MojoHandle* handles,
-                                              uint32_t num_handles,
-                                              void** buffer,
-                                              uint32_t* buffer_size) {
-  assert(g_thunks.ExtendSerializedMessagePayload);
-  return g_thunks.ExtendSerializedMessagePayload(
-      message, new_payload_size, handles, num_handles, buffer, buffer_size);
+MojoResult MojoGetMessageData(MojoMessageHandle message,
+                              const MojoGetMessageDataOptions* options,
+                              void** buffer,
+                              uint32_t* num_bytes,
+                              MojoHandle* handles,
+                              uint32_t* num_handles) {
+  return g_thunks.GetMessageData(message, options, buffer, num_bytes, handles,
+                                 num_handles);
 }
 
-MojoResult MojoCommitSerializedMessageContents(MojoMessageHandle message,
-                                               uint32_t final_payload_size,
-                                               void** buffer,
-                                               uint32_t* buffer_size) {
-  assert(g_thunks.CommitSerializedMessageContents);
-  return g_thunks.CommitSerializedMessageContents(message, final_payload_size,
-                                                  buffer, buffer_size);
-}
-
-MojoResult MojoGetSerializedMessageContents(
-    MojoMessageHandle message,
-    void** buffer,
-    uint32_t* num_bytes,
-    MojoHandle* handles,
-    uint32_t* num_handles,
-    MojoGetSerializedMessageContentsFlags flags) {
-  assert(g_thunks.GetSerializedMessageContents);
-  return g_thunks.GetSerializedMessageContents(message, buffer, num_bytes,
-                                               handles, num_handles, flags);
-}
-
-MojoResult MojoAttachMessageContext(MojoMessageHandle message,
-                                    uintptr_t context,
-                                    MojoMessageContextSerializer serializer,
-                                    MojoMessageContextDestructor destructor) {
-  assert(g_thunks.AttachMessageContext);
-  return g_thunks.AttachMessageContext(message, context, serializer,
-                                       destructor);
+MojoResult MojoSetMessageContext(MojoMessageHandle message,
+                                 uintptr_t context,
+                                 MojoMessageContextSerializer serializer,
+                                 MojoMessageContextDestructor destructor,
+                                 const MojoSetMessageContextOptions* options) {
+  return g_thunks.SetMessageContext(message, context, serializer, destructor,
+                                    options);
 }
 
 MojoResult MojoGetMessageContext(MojoMessageHandle message,
-                                 uintptr_t* context,
-                                 MojoGetMessageContextFlags flags) {
-  assert(g_thunks.GetMessageContext);
-  return g_thunks.GetMessageContext(message, context, flags);
+                                 const MojoGetMessageContextOptions* options,
+                                 uintptr_t* context) {
+  return g_thunks.GetMessageContext(message, options, context);
 }
 
 MojoResult MojoWrapPlatformHandle(
     const struct MojoPlatformHandle* platform_handle,
     MojoHandle* mojo_handle) {
-  assert(g_thunks.WrapPlatformHandle);
   return g_thunks.WrapPlatformHandle(platform_handle, mojo_handle);
 }
 
 MojoResult MojoUnwrapPlatformHandle(
     MojoHandle mojo_handle,
     struct MojoPlatformHandle* platform_handle) {
-  assert(g_thunks.UnwrapPlatformHandle);
   return g_thunks.UnwrapPlatformHandle(mojo_handle, platform_handle);
 }
 
@@ -267,7 +320,6 @@ MojoResult MojoWrapPlatformSharedBufferHandle(
     const struct MojoSharedBufferGuid* guid,
     MojoPlatformSharedBufferHandleFlags flags,
     MojoHandle* mojo_handle) {
-  assert(g_thunks.WrapPlatformSharedBufferHandle);
   return g_thunks.WrapPlatformSharedBufferHandle(platform_handle, num_bytes,
                                                  guid, flags, mojo_handle);
 }
@@ -278,7 +330,6 @@ MojoResult MojoUnwrapPlatformSharedBufferHandle(
     size_t* num_bytes,
     struct MojoSharedBufferGuid* guid,
     MojoPlatformSharedBufferHandleFlags* flags) {
-  assert(g_thunks.UnwrapPlatformSharedBufferHandle);
   return g_thunks.UnwrapPlatformSharedBufferHandle(mojo_handle, platform_handle,
                                                    num_bytes, guid, flags);
 }
@@ -286,19 +337,25 @@ MojoResult MojoUnwrapPlatformSharedBufferHandle(
 MojoResult MojoNotifyBadMessage(MojoMessageHandle message,
                                 const char* error,
                                 size_t error_num_bytes) {
-  assert(g_thunks.NotifyBadMessage);
   return g_thunks.NotifyBadMessage(message, error, error_num_bytes);
 }
 
 MojoResult MojoGetProperty(MojoPropertyType type, void* value) {
-  assert(g_thunks.GetProperty);
   return g_thunks.GetProperty(type, value);
 }
 
 }  // extern "C"
 
-size_t MojoEmbedderSetSystemThunks(const MojoSystemThunks* system_thunks) {
-  if (system_thunks->size >= sizeof(g_thunks))
-    g_thunks = *system_thunks;
-  return sizeof(g_thunks);
+void MojoEmbedderSetSystemThunks(const MojoSystemThunks* thunks) {
+  // Assume embedders will always use matching versions of the EDK and public
+  // APIs.
+  DCHECK_EQ(thunks->size, sizeof(g_thunks));
+
+  // This should only have to check that the |g_thunks.size| is zero, but we
+  // have multiple EDK initializations in some test suites still. For now we
+  // allow double calls as long as they're the same thunks as before.
+  DCHECK(g_thunks.size == 0 || !memcmp(&g_thunks, thunks, sizeof(g_thunks)))
+      << "Cannot set embedder thunks after Mojo API calls have been made.";
+
+  g_thunks = *thunks;
 }

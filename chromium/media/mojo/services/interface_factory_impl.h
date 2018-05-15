@@ -8,7 +8,7 @@
 #include <memory>
 
 #include "base/macros.h"
-#include "media/mojo/features.h"
+#include "media/mojo/buildflags.h"
 #include "media/mojo/interfaces/interface_factory.mojom.h"
 #include "media/mojo/services/mojo_cdm_service_context.h"
 #include "mojo/public/cpp/bindings/strong_binding_set.h"
@@ -34,7 +34,8 @@ class InterfaceFactoryImpl : public mojom::InterfaceFactory {
   // mojom::InterfaceFactory implementation.
   void CreateAudioDecoder(mojom::AudioDecoderRequest request) final;
   void CreateVideoDecoder(mojom::VideoDecoderRequest request) final;
-  void CreateRenderer(const std::string& audio_device_id,
+  void CreateRenderer(media::mojom::HostedRendererType type,
+                      const std::string& type_specific_id,
                       mojom::RendererRequest request) final;
   void CreateCdm(const std::string& key_system,
                  mojom::ContentDecryptionModuleRequest request) final;

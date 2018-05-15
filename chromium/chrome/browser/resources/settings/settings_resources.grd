@@ -28,6 +28,18 @@
         <structure name="IDR_SETTINGS_MANAGE_A11Y_PAGE_HTML"
                    file="a11y_page/manage_a11y_page.html"
                    type="chrome_html" />
+        <structure name="IDR_SETTINGS_TTS_SUBPAGE_JS"
+                   file="a11y_page/tts_subpage.js"
+                   type="chrome_html" />
+        <structure name="IDR_SETTINGS_TTS_SUBPAGE_HTML"
+                   file="a11y_page/tts_subpage.html"
+                   type="chrome_html" />
+        <structure name="IDR_SETTINGS_GOOGLE_TTS_ENGINE_SUBPAGE_JS"
+                   file="a11y_page/google_tts_engine_subpage.js"
+                   type="chrome_html" />
+        <structure name="IDR_SETTINGS_GOOGLE_TTS_ENGINE_SUBPAGE_HTML"
+                   file="a11y_page/google_tts_engine_subpage.html"
+                   type="chrome_html" />
       </if>
       <structure name="IDR_SETTINGS_ABOUT_PAGE_BROWSER_PROXY_HTML"
                  file="about_page/about_page_browser_proxy.html"
@@ -542,6 +554,12 @@
         <structure name="IDR_SETTINGS_DEVICE_NIGHT_LIGHT_SLIDER_JS"
                    file="device_page/night_light_slider.js"
                    type="chrome_html" />
+        <structure name="IDR_SETTINGS_DEVICE_DISPLAY_SIZE_SLIDER_HTML"
+                   file="device_page/display_size_slider.html"
+                   type="chrome_html" />
+        <structure name="IDR_SETTINGS_DEVICE_DISPLAY_SIZE_SLIDER_JS"
+                   file="device_page/display_size_slider.js"
+                   type="chrome_html" />
 
       </if>
       <structure name="IDR_SETTINGS_DOWNLOADS_BROWSER_PROXY_HTML"
@@ -559,6 +577,26 @@
                  file="downloads_page/downloads_page.js"
                  type="chrome_html"
                  preprocess="true" />
+      <if expr="chromeos">
+        <structure name="IDR_SETTINGS_SMB_BROWSER_PROXY_HTML"
+                   file="downloads_page/smb_browser_proxy.html"
+                   type="chrome_html" />
+        <structure name="IDR_SETTINGS_SMB_BROWSER_PROXY_JS"
+                   file="downloads_page/smb_browser_proxy.js"
+                   type="chrome_html" />
+        <structure name="IDR_SETTINGS_SMB_SHARES_PAGE_HTML"
+                   file="downloads_page/smb_shares_page.html"
+                   type="chrome_html" />
+        <structure name="IDR_SETTINGS_SMB_SHARES_PAGE_JS"
+                   file="downloads_page/smb_shares_page.js"
+                   type="chrome_html" />
+        <structure name="IDR_SETTINGS_ADD_SMB_SHARE_DIALOG_HTML"
+                   file="downloads_page/add_smb_share_dialog.html"
+                   type="chrome_html" />
+        <structure name="IDR_SETTINGS_ADD_SMB_SHARE_DIALOG_JS"
+                   file="downloads_page/add_smb_share_dialog.js"
+                   type="chrome_html" />
+      </if>
       <structure name="IDR_SETTINGS_I18n_SETUP_HTML"
                  file="i18n_setup.html"
                  type="chrome_html" />
@@ -690,6 +728,12 @@
                  type="chrome_html" />
       <structure name="IDR_SETTINGS_PASSWORD_LIST_ITEM_JS"
                  file="passwords_and_forms_page/password_list_item.js"
+                 type="chrome_html" />
+      <structure name="IDR_SETTINGS_PASSWORD_MANAGER_PROXY_HTML"
+                 file="passwords_and_forms_page/password_manager_proxy.html"
+                 type="chrome_html" />
+      <structure name="IDR_SETTINGS_PASSWORD_MANAGER_PROXY_JS"
+                 file="passwords_and_forms_page/password_manager_proxy.js"
                  type="chrome_html" />
       <structure name="IDR_SETTINGS_PASSWORDS_SECTION_HTML"
                  file="passwords_and_forms_page/passwords_section.html"
@@ -1055,7 +1099,8 @@
                  allowexternalscript="true" />
       <structure name="IDR_SETTINGS_SYNC_PAGE_JS"
                  file="people_page/sync_page.js"
-                 type="chrome_html" />
+                 type="chrome_html"
+                 preprocess="true" />
       <structure name="IDR_SETTINGS_SYNC_PAGE_HTML"
                  file="people_page/sync_page.html"
                  type="chrome_html"

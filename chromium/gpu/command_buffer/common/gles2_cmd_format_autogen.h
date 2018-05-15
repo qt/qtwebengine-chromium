@@ -13501,7 +13501,8 @@ struct ScheduleOverlayPlaneCHROMIUM {
             GLfloat _uv_x,
             GLfloat _uv_y,
             GLfloat _uv_width,
-            GLfloat _uv_height) {
+            GLfloat _uv_height,
+            GLboolean _enable_blend) {
     SetHeader();
     plane_z_order = _plane_z_order;
     plane_transform = _plane_transform;
@@ -13514,6 +13515,7 @@ struct ScheduleOverlayPlaneCHROMIUM {
     uv_y = _uv_y;
     uv_width = _uv_width;
     uv_height = _uv_height;
+    enable_blend = _enable_blend;
   }
 
   void* Set(void* cmd,
@@ -13527,11 +13529,12 @@ struct ScheduleOverlayPlaneCHROMIUM {
             GLfloat _uv_x,
             GLfloat _uv_y,
             GLfloat _uv_width,
-            GLfloat _uv_height) {
-    static_cast<ValueType*>(cmd)->Init(_plane_z_order, _plane_transform,
-                                       _overlay_texture_id, _bounds_x,
-                                       _bounds_y, _bounds_width, _bounds_height,
-                                       _uv_x, _uv_y, _uv_width, _uv_height);
+            GLfloat _uv_height,
+            GLboolean _enable_blend) {
+    static_cast<ValueType*>(cmd)->Init(
+        _plane_z_order, _plane_transform, _overlay_texture_id, _bounds_x,
+        _bounds_y, _bounds_width, _bounds_height, _uv_x, _uv_y, _uv_width,
+        _uv_height, _enable_blend);
     return NextCmdAddress<ValueType>(cmd);
   }
 
@@ -13547,10 +13550,11 @@ struct ScheduleOverlayPlaneCHROMIUM {
   float uv_y;
   float uv_width;
   float uv_height;
+  uint32_t enable_blend;
 };
 
-static_assert(sizeof(ScheduleOverlayPlaneCHROMIUM) == 48,
-              "size of ScheduleOverlayPlaneCHROMIUM should be 48");
+static_assert(sizeof(ScheduleOverlayPlaneCHROMIUM) == 52,
+              "size of ScheduleOverlayPlaneCHROMIUM should be 52");
 static_assert(offsetof(ScheduleOverlayPlaneCHROMIUM, header) == 0,
               "offset of ScheduleOverlayPlaneCHROMIUM header should be 0");
 static_assert(
@@ -13580,6 +13584,9 @@ static_assert(offsetof(ScheduleOverlayPlaneCHROMIUM, uv_width) == 40,
               "offset of ScheduleOverlayPlaneCHROMIUM uv_width should be 40");
 static_assert(offsetof(ScheduleOverlayPlaneCHROMIUM, uv_height) == 44,
               "offset of ScheduleOverlayPlaneCHROMIUM uv_height should be 44");
+static_assert(
+    offsetof(ScheduleOverlayPlaneCHROMIUM, enable_blend) == 48,
+    "offset of ScheduleOverlayPlaneCHROMIUM enable_blend should be 48");
 
 struct ScheduleCALayerSharedStateCHROMIUM {
   typedef ScheduleCALayerSharedStateCHROMIUM ValueType;
@@ -13784,38 +13791,6 @@ static_assert(sizeof(CommitOverlayPlanesCHROMIUM) == 4,
               "size of CommitOverlayPlanesCHROMIUM should be 4");
 static_assert(offsetof(CommitOverlayPlanesCHROMIUM, header) == 0,
               "offset of CommitOverlayPlanesCHROMIUM header should be 0");
-
-struct SwapInterval {
-  typedef SwapInterval ValueType;
-  static const CommandId kCmdId = kSwapInterval;
-  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
-  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(1);
-
-  static uint32_t ComputeSize() {
-    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
-  }
-
-  void SetHeader() { header.SetCmd<ValueType>(); }
-
-  void Init(GLint _interval) {
-    SetHeader();
-    interval = _interval;
-  }
-
-  void* Set(void* cmd, GLint _interval) {
-    static_cast<ValueType*>(cmd)->Init(_interval);
-    return NextCmdAddress<ValueType>(cmd);
-  }
-
-  gpu::CommandHeader header;
-  int32_t interval;
-};
-
-static_assert(sizeof(SwapInterval) == 8, "size of SwapInterval should be 8");
-static_assert(offsetof(SwapInterval, header) == 0,
-              "offset of SwapInterval header should be 0");
-static_assert(offsetof(SwapInterval, interval) == 4,
-              "offset of SwapInterval interval should be 4");
 
 struct FlushDriverCachesCHROMIUM {
   typedef FlushDriverCachesCHROMIUM ValueType;
@@ -16075,7 +16050,6 @@ struct BeginRasterCHROMIUM {
             GLuint _sk_color,
             GLuint _msaa_sample_count,
             GLboolean _can_use_lcd_text,
-            GLboolean _use_distance_field_text,
             GLint _color_type,
             GLuint _color_space_transfer_cache_id) {
     SetHeader();
@@ -16083,7 +16057,6 @@ struct BeginRasterCHROMIUM {
     sk_color = _sk_color;
     msaa_sample_count = _msaa_sample_count;
     can_use_lcd_text = _can_use_lcd_text;
-    use_distance_field_text = _use_distance_field_text;
     color_type = _color_type;
     color_space_transfer_cache_id = _color_space_transfer_cache_id;
   }
@@ -16093,12 +16066,11 @@ struct BeginRasterCHROMIUM {
             GLuint _sk_color,
             GLuint _msaa_sample_count,
             GLboolean _can_use_lcd_text,
-            GLboolean _use_distance_field_text,
             GLint _color_type,
             GLuint _color_space_transfer_cache_id) {
     static_cast<ValueType*>(cmd)->Init(
         _texture_id, _sk_color, _msaa_sample_count, _can_use_lcd_text,
-        _use_distance_field_text, _color_type, _color_space_transfer_cache_id);
+        _color_type, _color_space_transfer_cache_id);
     return NextCmdAddress<ValueType>(cmd);
   }
 
@@ -16107,13 +16079,12 @@ struct BeginRasterCHROMIUM {
   uint32_t sk_color;
   uint32_t msaa_sample_count;
   uint32_t can_use_lcd_text;
-  uint32_t use_distance_field_text;
   int32_t color_type;
   uint32_t color_space_transfer_cache_id;
 };
 
-static_assert(sizeof(BeginRasterCHROMIUM) == 32,
-              "size of BeginRasterCHROMIUM should be 32");
+static_assert(sizeof(BeginRasterCHROMIUM) == 28,
+              "size of BeginRasterCHROMIUM should be 28");
 static_assert(offsetof(BeginRasterCHROMIUM, header) == 0,
               "offset of BeginRasterCHROMIUM header should be 0");
 static_assert(offsetof(BeginRasterCHROMIUM, texture_id) == 4,
@@ -16124,14 +16095,11 @@ static_assert(offsetof(BeginRasterCHROMIUM, msaa_sample_count) == 12,
               "offset of BeginRasterCHROMIUM msaa_sample_count should be 12");
 static_assert(offsetof(BeginRasterCHROMIUM, can_use_lcd_text) == 16,
               "offset of BeginRasterCHROMIUM can_use_lcd_text should be 16");
+static_assert(offsetof(BeginRasterCHROMIUM, color_type) == 20,
+              "offset of BeginRasterCHROMIUM color_type should be 20");
 static_assert(
-    offsetof(BeginRasterCHROMIUM, use_distance_field_text) == 20,
-    "offset of BeginRasterCHROMIUM use_distance_field_text should be 20");
-static_assert(offsetof(BeginRasterCHROMIUM, color_type) == 24,
-              "offset of BeginRasterCHROMIUM color_type should be 24");
-static_assert(
-    offsetof(BeginRasterCHROMIUM, color_space_transfer_cache_id) == 28,
-    "offset of BeginRasterCHROMIUM color_space_transfer_cache_id should be 28");
+    offsetof(BeginRasterCHROMIUM, color_space_transfer_cache_id) == 24,
+    "offset of BeginRasterCHROMIUM color_space_transfer_cache_id should be 24");
 
 struct RasterCHROMIUM {
   typedef RasterCHROMIUM ValueType;

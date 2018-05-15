@@ -105,7 +105,7 @@ static void output_stats(FIRSTPASS_STATS *stats,
     fprintf(fpfile,
             "%12.0lf %12.4lf %12.2lf %12.2lf %12.2lf %12.0lf %12.4lf %12.4lf"
             "%12.4lf %12.4lf %12.4lf %12.4lf %12.4lf %12.4lf %12.4lf %12.4lf"
-            "%12.4lf %12.4lf %12.4lf %12.4lf %12.4lf %12.0lf %12.0lf %12.0lf"
+            "%12.4lf %12.4lf %12.4lf %12.4lf %12.4lf %12.0lf %12.4lf %12.0lf"
             "%12.4lf"
             "\n",
             stats->frame, stats->weight, stats->intra_error, stats->coded_error,
@@ -1582,7 +1582,24 @@ static double calc_correction_factor(double err_per_mb, double err_divisor,
   return fclamp(pow(error_term, power_term), 0.05, 5.0);
 }
 
-#define ERR_DIVISOR 115.0
+static double wq_err_divisor(VP9_COMP *cpi) {
+  const VP9_COMMON *const cm = &cpi->common;
+  unsigned int screen_area = (cm->width * cm->height);
+
+  // Use a different error per mb factor for calculating boost for
+  //  different formats.
+  if (screen_area < 1280 * 720) {
+    return 125.0;
+  } else if (screen_area <= 1920 * 1080) {
+    return 130.0;
+  } else if (screen_area < 3840 * 2160) {
+    return 150.0;
+  }
+
+  // Fall through to here only for 4K and above.
+  return 200.0;
+}
+
 #define NOISE_FACTOR_MIN 0.9
 #define NOISE_FACTOR_MAX 1.1
 static int get_twopass_worst_quality(VP9_COMP *cpi, const double section_err,
@@ -1642,7 +1659,7 @@ static int get_twopass_worst_quality(VP9_COMP *cpi, const double section_err,
     // content at the given rate.
     for (q = rc->best_quality; q < rc->worst_quality; ++q) {
       const double factor =
-          calc_correction_factor(av_err_per_mb, ERR_DIVISOR, q);
+          calc_correction_factor(av_err_per_mb, wq_err_divisor(cpi), q);
       const int bits_per_mb = vp9_rc_bits_per_mb(
           INTER_FRAME, q,
           factor * speed_term * cpi->twopass.bpm_factor * noise_factor,
@@ -1970,7 +1987,20 @@ static double calc_frame_boost(VP9_COMP *cpi, const FIRSTPASS_STATS *this_frame,
   return VPXMIN(frame_boost, GF_MAX_BOOST * boost_q_correction);
 }
 
-#define KF_BASELINE_ERR_PER_MB 12500.0
+static double kf_err_per_mb(VP9_COMP *cpi) {
+  const VP9_COMMON *const cm = &cpi->common;
+  unsigned int screen_area = (cm->width * cm->height);
+
+  // Use a different error per mb factor for calculating boost for
+  //  different formats.
+  if (screen_area < 1280 * 720) {
+    return 2000.0;
+  } else if (screen_area < 1920 * 1080) {
+    return 500.0;
+  }
+  return 250.0;
+}
+
 static double calc_kf_frame_boost(VP9_COMP *cpi,
                                   const FIRSTPASS_STATS *this_frame,
                                   double *sr_accumulator,
@@ -1983,7 +2013,7 @@ static double calc_kf_frame_boost(VP9_COMP *cpi,
   const double active_area = calculate_active_area(cpi, this_frame);
 
   // Underlying boost factor is based on inter error ratio.
-  frame_boost = (KF_BASELINE_ERR_PER_MB * active_area) /
+  frame_boost = (kf_err_per_mb(cpi) * active_area) /
                 DOUBLE_DIVIDE_CHECK(this_frame->coded_error + *sr_accumulator);
 
   // Update the accumulator for second ref error difference.
@@ -1996,8 +2026,11 @@ static double calc_kf_frame_boost(VP9_COMP *cpi,
   if (this_frame_mv_in_out > 0.0)
     frame_boost += frame_boost * (this_frame_mv_in_out * 2.0);
 
-  // Q correction and scalling
-  frame_boost = frame_boost * boost_q_correction;
+  // Q correction and scaling
+  // The 40.0 value here is an experimentally derived baseline minimum.
+  // This value is in line with the minimum per frame boost in the alt_ref
+  // boost calculation.
+  frame_boost = ((frame_boost + 40.0) * boost_q_correction);
 
   return VPXMIN(frame_boost, max_boost * boost_q_correction);
 }
@@ -2861,6 +2894,7 @@ static void find_next_key_frame(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   double zero_motion_accumulator = 1.0;
   double boost_score = 0.0;
   double kf_mod_err = 0.0;
+  double kf_raw_err = 0.0;
   double kf_group_err = 0.0;
   double recent_loop_decay[FRAMES_TO_CHECK_DECAY];
   double sr_accumulator = 0.0;
@@ -2889,6 +2923,7 @@ static void find_next_key_frame(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   twopass->kf_group_bits = 0;          // Total bits available to kf group
   twopass->kf_group_error_left = 0.0;  // Group modified error score.
 
+  kf_raw_err = this_frame->intra_error;
   kf_mod_err =
       calculate_norm_frame_score(cpi, twopass, oxcf, this_frame, av_err);
 
@@ -3056,7 +3091,8 @@ static void find_next_key_frame(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
           fabs(next_frame.mv_in_out_count * next_frame.pcnt_motion);
 
       if ((frame_boost < 25.00) ||
-          (abs_mv_in_out_accumulator > KF_ABS_ZOOM_THRESH))
+          (abs_mv_in_out_accumulator > KF_ABS_ZOOM_THRESH) ||
+          (sr_accumulator > (kf_raw_err * 1.50)))
         break;
     } else {
       break;

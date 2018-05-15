@@ -12,7 +12,6 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/optional.h"
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
@@ -350,7 +349,7 @@ TEST_F(FileUtilTest, BackgroundScriptsMustExist) {
   std::unique_ptr<base::DictionaryValue> value(new base::DictionaryValue());
   value->SetString("name", "test");
   value->SetString("version", "1");
-  value->SetInteger("manifest_version", 1);
+  value->SetInteger("manifest_version", 2);
 
   base::ListValue* scripts =
       value->SetList("background.scripts", std::make_unique<base::ListValue>());

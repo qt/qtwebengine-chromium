@@ -25,13 +25,19 @@
 #include "base/trace_event/tracing_agent.h"
 #include "components/tracing/common/trace_config_file.h"
 #include "components/viz/common/features.h"
-#include "content/browser/devtools/devtools_frame_trace_recorder_for_viz.h"
+#include "content/browser/devtools/devtools_frame_trace_recorder.h"
 #include "content/browser/devtools/devtools_io_context.h"
 #include "content/browser/devtools/devtools_session.h"
+#include "content/browser/devtools/devtools_traceable_screenshot.h"
+#include "content/browser/devtools/devtools_video_consumer.h"
+#include "content/browser/frame_host/frame_tree.h"
+#include "content/browser/frame_host/frame_tree_node.h"
+#include "content/browser/frame_host/navigation_handle_impl.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/tracing/tracing_controller_impl.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/content_features.h"
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/memory_instrumentation.h"
 #include "services/tracing/public/mojom/constants.mojom.h"
 
@@ -43,6 +49,17 @@ namespace {
 const double kMinimumReportingInterval = 250.0;
 
 const char kRecordModeParam[] = "record_mode";
+
+// Settings for |video_consumer_|.
+// Tracing requires a 10ms minimum capture period.
+constexpr base::TimeDelta kMinCapturePeriod =
+    base::TimeDelta::FromMilliseconds(10);
+
+// Frames need to be at least 1x1, otherwise nothing would be captured.
+constexpr gfx::Size kMinFrameSize = gfx::Size(1, 1);
+
+// Frames do not need to be greater than 500x500 for tracing.
+constexpr gfx::Size kMaxFrameSize = gfx::Size(500, 500);
 
 // Convert from camel case to separator + lowercase.
 std::string ConvertFromCamelCase(const std::string& in_str, char separator) {
@@ -143,22 +160,66 @@ class DevToolsStreamEndpoint : public TracingController::TraceDataEndpoint {
   base::WeakPtr<TracingHandler> tracing_handler_;
 };
 
+std::string GetProcessHostHex(RenderProcessHost* host) {
+  return base::StringPrintf("0x%" PRIxPTR, reinterpret_cast<uintptr_t>(host));
+}
+
+void SendProcessReadyInBrowserEvent(const base::UnguessableToken& frame_token,
+                                    RenderProcessHost* host) {
+  auto data = std::make_unique<base::trace_event::TracedValue>();
+  data->SetString("frame", frame_token.ToString());
+  data->SetString("processPseudoId", GetProcessHostHex(host));
+  data->SetInteger("processId",
+                   static_cast<int>(base::GetProcId(host->GetHandle())));
+  TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
+                       "ProcessReadyInBrowser", TRACE_EVENT_SCOPE_THREAD,
+                       "data", std::move(data));
+}
+
+void FillFrameData(base::trace_event::TracedValue* data,
+                   FrameTreeNode* node,
+                   RenderFrameHostImpl* frame_host,
+                   const GURL& url) {
+  url::Replacements<char> strip_fragment;
+  strip_fragment.ClearRef();
+  data->SetString("frame", node->devtools_frame_token().ToString());
+  data->SetString("url", url.ReplaceComponents(strip_fragment).spec());
+  data->SetString("name", node->frame_name());
+  if (node->parent())
+    data->SetString("parent",
+                    node->parent()->devtools_frame_token().ToString());
+  if (frame_host) {
+    RenderProcessHost* process_host = frame_host->GetProcess();
+    base::ProcessId process_id = base::GetProcId(process_host->GetHandle());
+    if (process_id == base::kNullProcessId) {
+      data->SetString("processPseudoId", GetProcessHostHex(process_host));
+      frame_host->GetProcess()->PostTaskWhenProcessIsReady(
+          base::BindOnce(&SendProcessReadyInBrowserEvent,
+                         node->devtools_frame_token(), process_host));
+    } else {
+      // Cast process id to int to be compatible with tracing.
+      data->SetInteger("processId", static_cast<int>(process_id));
+    }
+  }
+}
+
 }  // namespace
 
-TracingHandler::TracingHandler(TracingHandler::Target target,
-                               int frame_tree_node_id,
+TracingHandler::TracingHandler(FrameTreeNode* frame_tree_node_,
                                DevToolsIOContext* io_context)
     : DevToolsDomainHandler(Tracing::Metainfo::domainName),
-      target_(target),
       io_context_(io_context),
-      frame_tree_node_id_(frame_tree_node_id),
+      frame_tree_node_(frame_tree_node_),
       did_initiate_recording_(false),
       return_as_stream_(false),
       gzip_compression_(false),
       weak_factory_(this) {
-  if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor)) {
-    frame_trace_recorder_ =
-        std::make_unique<DevToolsFrameTraceRecorderForViz>();
+  if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor) ||
+      base::FeatureList::IsEnabled(
+          features::kUseVideoCaptureApiForDevToolsSnapshots)) {
+    video_consumer_ =
+        std::make_unique<DevToolsVideoConsumer>(base::BindRepeating(
+            &TracingHandler::OnFrameFromVideoConsumer, base::Unretained(this)));
   }
 }
 
@@ -174,9 +235,9 @@ std::vector<TracingHandler*> TracingHandler::ForAgentHost(
 
 void TracingHandler::SetRenderer(int process_host_id,
                                  RenderFrameHostImpl* frame_host) {
-  if (!frame_trace_recorder_ || !frame_host)
+  if (!video_consumer_ || !frame_host)
     return;
-  frame_trace_recorder_->SetFrameSinkId(
+  video_consumer_->SetFrameSinkId(
       frame_host->GetRenderWidgetHost()->GetFrameSinkId());
 }
 
@@ -340,7 +401,7 @@ void TracingHandler::Start(Maybe<std::string> categories,
 
   // If inspected target is a render process Tracing.start will be handled by
   // tracing agent in the renderer.
-  if (target_ == Renderer)
+  if (frame_tree_node_)
     callback->fallThrough();
 
   TracingController::GetInstance()->StartTracing(
@@ -377,7 +438,7 @@ void TracingHandler::End(std::unique_ptr<EndCallback> callback) {
   }
   // If inspected target is a render process Tracing.end will be handled by
   // tracing agent in the renderer.
-  if (target_ == Renderer)
+  if (frame_tree_node_)
     callback->fallThrough();
   else
     callback->sendSuccess();
@@ -393,17 +454,21 @@ void TracingHandler::GetCategories(
 
 void TracingHandler::OnRecordingEnabled(
     std::unique_ptr<StartCallback> callback) {
-  TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
-                       "TracingStartedInBrowser", TRACE_EVENT_SCOPE_THREAD,
-                       "frameTreeNodeId", frame_tree_node_id_);
-  if (target_ != Renderer)
+  EmitFrameTree();
+
+  if (!frame_tree_node_)
     callback->sendSuccess();
 
   bool screenshot_enabled;
   TRACE_EVENT_CATEGORY_GROUP_ENABLED(
       TRACE_DISABLED_BY_DEFAULT("devtools.screenshot"), &screenshot_enabled);
-  if (frame_trace_recorder_ && screenshot_enabled)
-    frame_trace_recorder_->StartCapture();
+  if (video_consumer_ && screenshot_enabled) {
+    // Reset number of screenshots received, each time tracing begins.
+    number_of_screenshots_from_video_consumer_ = 0;
+    video_consumer_->SetMinCapturePeriod(kMinCapturePeriod);
+    video_consumer_->SetMinAndMaxFrameSize(kMinFrameSize, kMaxFrameSize);
+    video_consumer_->StartCapture();
+  }
 }
 
 void TracingHandler::OnBufferUsage(float percent_full,
@@ -437,7 +502,7 @@ void TracingHandler::RequestMemoryDump(
       ->RequestGlobalDumpAndAppendToTrace(
           base::trace_event::MemoryDumpType::EXPLICITLY_TRIGGERED,
           base::trace_event::MemoryDumpLevelOfDetail::DETAILED,
-          on_memory_dump_finished);
+          std::move(on_memory_dump_finished));
 }
 
 void TracingHandler::OnMemoryDumpFinished(
@@ -445,6 +510,27 @@ void TracingHandler::OnMemoryDumpFinished(
     bool success,
     uint64_t dump_id) {
   callback->sendSuccess(base::StringPrintf("0x%" PRIx64, dump_id), success);
+}
+
+void TracingHandler::OnFrameFromVideoConsumer(
+    scoped_refptr<media::VideoFrame> frame) {
+  const SkBitmap skbitmap = DevToolsVideoConsumer::GetSkBitmapFromFrame(frame);
+
+  base::TimeTicks reference_time;
+  const bool had_reference_time = frame->metadata()->GetTimeTicks(
+      media::VideoFrameMetadata::REFERENCE_TIME, &reference_time);
+  DCHECK(had_reference_time);
+
+  TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID_AND_TIMESTAMP(
+      TRACE_DISABLED_BY_DEFAULT("devtools.screenshot"), "Screenshot", 1,
+      reference_time, std::make_unique<DevToolsTraceableScreenshot>(skbitmap));
+
+  ++number_of_screenshots_from_video_consumer_;
+  DCHECK(video_consumer_);
+  if (number_of_screenshots_from_video_consumer_ >=
+      DevToolsFrameTraceRecorder::kMaximumNumberOfScreenshots) {
+    video_consumer_->StopCapture();
+  }
 }
 
 Response TracingHandler::RecordClockSyncMarker(const std::string& sync_id) {
@@ -478,17 +564,63 @@ void TracingHandler::StopTracing(
   buffer_usage_poll_timer_.reset();
   TracingController::GetInstance()->StopTracing(endpoint, agent_label);
   did_initiate_recording_ = false;
-  if (frame_trace_recorder_)
-    frame_trace_recorder_->StopCapture();
+  if (video_consumer_)
+    video_consumer_->StopCapture();
 }
 
 bool TracingHandler::IsTracing() const {
   return TracingController::GetInstance()->IsTracing();
 }
 
+void TracingHandler::EmitFrameTree() {
+  auto data = std::make_unique<base::trace_event::TracedValue>();
+  if (frame_tree_node_) {
+    data->SetInteger("frameTreeNodeId", frame_tree_node_->frame_tree_node_id());
+    data->SetBoolean("persistentIds", true);
+    data->BeginArray("frames");
+    FrameTree::NodeRange subtree =
+        frame_tree_node_->frame_tree()->SubtreeNodes(frame_tree_node_);
+    for (FrameTreeNode* node : subtree) {
+      data->BeginDictionary();
+      FillFrameData(data.get(), node, node->current_frame_host(),
+                    node->current_url());
+      data->EndDictionary();
+    }
+    data->EndArray();
+  }
+  TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
+                       "TracingStartedInBrowser", TRACE_EVENT_SCOPE_THREAD,
+                       "data", std::move(data));
+}
+
+void TracingHandler::ReadyToCommitNavigation(
+    NavigationHandleImpl* navigation_handle) {
+  if (!did_initiate_recording_)
+    return;
+  auto data = std::make_unique<base::trace_event::TracedValue>();
+  FillFrameData(data.get(), navigation_handle->frame_tree_node(),
+                navigation_handle->GetRenderFrameHost(),
+                navigation_handle->GetURL());
+  TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
+                       "FrameCommittedInBrowser", TRACE_EVENT_SCOPE_THREAD,
+                       "data", std::move(data));
+}
+
+void TracingHandler::FrameDeleted(RenderFrameHostImpl* frame_host) {
+  if (!did_initiate_recording_)
+    return;
+  auto data = std::make_unique<base::trace_event::TracedValue>();
+  data->SetString(
+      "frame",
+      frame_host->frame_tree_node()->devtools_frame_token().ToString());
+  TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
+                       "FrameDeletedInBrowser", TRACE_EVENT_SCOPE_THREAD,
+                       "data", std::move(data));
+}
+
+// static
 bool TracingHandler::IsStartupTracingActive() {
-  return ::tracing::TraceConfigFile::GetInstance()->IsEnabled() &&
-      TracingController::GetInstance()->IsTracing();
+  return ::tracing::TraceConfigFile::GetInstance()->IsEnabled();
 }
 
 // static

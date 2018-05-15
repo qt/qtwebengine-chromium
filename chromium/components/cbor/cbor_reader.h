@@ -61,12 +61,12 @@ class CBOR_EXPORT CBORReader {
     TOO_MUCH_NESTING,
     INVALID_UTF8,
     EXTRANEOUS_DATA,
-    DUPLICATE_KEY,
     OUT_OF_ORDER_KEY,
     NON_MINIMAL_CBOR_ENCODING,
     UNSUPPORTED_SIMPLE_VALUE,
     UNSUPPORTED_FLOATING_POINT_VALUE,
     OUT_OF_RANGE_INTEGER_VALUE,
+    UNKNOWN_ERROR,
   };
 
   // Encapsulates information extracted from the header of a CBOR data item,
@@ -97,7 +97,7 @@ class CBOR_EXPORT CBORReader {
   // formats is violated -including unknown additional info and incomplete
   // CBOR data- then an empty optional is returned. Optional |error_code_out|
   // can be provided by the caller to obtain additional information about
-  // decoding failures.
+  // decoding failures, which is always available if an empty value is returned.
   //
   // Fails if not all the data was consumed and sets |error_code_out| to
   // EXTRANEOUS_DATA in this case.
@@ -114,9 +114,10 @@ class CBOR_EXPORT CBORReader {
 
   // Reads and parses the header of CBOR data item from |input_data|. Optional
   // |error_code_out| can be provided by the caller to obtain additional
-  // information about decoding failures. Never fails with EXTRANEOUS_DATA, but
-  // informs the caller of how many bytes were consumed through
-  // |num_bytes_consumed|.
+  // information about decoding failures, which is always available if an empty
+  // value is returned. Never fails with EXTRANEOUS_DATA, but informs the
+  // caller of how many bytes were consumed through |num_bytes_consumed|, which
+  // is set to zero on error.
   static base::Optional<DataItemHeader> ReadDataItemHeader(
       base::span<const uint8_t> input_data,
       size_t* num_bytes_consumed = nullptr,
@@ -141,8 +142,6 @@ class CBOR_EXPORT CBORReader {
   base::Optional<CBORValue> ReadMapContent(const DataItemHeader& header,
                                            int max_nesting_level);
   bool CanConsume(uint64_t bytes);
-  void CheckExtraneousData();
-  bool CheckDuplicateKey(const CBORValue& new_key, CBORValue::MapValue* map);
   bool HasValidUTF8Format(const std::string& string_data);
   bool CheckOutOfOrderKey(const CBORValue& new_key, CBORValue::MapValue* map);
   bool CheckMinimalEncoding(uint8_t additional_bytes, uint64_t uint_data);

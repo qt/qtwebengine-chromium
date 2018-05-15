@@ -246,7 +246,6 @@ BOOL QwaveAPI::SetFlow(HANDLE handle,
 //-----------------------------------------------------------------------------
 
 UDPSocketWin::UDPSocketWin(DatagramSocket::BindType bind_type,
-                           const RandIntCallback& rand_int_cb,
                            net::NetLog* net_log,
                            const net::NetLogSource& source)
     : socket_(INVALID_SOCKET),
@@ -256,7 +255,6 @@ UDPSocketWin::UDPSocketWin(DatagramSocket::BindType bind_type,
       multicast_interface_(0),
       multicast_time_to_live_(1),
       bind_type_(bind_type),
-      rand_int_cb_(rand_int_cb),
       use_non_blocking_io_(false),
       read_iobuffer_len_(0),
       write_iobuffer_len_(0),
@@ -268,8 +266,6 @@ UDPSocketWin::UDPSocketWin(DatagramSocket::BindType bind_type,
   EnsureWinsockInit();
   net_log_.BeginEvent(NetLogEventType::SOCKET_ALIVE,
                       source.ToEventParametersCallback());
-  if (bind_type == DatagramSocket::RANDOM_BIND)
-    DCHECK(!rand_int_cb.is_null());
 }
 
 UDPSocketWin::~UDPSocketWin() {
@@ -566,6 +562,8 @@ int UDPSocketWin::SetDoNotFragment() {
                       reinterpret_cast<const char*>(&val), sizeof(val));
   return rv == 0 ? OK : MapSystemError(WSAGetLastError());
 }
+
+void UDPSocketWin::SetMsgConfirm(bool confirm) {}
 
 int UDPSocketWin::AllowAddressReuse() {
   DCHECK_NE(socket_, INVALID_SOCKET);
@@ -997,11 +995,11 @@ int UDPSocketWin::DoBind(const IPEndPoint& address) {
 }
 
 int UDPSocketWin::RandomBind(const IPAddress& address) {
-  DCHECK(bind_type_ == DatagramSocket::RANDOM_BIND && !rand_int_cb_.is_null());
+  DCHECK_EQ(bind_type_, DatagramSocket::RANDOM_BIND);
 
   for (int i = 0; i < kBindRetries; ++i) {
-    int rv = DoBind(IPEndPoint(address, static_cast<uint16_t>(rand_int_cb_.Run(
-                                            kPortStart, kPortEnd))));
+    int rv = DoBind(IPEndPoint(
+        address, static_cast<uint16_t>(base::RandInt(kPortStart, kPortEnd))));
     if (rv != ERR_ADDRESS_IN_USE)
       return rv;
   }
@@ -1223,6 +1221,38 @@ void UDPSocketWin::ApplySocketTag(const SocketTag& tag) {
   // Windows does not support any specific SocketTags so fail if any non-default
   // tag is applied.
   CHECK(tag == SocketTag());
+}
+
+void UDPSocketWin::SetWriteAsyncEnabled(bool enabled) {}
+bool UDPSocketWin::WriteAsyncEnabled() {
+  return false;
+}
+void UDPSocketWin::SetMaxPacketSize(size_t max_packet_size) {}
+void UDPSocketWin::SetWriteMultiCoreEnabled(bool enabled) {}
+void UDPSocketWin::SetSendmmsgEnabled(bool enabled) {}
+void UDPSocketWin::SetWriteBatchingActive(bool active) {}
+
+int UDPSocketWin::WriteAsync(
+    DatagramBuffers buffers,
+    const CompletionCallback& callback,
+    const NetworkTrafficAnnotationTag& traffic_annotation) {
+  NOTIMPLEMENTED();
+  return ERR_NOT_IMPLEMENTED;
+}
+
+int UDPSocketWin::WriteAsync(
+    const char* buffer,
+    size_t buf_len,
+    const CompletionCallback& callback,
+    const NetworkTrafficAnnotationTag& traffic_annotation) {
+  NOTIMPLEMENTED();
+  return ERR_NOT_IMPLEMENTED;
+}
+
+DatagramBuffers UDPSocketWin::GetUnwrittenBuffers() {
+  DatagramBuffers result;
+  NOTIMPLEMENTED();
+  return result;
 }
 
 }  // namespace net

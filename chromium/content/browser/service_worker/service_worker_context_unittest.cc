@@ -8,11 +8,9 @@
 
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/time/time.h"
-#include "content/browser/browser_thread_impl.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
 #include "content/browser/service_worker/embedded_worker_test_helper.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
@@ -23,13 +21,12 @@
 #include "content/browser/service_worker/service_worker_storage.h"
 #include "content/browser/service_worker/service_worker_test_utils.h"
 #include "content/browser/service_worker/service_worker_version.h"
-#include "content/common/service_worker/embedded_worker_messages.h"
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_event_status.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -48,7 +45,7 @@ void SaveResponseCallback(bool* called,
 ServiceWorkerContextCore::RegistrationCallback MakeRegisteredCallback(
     bool* called,
     int64_t* store_registration_id) {
-  return base::Bind(&SaveResponseCallback, called, store_registration_id);
+  return base::BindOnce(&SaveResponseCallback, called, store_registration_id);
 }
 
 void CallCompletedCallback(bool* called, ServiceWorkerStatusCode) {
@@ -57,7 +54,7 @@ void CallCompletedCallback(bool* called, ServiceWorkerStatusCode) {
 
 ServiceWorkerContextCore::UnregistrationCallback MakeUnregisteredCallback(
     bool* called) {
-  return base::Bind(&CallCompletedCallback, called);
+  return base::BindOnce(&CallCompletedCallback, called);
 }
 
 void ExpectRegisteredWorkers(
@@ -645,26 +642,13 @@ TEST_F(ServiceWorkerContextTest, ProviderHostIterator) {
   ServiceWorkerProviderHost* host1_raw = host1.get();
   ServiceWorkerProviderHost* host2_raw = host2.get();
   ServiceWorkerProviderHost* host3_raw = host3.get();
-  ServiceWorkerProviderHost* host4_raw = host4.get();
   context()->AddProviderHost(std::move(host1));
   context()->AddProviderHost(std::move(host2));
   context()->AddProviderHost(std::move(host3));
   context()->AddProviderHost(std::move(host4));
 
-  // Iterate over all provider hosts.
-  std::set<ServiceWorkerProviderHost*> results;
-  for (auto it = context()->GetProviderHostIterator(); !it->IsAtEnd();
-       it->Advance()) {
-    results.insert(it->GetProviderHost());
-  }
-  EXPECT_EQ(4u, results.size());
-  EXPECT_TRUE(ContainsKey(results, host1_raw));
-  EXPECT_TRUE(ContainsKey(results, host2_raw));
-  EXPECT_TRUE(ContainsKey(results, host3_raw));
-  EXPECT_TRUE(ContainsKey(results, host4_raw));
-
   // Iterate over the client provider hosts that belong to kOrigin1.
-  results.clear();
+  std::set<ServiceWorkerProviderHost*> results;
   for (auto it = context()->GetClientProviderHostIterator(kOrigin1);
        !it->IsAtEnd(); it->Advance()) {
     results.insert(it->GetProviderHost());

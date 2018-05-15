@@ -9,6 +9,7 @@
  */
 
 #include "call/video_send_stream.h"
+#include "rtc_base/strings/string_builder.h"
 
 namespace webrtc {
 
@@ -16,7 +17,8 @@ VideoSendStream::StreamStats::StreamStats() = default;
 VideoSendStream::StreamStats::~StreamStats() = default;
 
 std::string VideoSendStream::StreamStats::ToString() const {
-  std::stringstream ss;
+  char buf[1024];
+  rtc::SimpleStringBuilder ss(buf);
   ss << "width: " << width << ", ";
   ss << "height: " << height << ", ";
   ss << "key: " << frame_counts.key_frames << ", ";
@@ -37,7 +39,8 @@ VideoSendStream::Stats::Stats() = default;
 VideoSendStream::Stats::~Stats() = default;
 
 std::string VideoSendStream::Stats::ToString(int64_t time_ms) const {
-  std::stringstream ss;
+  char buf[1024];
+  rtc::SimpleStringBuilder ss(buf);
   ss << "VideoSendStream stats: " << time_ms << ", {";
   ss << "input_fps: " << input_frame_rate << ", ";
   ss << "encode_fps: " << encode_frame_rate << ", ";
@@ -68,7 +71,8 @@ VideoSendStream::Config& VideoSendStream::Config::operator=(Config&&) = default;
 VideoSendStream::Config::Config::~Config() = default;
 
 std::string VideoSendStream::Config::ToString() const {
-  std::stringstream ss;
+  char buf[2 * 1024];
+  rtc::SimpleStringBuilder ss(buf);
   ss << "{encoder_settings: " << encoder_settings.ToString();
   ss << ", rtp: " << rtp.ToString();
   ss << ", rtcp: " << rtcp.ToString();
@@ -85,9 +89,10 @@ std::string VideoSendStream::Config::ToString() const {
 }
 
 std::string VideoSendStream::Config::EncoderSettings::ToString() const {
-  std::stringstream ss;
-  ss << "{payload_name: " << payload_name;
-  ss << ", payload_type: " << payload_type;
+  char buf[1024];
+  rtc::SimpleStringBuilder ss(buf);
+  ss << "{encoder_factory: "
+     << (encoder_factory ? "(VideoEncoderFactory)" : "(nullptr)");
   ss << ", encoder: " << (encoder ? "(VideoEncoder)" : "nullptr");
   ss << '}';
   return ss.str();
@@ -102,7 +107,8 @@ VideoSendStream::Config::Rtp::Flexfec::Flexfec(const Flexfec&) = default;
 VideoSendStream::Config::Rtp::Flexfec::~Flexfec() = default;
 
 std::string VideoSendStream::Config::Rtp::ToString() const {
-  std::stringstream ss;
+  char buf[2 * 1024];
+  rtc::SimpleStringBuilder ss(buf);
   ss << "{ssrcs: [";
   for (size_t i = 0; i < ssrcs.size(); ++i) {
     ss << ssrcs[i];
@@ -124,6 +130,8 @@ std::string VideoSendStream::Config::Rtp::ToString() const {
 
   ss << ", nack: {rtp_history_ms: " << nack.rtp_history_ms << '}';
   ss << ", ulpfec: " << ulpfec.ToString();
+  ss << ", payload_name: " << payload_name;
+  ss << ", payload_type: " << payload_type;
 
   ss << ", flexfec: {payload_type: " << flexfec.payload_type;
   ss << ", ssrc: " << flexfec.ssrc;
@@ -146,7 +154,8 @@ VideoSendStream::Config::Rtp::Rtx::Rtx(const Rtx&) = default;
 VideoSendStream::Config::Rtp::Rtx::~Rtx() = default;
 
 std::string VideoSendStream::Config::Rtp::Rtx::ToString() const {
-  std::stringstream ss;
+  char buf[1024];
+  rtc::SimpleStringBuilder ss(buf);
   ss << "{ssrcs: [";
   for (size_t i = 0; i < ssrcs.size(); ++i) {
     ss << ssrcs[i];
@@ -165,7 +174,8 @@ VideoSendStream::Config::Rtcp::Rtcp(const Rtcp&) = default;
 VideoSendStream::Config::Rtcp::~Rtcp() = default;
 
 std::string VideoSendStream::Config::Rtcp::ToString() const {
-  std::stringstream ss;
+  char buf[1024];
+  rtc::SimpleStringBuilder ss(buf);
   ss << "{video_report_interval_ms: " << video_report_interval_ms;
   ss << ", audio_report_interval_ms: " << audio_report_interval_ms;
   ss << '}';

@@ -4,17 +4,13 @@
 
 module network.mojom;
 
+import "services/network/public/mojom/network_param.mojom";
+
 [Native]
 struct URLRequest;
 
 [Native]
 struct URLResponseHead;
-
-[Native]
-struct SSLCertRequestInfo;
-
-[Native]
-struct SSLInfo;
 
 [Native]
 struct URLRequestRedirectInfo;
@@ -24,9 +20,6 @@ struct CORSErrorStatus;
 
 [Native]
 struct URLLoaderCompletionStatus;
-
-[Native]
-struct X509Certificate;
 
 // This enum corresponds to net::RequestPriority. See its comments for details.
 enum RequestPriority {
@@ -93,10 +86,7 @@ interface DownloadedTempFile {
 interface URLLoaderClient {
   // Called when the response head is received.
   // |downloaded_file| is non-null in the 'download_to_file' case.
-  // |ssl_info| is non-null if |kURLLoadOptionsSendSSLInfoWithResponse|
-  // was specified to CreateLoaderAndStart.
   OnReceiveResponse(URLResponseHead head,
-                    SSLInfo? ssl_info,
                     DownloadedTempFile? downloaded_file);
 
   // Called when the request has been redirected. The receiver is expected to

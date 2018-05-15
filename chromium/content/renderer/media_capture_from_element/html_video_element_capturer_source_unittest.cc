@@ -11,9 +11,9 @@
 #include "media/base/limits.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebMediaPlayer.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/web_media_player.h"
+#include "third_party/blink/public/platform/web_string.h"
 
 using ::testing::_;
 using ::testing::InSequence;
@@ -40,6 +40,7 @@ class MockWebMediaPlayer : public blink::WebMediaPlayer,
   void SetRate(double) override {}
   void SetVolume(double) override {}
   void EnterPictureInPicture() override {}
+  void ExitPictureInPicture() override {}
   blink::WebTimeRanges Buffered() const override {
     return blink::WebTimeRanges();
   }
@@ -146,7 +147,8 @@ TEST_F(HTMLVideoElementCapturerSourceTest, GetFormatsAndStartAndStop) {
   EXPECT_CALL(*this, DoOnDeliverFrame(_, _)).WillOnce(SaveArg<0>(&first_frame));
   EXPECT_CALL(*this, DoOnDeliverFrame(_, _))
       .Times(1)
-      .WillOnce(DoAll(SaveArg<0>(&second_frame), RunClosure(quit_closure)));
+      .WillOnce(DoAll(SaveArg<0>(&second_frame),
+                      RunClosure(std::move(quit_closure))));
 
   html_video_capturer_->StartCapture(
       params, base::Bind(&HTMLVideoElementCapturerSourceTest::OnDeliverFrame,

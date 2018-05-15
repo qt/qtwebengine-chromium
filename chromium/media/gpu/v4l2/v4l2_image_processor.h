@@ -13,7 +13,6 @@
 
 #include "base/containers/queue.h"
 #include "base/macros.h"
-#include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
@@ -109,6 +108,7 @@ class MEDIA_GPU_EXPORT V4L2ImageProcessor {
   // Record for input buffers.
   struct InputRecord {
     InputRecord();
+    InputRecord(const V4L2ImageProcessor::InputRecord&);
     ~InputRecord();
     scoped_refptr<VideoFrame> frame;
     bool at_device;
@@ -117,7 +117,7 @@ class MEDIA_GPU_EXPORT V4L2ImageProcessor {
   // Record for output buffers.
   struct OutputRecord {
     OutputRecord();
-    OutputRecord(OutputRecord&&) = default;
+    OutputRecord(OutputRecord&&);
     ~OutputRecord();
     bool at_device;
     // The processed frame will be stored in these buffers if
@@ -198,8 +198,8 @@ class MEDIA_GPU_EXPORT V4L2ImageProcessor {
 
   // All the below members are to be accessed from device_thread_ only
   // (if it's running).
-  base::queue<linked_ptr<JobRecord>> input_queue_;
-  base::queue<linked_ptr<JobRecord>> running_jobs_;
+  base::queue<std::unique_ptr<JobRecord>> input_queue_;
+  base::queue<std::unique_ptr<JobRecord>> running_jobs_;
 
   // Input queue state.
   bool input_streamon_;

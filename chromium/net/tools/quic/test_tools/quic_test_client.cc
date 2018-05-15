@@ -371,7 +371,7 @@ ssize_t QuicTestClient::GetOrCreateStreamAndSendRequest(
     ret = stream->SendRequest(std::move(spdy_headers), body, fin);
     ++num_requests_;
   } else {
-    stream->WriteOrBufferBody(body.as_string(), fin, ack_listener);
+    stream->WriteOrBufferBody(string(body), fin, ack_listener);
     ret = body.length();
   }
   if (GetQuicReloadableFlag(enable_quic_stateless_reject_support)) {
@@ -855,6 +855,21 @@ void QuicTestClient::ClearPerConnectionState() {
   open_streams_.clear();
   closed_stream_states_.clear();
   latest_created_stream_ = nullptr;
+}
+
+void QuicTestClient::WaitForDelayedAcks() {
+  // kWaitDuration is a period of time that is long enough for all delayed
+  // acks to be sent and received on the other end.
+  const QuicTime::Delta kWaitDuration =
+      4 * QuicTime::Delta::FromMilliseconds(kDefaultDelayedAckTimeMs);
+
+  const QuicClock* clock = client()->client_session()->connection()->clock();
+
+  QuicTime wait_until = clock->ApproximateNow() + kWaitDuration;
+  while (clock->ApproximateNow() < wait_until) {
+    // This waits for up to 50 ms.
+    client()->WaitForEvents();
+  }
 }
 
 }  // namespace test

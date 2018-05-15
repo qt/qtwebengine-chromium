@@ -48,8 +48,15 @@ class AURA_EXPORT WindowTreeHostPlatform : public WindowTreeHost,
   WindowTreeHostPlatform();
   explicit WindowTreeHostPlatform(std::unique_ptr<WindowPort> window_port);
 
+  // Creates a ui::PlatformWindow appropriate for the current platform and
+  // installs it at as the PlatformWindow for this WindowTreeHostPlatform.
+  void CreateAndSetDefaultPlatformWindow();
+
   void SetPlatformWindow(std::unique_ptr<ui::PlatformWindow> window);
   ui::PlatformWindow* platform_window() { return platform_window_.get(); }
+  const ui::PlatformWindow* platform_window() const {
+    return platform_window_.get();
+  }
 
   // ui::PlatformWindowDelegate:
   void OnBoundsChanged(const gfx::Rect& new_bounds) override;
@@ -66,6 +73,7 @@ class AURA_EXPORT WindowTreeHostPlatform : public WindowTreeHost,
   bool CaptureSystemKeyEventsImpl(
       base::Optional<base::flat_set<int>> native_key_codes) override;
   void ReleaseSystemKeyEventCapture() override;
+  bool IsKeyLocked(int native_key_code) override;
 
  private:
   gfx::AcceleratedWidget widget_;

@@ -6,7 +6,6 @@
 
 #include <utility>
 
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_task_environment.h"
@@ -67,7 +66,7 @@ class TestProxyResolverFactory : public net::ProxyResolverV8TracingFactory {
   ~TestProxyResolverFactory() override {}
 
   void CreateProxyResolverV8Tracing(
-      const scoped_refptr<net::ProxyResolverScriptData>& pac_script,
+      const scoped_refptr<net::PacFileData>& pac_script,
       std::unique_ptr<net::ProxyResolverV8Tracing::Bindings> bindings,
       std::unique_ptr<net::ProxyResolverV8Tracing>* resolver,
       const net::CompletionCallback& callback,

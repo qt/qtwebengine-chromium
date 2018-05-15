@@ -55,6 +55,14 @@ extern "C" {
 #endif  // clang >= 3.4
 #endif  // __clang__
 
+// clang >= 6.0.0 required for AVX512.
+// TODO(fbarchard): fix xcode 9 ios b/789.
+#if defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
+#if (__clang_major__ >= 7) && !defined(__APPLE_EMBEDDED_SIMULATOR__)
+#define CLANG_HAS_AVX512 1
+#endif  // clang >= 7
+#endif  // __clang__
+
 // Visual C 2012 required for AVX2.
 #if defined(_M_IX86) && !defined(__clang__) && defined(_MSC_VER) && \
     _MSC_VER >= 1700
@@ -105,8 +113,10 @@ extern "C" {
 #define HAS_MIRRORROW_SSSE3
 #define HAS_MIRRORUVROW_SSSE3
 #define HAS_NV12TOARGBROW_SSSE3
+#define HAS_NV12TORGB24ROW_SSSE3
 #define HAS_NV12TORGB565ROW_SSSE3
 #define HAS_NV21TOARGBROW_SSSE3
+#define HAS_NV21TORGB24ROW_SSSE3
 #define HAS_RAWTOARGBROW_SSSE3
 #define HAS_RAWTORGB24ROW_SSSE3
 #define HAS_RAWTOYROW_SSSE3
@@ -200,8 +210,10 @@ extern "C" {
 #define HAS_MERGEUVROW_AVX2
 #define HAS_MIRRORROW_AVX2
 #define HAS_NV12TOARGBROW_AVX2
+#define HAS_NV12TORGB24ROW_AVX2
 #define HAS_NV12TORGB565ROW_AVX2
 #define HAS_NV21TOARGBROW_AVX2
+#define HAS_NV21TORGB24ROW_AVX2
 #define HAS_SPLITUVROW_AVX2
 #define HAS_UYVYTOARGBROW_AVX2
 #define HAS_UYVYTOUV422ROW_AVX2
@@ -230,7 +242,7 @@ extern "C" {
 
 // The following are available for AVX2 Visual C and clangcl 32 bit:
 // TODO(fbarchard): Port to gcc.
-#if !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86) && \
+#if !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86) && defined(_MSC_VER) && \
     (defined(VISUALC_HAS_AVX2) || defined(CLANG_HAS_AVX2))
 #define HAS_ARGB1555TOARGBROW_AVX2
 #define HAS_ARGB4444TOARGBROW_AVX2
@@ -271,15 +283,26 @@ extern "C" {
     (defined(CLANG_HAS_AVX2) || defined(GCC_HAS_AVX2))
 #define HAS_ABGRTOAR30ROW_AVX2
 #define HAS_ARGBTOAR30ROW_AVX2
+#define HAS_ARGBTORAWROW_AVX2
+#define HAS_ARGBTORGB24ROW_AVX2
 #define HAS_CONVERT16TO8ROW_AVX2
 #define HAS_CONVERT8TO16ROW_AVX2
-#define HAS_I210TOARGBROW_AVX2
 #define HAS_I210TOAR30ROW_AVX2
+#define HAS_I210TOARGBROW_AVX2
 #define HAS_I422TOAR30ROW_AVX2
 #define HAS_I422TOUYVYROW_AVX2
 #define HAS_I422TOYUY2ROW_AVX2
 #define HAS_MERGEUVROW_16_AVX2
 #define HAS_MULTIPLYROW_16_AVX2
+#endif
+
+// The following are available for AVX512 clang x86 platforms:
+// TODO(fbarchard): Port to GCC and Visual C
+// TODO(fbarchard): re-enable HAS_ARGBTORGB24ROW_AVX512VBMI. Issue libyuv:789
+#if !defined(LIBYUV_DISABLE_X86) &&                                       \
+    (defined(__x86_64__) || (defined(__i386__) && !defined(_MSC_VER))) && \
+    (defined(CLANG_HAS_AVX512))
+#define HAS_ARGBTORGB24ROW_AVX512VBMI
 #endif
 
 // The following are available on Neon platforms:
@@ -308,6 +331,7 @@ extern "C" {
 #define HAS_ARGBTOYROW_NEON
 #define HAS_BGRATOUVROW_NEON
 #define HAS_BGRATOYROW_NEON
+#define HAS_BYTETOFLOATROW_NEON
 #define HAS_COPYROW_NEON
 #define HAS_HALFFLOATROW_NEON
 #define HAS_I400TOARGBROW_NEON
@@ -326,8 +350,10 @@ extern "C" {
 #define HAS_MIRRORROW_NEON
 #define HAS_MIRRORUVROW_NEON
 #define HAS_NV12TOARGBROW_NEON
+#define HAS_NV12TORGB24ROW_NEON
 #define HAS_NV12TORGB565ROW_NEON
 #define HAS_NV21TOARGBROW_NEON
+#define HAS_NV21TORGB24ROW_NEON
 #define HAS_RAWTOARGBROW_NEON
 #define HAS_RAWTORGB24ROW_NEON
 #define HAS_RAWTOUVROW_NEON
@@ -703,6 +729,16 @@ void NV21ToARGBRow_NEON(const uint8_t* src_y,
                         uint8_t* dst_argb,
                         const struct YuvConstants* yuvconstants,
                         int width);
+void NV12ToRGB24Row_NEON(const uint8_t* src_y,
+                         const uint8_t* src_uv,
+                         uint8_t* dst_rgb24,
+                         const struct YuvConstants* yuvconstants,
+                         int width);
+void NV21ToRGB24Row_NEON(const uint8_t* src_y,
+                         const uint8_t* src_vu,
+                         uint8_t* dst_rgb24,
+                         const struct YuvConstants* yuvconstants,
+                         int width);
 void YUY2ToARGBRow_NEON(const uint8_t* src_yuy2,
                         uint8_t* dst_argb,
                         const struct YuvConstants* yuvconstants,
@@ -1612,6 +1648,9 @@ void ARGB4444ToARGBRow_C(const uint8_t* src_argb4444,
                          int width);
 void AR30ToARGBRow_C(const uint8_t* src_ar30, uint8_t* dst_argb, int width);
 void AR30ToABGRRow_C(const uint8_t* src_ar30, uint8_t* dst_abgr, int width);
+void ARGBToAR30Row_C(const uint8_t* src_argb, uint8_t* dst_ar30, int width);
+void AR30ToAB30Row_C(const uint8_t* src_ar30, uint8_t* dst_ab30, int width);
+
 void RGB24ToARGBRow_Any_SSSE3(const uint8_t* src_ptr,
                               uint8_t* dst_ptr,
                               int width);
@@ -1680,6 +1719,11 @@ void ARGBToARGB1555Row_SSE2(const uint8_t* src, uint8_t* dst, int width);
 void ARGBToARGB4444Row_SSE2(const uint8_t* src, uint8_t* dst, int width);
 void ABGRToAR30Row_SSSE3(const uint8_t* src, uint8_t* dst, int width);
 void ARGBToAR30Row_SSSE3(const uint8_t* src, uint8_t* dst, int width);
+
+void ARGBToRAWRow_AVX2(const uint8_t* src, uint8_t* dst, int width);
+void ARGBToRGB24Row_AVX2(const uint8_t* src, uint8_t* dst, int width);
+
+void ARGBToRGB24Row_AVX512VBMI(const uint8_t* src, uint8_t* dst, int width);
 
 void ARGBToRGB565DitherRow_C(const uint8_t* src_argb,
                              uint8_t* dst_rgb,
@@ -1812,6 +1856,16 @@ void NV21ToARGBRow_C(const uint8_t* src_y,
                      uint8_t* rgb_buf,
                      const struct YuvConstants* yuvconstants,
                      int width);
+void NV12ToRGB24Row_C(const uint8_t* src_y,
+                      const uint8_t* src_uv,
+                      uint8_t* rgb_buf,
+                      const struct YuvConstants* yuvconstants,
+                      int width);
+void NV21ToRGB24Row_C(const uint8_t* src_y,
+                      const uint8_t* src_vu,
+                      uint8_t* rgb_buf,
+                      const struct YuvConstants* yuvconstants,
+                      int width);
 void YUY2ToARGBRow_C(const uint8_t* src_yuy2,
                      uint8_t* rgb_buf,
                      const struct YuvConstants* yuvconstants,
@@ -1953,11 +2007,31 @@ void NV12ToARGBRow_AVX2(const uint8_t* y_buf,
                         uint8_t* dst_argb,
                         const struct YuvConstants* yuvconstants,
                         int width);
+void NV12ToRGB24Row_SSSE3(const uint8_t* src_y,
+                          const uint8_t* src_uv,
+                          uint8_t* dst_rgb24,
+                          const struct YuvConstants* yuvconstants,
+                          int width);
+void NV21ToRGB24Row_SSSE3(const uint8_t* src_y,
+                          const uint8_t* src_vu,
+                          uint8_t* dst_rgb24,
+                          const struct YuvConstants* yuvconstants,
+                          int width);
 void NV12ToRGB565Row_SSSE3(const uint8_t* src_y,
                            const uint8_t* src_uv,
                            uint8_t* dst_rgb565,
                            const struct YuvConstants* yuvconstants,
                            int width);
+void NV12ToRGB24Row_AVX2(const uint8_t* src_y,
+                         const uint8_t* src_uv,
+                         uint8_t* dst_rgb24,
+                         const struct YuvConstants* yuvconstants,
+                         int width);
+void NV21ToRGB24Row_AVX2(const uint8_t* src_y,
+                         const uint8_t* src_vu,
+                         uint8_t* dst_rgb24,
+                         const struct YuvConstants* yuvconstants,
+                         int width);
 void NV12ToRGB565Row_AVX2(const uint8_t* src_y,
                           const uint8_t* src_uv,
                           uint8_t* dst_rgb565,
@@ -2143,6 +2217,26 @@ void NV21ToARGBRow_Any_AVX2(const uint8_t* y_buf,
                             uint8_t* dst_ptr,
                             const struct YuvConstants* yuvconstants,
                             int width);
+void NV12ToRGB24Row_Any_SSSE3(const uint8_t* y_buf,
+                              const uint8_t* uv_buf,
+                              uint8_t* dst_ptr,
+                              const struct YuvConstants* yuvconstants,
+                              int width);
+void NV21ToRGB24Row_Any_SSSE3(const uint8_t* y_buf,
+                              const uint8_t* uv_buf,
+                              uint8_t* dst_ptr,
+                              const struct YuvConstants* yuvconstants,
+                              int width);
+void NV12ToRGB24Row_Any_AVX2(const uint8_t* y_buf,
+                             const uint8_t* uv_buf,
+                             uint8_t* dst_ptr,
+                             const struct YuvConstants* yuvconstants,
+                             int width);
+void NV21ToRGB24Row_Any_AVX2(const uint8_t* y_buf,
+                             const uint8_t* uv_buf,
+                             uint8_t* dst_ptr,
+                             const struct YuvConstants* yuvconstants,
+                             int width);
 void NV12ToRGB565Row_Any_SSSE3(const uint8_t* y_buf,
                                const uint8_t* uv_buf,
                                uint8_t* dst_ptr,
@@ -2422,7 +2516,13 @@ void ABGRToAR30Row_Any_SSSE3(const uint8_t* src_ptr,
 void ARGBToAR30Row_Any_SSSE3(const uint8_t* src_ptr,
                              uint8_t* dst_ptr,
                              int width);
-
+void ARGBToRAWRow_Any_AVX2(const uint8_t* src_ptr, uint8_t* dst_ptr, int width);
+void ARGBToRGB24Row_Any_AVX2(const uint8_t* src_ptr,
+                             uint8_t* dst_ptr,
+                             int width);
+void ARGBToRGB24Row_Any_AVX512VBMI(const uint8_t* src_ptr,
+                                   uint8_t* dst_ptr,
+                                   int width);
 void ARGBToRGB565DitherRow_Any_SSE2(const uint8_t* src_ptr,
                                     uint8_t* dst_ptr,
                                     const uint32_t param,
@@ -2542,6 +2642,16 @@ void NV21ToARGBRow_Any_NEON(const uint8_t* y_buf,
                             uint8_t* dst_ptr,
                             const struct YuvConstants* yuvconstants,
                             int width);
+void NV12ToRGB24Row_Any_NEON(const uint8_t* y_buf,
+                             const uint8_t* uv_buf,
+                             uint8_t* dst_ptr,
+                             const struct YuvConstants* yuvconstants,
+                             int width);
+void NV21ToRGB24Row_Any_NEON(const uint8_t* y_buf,
+                             const uint8_t* uv_buf,
+                             uint8_t* dst_ptr,
+                             const struct YuvConstants* yuvconstants,
+                             int width);
 void NV12ToRGB565Row_Any_NEON(const uint8_t* y_buf,
                               const uint8_t* uv_buf,
                               uint8_t* dst_ptr,
@@ -3317,6 +3427,15 @@ void HalfFloatRow_Any_MSA(const uint16_t* src_ptr,
                           uint16_t* dst_ptr,
                           float param,
                           int width);
+void ByteToFloatRow_C(const uint8_t* src, float* dst, float scale, int width);
+void ByteToFloatRow_NEON(const uint8_t* src,
+                         float* dst,
+                         float scale,
+                         int width);
+void ByteToFloatRow_Any_NEON(const uint8_t* src_ptr,
+                             float* dst_ptr,
+                             float param,
+                             int width);
 
 void ARGBLumaColorTableRow_C(const uint8_t* src_argb,
                              uint8_t* dst_argb,

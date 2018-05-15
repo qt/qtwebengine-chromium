@@ -164,7 +164,8 @@ AuditorResult AnnotationInstance::Deserialize(
   if (unique_id_hash_code == TRAFFIC_ANNOTATION_FOR_TESTS.unique_id_hash_code ||
       unique_id_hash_code ==
           PARTIAL_TRAFFIC_ANNOTATION_FOR_TESTS.unique_id_hash_code) {
-    return AuditorResult(AuditorResult::Type::RESULT_IGNORE);
+    return AuditorResult(AuditorResult::Type::ERROR_TEST_ANNOTATION, "",
+                         file_path, line_number);
   }
 
   // Process undefined tags.
@@ -179,13 +180,6 @@ AuditorResult AnnotationInstance::Deserialize(
   if (unique_id_hash_code == MISSING_TRAFFIC_ANNOTATION.unique_id_hash_code)
     return AuditorResult(AuditorResult::Type::ERROR_MISSING_TAG_USED, "",
                          file_path, line_number);
-
-  // TODO(crbug.com/656607): Remove this test.
-  // Process temporary tag.
-  if (unique_id_hash_code ==
-      NO_TRAFFIC_ANNOTATION_BUG_656607.unique_id_hash_code) {
-    return AuditorResult(AuditorResult::Type::RESULT_IGNORE);
-  }
 
   // Decode serialized proto.
   std::string annotation_text = "";

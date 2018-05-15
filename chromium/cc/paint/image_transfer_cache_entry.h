@@ -37,6 +37,7 @@ class CC_PAINT_EXPORT ClientImageTransferCacheEntry
  private:
   uint32_t id_;
   const SkPixmap* const pixmap_;
+  const SkColorSpace* const target_color_space_;
   size_t size_ = 0;
   static base::AtomicSequenceNumber s_next_id_;
 };
@@ -53,7 +54,7 @@ class CC_PAINT_EXPORT ServiceImageTransferCacheEntry
 
   // ServiceTransferCacheEntry implementation:
   size_t CachedSize() const final;
-  bool Deserialize(GrContext* context, base::span<uint8_t> data) final;
+  bool Deserialize(GrContext* context, base::span<const uint8_t> data) final;
 
   void set_image_for_testing(sk_sp<SkImage> image) {
     image_ = std::move(image);

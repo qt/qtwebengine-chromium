@@ -12,7 +12,6 @@
 #include "content/browser/appcache/appcache_url_loader_request.h"
 #include "content/browser/url_loader_factory_getter.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/common/shared_url_loader_factory.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "mojo/public/cpp/bindings/interface_ptr.h"
@@ -20,6 +19,7 @@
 #include "net/url_request/url_request.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/resource_response.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 
 namespace content {
@@ -176,11 +176,10 @@ class SubresourceLoader : public network::mojom::URLLoader,
   // Called by either the appcache or network loader, whichever is in use.
   void OnReceiveResponse(
       const network::ResourceResponseHead& response_head,
-      const base::Optional<net::SSLInfo>& ssl_info,
       network::mojom::DownloadedTempFilePtr downloaded_file) override {
     // Don't MaybeFallback for appcache produced responses.
     if (appcache_loader_ || !handler_) {
-      remote_client_->OnReceiveResponse(response_head, ssl_info,
+      remote_client_->OnReceiveResponse(response_head,
                                         std::move(downloaded_file));
       return;
     }
@@ -189,19 +188,18 @@ class SubresourceLoader : public network::mojom::URLLoader,
     handler_->MaybeFallbackForSubresourceResponse(
         response_head,
         base::BindOnce(&SubresourceLoader::ContinueOnReceiveResponse,
-                       weak_factory_.GetWeakPtr(), response_head, ssl_info,
+                       weak_factory_.GetWeakPtr(), response_head,
                        std::move(downloaded_file)));
   }
 
   void ContinueOnReceiveResponse(
       const network::ResourceResponseHead& response_head,
-      const base::Optional<net::SSLInfo>& ssl_info,
       network::mojom::DownloadedTempFilePtr downloaded_file,
       SingleRequestURLLoaderFactory::RequestHandler handler) {
     if (handler) {
       CreateAndStartAppCacheLoader(std::move(handler));
     } else {
-      remote_client_->OnReceiveResponse(response_head, ssl_info,
+      remote_client_->OnReceiveResponse(response_head,
                                         std::move(downloaded_file));
     }
   }

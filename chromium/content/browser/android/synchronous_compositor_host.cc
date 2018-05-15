@@ -263,11 +263,9 @@ void SynchronousCompositorHost::InitMojo() {
   mojom::SynchronousCompositorAssociatedRequest compositor_request =
       mojo::MakeRequest(&sync_compositor_);
 
-  rwhva_->GetRenderWidgetHostImpl()
-      ->GetWidgetInputHandler()
-      ->AttachSynchronousCompositor(std::move(host_control),
-                                    host.PassInterface(),
-                                    std::move(compositor_request));
+  rwhva_->host()->GetWidgetInputHandler()->AttachSynchronousCompositor(
+      std::move(host_control), host.PassInterface(),
+      std::move(compositor_request));
 }
 
 bool SynchronousCompositorHost::IsReadyForSynchronousCall() {
@@ -295,7 +293,8 @@ SynchronousCompositorHost::DemandDrawHwAsync(
     const gfx::Rect& viewport_rect_for_tile_priority,
     const gfx::Transform& transform_for_tile_priority) {
   scoped_refptr<FrameFuture> frame_future = new FrameFuture();
-  if (compute_scroll_needs_synchronous_draw_) {
+  if (compute_scroll_needs_synchronous_draw_ || !allow_async_draw_) {
+    allow_async_draw_ = allow_async_draw_ || IsReadyForSynchronousCall();
     compute_scroll_needs_synchronous_draw_ = false;
     auto frame_ptr = std::make_unique<Frame>();
     *frame_ptr = DemandDrawHw(viewport_size, viewport_rect_for_tile_priority,
@@ -575,6 +574,8 @@ void SynchronousCompositorHost::SynchronouslyZoomBy(float zoom_delta,
 
 void SynchronousCompositorHost::OnComputeScroll(
     base::TimeTicks animation_time) {
+  on_compute_scroll_called_ = true;
+
   if (!need_animate_scroll_)
     return;
   need_animate_scroll_ = false;
@@ -608,7 +609,7 @@ void SynchronousCompositorHost::SetBeginFramePaused(bool paused) {
 }
 
 void SynchronousCompositorHost::SetNeedsBeginFrames(bool needs_begin_frames) {
-  rwhva_->GetRenderWidgetHostImpl()->SetNeedsBeginFrame(needs_begin_frames);
+  rwhva_->host()->SetNeedsBeginFrame(needs_begin_frames);
 }
 
 void SynchronousCompositorHost::LayerTreeFrameSinkCreated() {

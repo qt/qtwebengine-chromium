@@ -51,11 +51,6 @@ uint32_t GetOffsetInUTF16(const base::string16& utf16_string,
   return char_iterator.array_pos();
 }
 
-enum KeyEventHandlerBehavior {
-  KEYEVENT_CONSUME,
-  KEYEVENT_NOT_CONSUME,
-};
-
 }  // namespace
 
 
@@ -67,22 +62,23 @@ class TestableInputMethodChromeOS : public InputMethodChromeOS {
   }
 
   struct ProcessKeyEventPostIMEArgs {
-    ProcessKeyEventPostIMEArgs() : event(NULL), handled(false) {}
-    const ui::KeyEvent* event;
+    ProcessKeyEventPostIMEArgs()
+        : event(ET_UNKNOWN, VKEY_UNKNOWN, DomCode::NONE, EF_NONE),
+          handled(false) {}
+    ui::KeyEvent event;
     bool handled;
   };
 
   // Overridden from InputMethodChromeOS:
-  ui::EventDispatchDetails ProcessKeyEventPostIME(
-      ui::KeyEvent* key_event,
-      std::unique_ptr<AckCallback> ack_callback,
-      bool skip_process_filtered,
-      bool handled) override {
+  ui::EventDispatchDetails ProcessKeyEventPostIME(ui::KeyEvent* key_event,
+                                                  AckCallback ack_callback,
+                                                  bool skip_process_filtered,
+                                                  bool handled) override {
     ui::EventDispatchDetails details =
         InputMethodChromeOS::ProcessKeyEventPostIME(
             key_event, std::move(ack_callback), skip_process_filtered, handled);
     if (!skip_process_filtered) {
-      process_key_event_post_ime_args_.event = key_event;
+      process_key_event_post_ime_args_.event = *key_event;
       process_key_event_post_ime_args_.handled = handled;
       ++process_key_event_post_ime_call_count_;
     }
@@ -108,72 +104,6 @@ class TestableInputMethodChromeOS : public InputMethodChromeOS {
  private:
   ProcessKeyEventPostIMEArgs process_key_event_post_ime_args_;
   int process_key_event_post_ime_call_count_;
-};
-
-class SynchronousKeyEventHandler {
- public:
-  SynchronousKeyEventHandler(uint32_t expected_keyval,
-                             uint32_t expected_keycode,
-                             uint32_t expected_state,
-                             KeyEventHandlerBehavior behavior)
-      : expected_keyval_(expected_keyval),
-        expected_keycode_(expected_keycode),
-        expected_state_(expected_state),
-        behavior_(behavior) {}
-
-  virtual ~SynchronousKeyEventHandler() {}
-
-  void Run(uint32_t keyval,
-           uint32_t keycode,
-           uint32_t state,
-           const KeyEventCallback& callback) {
-    EXPECT_EQ(expected_keyval_, keyval);
-    EXPECT_EQ(expected_keycode_, keycode);
-    EXPECT_EQ(expected_state_, state);
-    callback.Run(behavior_ == KEYEVENT_CONSUME);
-  }
-
- private:
-  const uint32_t expected_keyval_;
-  const uint32_t expected_keycode_;
-  const uint32_t expected_state_;
-  const KeyEventHandlerBehavior behavior_;
-
-  DISALLOW_COPY_AND_ASSIGN(SynchronousKeyEventHandler);
-};
-
-class AsynchronousKeyEventHandler {
- public:
-  AsynchronousKeyEventHandler(uint32_t expected_keyval,
-                              uint32_t expected_keycode,
-                              uint32_t expected_state)
-      : expected_keyval_(expected_keyval),
-        expected_keycode_(expected_keycode),
-        expected_state_(expected_state) {}
-
-  virtual ~AsynchronousKeyEventHandler() {}
-
-  void Run(uint32_t keyval,
-           uint32_t keycode,
-           uint32_t state,
-           const KeyEventCallback& callback) {
-    EXPECT_EQ(expected_keyval_, keyval);
-    EXPECT_EQ(expected_keycode_, keycode);
-    EXPECT_EQ(expected_state_, state);
-    callback_ = callback;
-  }
-
-  void RunCallback(KeyEventHandlerBehavior behavior) {
-    callback_.Run(behavior == KEYEVENT_CONSUME);
-  }
-
- private:
-  const uint32_t expected_keyval_;
-  const uint32_t expected_keycode_;
-  const uint32_t expected_state_;
-  KeyEventCallback callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(AsynchronousKeyEventHandler);
 };
 
 class SetSurroundingTextVerifier {
@@ -605,7 +535,8 @@ TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_NoAttribute) {
   EXPECT_EQ(0UL, composition_text.ime_text_spans[0].start_offset);
   EXPECT_EQ(kSampleAsciiText.size(),
             composition_text.ime_text_spans[0].end_offset);
-  EXPECT_FALSE(composition_text.ime_text_spans[0].thick);
+  EXPECT_EQ(ui::ImeTextSpan::Thickness::kThin,
+            composition_text.ime_text_spans[0].thickness);
 }
 
 TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_SingleUnderline) {
@@ -615,7 +546,7 @@ TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_SingleUnderline) {
   CompositionText composition_text;
   composition_text.text = kSampleText;
   ImeTextSpan underline(ImeTextSpan::Type::kComposition, 1UL, 4UL,
-                        SK_ColorBLACK, false, SK_ColorTRANSPARENT);
+                        ui::ImeTextSpan::Thickness::kThin, SK_ColorTRANSPARENT);
   composition_text.ime_text_spans.push_back(underline);
 
   CompositionText composition_text2;
@@ -630,9 +561,11 @@ TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_SingleUnderline) {
             composition_text2.ime_text_spans[0].start_offset);
   EXPECT_EQ(GetOffsetInUTF16(kSampleText, underline.end_offset),
             composition_text2.ime_text_spans[0].end_offset);
-  // Single underline represents as black thin line.
-  EXPECT_EQ(SK_ColorBLACK, composition_text2.ime_text_spans[0].underline_color);
-  EXPECT_FALSE(composition_text2.ime_text_spans[0].thick);
+  // Single underline represents as thin line with text color.
+  EXPECT_EQ(SK_ColorTRANSPARENT,
+            composition_text2.ime_text_spans[0].underline_color);
+  EXPECT_EQ(ui::ImeTextSpan::Thickness::kThin,
+            composition_text2.ime_text_spans[0].thickness);
   EXPECT_EQ(static_cast<SkColor>(SK_ColorTRANSPARENT),
             composition_text2.ime_text_spans[0].background_color);
 }
@@ -644,7 +577,8 @@ TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_DoubleUnderline) {
   CompositionText composition_text;
   composition_text.text = kSampleText;
   ImeTextSpan underline(ImeTextSpan::Type::kComposition, 1UL, 4UL,
-                        SK_ColorBLACK, true, SK_ColorTRANSPARENT);
+                        ui::ImeTextSpan::Thickness::kThick,
+                        SK_ColorTRANSPARENT);
   composition_text.ime_text_spans.push_back(underline);
 
   CompositionText composition_text2;
@@ -659,9 +593,11 @@ TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_DoubleUnderline) {
             composition_text2.ime_text_spans[0].start_offset);
   EXPECT_EQ(GetOffsetInUTF16(kSampleText, underline.end_offset),
             composition_text2.ime_text_spans[0].end_offset);
-  // Double underline represents as black thick line.
-  EXPECT_EQ(SK_ColorBLACK, composition_text2.ime_text_spans[0].underline_color);
-  EXPECT_TRUE(composition_text2.ime_text_spans[0].thick);
+  // Double underline represents as thick line with text color.
+  EXPECT_EQ(SK_ColorTRANSPARENT,
+            composition_text2.ime_text_spans[0].underline_color);
+  EXPECT_EQ(ui::ImeTextSpan::Thickness::kThick,
+            composition_text2.ime_text_spans[0].thickness);
   EXPECT_EQ(static_cast<SkColor>(SK_ColorTRANSPARENT),
             composition_text2.ime_text_spans[0].background_color);
 }
@@ -672,8 +608,9 @@ TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_ErrorUnderline) {
   // Set up chromeos composition text with one underline attribute.
   CompositionText composition_text;
   composition_text.text = kSampleText;
-  ImeTextSpan underline(ImeTextSpan::Type::kComposition, 1UL, 4UL, SK_ColorRED,
-                        false, SK_ColorTRANSPARENT);
+  ImeTextSpan underline(ImeTextSpan::Type::kComposition, 1UL, 4UL,
+                        ui::ImeTextSpan::Thickness::kThin, SK_ColorTRANSPARENT);
+  underline.underline_color = SK_ColorRED;
   composition_text.ime_text_spans.push_back(underline);
 
   CompositionText composition_text2;
@@ -689,7 +626,8 @@ TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_ErrorUnderline) {
             composition_text2.ime_text_spans[0].end_offset);
   // Error underline represents as red thin line.
   EXPECT_EQ(SK_ColorRED, composition_text2.ime_text_spans[0].underline_color);
-  EXPECT_FALSE(composition_text2.ime_text_spans[0].thick);
+  EXPECT_EQ(ui::ImeTextSpan::Thickness::kThin,
+            composition_text2.ime_text_spans[0].thickness);
 }
 
 TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_Selection) {
@@ -712,8 +650,10 @@ TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_Selection) {
             composition_text2.ime_text_spans[0].start_offset);
   EXPECT_EQ(GetOffsetInUTF16(kSampleText, composition_text.selection.end()),
             composition_text2.ime_text_spans[0].end_offset);
-  EXPECT_EQ(SK_ColorBLACK, composition_text2.ime_text_spans[0].underline_color);
-  EXPECT_TRUE(composition_text2.ime_text_spans[0].thick);
+  EXPECT_EQ(SK_ColorTRANSPARENT,
+            composition_text2.ime_text_spans[0].underline_color);
+  EXPECT_EQ(ui::ImeTextSpan::Thickness::kThick,
+            composition_text2.ime_text_spans[0].thickness);
   EXPECT_EQ(static_cast<SkColor>(SK_ColorTRANSPARENT),
             composition_text2.ime_text_spans[0].background_color);
 }
@@ -743,8 +683,10 @@ TEST_F(InputMethodChromeOSTest,
             composition_text2.ime_text_spans[0].start_offset);
   EXPECT_EQ(GetOffsetInUTF16(kSampleText, composition_text.selection.end()),
             composition_text2.ime_text_spans[0].end_offset);
-  EXPECT_EQ(SK_ColorBLACK, composition_text2.ime_text_spans[0].underline_color);
-  EXPECT_TRUE(composition_text2.ime_text_spans[0].thick);
+  EXPECT_EQ(SK_ColorTRANSPARENT,
+            composition_text2.ime_text_spans[0].underline_color);
+  EXPECT_EQ(ui::ImeTextSpan::Thickness::kThick,
+            composition_text2.ime_text_spans[0].thickness);
   EXPECT_EQ(static_cast<SkColor>(SK_ColorTRANSPARENT),
             composition_text2.ime_text_spans[0].background_color);
 }
@@ -774,8 +716,10 @@ TEST_F(InputMethodChromeOSTest,
             composition_text2.ime_text_spans[0].start_offset);
   EXPECT_EQ(GetOffsetInUTF16(kSampleText, composition_text.selection.end()),
             composition_text2.ime_text_spans[0].end_offset);
-  EXPECT_EQ(SK_ColorBLACK, composition_text2.ime_text_spans[0].underline_color);
-  EXPECT_TRUE(composition_text2.ime_text_spans[0].thick);
+  EXPECT_EQ(SK_ColorTRANSPARENT,
+            composition_text2.ime_text_spans[0].underline_color);
+  EXPECT_EQ(ui::ImeTextSpan::Thickness::kThick,
+            composition_text2.ime_text_spans[0].thickness);
   EXPECT_EQ(static_cast<SkColor>(SK_ColorTRANSPARENT),
             composition_text2.ime_text_spans[0].background_color);
 }
@@ -913,14 +857,14 @@ TEST_F(InputMethodChromeOSKeyEventTest, KeyEventDelayResponseTest) {
   EXPECT_EQ(0, inserted_char_);
 
   // Do callback.
-  mock_ime_engine_handler_->last_passed_callback().Run(true);
+  std::move(mock_ime_engine_handler_->last_passed_callback()).Run(true);
 
   // Check the results
   EXPECT_EQ(1, ime_->process_key_event_post_ime_call_count());
-  const ui::KeyEvent* stored_event =
+  const ui::KeyEvent stored_event =
       ime_->process_key_event_post_ime_args().event;
-  EXPECT_EQ(ui::VKEY_A, stored_event->key_code());
-  EXPECT_EQ(kFlags, stored_event->flags());
+  EXPECT_EQ(ui::VKEY_A, stored_event.key_code());
+  EXPECT_EQ(kFlags, stored_event.flags());
   EXPECT_TRUE(ime_->process_key_event_post_ime_args().handled);
 
   EXPECT_EQ(L'A', inserted_char_);
@@ -966,16 +910,15 @@ TEST_F(InputMethodChromeOSKeyEventTest, MultiKeyEventDelayResponseTest) {
   EXPECT_EQ(0, composition_text_.text[0]);
 
   // Do callback for first key event.
-  first_callback.Run(true);
+  std::move(first_callback).Run(true);
 
   EXPECT_EQ(comp.text, composition_text_.text);
 
   // Check the results for first key event.
   EXPECT_EQ(1, ime_->process_key_event_post_ime_call_count());
-  const ui::KeyEvent* stored_event =
-      ime_->process_key_event_post_ime_args().event;
-  EXPECT_EQ(ui::VKEY_B, stored_event->key_code());
-  EXPECT_EQ(kFlags, stored_event->flags());
+  ui::KeyEvent stored_event = ime_->process_key_event_post_ime_args().event;
+  EXPECT_EQ(ui::VKEY_B, stored_event.key_code());
+  EXPECT_EQ(kFlags, stored_event.flags());
   EXPECT_TRUE(ime_->process_key_event_post_ime_args().handled);
   EXPECT_EQ(0, inserted_char_);
 
@@ -985,8 +928,8 @@ TEST_F(InputMethodChromeOSKeyEventTest, MultiKeyEventDelayResponseTest) {
   // Check the results for second key event.
   EXPECT_EQ(2, ime_->process_key_event_post_ime_call_count());
   stored_event = ime_->process_key_event_post_ime_args().event;
-  EXPECT_EQ(ui::VKEY_C, stored_event->key_code());
-  EXPECT_EQ(kFlags, stored_event->flags());
+  EXPECT_EQ(ui::VKEY_C, stored_event.key_code());
+  EXPECT_EQ(kFlags, stored_event.flags());
   EXPECT_FALSE(ime_->process_key_event_post_ime_args().handled);
 
   EXPECT_EQ(L'C', inserted_char_);
@@ -1030,7 +973,8 @@ TEST_F(InputMethodChromeOSKeyEventTest, DeadKeyPressTest) {
                       0,
                       DomKey::DeadKeyFromCombiningCharacter('^'),
                       EventTimeForNow());
-  ime_->ProcessKeyEventPostIME(&eventA, nullptr, false, true);
+  ime_->ProcessKeyEventPostIME(&eventA, InputMethodChromeOS::AckCallback(),
+                               false, true);
 
   const ui::KeyEvent& key_event = dispatched_key_event_;
 

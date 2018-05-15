@@ -18,6 +18,7 @@
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
+#include "base/time/time.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
@@ -71,8 +72,9 @@ class VIZ_SERVICE_EXPORT Surface final : public SurfaceDeadlineClient {
  public:
   using AggregatedDamageCallback =
       base::RepeatingCallback<void(const LocalSurfaceId& local_surface_id,
+                                   const gfx::Size& frame_size_in_pixels,
                                    const gfx::Rect& damage_rect,
-                                   const CompositorFrame& frame)>;
+                                   base::TimeTicks expected_display_time)>;
   using PresentedCallback =
       base::OnceCallback<void(base::TimeTicks, base::TimeDelta, uint32_t)>;
 
@@ -102,7 +104,12 @@ class VIZ_SERVICE_EXPORT Surface final : public SurfaceDeadlineClient {
 
   bool has_deadline() const { return deadline_ && deadline_->has_deadline(); }
 
-  bool InheritActivationDeadlineFrom(Surface* surface);
+  // Inherits the same deadline as the one specified by |surface|. A deadline
+  // may be set further out in order to avoid doing unnecessary work while a
+  // parent surface is blocked on dependencies. A deadline may be shortened
+  // in order to minimize guttering (by unblocking children blocked on their
+  // grandchildren sooner).
+  void InheritActivationDeadlineFrom(Surface* surface);
 
   void SetPreviousFrameSurface(Surface* surface);
 
@@ -127,7 +134,6 @@ class VIZ_SERVICE_EXPORT Surface final : public SurfaceDeadlineClient {
                   base::OnceClosure draw_callback,
                   const AggregatedDamageCallback& aggregated_damage_callback,
                   PresentedCallback presented_callback);
-  void RequestCopyOfOutput(std::unique_ptr<CopyOutputRequest> copy_request);
 
   // Notifies the Surface that a blocking SurfaceId now has an active
   // frame.
@@ -146,6 +152,14 @@ class VIZ_SERVICE_EXPORT Surface final : public SurfaceDeadlineClient {
   // ids.
   void TakeCopyOutputRequests(CopyRequestsMap* copy_requests);
 
+  // Takes CopyOutputRequests made at the client level and adds them to this
+  // Surface.
+  void TakeCopyOutputRequestsFromClient();
+
+  // Returns whether there is a CopyOutputRequest inside the active frame or at
+  // the client level.
+  bool HasCopyOutputRequests();
+
   // Returns the most recent frame that is eligible to be rendered.
   // You must check whether HasActiveFrame() returns true before calling this
   // method.
@@ -163,7 +177,8 @@ class VIZ_SERVICE_EXPORT Surface final : public SurfaceDeadlineClient {
   void TakeLatencyInfo(std::vector<ui::LatencyInfo>* latency_info);
   bool TakePresentedCallback(PresentedCallback* callback);
   void RunDrawCallback();
-  void NotifyAggregatedDamage(const gfx::Rect& damage_rect);
+  void NotifyAggregatedDamage(const gfx::Rect& damage_rect,
+                              base::TimeTicks expected_display_time);
 
   const std::vector<SurfaceId>* active_referenced_surfaces() const {
     return active_frame_data_
@@ -192,6 +207,9 @@ class VIZ_SERVICE_EXPORT Surface final : public SurfaceDeadlineClient {
 
   // SurfaceDeadlineClient implementation:
   void OnDeadline(base::TimeDelta duration) override;
+
+  // Called when this surface will be included in the next display frame.
+  void OnWillBeDrawn();
 
  private:
   struct SequenceNumbers {
@@ -246,6 +264,8 @@ class VIZ_SERVICE_EXPORT Surface final : public SurfaceDeadlineClient {
   static void TakeLatencyInfoFromFrame(
       CompositorFrame* frame,
       std::vector<ui::LatencyInfo>* latency_info);
+
+  void RequestCopyOfOutput(std::unique_ptr<CopyOutputRequest> copy_request);
 
   const SurfaceInfo surface_info_;
   SurfaceId previous_frame_surface_id_;

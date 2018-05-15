@@ -12,13 +12,13 @@
 #include "media/base/renderer_factory_selector.h"
 #include "media/base/routing_token_callback.h"
 #include "media/blink/url_index.h"
-#include "media/media_features.h"
-#include "media/mojo/features.h"
+#include "media/media_buildflags.h"
+#include "media/mojo/buildflags.h"
 #include "media/mojo/interfaces/remoting.mojom.h"
-#include "third_party/WebKit/public/platform/WebMediaPlayerSource.h"
-#include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
-#include "third_party/WebKit/public/platform/WebSetSinkIdCallbacks.h"
-#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/blink/public/platform/web_media_player_source.h"
+#include "third_party/blink/public/platform/web_security_origin.h"
+#include "third_party/blink/public/platform/web_set_sink_id_callbacks.h"
+#include "third_party/blink/public/platform/web_string.h"
 
 #if BUILDFLAG(ENABLE_MOJO_MEDIA)
 #include "media/mojo/interfaces/interface_factory.mojom.h"  // nogncheck
@@ -49,9 +49,6 @@ class WebEncryptedMediaClientImpl;
 #if defined(OS_ANDROID)
 class RendererMediaPlayerManager;
 #endif
-namespace remoting {
-class SinkAvailabilityObserver;
-}
 }
 
 namespace service_manager {
@@ -197,14 +194,6 @@ class MediaFactory {
   // Lazy-bound pointer to the RemoterFactory service in the browser
   // process. Always use the GetRemoterFactory() accessor instead of this.
   media::mojom::RemoterFactoryPtr remoter_factory_;
-
-  // An observer for the remoting sink availability that is used by
-  // media::RemotingCdmFactory to initialize media::RemotingSourceImpl. Created
-  // in the constructor of RenderFrameImpl to make sure
-  // media::RemotingSourceImpl be intialized with correct availability info.
-  // Own by media::RemotingCdmFactory after it is created.
-  std::unique_ptr<media::remoting::SinkAvailabilityObserver>
-      remoting_sink_observer_;
 #endif
 };
 

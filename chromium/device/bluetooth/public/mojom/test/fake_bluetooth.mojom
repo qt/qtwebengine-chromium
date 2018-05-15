@@ -50,6 +50,10 @@ struct Power {
   int8 value;
 };
 
+struct ServiceDataMap {
+  map<string, array<uint8>> service_data;
+};
+
 // Stores the byte data of the advertisement packet sent by a Bluetooth device.
 struct ScanRecord {
   string? name;
@@ -58,8 +62,7 @@ struct ScanRecord {
   Power tx_power;
 
   map<uint8, array<uint8>>? manufacturer_data;
-  // TODO(https://crbug.com/817603): Add the service_data field once a typemap
-  // for this field and device::BluetoothDevice::ServiceDataMap exists.
+  ServiceDataMap? service_data;
 };
 
 // Stores the advertisement packet information that is sent by a Bluetooth device.
@@ -232,6 +235,15 @@ interface FakeCentral {
                     string service_id,
                     string peripheral_address) => (string? descriptor_id);
 
+  // Removes a fake GATT Descriptor with |descriptor_id| from the fake
+  // characteristic with |characteristic_id| in |service_id| fake service in
+  // |peripheral_address| peripheral.
+  RemoveFakeDescriptor(
+        string descriptor_id,
+        string characteristic_id,
+        string service_id,
+        string peripheral_address) => (bool success);
+
   // Sets the next read response for characteristic with |characteristics_id|
   // in |service_id| and in |peripheral_address| to |code| and |value|.
   // |code| could be a GATT Error Response from
@@ -276,12 +288,34 @@ interface FakeCentral {
       string service_id,
       string peripheral_address) => (bool success);
 
+  // Sets the next unsubscribe from notifications response for characteristic
+  // with |characteristic_id| in |service_id| and in |peripheral_address| to
+  // |code|. |code| could be a GATT Error Response from BT 4.2 Vol 3
+  // Part F 3.4.1.1 Error Response or a number outside that range returned by
+  // specific platforms e.g. Android returns 0x101 to signal a GATT failure.
+  // https://developer.android.com/reference/android/bluetooth/BluetoothGatt.html#GATT_FAILURE
+  // Calls callback with false if there was any error when simulating the next
+  // response.
+  SetNextUnsubscribeFromNotificationsResponse(
+      uint16 gatt_code,
+      string characteristic_id,
+      string service_id,
+      string peripheral_address) => (bool success);
+
+  // Returns whether or not a client has subscribed to notifications for a
+  // characteristic with |characteristic_id| in |service_id| in
+  // |peripheral_address|. If the value can't be retrieved, calls its callback
+  // with false.
+  IsNotifying(string characteristic_id,
+              string service_id,
+              string peripheral_address) => (bool success, bool is_notifying);
+
   // Gets the last successfully written value to the characteristic with
   // |characteristics_id| in |service_id| and in |peripheral_address|.
   // If the value can't be retrieved calls its callback with false. Calls its
   // callback with null value if no value has been written to the
   // characteristic.
-  GetLastWrittenValue(
+  GetLastWrittenCharacteristicValue(
       string characteristic_id,
       string service_id,
       string peripheral_address) => (bool success, array<uint8>? value);
@@ -302,4 +336,30 @@ interface FakeCentral {
       string characteristic_id,
       string service_id,
       string peripheral_address) => (bool success);
+
+  // Sets the next write response for descriptor with |descriptor_id| in
+  // |characteristic_id| in |service_id| and in |peripheral_address| to |code|.
+  // |code| could be a GATT Error Response from BT 4.2 Vol 3 Part F 3.4.1.1
+  // Error Response or a number outside that range returned by specific
+  // platforms e.g. Android returns 0x101 to signal a GATT failure.
+  // https://developer.android.com/reference/android/bluetooth/BluetoothGatt.html#GATT_FAILURE
+  // Calls callback with false if there was any error when simulating the next
+  // response.
+  SetNextWriteDescriptorResponse(
+      uint16 gatt_code,
+      string descriptor_id,
+      string characteristic_id,
+      string service_id,
+      string peripheral_address) => (bool success);
+
+  // Gets the last successfully written value to the descriptor with
+  // |descriptor_id| in |characteristic_id| in |service_id| and in
+  // |peripheral_address|. If the value can't be retrieved, calls its callback
+  // with false. Calls its callback with null value if no value has been
+  // written to the descriptor.
+  GetLastWrittenDescriptorValue(
+      string descriptor_id,
+      string characteristic_id,
+      string service_id,
+      string peripheral_address) => (bool success, array<uint8>? value);
 };

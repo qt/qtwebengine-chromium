@@ -27,6 +27,7 @@
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_member.h"
+#include "components/sync/driver/sync_service_observer.h"
 #include "components/webdata/common/web_data_service_consumer.h"
 
 class Browser;
@@ -63,7 +64,8 @@ extern const char kFrecencyFieldTrialLimitParam[];
 // Autofill.
 class PersonalDataManager : public KeyedService,
                             public WebDataServiceConsumer,
-                            public AutofillWebDataServiceObserverOnUISequence {
+                            public AutofillWebDataServiceObserverOnUISequence,
+                            public syncer::SyncServiceObserver {
  public:
   explicit PersonalDataManager(const std::string& app_locale);
   ~PersonalDataManager() override;
@@ -77,6 +79,9 @@ class PersonalDataManager : public KeyedService,
             identity::IdentityManager* identity_manager,
             bool is_off_the_record);
 
+  // KeyedService:
+  void Shutdown() override;
+
   // Called once the sync service is known to be instantiated. Note that it may
   // not be started, but it's preferences can be queried.
   virtual void OnSyncServiceInitialized(syncer::SyncService* sync_service);
@@ -89,6 +94,9 @@ class PersonalDataManager : public KeyedService,
   // AutofillWebDataServiceObserverOnUISequence:
   void AutofillMultipleChanged() override;
   void SyncStarted(syncer::ModelType model_type) override;
+
+  // SyncServiceObserver:
+  void OnStateChanged(syncer::SyncService* sync) override;
 
   // Adds a listener to be notified of PersonalDataManager events.
   virtual void AddObserver(PersonalDataManagerObserver* observer);
@@ -164,6 +172,10 @@ class PersonalDataManager : public KeyedService,
   // Sets a server credit card for test.
   void AddServerCreditCardForTest(std::unique_ptr<CreditCard> credit_card);
 
+  // Sets which SyncService to use and observe in a test. |sync_service| is not
+  // owned by this class and must outlive |this|.
+  void SetSyncServiceForTest(syncer::SyncService* sync_service);
+
   // Returns the credit card with the specified |guid|, or nullptr if there is
   // no credit card with the specified |guid|.
   virtual CreditCard* GetCreditCardByGUID(const std::string& guid);
@@ -219,8 +231,10 @@ class PersonalDataManager : public KeyedService,
 
   // Returns the credit cards to suggest to the user. Those have been deduped
   // and ordered by frecency with the expired cards put at the end of the
-  // vector.
-  const std::vector<CreditCard*> GetCreditCardsToSuggest() const;
+  // vector. If |include_server_cards| is false, server side cards should not
+  // be included.
+  const std::vector<CreditCard*> GetCreditCardsToSuggest(
+      bool include_server_cards) const;
 
   // Remove credit cards that are expired at |comparison_time| and not used
   // since |min_last_used| from |cards|. The relative ordering of |cards| is
@@ -232,10 +246,12 @@ class PersonalDataManager : public KeyedService,
 
   // Gets credit cards that can suggest data for |type|. See
   // GetProfileSuggestions for argument descriptions. The variant in each
-  // GUID pair should be ignored.
+  // GUID pair should be ignored. If |include_server_cards| is false, server
+  // side cards should not be included.
   std::vector<Suggestion> GetCreditCardSuggestions(
       const AutofillType& type,
-      const base::string16& field_contents);
+      const base::string16& field_contents,
+      bool include_server_cards);
 
   // Tries to delete disused credit cards once per major version if the
   // feature is enabled.
@@ -288,6 +304,11 @@ class PersonalDataManager : public KeyedService,
   // unmasked server card known by the browser, or |TypeAndLastFourDigits| of
   // |credit_card| is equal to any masked server card known by the browser.
   bool IsKnownCard(const CreditCard& credit_card);
+
+  // Sets the value that can skip the checks to see if we are syncing in a test.
+  void SetSyncingForTest(bool is_syncing_for_test) {
+    is_syncing_for_test_ = is_syncing_for_test;
+  }
 
  protected:
   // Only PersonalDataManagerFactory and certain tests can create instances of
@@ -413,6 +434,12 @@ class PersonalDataManager : public KeyedService,
 
   // Returns the value of the AutofillEnabled pref.
   virtual bool IsAutofillEnabled() const;
+
+  // Returns the value of the AutofillCreditCardEnabled pref.
+  virtual bool IsAutofillCreditCardEnabled() const;
+
+  // Returns the value of the AutofillWalletImportEnabled pref.
+  virtual bool IsAutofillWalletImportEnabled() const;
 
   // Overrideable for testing.
   virtual std::string CountryCodeForCurrentTimezone() const;
@@ -566,6 +593,9 @@ class PersonalDataManager : public KeyedService,
   // manually using the UI.
   void CreateTestCreditCards();
 
+  // Whether the server cards are enabled and should be suggested to the user.
+  bool ShouldSuggestServerCards() const;
+
   const std::string app_locale_;
 
   // The default country code for new addresses.
@@ -576,6 +606,9 @@ class PersonalDataManager : public KeyedService,
 
   // The identity manager that this instance uses. Must outlive this instance.
   identity::IdentityManager* identity_manager_;
+
+  // The sync service this instances uses. Must outlive this instance.
+  syncer::SyncService* sync_service_;
 
   // Whether the user is currently operating in an off-the-record context.
   // Default value is false.
@@ -605,6 +638,9 @@ class PersonalDataManager : public KeyedService,
   // True if test data has been created this session.
   bool has_created_test_addresses_ = false;
   bool has_created_test_credit_cards_ = false;
+
+  // Whether sync should be considered on in a test.
+  bool is_syncing_for_test_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(PersonalDataManager);
 };

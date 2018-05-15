@@ -105,12 +105,24 @@ class MEDIA_GPU_EXPORT H264Decoder : public AcceleratedVideoDecoder {
   ~H264Decoder() override;
 
   // AcceleratedVideoDecoder implementation.
+  void SetStream(int32_t id, const uint8_t* ptr, size_t size) override;
   bool Flush() override WARN_UNUSED_RESULT;
   void Reset() override;
-  void SetStream(const uint8_t* ptr, size_t size) override;
   DecodeResult Decode() override WARN_UNUSED_RESULT;
   gfx::Size GetPicSize() const override;
   size_t GetRequiredNumOfPictures() const override;
+
+  // Return true if we need to start a new picture.
+  static bool IsNewPrimaryCodedPicture(const H264Picture* curr_pic,
+                                       int curr_pps_id,
+                                       const H264SPS* sps,
+                                       const H264SliceHeader& slice_hdr);
+
+  // Fill a H264Picture in |pic| from given |sps| and |slice_hdr|. Return false
+  // when there is an error.
+  static bool FillH264PictureFromSliceHeader(const H264SPS* sps,
+                                             const H264SliceHeader& slice_hdr,
+                                             H264Picture* pic);
 
  private:
   // We need to keep at most kDPBMaxSize pictures in DPB for
@@ -139,9 +151,6 @@ class MEDIA_GPU_EXPORT H264Decoder : public AcceleratedVideoDecoder {
   bool PreprocessCurrentSlice();
   // Process current slice as a slice of the current picture.
   bool ProcessCurrentSlice();
-
-  // Return true if we need to start a new picture.
-  bool IsNewPrimaryCodedPicture(const H264SliceHeader* slice_hdr) const;
 
   // Initialize the current picture according to data in |slice_hdr|.
   bool InitCurrPicture(const H264SliceHeader* slice_hdr);
@@ -230,6 +239,9 @@ class MEDIA_GPU_EXPORT H264Decoder : public AcceleratedVideoDecoder {
 
   // DPB in use.
   H264DPB dpb_;
+
+  // Current stream buffer id; to be assigned to pictures decoded from it.
+  int32_t stream_id_ = -1;
 
   // Picture currently being processed/decoded.
   scoped_refptr<H264Picture> curr_pic_;

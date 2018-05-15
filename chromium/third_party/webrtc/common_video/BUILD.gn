@@ -65,6 +65,7 @@ rtc_static_library("common_video") {
     "../rtc_base:checks",
     "../rtc_base:rtc_base",
     "../rtc_base:rtc_task_queue",
+    "../rtc_base:safe_minmax",
     "../system_wrappers",
     "//third_party/libyuv",
   ]
@@ -114,6 +115,7 @@ if (rtc_include_tests) {
       "../rtc_base:rtc_base",
       "../rtc_base:rtc_base_approved",
       "../system_wrappers:system_wrappers",
+      "../test:fileutils",
       "../test:test_main",
       "../test:video_test_common",
       "//testing/gtest",

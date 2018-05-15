@@ -8,7 +8,7 @@ import time
 from util import build_utils
 
 
-class _ProguardOutputFilter(object):
+class ProguardOutputFilter(object):
   """ProGuard outputs boring stuff to stdout (proguard version, jar path, etc)
   as well as interesting stuff (notes, warnings, etc). If stdout is entirely
   boring, this class suppresses the output.
@@ -16,7 +16,7 @@ class _ProguardOutputFilter(object):
 
   IGNORE_RE = re.compile(
       r'Pro.*version|Note:|Reading|Preparing|Printing|ProgramClass:|Searching|'
-      r'jar \[|\d+ class path entries checked|.*:.*(?:MANIFEST\.MF|\.empty)')
+      r'jar \[|\d+ class path entries checked')
 
   def __init__(self):
     self._last_line_ignored = False
@@ -128,8 +128,11 @@ class ProguardCmdBuilder(object):
     for optimization in self._disabled_optimizations:
       cmd += [ '-optimizations', '!' + optimization ]
 
+    # Filter to just .class files to avoid warnings about multiple inputs having
+    # the same files in META_INF/.
     cmd += [
-      '-injars', ':'.join(self._injars)
+        '-injars',
+        ':'.join('{}(**.class)'.format(x) for x in self._injars)
     ]
 
     for config_file in self._configs:
@@ -211,8 +214,8 @@ class ProguardCmdBuilder(object):
     stdout_filter = None
     stderr_filter = None
     if not self._verbose:
-      stdout_filter = _ProguardOutputFilter()
-      stderr_filter = _ProguardOutputFilter()
+      stdout_filter = ProguardOutputFilter()
+      stderr_filter = ProguardOutputFilter()
     start_time = time.time()
     build_utils.CheckOutput(self._cmd, print_stdout=True,
                             print_stderr=True,

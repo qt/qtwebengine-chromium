@@ -140,7 +140,8 @@ void BlobStorageContext::RevokePublicBlobURL(const GURL& blob_url) {
 std::unique_ptr<BlobDataHandle> BlobStorageContext::AddFutureBlob(
     const std::string& uuid,
     const std::string& content_type,
-    const std::string& content_disposition) {
+    const std::string& content_disposition,
+    BuildAbortedCallback build_aborted_callback) {
   DCHECK(!registry_.HasEntry(uuid));
 
   BlobEntry* entry =
@@ -149,6 +150,8 @@ std::unique_ptr<BlobDataHandle> BlobStorageContext::AddFutureBlob(
   entry->set_status(BlobStatus::PENDING_CONSTRUCTION);
   entry->set_building_state(std::make_unique<BlobEntry::BuildingState>(
       false, TransportAllowedCallback(), 0));
+  entry->building_state_->build_aborted_callback =
+      std::move(build_aborted_callback);
   return CreateHandle(uuid, entry);
 }
 
@@ -275,6 +278,8 @@ std::unique_ptr<BlobDataHandle> BlobStorageContext::BuildBlobInternal(
     DCHECK(previous_building_state->copies.empty());
     std::swap(building_state->build_completion_callbacks,
               previous_building_state->build_completion_callbacks);
+    building_state->build_aborted_callback =
+        std::move(previous_building_state->build_aborted_callback);
     auto runner = base::ThreadTaskRunnerHandle::Get();
     for (auto& callback : previous_building_state->build_started_callbacks)
       runner->PostTask(FROM_HERE,
@@ -318,7 +323,7 @@ std::unique_ptr<BlobDataHandle> BlobStorageContext::BuildBlobInternal(
             content->ReleasePendingTransportItems(),
             base::BindOnce(&BlobStorageContext::OnEnoughSpaceForTransport,
                            ptr_factory_.GetWeakPtr(), content->uuid_,
-                           base::Passed(&empty_files)));
+                           std::move(empty_files)));
         break;
       }
       case TransportQuotaType::FILE:
@@ -612,7 +617,7 @@ void BlobStorageContext::OnDependentBlobFinished(
 
 void BlobStorageContext::ClearAndFreeMemory(BlobEntry* entry) {
   if (entry->building_state_)
-    entry->building_state_->CancelRequests();
+    entry->building_state_->CancelRequestsAndAbort();
   entry->ClearItems();
   entry->ClearOffsets();
   entry->set_size(0);
@@ -625,8 +630,9 @@ bool BlobStorageContext::OnMemoryDump(
       base::trace_event::MemoryDumpManager::GetInstance()
           ->system_allocator_pool_name();
 
-  auto* mad = pmd->CreateAllocatorDump(base::StringPrintf(
-      "blob_storage/0x%" PRIXPTR, reinterpret_cast<uintptr_t>(this)));
+  auto* mad = pmd->CreateAllocatorDump(
+      base::StringPrintf("site_storage/blob_storage/0x%" PRIXPTR,
+                         reinterpret_cast<uintptr_t>(this)));
   mad->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
                  base::trace_event::MemoryAllocatorDump::kUnitsBytes,
                  memory_controller().memory_usage());

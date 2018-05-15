@@ -186,6 +186,7 @@ if (!build_with_chromium) {
 
       deps = [
         "../modules/audio_device",
+        "../modules/audio_device:audio_device_impl",
         "../system_wrappers:system_wrappers_default",
         "//build/win:default_exe_manifest",
       ]
@@ -271,6 +272,7 @@ if (rtc_include_tests) {
         "../rtc_base:rtc_base_approved",
         "../system_wrappers:field_trial_default",
         "../test:field_trial",
+        "../test:fileutils",
         "../test:test_support",
       ]
     }
@@ -292,6 +294,7 @@ if (rtc_include_tests) {
       "../modules/audio_processing",
       "../modules/audio_processing/vad",
       "../rtc_base:rtc_base_approved",
+      "../rtc_base:safe_minmax",
       "../system_wrappers:metrics_default",
       "../test:test_support",
       "//build/win:default_exe_manifest",
@@ -342,6 +345,7 @@ if (rtc_include_tests) {
       "../common_video:common_video",
       "../rtc_base",
       "../rtc_base:checks",
+      "../test:fileutils",
       "../test:test_main",
       "//testing/gtest",
     ]

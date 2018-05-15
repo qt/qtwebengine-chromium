@@ -8,14 +8,11 @@
 #include <utility>
 
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/numerics/checked_math.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/optional.h"
-#include "base/rand_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "net/base/rand_callback.h"
 #include "net/log/net_log.h"
 #include "net/socket/udp_socket.h"
 
@@ -31,10 +28,9 @@ const uint32_t kMaxPacketSize = kMaxReadSize - 1;
 class SocketWrapperImpl : public UDPSocket::SocketWrapper {
  public:
   SocketWrapperImpl(net::DatagramSocket::BindType bind_type,
-                    const net::RandIntCallback& rand_int_cb,
                     net::NetLog* net_log,
                     const net::NetLogSource& source)
-      : socket_(bind_type, rand_int_cb, net_log, source) {}
+      : socket_(bind_type, net_log, source) {}
   ~SocketWrapperImpl() override {}
 
   int Connect(const net::IPEndPoint& remote_addr,
@@ -137,21 +133,14 @@ UDPSocket::PendingSendRequest::PendingSendRequest() {}
 
 UDPSocket::PendingSendRequest::~PendingSendRequest() {}
 
-UDPSocket::UDPSocket(mojom::UDPSocketRequest request,
-                     mojom::UDPSocketReceiverPtr receiver)
-    : is_bound_(false),
+UDPSocket::UDPSocket(mojom::UDPSocketReceiverPtr receiver, net::NetLog* net_log)
+    : net_log_(net_log),
+      is_bound_(false),
       is_connected_(false),
       receiver_(std::move(receiver)),
-      remaining_recv_slots_(0),
-      binding_(this) {
-  binding_.Bind(std::move(request));
-}
+      remaining_recv_slots_(0) {}
 
 UDPSocket::~UDPSocket() {}
-
-void UDPSocket::set_connection_error_handler(base::OnceClosure handler) {
-  binding_.set_connection_error_handler(std::move(handler));
-}
 
 void UDPSocket::Connect(const net::IPEndPoint& remote_addr,
                         mojom::UDPSocketOptionsPtr options,
@@ -293,9 +282,8 @@ void UDPSocket::Close() {
 
 std::unique_ptr<UDPSocket::SocketWrapper> UDPSocket::CreateSocketWrapper()
     const {
-  return std::make_unique<SocketWrapperImpl>(
-      net::DatagramSocket::RANDOM_BIND, base::BindRepeating(&base::RandInt),
-      nullptr, net::NetLogSource());
+  return std::make_unique<SocketWrapperImpl>(net::DatagramSocket::RANDOM_BIND,
+                                             nullptr, net::NetLogSource());
 }
 
 bool UDPSocket::IsConnectedOrBound() const {

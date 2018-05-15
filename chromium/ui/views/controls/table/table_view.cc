@@ -287,6 +287,11 @@ bool TableView::HasColumn(int id) const {
   return false;
 }
 
+const TableView::VisibleColumn& TableView::GetVisibleColumn(int index) {
+  DCHECK(index >= 0 && index < static_cast<int>(visible_columns_.size()));
+  return visible_columns_[index];
+}
+
 void TableView::SetVisibleColumnWidth(int index, int width) {
   DCHECK(index >= 0 && index < static_cast<int>(visible_columns_.size()));
   if (visible_columns_[index].width == width)
@@ -458,9 +463,9 @@ void TableView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
     node_data->role = ax::mojom::Role::kRow;
     node_data->AddIntAttribute(ax::mojom::IntAttribute::kPosInSet,
                                selection_model_.active());
-    if (selection_model_.IsSelected(selection_model_.active())) {
-      node_data->AddState(ax::mojom::State::kSelected);
-    }
+    node_data->AddBoolAttribute(
+        ax::mojom::BoolAttribute::kSelected,
+        selection_model_.IsSelected(selection_model_.active()));
 
     // Generate accessible name from column headers and selected cell text.
     std::vector<base::string16> name_parts;

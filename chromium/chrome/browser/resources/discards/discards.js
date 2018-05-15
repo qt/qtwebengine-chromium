@@ -71,8 +71,10 @@ cr.define('discards', function() {
     }
 
     // Compares numeric fields.
-    if (['discardCount', 'utilityRank', 'lastActiveSeconds'].includes(
-            sortKey)) {
+    // Note: Visibility is represented as a numeric value.
+    if ([
+          'visibility', 'discardCount', 'utilityRank', 'lastActiveSeconds'
+        ].includes(sortKey)) {
       return val1 - val2;
     }
 
@@ -179,6 +181,24 @@ cr.define('discards', function() {
   }
 
   /**
+   * Returns a string representation of a visibility enum value for display in
+   * a table.
+   * @param {int} visibility A value in LifecycleUnitVisibility.
+   * @return {string} A string representation of the visibility.
+   */
+  function visibilityToString(visibility) {
+    switch (visibility) {
+      case 0:
+        return 'hidden';
+      case 1:
+        return 'occluded';
+      case 2:
+        return 'visible';
+    }
+    assertNotReached('Unsupported visibility: ' + visibility);
+  }
+
+  /**
    * Returns the index of the row in the table that houses the given |element|.
    * @param {HTMLElement} element Any element in the DOM.
    */
@@ -229,6 +249,20 @@ cr.define('discards', function() {
     discardLink.addEventListener('click', discardListener);
     discardUrgentLink.addEventListener('click', discardListener);
 
+
+    // Set up the listeners for freeze links.
+    let lifecycleListener = function(e) {
+      // Get the info backing this row.
+      let info = infos[getRowIndex(e.target)];
+      // TODO(fmeawad): Disable the action, and let the update function
+      // re-enable it. Blocked on acquiring freeze status.
+      // Perform the action.
+      uiHandler.freezeById(info.id);
+    };
+
+    let freezeLink = row.querySelector('.freeze-link');
+    freezeLink.addEventListener('click', lifecycleListener);
+
     return row;
   }
 
@@ -244,6 +278,8 @@ cr.define('discards', function() {
         info.faviconUrl ? info.faviconUrl : 'chrome://favicon';
     row.querySelector('.title-div').textContent = info.title;
     row.querySelector('.tab-url-cell').textContent = info.tabUrl;
+    row.querySelector('.visibility-cell').textContent =
+        visibilityToString(info.visibility);
     row.querySelector('.is-media-cell').textContent =
         boolToString(info.isMedia);
     row.querySelector('.is-discarded-cell').textContent =

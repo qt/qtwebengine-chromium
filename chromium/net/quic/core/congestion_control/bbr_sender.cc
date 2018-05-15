@@ -138,6 +138,14 @@ BbrSender::BbrSender(const RttStats* rtt_stats,
 
 BbrSender::~BbrSender() {}
 
+void BbrSender::SetInitialCongestionWindowInPackets(
+    QuicPacketCount congestion_window) {
+  if (mode_ == STARTUP) {
+    initial_congestion_window_ = congestion_window * kDefaultTCPMSS;
+    congestion_window_ = congestion_window * kDefaultTCPMSS;
+  }
+}
+
 bool BbrSender::InSlowStart() const {
   return mode_ == STARTUP;
 }
@@ -412,6 +420,11 @@ bool BbrSender::UpdateBandwidthAndMinRtt(
     const AckedPacketVector& acked_packets) {
   QuicTime::Delta sample_min_rtt = QuicTime::Delta::Infinite();
   for (const auto& packet : acked_packets) {
+    if (GetQuicReloadableFlag(quic_use_incremental_ack_processing3) &&
+        packet.bytes_acked == 0) {
+      // Skip acked packets with 0 in flight bytes when updating bandwidth.
+      continue;
+    }
     BandwidthSample bandwidth_sample =
         sampler_->OnPacketAcknowledged(now, packet.packet_number);
     last_sample_is_app_limited_ = bandwidth_sample.is_app_limited;

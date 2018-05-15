@@ -8,7 +8,6 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/location.h"
@@ -180,11 +179,15 @@ std::string Component::session_id() const {
   return update_context_.session_id;
 }
 
-void Component::Handle(CallbackHandleComplete callback) {
+bool Component::is_foreground() const {
+  return update_context_.is_foreground;
+}
+
+void Component::Handle(CallbackHandleComplete callback_handle_complete) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(state_);
 
-  callback_handle_complete_ = std::move(callback);
+  callback_handle_complete_ = std::move(callback_handle_complete);
 
   state_->Handle(
       base::BindOnce(&Component::ChangeState, base::Unretained(this)));
@@ -196,6 +199,8 @@ void Component::ChangeState(std::unique_ptr<State> next_state) {
   previous_state_ = state();
   if (next_state)
     state_ = std::move(next_state);
+  else
+    is_handled_ = true;
 
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE, std::move(callback_handle_complete_));
@@ -268,8 +273,8 @@ void Component::UpdateCheckComplete() {
 }
 
 bool Component::CanDoBackgroundDownload() const {
-  // On demand component updates are always downloaded in foreground.
-  return !on_demand_ && crx_component_.allows_background_download &&
+  // Foreground component updates are always downloaded in foreground.
+  return !is_foreground() && crx_component_.allows_background_download &&
          update_context_.config->EnabledBackgroundDownloader();
 }
 
@@ -300,21 +305,28 @@ Component::State::State(Component* component, ComponentState state)
 
 Component::State::~State() {}
 
-void Component::State::Handle(CallbackNextState callback) {
+void Component::State::Handle(CallbackNextState callback_next_state) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  callback_ = std::move(callback);
+  callback_next_state_ = std::move(callback_next_state);
 
-  DCHECK(!is_final_);
   DoHandle();
 }
 
 void Component::State::TransitionState(std::unique_ptr<State> next_state) {
-  if (!next_state)
-    is_final_ = true;
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(next_state);
 
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::BindOnce(std::move(callback_), std::move(next_state)));
+      FROM_HERE,
+      base::BindOnce(std::move(callback_next_state_), std::move(next_state)));
+}
+
+void Component::State::EndState() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(std::move(callback_next_state_), nullptr));
 }
 
 Component::StateNew::StateNew(Component* component)
@@ -394,7 +406,7 @@ void Component::StateUpdateError::DoHandle() {
   if (component.IsUpdateAvailable())
     component.AppendEvent(BuildUpdateCompleteEventElement(component));
 
-  TransitionState(nullptr);
+  EndState();
   component.NotifyObservers(Events::COMPONENT_UPDATE_ERROR);
 }
 
@@ -452,7 +464,7 @@ void Component::StateUpToDate::DoHandle() {
   auto& component = State::component();
 
   component.NotifyObservers(Events::COMPONENT_NOT_UPDATED);
-  TransitionState(nullptr);
+  EndState();
 }
 
 Component::StateDownloadingDiff::StateDownloadingDiff(Component* component)
@@ -731,7 +743,7 @@ void Component::StateUpdated::DoHandle() {
   component.AppendEvent(BuildUpdateCompleteEventElement(component));
 
   component.NotifyObservers(Events::COMPONENT_UPDATED);
-  TransitionState(nullptr);
+  EndState();
 }
 
 Component::StateUninstalled::StateUninstalled(Component* component)
@@ -749,7 +761,7 @@ void Component::StateUninstalled::DoHandle() {
   auto& component = State::component();
   component.AppendEvent(BuildUninstalledEventElement(component));
 
-  TransitionState(nullptr);
+  EndState();
 }
 
 Component::StateRun::StateRun(Component* component)

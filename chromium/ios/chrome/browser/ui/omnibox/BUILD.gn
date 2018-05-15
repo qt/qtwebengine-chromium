@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 
 source_set("omnibox") {
+  configs += [ "//build/config/compiler:enable_arc" ]
+
   sources = [
     "location_bar_controller.cc",
     "location_bar_controller.h",
@@ -17,6 +19,21 @@ source_set("omnibox") {
   ]
 }
 
+source_set("omnibox_popup_shared") {
+  configs += [ "//build/config/compiler:enable_arc" ]
+  sources = [
+    "truncating_attributed_label.h",
+    "truncating_attributed_label.mm",
+  ]
+  deps = [
+    "//base",
+    "//components/omnibox/browser",
+  ]
+  public_deps = [
+    "//ui/base",
+  ]
+}
+
 source_set("omnibox_util") {
   sources = [
     "omnibox_util.cc",
@@ -26,6 +43,8 @@ source_set("omnibox_util") {
     "//base",
     "//components/omnibox/browser",
     "//components/security_state/core",
+  ]
+  public_deps = [
     "//ios/chrome/app/theme",
   ]
 }
@@ -48,19 +67,8 @@ source_set("omnibox_internal") {
     "image_retriever.h",
     "location_bar_controller_impl.h",
     "location_bar_controller_impl.mm",
-    "omnibox_popup_mediator.h",
-    "omnibox_popup_mediator.mm",
-    "omnibox_popup_positioner.h",
-    "omnibox_popup_presenter.h",
-    "omnibox_popup_presenter.mm",
-    "omnibox_popup_provider.h",
-    "omnibox_popup_row.h",
-    "omnibox_popup_row.mm",
-    "omnibox_popup_view_controller.h",
-    "omnibox_popup_view_controller.mm",
-    "omnibox_popup_view_ios.h",
-    "omnibox_popup_view_ios.mm",
-    "omnibox_popup_view_suggestions_delegate.h",
+    "omnibox_coordinator.h",
+    "omnibox_coordinator.mm",
     "omnibox_text_field_delegate.h",
     "omnibox_text_field_ios.h",
     "omnibox_text_field_ios.mm",
@@ -68,23 +76,22 @@ source_set("omnibox_internal") {
     "omnibox_text_field_paste_delegate.mm",
     "omnibox_view_ios.h",
     "omnibox_view_ios.mm",
-    "truncating_attributed_label.h",
-    "truncating_attributed_label.mm",
+    "web_omnibox_edit_controller_impl.h",
+    "web_omnibox_edit_controller_impl.mm",
   ]
   deps = [
     ":omnibox",
+    ":omnibox_popup_shared",
     ":omnibox_util",
     "resources:omnibox_background",
     "resources:omnibox_transparent_background",
     "//base",
     "//components/favicon/ios",
     "//components/image_fetcher/ios",
-    "//components/open_from_clipboard",
     "//components/resources",
     "//components/search_engines",
     "//components/security_state/core",
     "//components/strings",
-    "//components/toolbar",
     "//ios/chrome/app/strings",
     "//ios/chrome/app/theme",
     "//ios/chrome/browser",
@@ -99,6 +106,7 @@ source_set("omnibox_internal") {
     "//ios/chrome/browser/ui",
     "//ios/chrome/browser/ui/commands",
     "//ios/chrome/browser/ui/fullscreen",
+    "//ios/chrome/browser/ui/location_bar:constants",
     "//ios/chrome/browser/ui/omnibox/popup",
     "//ios/chrome/browser/ui/toolbar/buttons",
     "//ios/chrome/browser/ui/toolbar/public",
@@ -117,9 +125,13 @@ source_set("omnibox_internal") {
     "//ui/gfx/geometry",
     "//url",
   ]
-  allow_circular_includes_from = [ "//ios/chrome/browser/ui/omnibox/popup" ]
+  allow_circular_includes_from = [
+    "//ios/chrome/browser/ui/omnibox/popup",
+    ":omnibox",
+  ]
   public_deps = [
     "//components/omnibox/browser",
+    "//components/toolbar",
   ]
   libs = [
     "CoreText.framework",

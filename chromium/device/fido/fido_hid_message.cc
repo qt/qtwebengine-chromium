@@ -10,45 +10,46 @@
 
 #include "base/memory/ptr_util.h"
 #include "base/numerics/safe_conversions.h"
+#include "device/fido/u2f_parsing_utils.h"
 
 namespace device {
 
 // static
 std::unique_ptr<FidoHidMessage> FidoHidMessage::Create(
     uint32_t channel_id,
-    CtapHidDeviceCommand type,
+    FidoHidDeviceCommand type,
     base::span<const uint8_t> data) {
   if (data.size() > kHidMaxMessageSize)
     return nullptr;
 
   switch (type) {
-    case CtapHidDeviceCommand::kCtapHidPing:
+    case FidoHidDeviceCommand::kPing:
       break;
-    case CtapHidDeviceCommand::kCtapHidMsg:
-    case CtapHidDeviceCommand::kCtapHidCBOR: {
+    case FidoHidDeviceCommand::kMsg:
+    case FidoHidDeviceCommand::kCbor: {
       if (data.empty())
         return nullptr;
       break;
     }
 
-    case CtapHidDeviceCommand::kCtapHidCancel:
-    case CtapHidDeviceCommand::kCtapHidWink: {
+    case FidoHidDeviceCommand::kCancel:
+    case FidoHidDeviceCommand::kWink: {
       if (!data.empty())
         return nullptr;
       break;
     }
-    case CtapHidDeviceCommand::kCtapHidLock: {
+    case FidoHidDeviceCommand::kLock: {
       if (data.size() != 1 || data[0] > kHidMaxLockSeconds)
         return nullptr;
       break;
     }
-    case CtapHidDeviceCommand::kCtapHidInit: {
+    case FidoHidDeviceCommand::kInit: {
       if (data.size() != 8)
         return nullptr;
       break;
     }
-    case CtapHidDeviceCommand::kCtapHidKeepAlive:
-    case CtapHidDeviceCommand::kCtapHidError:
+    case FidoHidDeviceCommand::kKeepAlive:
+    case FidoHidDeviceCommand::kError:
       if (data.size() != 1)
         return nullptr;
   }
@@ -124,7 +125,7 @@ size_t FidoHidMessage::NumPackets() const {
 }
 
 FidoHidMessage::FidoHidMessage(uint32_t channel_id,
-                               CtapHidDeviceCommand type,
+                               FidoHidDeviceCommand type,
                                base::span<const uint8_t> data)
     : channel_id_(channel_id) {
   uint8_t sequence = 0;
@@ -135,13 +136,10 @@ FidoHidMessage::FidoHidMessage(uint32_t channel_id,
       std::vector<uint8_t>(init_data.begin(), init_data.end()), data.size()));
   data = data.subspan(init_data.size());
 
-  while (!data.empty()) {
-    auto cont_data =
-        data.first(std::min(kHidContinuationPacketDataSize, data.size()));
+  for (auto cont_data :
+       u2f_parsing_utils::SplitSpan(data, kHidContinuationPacketDataSize)) {
     packets_.push_back(std::make_unique<FidoHidContinuationPacket>(
-        channel_id, sequence++,
-        std::vector<uint8_t>(cont_data.begin(), cont_data.end())));
-    data = data.subspan(cont_data.size());
+        channel_id, sequence++, u2f_parsing_utils::Materialize(cont_data)));
   }
 }
 

@@ -10,7 +10,6 @@
 #include <utility>
 
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/trace_event/trace_event.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/geometry/point.h"
@@ -117,11 +116,6 @@ bool HardwareDisplayController::ActualSchedulePageFlip(
             [](const OverlayPlane& l, const OverlayPlane& r) {
               return l.z_order < r.z_order;
             });
-  if (pending_planes.front().z_order < 0) {
-    std::move(callback).Run(gfx::SwapResult::SWAP_FAILED,
-                            gfx::PresentationFeedback());
-    return false;
-  }
   scoped_refptr<PageFlipRequest> page_flip_request =
       new PageFlipRequest(crtc_controllers_.size(), std::move(callback));
 

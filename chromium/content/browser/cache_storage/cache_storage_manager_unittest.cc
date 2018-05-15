@@ -52,7 +52,7 @@
 #include "storage/browser/test/mock_special_storage_policy.h"
 #include "storage/common/blob_storage/blob_handle.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/modules/cache_storage/cache_storage.mojom.h"
+#include "third_party/blink/public/platform/modules/cache_storage/cache_storage.mojom.h"
 #include "url/origin.h"
 
 using blink::mojom::CacheStorageError;
@@ -145,6 +145,12 @@ class CacheStorageManagerTest : public testing::Test {
     run_loop->Quit();
   }
 
+  void ErrorCallback(base::RunLoop* run_loop, CacheStorageError error) {
+    callback_error_ = error;
+    callback_bool_ = error == CacheStorageError::kSuccess;
+    run_loop->Quit();
+  }
+
   void BoolAndErrorCallback(base::RunLoop* run_loop,
                             bool value,
                             CacheStorageError error) {
@@ -189,14 +195,11 @@ class CacheStorageManagerTest : public testing::Test {
     run_loop->Quit();
   }
 
-  void CacheMatchCallback(
-      base::RunLoop* run_loop,
-      CacheStorageError error,
-      std::unique_ptr<ServiceWorkerResponse> response,
-      std::unique_ptr<storage::BlobDataHandle> blob_data_handle) {
+  void CacheMatchCallback(base::RunLoop* run_loop,
+                          CacheStorageError error,
+                          std::unique_ptr<ServiceWorkerResponse> response) {
     callback_error_ = error;
     callback_cache_handle_response_ = std::move(response);
-    callback_data_handle_ = std::move(blob_data_handle);
     run_loop->Quit();
   }
 
@@ -263,7 +266,6 @@ class CacheStorageManagerTest : public testing::Test {
     callback_cache_handle_ = CacheStorageCacheHandle();
     callback_bool_ = false;
     callback_cache_handle_response_ = nullptr;
-    callback_data_handle_ = nullptr;
     callback_cache_index_ = CacheStorageIndex();
     callback_all_origins_usage_.clear();
 
@@ -310,7 +312,7 @@ class CacheStorageManagerTest : public testing::Test {
     base::RunLoop loop;
     cache_manager_->DeleteCache(
         origin, cache_name,
-        base::BindOnce(&CacheStorageManagerTest::BoolAndErrorCallback,
+        base::BindOnce(&CacheStorageManagerTest::ErrorCallback,
                        base::Unretained(this), base::Unretained(&loop)));
     loop.Run();
 
@@ -544,8 +546,9 @@ class CacheStorageManagerTest : public testing::Test {
     quota_manager_proxy_->GetUsageAndQuota(
         base::ThreadTaskRunnerHandle::Get().get(), origin,
         StorageType::kTemporary,
-        base::Bind(&CacheStorageManagerTest::DidGetQuotaOriginUsage,
-                   base::Unretained(this), base::Unretained(&usage), &loop));
+        base::BindOnce(&CacheStorageManagerTest::DidGetQuotaOriginUsage,
+                       base::Unretained(this), base::Unretained(&usage),
+                       &loop));
     loop.Run();
     return usage;
   }

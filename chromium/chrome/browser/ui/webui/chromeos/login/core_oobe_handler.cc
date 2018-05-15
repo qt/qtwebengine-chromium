@@ -6,7 +6,6 @@
 
 #include <type_traits>
 
-#include "ash/public/cpp/accessibility_types.h"
 #include "ash/shell.h"
 #include "base/bind.h"
 #include "base/strings/utf_string_conversions.h"
@@ -195,7 +194,6 @@ void CoreOobeHandler::RegisterMessages() {
               &CoreOobeHandler::HandleSetOobeBootstrappingSlave);
   AddRawCallback("getPrimaryDisplayNameForTesting",
                  &CoreOobeHandler::HandleGetPrimaryDisplayNameForTesting);
-  AddCallback("setupDemoMode", &CoreOobeHandler::HandleSetupDemoMode);
 }
 
 void CoreOobeHandler::ShowSignInError(
@@ -333,8 +331,7 @@ void CoreOobeHandler::HandleEnableSpokenFeedback(bool /* enabled */) {
   // Checkbox is initialized on page init and updates when spoken feedback
   // setting is changed so just toggle spoken feedback here.
   AccessibilityManager* manager = AccessibilityManager::Get();
-  manager->EnableSpokenFeedback(!manager->IsSpokenFeedbackEnabled(),
-                                ash::A11Y_NOTIFICATION_NONE);
+  manager->EnableSpokenFeedback(!manager->IsSpokenFeedbackEnabled());
 }
 
 void CoreOobeHandler::HandleSetDeviceRequisition(
@@ -576,15 +573,6 @@ void CoreOobeHandler::HandleGetPrimaryDisplayNameForTesting(
 
   AllowJavascript();
   ResolveJavascriptCallback(*callback_id, base::Value(display_name));
-}
-
-void CoreOobeHandler::HandleSetupDemoMode() {
-  const bool is_demo_mode_enabled =
-      base::CommandLine::ForCurrentProcess()->HasSwitch(
-          chromeos::switches::kEnableDemoMode);
-  if (is_demo_mode_enabled) {
-    NOTIMPLEMENTED();
-  }
 }
 
 void CoreOobeHandler::InitDemoModeDetection() {

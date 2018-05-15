@@ -435,6 +435,9 @@ need to be translated for each locale.-->
       <message name="IDS_APP_ACCNAME_RESTORE" desc="The accessible name for the Restore button.">
         Restore
       </message>
+      <message name="IDS_APP_ACCNAME_MENU" desc="The accessible name for the Menu button.">
+        Menu
+      </message>
 
       <!-- Scroll Bar Context Menu Labels -->
       <message name="IDS_APP_SCROLLBAR_CXMENU_SCROLLHERE" desc="The label for the 'Scroll Here' item">
@@ -495,6 +498,16 @@ need to be translated for each locale.-->
       <if expr="use_titlecase">
         <message name="IDS_APP_SELECT_ALL" desc="In Title Case: The text label of the Select All menu item">
           Select &amp;All
+        </message>
+      </if>
+      <if expr="not is_macosx">
+        <message name="IDS_CONTENT_CONTEXT_EMOJI" desc="The context menu item to display the OS-provided emoji picker.">
+          Emoji
+        </message>
+      </if>
+      <if expr="is_macosx">
+        <message name="IDS_CONTENT_CONTEXT_EMOJI" desc="The context menu item to display the OS-provided emoji picker.">
+          Emoji &amp;&amp; Symbols
         </message>
       </if>
 

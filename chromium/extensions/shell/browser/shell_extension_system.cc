@@ -10,7 +10,6 @@
 #include "apps/launcher.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
-#include "base/memory/ptr_util.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
@@ -68,6 +67,10 @@ void ShellExtensionSystem::LaunchApp(const ExtensionId& extension_id) {
                                    ->enabled_extensions()
                                    .GetByID(extension_id);
   apps::LaunchPlatformApp(browser_context_, extension, SOURCE_UNTRACKED);
+}
+
+void ShellExtensionSystem::ReloadExtension(const ExtensionId& extension_id) {
+  extension_loader_->ReloadExtension(extension_id);
 }
 
 void ShellExtensionSystem::Shutdown() {

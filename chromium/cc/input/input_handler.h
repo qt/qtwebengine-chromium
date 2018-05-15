@@ -49,6 +49,9 @@ struct CC_EXPORT InputHandlerScrollResult {
   // How the browser should handle the overscroll navigation based on the css
   // property scroll-boundary-behavior.
   OverscrollBehavior overscroll_behavior;
+  // The current offset of the currently scrolling node. It is in DIP or
+  // physical pixels depending on the use-zoom-for-dsf flag.
+  gfx::Vector2dF current_offset;
 };
 
 class CC_EXPORT InputHandlerClient {
@@ -230,6 +233,16 @@ class CC_EXPORT InputHandler {
   virtual bool ScrollLayerTo(int layer_id, const gfx::ScrollOffset& offset) = 0;
 
   virtual bool ScrollingShouldSwitchtoMainThread() = 0;
+
+  // Sets the initial and target offset for scroll snapping for the currently
+  // scrolling node and the given natural displacement.
+  // |natural_displacement_in_viewport| is the estimated total scrolling for
+  // the active scroll sequence.
+  // Returns false if their is no position to snap to.
+  virtual bool GetSnapFlingInfo(
+      const gfx::Vector2dF& natural_displacement_in_viewport,
+      gfx::Vector2dF* initial_offset,
+      gfx::Vector2dF* target_offset) const = 0;
 
  protected:
   InputHandler() {}

@@ -196,6 +196,9 @@ TEST_P(GLES2DecoderTest, IsBuffer) {
   EXPECT_FALSE(DoIsBuffer(client_buffer_id_));
   DoBindBuffer(GL_ARRAY_BUFFER, client_buffer_id_, kServiceBufferId);
   EXPECT_TRUE(DoIsBuffer(client_buffer_id_));
+  EXPECT_CALL(*gl_, BindBuffer(GL_ARRAY_BUFFER, 0))
+      .Times(1)
+      .RetiresOnSaturation();
   DoDeleteBuffer(client_buffer_id_, kServiceBufferId);
   EXPECT_FALSE(DoIsBuffer(client_buffer_id_));
 }
@@ -1407,6 +1410,9 @@ TEST_P(GLES3DecoderTest, BindTransformFeedbackValidArgs) {
   SpecializedSetup<BindTransformFeedback, 0>(true);
   BindTransformFeedback cmd;
   cmd.Init(GL_TRANSFORM_FEEDBACK, client_transformfeedback_id_);
+  EXPECT_CALL(*gl_, BindBuffer(GL_TRANSFORM_FEEDBACK_BUFFER, 0))
+      .Times(1)
+      .RetiresOnSaturation();
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
@@ -1479,6 +1485,9 @@ TEST_P(GLES3DecoderTest, GetTransformFeedbackBinding) {
   const GLuint kServiceID = 1012;
   const GLenum kTarget = GL_TRANSFORM_FEEDBACK;
   DoCreateTransformFeedback(kClientID, kServiceID);
+  EXPECT_CALL(*gl_, BindBuffer(GL_TRANSFORM_FEEDBACK_BUFFER, 0))
+      .Times(1)
+      .RetiresOnSaturation();
   DoBindTransformFeedback(kTarget, kClientID, kServiceID);
 
   EXPECT_CALL(*gl_, GetError())
@@ -1496,6 +1505,9 @@ TEST_P(GLES3DecoderTest, GetTransformFeedbackBinding) {
   EXPECT_EQ(1, result->GetNumResults());
   EXPECT_EQ(kClientID, static_cast<GLuint>(result->GetData()[0]));
 
+  EXPECT_CALL(*gl_, BindBuffer(GL_TRANSFORM_FEEDBACK_BUFFER, 0))
+      .Times(1)
+      .RetiresOnSaturation();
   DoBindTransformFeedback(kTarget, 0, kServiceDefaultTransformFeedbackId);
   DoDeleteTransformFeedback(kClientID, kServiceID);
   EXPECT_EQ(GL_NO_ERROR, GetGLError());

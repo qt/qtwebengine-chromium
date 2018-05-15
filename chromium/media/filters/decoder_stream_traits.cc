@@ -59,10 +59,13 @@ void DecoderStreamTraits<DemuxerStream::AUDIO>::InitializeDecoder(
     bool /* low_delay */,
     CdmContext* cdm_context,
     const InitCB& init_cb,
-    const OutputCB& output_cb) {
+    const OutputCB& output_cb,
+    const DecoderType::WaitingForDecryptionKeyCB&
+        waiting_for_decryption_key_cb) {
   DCHECK(config.IsValidConfig());
   stats_.audio_decoder_name = decoder->GetDisplayName();
-  decoder->Initialize(config, cdm_context, init_cb, output_cb);
+  decoder->Initialize(config, cdm_context, init_cb, output_cb,
+                      waiting_for_decryption_key_cb);
 }
 
 void DecoderStreamTraits<DemuxerStream::AUDIO>::OnStreamReset(
@@ -75,7 +78,7 @@ void DecoderStreamTraits<DemuxerStream::AUDIO>::OnStreamReset(
 }
 
 void DecoderStreamTraits<DemuxerStream::AUDIO>::OnDecode(
-    const scoped_refptr<DecoderBuffer>& buffer) {
+    const DecoderBuffer& buffer) {
   audio_ts_validator_->CheckForTimestampGap(buffer);
 }
 
@@ -146,10 +149,13 @@ void DecoderStreamTraits<DemuxerStream::VIDEO>::InitializeDecoder(
     bool low_delay,
     CdmContext* cdm_context,
     const InitCB& init_cb,
-    const OutputCB& output_cb) {
+    const OutputCB& output_cb,
+    const DecoderType::WaitingForDecryptionKeyCB&
+        waiting_for_decryption_key_cb) {
   DCHECK(config.IsValidConfig());
   stats_.video_decoder_name = decoder->GetDisplayName();
-  decoder->Initialize(config, low_delay, cdm_context, init_cb, output_cb);
+  decoder->Initialize(config, low_delay, cdm_context, init_cb, output_cb,
+                      waiting_for_decryption_key_cb);
 }
 
 void DecoderStreamTraits<DemuxerStream::VIDEO>::OnStreamReset(
@@ -160,22 +166,19 @@ void DecoderStreamTraits<DemuxerStream::VIDEO>::OnStreamReset(
 }
 
 void DecoderStreamTraits<DemuxerStream::VIDEO>::OnDecode(
-    const scoped_refptr<DecoderBuffer>& buffer) {
-  if (!buffer)
-    return;
-
-  if (buffer->end_of_stream()) {
+    const DecoderBuffer& buffer) {
+  if (buffer.end_of_stream()) {
     last_keyframe_timestamp_ = base::TimeDelta();
     return;
   }
 
-  if (buffer->discard_padding().first == kInfiniteDuration)
-    frames_to_drop_.insert(buffer->timestamp());
+  if (buffer.discard_padding().first == kInfiniteDuration)
+    frames_to_drop_.insert(buffer.timestamp());
 
-  if (!buffer->is_key_frame())
+  if (!buffer.is_key_frame())
     return;
 
-  base::TimeDelta current_frame_timestamp = buffer->timestamp();
+  base::TimeDelta current_frame_timestamp = buffer.timestamp();
   if (last_keyframe_timestamp_.is_zero()) {
     last_keyframe_timestamp_ = current_frame_timestamp;
     return;

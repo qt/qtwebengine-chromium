@@ -2742,13 +2742,14 @@ void ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
                                   GLfloat uv_x,
                                   GLfloat uv_y,
                                   GLfloat uv_width,
-                                  GLfloat uv_height) {
+                                  GLfloat uv_height,
+                                  GLboolean enable_blend) {
   gles2::cmds::ScheduleOverlayPlaneCHROMIUM* c =
       GetCmdSpace<gles2::cmds::ScheduleOverlayPlaneCHROMIUM>();
   if (c) {
     c->Init(plane_z_order, plane_transform, overlay_texture_id, bounds_x,
             bounds_y, bounds_width, bounds_height, uv_x, uv_y, uv_width,
-            uv_height);
+            uv_height, enable_blend);
   }
 }
 
@@ -2796,13 +2797,6 @@ void CommitOverlayPlanesCHROMIUM() {
       GetCmdSpace<gles2::cmds::CommitOverlayPlanesCHROMIUM>();
   if (c) {
     c->Init();
-  }
-}
-
-void SwapInterval(GLint interval) {
-  gles2::cmds::SwapInterval* c = GetCmdSpace<gles2::cmds::SwapInterval>();
-  if (c) {
-    c->Init(interval);
   }
 }
 
@@ -3271,14 +3265,13 @@ void BeginRasterCHROMIUM(GLuint texture_id,
                          GLuint sk_color,
                          GLuint msaa_sample_count,
                          GLboolean can_use_lcd_text,
-                         GLboolean use_distance_field_text,
                          GLint color_type,
                          GLuint color_space_transfer_cache_id) {
   gles2::cmds::BeginRasterCHROMIUM* c =
       GetCmdSpace<gles2::cmds::BeginRasterCHROMIUM>();
   if (c) {
     c->Init(texture_id, sk_color, msaa_sample_count, can_use_lcd_text,
-            use_distance_field_text, color_type, color_space_transfer_cache_id);
+            color_type, color_space_transfer_cache_id);
   }
 }
 

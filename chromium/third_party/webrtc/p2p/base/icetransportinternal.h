@@ -70,10 +70,10 @@ enum class NominationMode {
 // -1.
 struct IceConfig {
   // The ICE connection receiving timeout value in milliseconds.
-  int receiving_timeout = -1;
+  rtc::Optional<int> receiving_timeout;
   // Time interval in milliseconds to ping a backup connection when the ICE
   // channel is strongly connected.
-  int backup_connection_ping_interval = -1;
+  rtc::Optional<int> backup_connection_ping_interval;
 
   ContinualGatheringPolicy continual_gathering_policy = GATHER_ONCE;
 
@@ -87,7 +87,7 @@ struct IceConfig {
   bool prioritize_most_likely_candidate_pairs = false;
 
   // Writable connections are pinged at a slower rate once stablized.
-  int stable_writable_connection_ping_interval = -1;
+  rtc::Optional<int> stable_writable_connection_ping_interval;
 
   // If set to true, this means the ICE transport should presume TURN-to-TURN
   // candidate pairs will succeed, even before a binding response is received.
@@ -110,10 +110,35 @@ struct IceConfig {
   // Default nomination mode if the remote does not support renomination.
   NominationMode default_nomination_mode = NominationMode::SEMI_AGGRESSIVE;
 
+  // The interval in milliseconds at which ICE checks (STUN pings) will be sent
+  // for a candidate pair when it is both writable and receiving (strong
+  // connectivity). This parameter overrides the default value given by
+  // |STRONG_PING_INTERVAL| in p2ptransport.h if set.
+  rtc::Optional<int> ice_check_interval_strong_connectivity;
+  // The interval in milliseconds at which ICE checks (STUN pings) will be sent
+  // for a candidate pair when it is either not writable or not receiving (weak
+  // connectivity). This parameter overrides the default value given by
+  // |WEAK_PING_INTERVAL| in p2ptransport.h if set.
+  rtc::Optional<int> ice_check_interval_weak_connectivity;
   // ICE checks (STUN pings) will not be sent at higher rate (lower interval)
   // than this, no matter what other settings there are.
   // Measure in milliseconds.
+  //
+  // Note that this parameter overrides both the above check intervals for
+  // candidate pairs with strong or weak connectivity, if either of the above
+  // interval is shorter than the min interval.
   rtc::Optional<int> ice_check_min_interval;
+  // The min time period for which a candidate pair must wait for response to
+  // connectivity checks before it becomes unwritable. This parameter
+  // overrides the default value given by |CONNECTION_WRITE_CONNECT_TIMEOUT|
+  // in port.h if set, when determining the writability of a candidate pair.
+  rtc::Optional<int> ice_unwritable_timeout;
+
+  // The min number of connectivity checks that a candidate pair must sent
+  // without receiving response before it becomes unwritable. This parameter
+  // overrides the default value given by |CONNECTION_WRITE_CONNECT_FAILURES| in
+  // port.h if set, when determining the writability of a candidate pair.
+  rtc::Optional<int> ice_unwritable_min_checks;
   // The interval in milliseconds at which STUN candidates will resend STUN
   // binding requests to keep NAT bindings open.
   rtc::Optional<int> stun_keepalive_interval;
@@ -128,9 +153,23 @@ struct IceConfig {
             int stable_writable_connection_ping_interval_ms,
             bool presume_writable_when_fully_relayed,
             int regather_on_failed_networks_interval_ms,
-            int receiving_switching_delay_ms,
-            rtc::Optional<rtc::AdapterType> network_preference);
+            int receiving_switching_delay_ms);
   ~IceConfig();
+
+  // Helper getters for parameters with implementation-specific default value.
+  // By convention, parameters with default value are represented by
+  // rtc::Optional and setting a parameter to null restores its default value.
+  int receiving_timeout_or_default() const;
+  int backup_connection_ping_interval_or_default() const;
+  int stable_writable_connection_ping_interval_or_default() const;
+  int regather_on_failed_networks_interval_or_default() const;
+  int receiving_switching_delay_or_default() const;
+  int ice_check_interval_strong_connectivity_or_default() const;
+  int ice_check_interval_weak_connectivity_or_default() const;
+  int ice_check_min_interval_or_default() const;
+  int ice_unwritable_timeout_or_default() const;
+  int ice_unwritable_min_checks_or_default() const;
+  int stun_keepalive_interval_or_default() const;
 };
 
 // TODO(zhihuang): Replace this with

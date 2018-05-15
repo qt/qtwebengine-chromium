@@ -18,6 +18,7 @@
 #include "components/download/public/common/download_task_runner.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/common/frame_messages.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/mhtml_extra_parts.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
@@ -33,8 +34,8 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/web/WebFindOptions.h"
-#include "third_party/WebKit/public/web/WebFrameSerializerCacheControlPolicy.h"
+#include "third_party/blink/public/web/web_find_options.h"
+#include "third_party/blink/public/web/web_frame_serializer_cache_control_policy.h"
 
 using testing::ContainsRegex;
 using testing::HasSubstr;
@@ -119,9 +120,8 @@ class MHTMLGenerationTest : public ContentBrowserTest {
     histogram_tester_.reset(new base::HistogramTester());
 
     shell()->web_contents()->GenerateMHTML(
-        params, base::Bind(&MHTMLGenerationTest::MHTMLGenerated,
-                           base::Unretained(this),
-                           run_loop.QuitClosure()));
+        params, base::BindOnce(&MHTMLGenerationTest::MHTMLGenerated,
+                               base::Unretained(this), run_loop.QuitClosure()));
 
     // Block until the MHTML is generated.
     run_loop.Run();
@@ -226,7 +226,7 @@ class MHTMLGenerationTest : public ContentBrowserTest {
   void MHTMLGenerated(base::Closure quit_closure, int64_t size) {
     has_mhtml_callback_run_ = true;
     file_size_ = size;
-    quit_closure.Run();
+    std::move(quit_closure).Run();
   }
 
   bool has_mhtml_callback_run_;

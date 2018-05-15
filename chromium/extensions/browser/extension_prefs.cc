@@ -11,8 +11,8 @@
 #include <utility>
 
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
@@ -191,6 +191,10 @@ constexpr const char kPrefNeedsSync[] = "needs_sync";
 // The indexed ruleset checksum for the Declarative Net Request API.
 constexpr const char kPrefDNRRulesetChecksum[] = "dnr_ruleset_checksum";
 
+// List of match patterns representing the set of whitelisted pages for an
+// extension for the Declarative Net Request API.
+constexpr const char kPrefDNRWhitelistedPages[] = "dnr_whitelisted_pages";
+
 // Provider of write access to a dictionary storing extension prefs.
 class ScopedExtensionPrefUpdate : public prefs::ScopedDictionaryPrefUpdate {
  public:
@@ -232,28 +236,6 @@ std::string JoinPrefs(base::StringPiece parent, base::StringPiece child) {
 bool IsBlacklistBitSet(const base::DictionaryValue* ext) {
   bool bool_value;
   return ext->GetBoolean(kPrefBlacklist, &bool_value) && bool_value;
-}
-
-void LoadExtensionControlledPrefs(ExtensionPrefs* prefs,
-                                  ExtensionPrefValueMap* value_map,
-                                  const std::string& extension_id,
-                                  ExtensionPrefsScope scope) {
-  std::string scope_string;
-  if (!pref_names::ScopeToPrefName(scope, &scope_string))
-    return;
-  std::string key = extension_id + "." + scope_string;
-
-  const base::DictionaryValue* source_dict =
-      prefs->pref_service()->GetDictionary(pref_names::kExtensions);
-  const base::DictionaryValue* preferences = NULL;
-  if (!source_dict->GetDictionary(key, &preferences))
-    return;
-
-  for (base::DictionaryValue::Iterator iter(*preferences); !iter.IsAtEnd();
-       iter.Advance()) {
-    value_map->SetExtensionPref(
-        extension_id, iter.key(), scope, iter.value().DeepCopy());
-  }
 }
 
 // Whether SetAlertSystemFirstRun() should always return true, so that alerts
@@ -332,10 +314,9 @@ ExtensionPrefs* ExtensionPrefs::Create(
     ExtensionPrefValueMap* extension_pref_value_map,
     bool extensions_disabled,
     const std::vector<ExtensionPrefsObserver*>& early_observers) {
-  return ExtensionPrefs::Create(browser_context, prefs, root_dir,
-                                extension_pref_value_map, extensions_disabled,
-                                early_observers,
-                                std::make_unique<base::DefaultClock>());
+  return ExtensionPrefs::Create(
+      browser_context, prefs, root_dir, extension_pref_value_map,
+      extensions_disabled, early_observers, base::DefaultClock::GetInstance());
 }
 
 // static
@@ -346,9 +327,9 @@ ExtensionPrefs* ExtensionPrefs::Create(
     ExtensionPrefValueMap* extension_pref_value_map,
     bool extensions_disabled,
     const std::vector<ExtensionPrefsObserver*>& early_observers,
-    std::unique_ptr<base::Clock> clock) {
+    base::Clock* clock) {
   return new ExtensionPrefs(browser_context, pref_service, root_dir,
-                            extension_pref_value_map, std::move(clock),
+                            extension_pref_value_map, clock,
                             extensions_disabled, early_observers);
 }
 
@@ -1573,28 +1554,51 @@ void ExtensionPrefs::InitPrefStore() {
   TRACE_EVENT0("browser,startup", "ExtensionPrefs::InitPrefStore")
   SCOPED_UMA_HISTOGRAM_TIMER("Extensions.InitPrefStoreTime");
 
-  if (extensions_disabled_) {
-    extension_pref_value_map_->NotifyInitializationCompleted();
-    return;
-  }
-
   // When this is called, the PrefService is initialized and provides access
   // to the user preferences stored in a JSON file.
-  ExtensionIdList extension_ids;
+  std::unique_ptr<ExtensionsInfo> extensions_info;
   {
     SCOPED_UMA_HISTOGRAM_TIMER("Extensions.InitPrefGetExtensionsTime");
-    GetExtensions(&extension_ids);
-  }
-  // Create empty preferences dictionary for each extension (these dictionaries
-  // are pruned when persisting the preferences to disk).
-  for (ExtensionIdList::iterator ext_id = extension_ids.begin();
-       ext_id != extension_ids.end(); ++ext_id) {
-    ScopedExtensionPrefUpdate update(prefs_, *ext_id);
-    // This creates an empty dictionary if none is stored.
-    update.Get();
+    extensions_info = GetInstalledExtensionsInfo();
   }
 
-  InitExtensionControlledPrefs(extension_pref_value_map_);
+  if (extensions_disabled_) {
+    // Normally, if extensions are disabled, we don't want to load the
+    // controlled prefs from that extension. However, some extensions are
+    // *always* loaded, even with e.g. --disable-extensions. For these, we
+    // need to load the extension-controlled preferences.
+    // See https://crbug.com/828295.
+    auto predicate = [](const auto& info) {
+      // HACK(devlin): Unpacked extensions stored in preferences do not have a
+      // manifest, only a path (from which the manifest is later loaded). This
+      // means that we don't know what type the extension is just from the
+      // preferences (and, indeed, it may change types, if the file on disk has
+      // changed).
+      // Because of this, we may be passing |is_theme| incorrectly for unpacked
+      // extensions below. This is okay in this instance, since if the extension
+      // is a theme, initializing the controlled prefs shouldn't matter.
+      // However, this is a pretty hacky solution. It would likely be better if
+      // we could instead initialize the controlled preferences when the
+      // extension is more finalized, but this also needs to happen sufficiently
+      // before other subsystems are notified about the extension being loaded.
+      Manifest::Type type =
+          info->extension_manifest
+              ? Manifest::GetTypeFromManifestValue(*info->extension_manifest)
+              : Manifest::TYPE_UNKNOWN;
+      bool is_theme = type == Manifest::TYPE_THEME;
+      // Erase the entry if the extension won't be loaded.
+      return !Manifest::ShouldAlwaysLoadExtension(info->extension_location,
+                                                  is_theme);
+    };
+    base::EraseIf(*extensions_info, predicate);
+  }
+
+  // TODO(devlin): |extensions_info| won't contain records for component
+  // extensions (see GetInstalledInfoHelper()). It probably should, because
+  // otherwise component extensions using APIs that rely on extension-controlled
+  // prefs may crash.
+
+  InitExtensionControlledPrefs(*extensions_info);
 
   extension_pref_value_map_->NotifyInitializationCompleted();
 }
@@ -1684,6 +1688,19 @@ bool ExtensionPrefs::GetDNRRulesetChecksum(const ExtensionId& extension_id,
                            dnr_ruleset_checksum);
 }
 
+void ExtensionPrefs::SetDNRWhitelistedPages(const ExtensionId& extension_id,
+                                            URLPatternSet set) {
+  SetExtensionPrefURLPatternSet(extension_id, kPrefDNRWhitelistedPages, set);
+}
+
+URLPatternSet ExtensionPrefs::GetDNRWhitelistedPages(
+    const ExtensionId& extension_id) const {
+  URLPatternSet result;
+  ReadPrefAsURLPatternSet(extension_id, kPrefDNRWhitelistedPages, &result,
+                          URLPattern::SCHEME_ALL);
+  return result;
+}
+
 // static
 void ExtensionPrefs::SetRunAlertsInFirstRunForTest() {
   g_run_alerts_in_first_run_for_testing = true;
@@ -1698,14 +1715,14 @@ ExtensionPrefs::ExtensionPrefs(
     PrefService* prefs,
     const base::FilePath& root_dir,
     ExtensionPrefValueMap* extension_pref_value_map,
-    std::unique_ptr<base::Clock> clock,
+    base::Clock* clock,
     bool extensions_disabled,
     const std::vector<ExtensionPrefsObserver*>& early_observers)
     : browser_context_(browser_context),
       prefs_(prefs),
       install_directory_(root_dir),
       extension_pref_value_map_(extension_pref_value_map),
-      clock_(std::move(clock)),
+      clock_(clock),
       extensions_disabled_(extensions_disabled) {
   MakePathsRelative();
 
@@ -1846,40 +1863,54 @@ void ExtensionPrefs::PopulateExtensionInfoPrefs(
 }
 
 void ExtensionPrefs::InitExtensionControlledPrefs(
-    ExtensionPrefValueMap* value_map) {
+    const ExtensionsInfo& extensions_info) {
   TRACE_EVENT0("browser,startup",
                "ExtensionPrefs::InitExtensionControlledPrefs")
   SCOPED_UMA_HISTOGRAM_TIMER("Extensions.InitExtensionControlledPrefsTime");
 
-  ExtensionIdList extension_ids;
-  GetExtensions(&extension_ids);
+  for (const auto& info : extensions_info) {
+    const ExtensionId& extension_id = info->extension_id;
 
-  for (ExtensionIdList::iterator extension_id = extension_ids.begin();
-       extension_id != extension_ids.end();
-       ++extension_id) {
-    base::Time install_time = GetInstallTime(*extension_id);
-    bool is_enabled = !IsExtensionDisabled(*extension_id);
-    bool is_incognito_enabled = IsIncognitoEnabled(*extension_id);
-    value_map->RegisterExtension(
-        *extension_id, install_time, is_enabled, is_incognito_enabled);
+    base::Time install_time = GetInstallTime(extension_id);
+    bool is_enabled = !IsExtensionDisabled(extension_id);
+    bool is_incognito_enabled = IsIncognitoEnabled(extension_id);
+    extension_pref_value_map_->RegisterExtension(
+        extension_id, install_time, is_enabled, is_incognito_enabled);
 
     for (auto& observer : observer_list_)
-      observer.OnExtensionRegistered(*extension_id, install_time, is_enabled);
+      observer.OnExtensionRegistered(extension_id, install_time, is_enabled);
 
     // Set regular extension controlled prefs.
-    LoadExtensionControlledPrefs(
-        this, value_map, *extension_id, kExtensionPrefsScopeRegular);
+    LoadExtensionControlledPrefs(extension_id, kExtensionPrefsScopeRegular);
     // Set incognito extension controlled prefs.
-    LoadExtensionControlledPrefs(this,
-                                 value_map,
-                                 *extension_id,
+    LoadExtensionControlledPrefs(extension_id,
                                  kExtensionPrefsScopeIncognitoPersistent);
     // Set regular-only extension controlled prefs.
-    LoadExtensionControlledPrefs(
-        this, value_map, *extension_id, kExtensionPrefsScopeRegularOnly);
+    LoadExtensionControlledPrefs(extension_id, kExtensionPrefsScopeRegularOnly);
 
     for (auto& observer : observer_list_)
-      observer.OnExtensionPrefsLoaded(*extension_id, this);
+      observer.OnExtensionPrefsLoaded(extension_id, this);
+  }
+}
+
+void ExtensionPrefs::LoadExtensionControlledPrefs(
+    const ExtensionId& extension_id,
+    ExtensionPrefsScope scope) {
+  std::string scope_string;
+  if (!pref_names::ScopeToPrefName(scope, &scope_string))
+    return;
+  std::string key = extension_id + "." + scope_string;
+
+  const base::DictionaryValue* source_dict =
+      pref_service()->GetDictionary(pref_names::kExtensions);
+  const base::DictionaryValue* preferences = NULL;
+  if (!source_dict->GetDictionary(key, &preferences))
+    return;
+
+  for (base::DictionaryValue::Iterator iter(*preferences); !iter.IsAtEnd();
+       iter.Advance()) {
+    extension_pref_value_map_->SetExtensionPref(extension_id, iter.key(), scope,
+                                                iter.value().DeepCopy());
   }
 }
 

@@ -21,11 +21,13 @@
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/screen_position_client.h"
+#include "ui/aura/scoped_keyboard_hook.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/events/blink/blink_event_util.h"
 #include "ui/events/blink/web_input_event.h"
+#include "ui/events/keycodes/dom/keycode_converter.h"
 #include "ui/touch_selection/touch_selection_controller.h"
 
 #if defined(OS_WIN)
@@ -140,7 +142,7 @@ RenderWidgetHostViewEventHandler::RenderWidgetHostViewEventHandler(
       popup_child_event_handler_(nullptr),
       delegate_(delegate),
       window_(nullptr),
-      mouse_wheel_phase_handler_(host, host_view) {}
+      mouse_wheel_phase_handler_(host_view) {}
 
 RenderWidgetHostViewEventHandler::~RenderWidgetHostViewEventHandler() {}
 
@@ -161,15 +163,6 @@ void RenderWidgetHostViewEventHandler::TrackHost(
 }
 
 #if defined(OS_WIN)
-void RenderWidgetHostViewEventHandler::SetContextMenuParams(
-    const ContextMenuParams& params) {
-  last_context_menu_params_.reset();
-  if (params.source_type == ui::MENU_SOURCE_LONG_PRESS) {
-    last_context_menu_params_.reset(new ContextMenuParams);
-    *last_context_menu_params_ = params;
-  }
-}
-
 void RenderWidgetHostViewEventHandler::UpdateMouseLockRegion() {
   RECT window_rect =
       display::Screen::GetScreen()
@@ -240,6 +233,27 @@ void RenderWidgetHostViewEventHandler::UnlockMouse() {
   host_->LostMouseLock();
 }
 
+bool RenderWidgetHostViewEventHandler::LockKeyboard(
+    base::Optional<base::flat_set<int>> keys) {
+  aura::Window* root_window = window_->GetRootWindow();
+  if (!root_window)
+    return false;
+
+  // Remove existing hook, if registered.
+  UnlockKeyboard();
+  scoped_keyboard_hook_ = root_window->CaptureSystemKeyEvents(std::move(keys));
+
+  return IsKeyboardLocked();
+}
+
+void RenderWidgetHostViewEventHandler::UnlockKeyboard() {
+  scoped_keyboard_hook_.reset();
+}
+
+bool RenderWidgetHostViewEventHandler::IsKeyboardLocked() const {
+  return scoped_keyboard_hook_ != nullptr;
+}
+
 void RenderWidgetHostViewEventHandler::OnKeyEvent(ui::KeyEvent* event) {
   TRACE_EVENT0("input", "RenderWidgetHostViewBase::OnKeyEvent");
 
@@ -285,6 +299,12 @@ void RenderWidgetHostViewEventHandler::OnKeyEvent(ui::KeyEvent* event) {
     SetKeyboardFocus();
     // We don't have to communicate with an input method here.
     NativeWebKeyboardEvent webkit_event(*event);
+
+    // If the key has been reserved as part of the active KeyboardLock request,
+    // then we want to mark it as such so it is not intercepted by the browser.
+    if (IsKeyLocked(*event))
+      webkit_event.skip_in_browser = true;
+
     delegate_->ForwardKeyboardEventWithLatencyInfo(
         webkit_event, *event->latency(), &mark_event_as_handled);
   }
@@ -414,8 +434,7 @@ void RenderWidgetHostViewEventHandler::OnScrollEvent(ui::ScrollEvent* event) {
     // Coordinates need to be transferred to the fling cancel gesture only
     // for Surface-targeting to ensure that it is targeted to the correct
     // RenderWidgetHost.
-    gesture_event.x = event->x();
-    gesture_event.y = event->y();
+    gesture_event.SetPositionInWidget(event->location_f());
     blink::WebMouseWheelEvent mouse_wheel_event = ui::MakeWebMouseWheelEvent(
         *event, base::Bind(&GetScreenLocationFromEvent));
     if (host_view_->wheel_scroll_latching_enabled())
@@ -449,7 +468,7 @@ void RenderWidgetHostViewEventHandler::OnScrollEvent(ui::ScrollEvent* event) {
       mouse_wheel_phase_handler_.ResetScrollSequence();
     } else if (event->type() == ui::ET_SCROLL_FLING_CANCEL) {
       // The user has put their fingers down.
-      DCHECK_EQ(blink::kWebGestureDeviceTouchpad, gesture_event.source_device);
+      DCHECK_EQ(blink::kWebGestureDeviceTouchpad, gesture_event.SourceDevice());
       mouse_wheel_phase_handler_.ScrollingMayBegin();
     }
   }
@@ -532,7 +551,7 @@ void RenderWidgetHostViewEventHandler::OnGestureEvent(ui::GestureEvent* event) {
     // event to stop any in-progress flings.
     blink::WebGestureEvent fling_cancel = gesture;
     fling_cancel.SetType(blink::WebInputEvent::kGestureFlingCancel);
-    fling_cancel.source_device = blink::kWebGestureDeviceTouchscreen;
+    fling_cancel.SetSourceDevice(blink::kWebGestureDeviceTouchscreen);
     if (ShouldRouteEvent(event)) {
       host_->delegate()->GetInputEventRouter()->RouteGestureEvent(
           host_view_, &fling_cancel,
@@ -701,29 +720,6 @@ void RenderWidgetHostViewEventHandler::HandleGestureForTouchSelection(
     case ui::ET_GESTURE_SCROLL_END:
       delegate_->selection_controller_client()->OnScrollCompleted();
       break;
-#if defined(OS_WIN)
-    case ui::ET_GESTURE_LONG_TAP: {
-      if (!last_context_menu_params_)
-        break;
-
-      std::unique_ptr<ContextMenuParams> context_menu_params =
-          std::move(last_context_menu_params_);
-
-      // On Windows we want to display the context menu when the long press
-      // gesture is released. To achieve that, we switch the saved context
-      // menu params source type to MENU_SOURCE_TOUCH. This is to ensure that
-      // the RenderWidgetHostViewBase::OnShowContextMenu function which is
-      // called from the ShowContextMenu call below, does not treat it as
-      // a context menu request coming in from the long press gesture.
-      DCHECK(context_menu_params->source_type == ui::MENU_SOURCE_LONG_PRESS);
-      context_menu_params->source_type = ui::MENU_SOURCE_TOUCH;
-
-      delegate_->ShowContextMenu(*context_menu_params);
-      event->SetHandled();
-      // WARNING: we may have been deleted during the call to ShowContextMenu().
-      break;
-    }
-#endif
     default:
       break;
   }
@@ -946,6 +942,17 @@ void RenderWidgetHostViewEventHandler::ProcessTouchEvent(
     const blink::WebTouchEvent& event,
     const ui::LatencyInfo& latency) {
   host_->ForwardTouchEventWithLatencyInfo(event, latency);
+}
+
+bool RenderWidgetHostViewEventHandler::IsKeyLocked(const ui::KeyEvent& event) {
+  // Note: We never consider 'ESC' to be locked as we don't want to prevent it
+  // from being handled by the browser.  Doing so would have adverse effects
+  // such as the user being unable to exit fullscreen mode.
+  if (!IsKeyboardLocked() || event.key_code() == ui::VKEY_ESCAPE)
+    return false;
+
+  int key_code = ui::KeycodeConverter::DomCodeToNativeKeycode(event.code());
+  return scoped_keyboard_hook_->IsKeyLocked(key_code);
 }
 
 }  // namespace content

@@ -23,6 +23,7 @@
 #include "gpu/command_buffer/client/gpu_control_client.h"
 #include "gpu/command_buffer/client/query_tracker.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
+#include "gpu/command_buffer/common/capabilities.h"
 #include "gpu/command_buffer/common/context_result.h"
 
 namespace gpu {
@@ -72,6 +73,8 @@ class GLES2_IMPL_EXPORT ImplementationBase
   // intercept it.
   void SetLostContextCallback(base::OnceClosure callback);
 
+  const Capabilities& capabilities() const { return capabilities_; }
+
   // ContextSupport implementation.
   void FlushPendingWork() override;
   void SignalSyncToken(const gpu::SyncToken& sync_token,
@@ -88,6 +91,10 @@ class GLES2_IMPL_EXPORT ImplementationBase
       const std::vector<std::pair<uint32_t, uint32_t>>& entries) override;
   void DeleteTransferCacheEntry(uint32_t type, uint32_t id) override;
   unsigned int GetTransferBufferFreeSize() const override;
+  void SetGrContext(GrContext* gr) override;
+  bool HasGrContextSupport() const override;
+  void WillCallGLFromSkia() override;
+  void DidCallGLFromSkia() override;
 
   // base::trace_event::MemoryDumpProvider implementation.
   bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
@@ -144,6 +151,8 @@ class GLES2_IMPL_EXPORT ImplementationBase
   bool lost_context_callback_run_ = false;
 
   GpuControl* const gpu_control_;
+
+  Capabilities capabilities_;
 
  private:
   virtual void IssueShallowFlush() = 0;

@@ -57,7 +57,6 @@ class HttpResponseBodyDrainer;
 class HttpServerProperties;
 class NetLog;
 class NetworkQualityProvider;
-class NetworkThrottleManager;
 class ProxyDelegate;
 class ProxyResolutionService;
 class QuicClock;
@@ -68,6 +67,7 @@ class SSLClientSocketPool;
 class SSLConfigService;
 class TransportClientSocketPool;
 class TransportSecurityState;
+class WebSocketEndpointLockManager;
 
 // Specifies the maximum HPACK dynamic table size the server is allowed to set.
 const uint32_t kSpdyMaxHeaderTableSize = 64 * 1024;
@@ -285,6 +285,9 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
       return proxy_resolution_service_;
   }
   SSLConfigService* ssl_config_service() { return ssl_config_service_.get(); }
+  WebSocketEndpointLockManager* websocket_endpoint_lock_manager() {
+    return websocket_endpoint_lock_manager_.get();
+  }
   SpdySessionPool* spdy_session_pool() { return &spdy_session_pool_; }
   QuicStreamFactory* quic_stream_factory() { return &quic_stream_factory_; }
   HttpAuthHandlerFactory* http_auth_handler_factory() {
@@ -295,9 +298,6 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
   }
   HttpStreamFactory* http_stream_factory() {
     return http_stream_factory_.get();
-  }
-  NetworkThrottleManager* throttler() {
-    return network_stream_throttler_.get();
   }
   NetLog* net_log() {
     return net_log_;
@@ -362,12 +362,13 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
   CertVerifier* const cert_verifier_;
   HttpAuthHandlerFactory* const http_auth_handler_factory_;
 
-  // Not const since it's modified by HttpNetworkSessionPeer for testing.
-  ProxyResolutionService* proxy_resolution_service_;
+  ProxyResolutionService* const proxy_resolution_service_;
   const scoped_refptr<SSLConfigService> ssl_config_service_;
 
   HttpAuthCache http_auth_cache_;
   SSLClientAuthCache ssl_client_auth_cache_;
+  std::unique_ptr<WebSocketEndpointLockManager>
+      websocket_endpoint_lock_manager_;
   std::unique_ptr<ClientSocketPoolManager> normal_socket_pool_manager_;
   std::unique_ptr<ClientSocketPoolManager> websocket_socket_pool_manager_;
   std::unique_ptr<ServerPushDelegate> push_delegate_;
@@ -376,8 +377,6 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
   std::unique_ptr<HttpStreamFactory> http_stream_factory_;
   std::map<HttpResponseBodyDrainer*, std::unique_ptr<HttpResponseBodyDrainer>>
       response_drainers_;
-  std::unique_ptr<NetworkThrottleManager> network_stream_throttler_;
-
   NextProtoVector next_protos_;
 
   Params params_;

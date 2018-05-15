@@ -9,7 +9,6 @@
 
 #include "base/command_line.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "chromeos/chromeos_switches.cc"
@@ -685,6 +684,12 @@ TEST_F(DisplayConfiguratorTest, SetDisplayPower) {
 
 TEST_F(DisplayConfiguratorTest, SuspendAndResume) {
   InitWithSingleOutput();
+
+  // Set the initial power state to on.
+  config_waiter_.Reset();
+  configurator_.SetDisplayPower(chromeos::DISPLAY_POWER_ALL_ON,
+                                DisplayConfigurator::kSetDisplayPowerNoFlags,
+                                config_waiter_.on_configuration_callback());
 
   // No preparation is needed before suspending when the display is already
   // on.  The configurator should still reprobe on resume in case a display
@@ -1406,9 +1411,17 @@ TEST_F(DisplayConfiguratorTest, DontRestoreStalePowerStateAfterResume) {
 TEST_F(DisplayConfiguratorTest, ExternalControl) {
   InitWithSingleOutput();
   state_controller_.set_state(MULTIPLE_DISPLAY_STATE_SINGLE);
+
+  // Set the initial power state and verify that it is restored when control is
+  // taken.
+  config_waiter_.Reset();
+  configurator_.SetDisplayPower(chromeos::DISPLAY_POWER_ALL_ON,
+                                DisplayConfigurator::kSetDisplayPowerNoFlags,
+                                config_waiter_.on_configuration_callback());
+
   configurator_.RelinquishControl(
-      base::Bind(&DisplayConfiguratorTest::OnDisplayControlUpdated,
-                 base::Unretained(this)));
+      base::BindOnce(&DisplayConfiguratorTest::OnDisplayControlUpdated,
+                     base::Unretained(this)));
   EXPECT_EQ(CALLBACK_SUCCESS, PopDisplayControlResult());
   EXPECT_EQ(
       JoinActions(
@@ -1416,8 +1429,8 @@ TEST_F(DisplayConfiguratorTest, ExternalControl) {
           kRelinquishDisplayControl, nullptr),
       log_->GetActionsAndClear());
   configurator_.TakeControl(
-      base::Bind(&DisplayConfiguratorTest::OnDisplayControlUpdated,
-                 base::Unretained(this)));
+      base::BindOnce(&DisplayConfiguratorTest::OnDisplayControlUpdated,
+                     base::Unretained(this)));
   EXPECT_EQ(CALLBACK_SUCCESS, PopDisplayControlResult());
   EXPECT_EQ(
       JoinActions(
@@ -1652,6 +1665,13 @@ TEST_F(DisplayConfiguratorTest, TestWithThreeDisplays) {
 // Tests the suspend and resume behavior when in dual or multi display modes.
 TEST_F(DisplayConfiguratorTest, SuspendResumeWithMultipleDisplays) {
   InitWithSingleOutput();
+
+  // Set the initial power state and verify that it is restored on resume.
+  config_waiter_.Reset();
+  configurator_.SetDisplayPower(chromeos::DISPLAY_POWER_ALL_ON,
+                                DisplayConfigurator::kSetDisplayPowerNoFlags,
+                                config_waiter_.on_configuration_callback());
+
   state_controller_.set_state(MULTIPLE_DISPLAY_STATE_MULTI_EXTENDED);
   observer_.Reset();
   UpdateOutputs(2, true);

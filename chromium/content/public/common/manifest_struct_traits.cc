@@ -5,8 +5,8 @@
 #include "content/public/common/manifest_struct_traits.h"
 
 #include "mojo/public/cpp/base/string16_mojom_traits.h"
-#include "third_party/WebKit/public/platform/WebDisplayModeStructTraits.h"
-#include "third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationEnumTraits.h"
+#include "third_party/blink/public/platform/modules/screen_orientation/web_screen_orientation_enum_traits.h"
+#include "third_party/blink/public/platform/web_display_mode_struct_traits.h"
 #include "ui/gfx/geometry/mojo/geometry_struct_traits.h"
 #include "url/mojom/url_gurl_mojom_traits.h"
 
@@ -147,11 +147,7 @@ bool StructTraits<blink::mojom::ManifestShareTargetDataView,
                   content::Manifest::ShareTarget>::
     Read(blink::mojom::ManifestShareTargetDataView data,
          content::Manifest::ShareTarget* out) {
-  TruncatedString16 string;
-  if (!data.ReadUrlTemplate(&string))
-    return false;
-  out->url_template = base::NullableString16(std::move(string.string));
-  return true;
+  return data.ReadUrlTemplate(&out->url_template);
 }
 
 }  // namespace mojo

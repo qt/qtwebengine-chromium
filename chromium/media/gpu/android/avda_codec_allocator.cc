@@ -81,7 +81,8 @@ void DeleteMediaCodecAndSignal(std::unique_ptr<MediaCodecBridge> codec,
 CodecConfig::CodecConfig() {}
 CodecConfig::~CodecConfig() {}
 
-AVDACodecAllocator::HangDetector::HangDetector(base::TickClock* tick_clock)
+AVDACodecAllocator::HangDetector::HangDetector(
+    const base::TickClock* tick_clock)
     : tick_clock_(tick_clock) {}
 
 void AVDACodecAllocator::HangDetector::WillProcessTask(
@@ -448,14 +449,14 @@ bool AVDACodecAllocator::WaitForPendingRelease(AndroidOverlay* overlay) {
 AVDACodecAllocator::AVDACodecAllocator(
     AVDACodecAllocator::CodecFactoryCB factory_cb,
     scoped_refptr<base::SequencedTaskRunner> task_runner,
-    base::TickClock* tick_clock,
+    const base::TickClock* tick_clock,
     base::WaitableEvent* stop_event)
     : task_runner_(task_runner),
       stop_event_for_testing_(stop_event),
       factory_cb_(std::move(factory_cb)),
       weak_this_factory_(this) {
   // We leak the clock we create, but that's okay because we're a singleton.
-  auto* clock = tick_clock ? tick_clock : new base::DefaultTickClock();
+  auto* clock = tick_clock ? tick_clock : base::DefaultTickClock::GetInstance();
 
   // Create threads with names and indices that match up with TaskType.
   threads_.push_back(new ThreadAndHangDetector("AVDAAutoThread", clock));

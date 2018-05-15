@@ -44,7 +44,7 @@
 #include "media/base/video_decoder_config.h"
 #include "media/ffmpeg/ffmpeg_deleters.h"
 #include "media/filters/blocking_url_protocol.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 
 // FFmpeg forward declarations.
 struct AVFormatContext;
@@ -200,6 +200,8 @@ class MEDIA_EXPORT FFmpegDemuxerStream : public DemuxerStream {
   bool fixup_negative_timestamps_;
   bool fixup_chained_ogg_;
 
+  int num_discarded_packet_warnings_;
+
   DISALLOW_COPY_AND_ASSIGN(FFmpegDemuxerStream);
 };
 
@@ -256,6 +258,10 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   // Task runner used to execute blocking FFmpeg operations.
   scoped_refptr<base::SequencedTaskRunner> ffmpeg_task_runner() {
     return blocking_task_runner_;
+  }
+
+  container_names::MediaContainerName container() const {
+    return glue_->container();
   }
 
  private:

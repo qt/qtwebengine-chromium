@@ -29,14 +29,15 @@
 
 #if defined(WEBRTC_ANDROID)
 #include "examples/unityplugin/classreferenceholder.h"
+#include "modules/utility/include/helpers_android.h"
 #include "sdk/android/src/jni/androidvideotracksource.h"
 #include "sdk/android/src/jni/jni_helpers.h"
 #endif
 
-// Names used for media stream labels.
+// Names used for media stream ids.
 const char kAudioLabel[] = "audio_label";
 const char kVideoLabel[] = "video_label";
-const char kStreamLabel[] = "stream_label";
+const char kStreamId[] = "stream_id";
 
 namespace {
 static int g_peer_count = 0;
@@ -180,7 +181,7 @@ void SimplePeerConnection::DeletePeerConnection() {
     JNIEnv* env = webrtc::jni::GetEnv();
     jclass pc_factory_class =
         unity_plugin::FindClass(env, "org/webrtc/UnityUtility");
-    jmethodID stop_camera_method = webrtc::jni::GetStaticMethodID(
+    jmethodID stop_camera_method = webrtc::GetStaticMethodID(
         env, pc_factory_class, "StopCamera", "(Lorg/webrtc/VideoCapturer;)V");
 
     env->CallStaticVoidMethod(pc_factory_class, stop_camera_method, g_camera);
@@ -377,7 +378,7 @@ void SimplePeerConnection::SetAudioControl() {
 
 void SimplePeerConnection::OnAddStream(
     rtc::scoped_refptr<webrtc::MediaStreamInterface> stream) {
-  RTC_LOG(INFO) << __FUNCTION__ << " " << stream->label();
+  RTC_LOG(INFO) << __FUNCTION__ << " " << stream->id();
   remote_stream_ = stream;
   if (remote_video_observer_ && !remote_stream_->GetVideoTracks().empty()) {
     remote_stream_->GetVideoTracks()[0]->AddOrUpdateSink(
@@ -418,11 +419,11 @@ SimplePeerConnection::OpenVideoCaptureDevice() {
 }
 
 void SimplePeerConnection::AddStreams(bool audio_only) {
-  if (active_streams_.find(kStreamLabel) != active_streams_.end())
+  if (active_streams_.find(kStreamId) != active_streams_.end())
     return;  // Already added.
 
   rtc::scoped_refptr<webrtc::MediaStreamInterface> stream =
-      g_peer_connection_factory->CreateLocalMediaStream(kStreamLabel);
+      g_peer_connection_factory->CreateLocalMediaStream(kStreamId);
 
   rtc::scoped_refptr<webrtc::AudioTrackInterface> audio_track(
       g_peer_connection_factory->CreateAudioTrack(
@@ -435,7 +436,7 @@ void SimplePeerConnection::AddStreams(bool audio_only) {
     JNIEnv* env = webrtc::jni::GetEnv();
     jclass pc_factory_class =
         unity_plugin::FindClass(env, "org/webrtc/UnityUtility");
-    jmethodID load_texture_helper_method = webrtc::jni::GetStaticMethodID(
+    jmethodID load_texture_helper_method = webrtc::GetStaticMethodID(
         env, pc_factory_class, "LoadSurfaceTextureHelper",
         "()Lorg/webrtc/SurfaceTextureHelper;");
     jobject texture_helper = env->CallStaticObjectMethod(
@@ -446,13 +447,14 @@ void SimplePeerConnection::AddStreams(bool audio_only) {
 
     rtc::scoped_refptr<webrtc::jni::AndroidVideoTrackSource> source(
         new rtc::RefCountedObject<webrtc::jni::AndroidVideoTrackSource>(
-            g_signaling_thread.get(), env, texture_helper, false));
+            g_signaling_thread.get(), env,
+            webrtc::JavaParamRef<jobject>(texture_helper), false));
     rtc::scoped_refptr<webrtc::VideoTrackSourceProxy> proxy_source =
         webrtc::VideoTrackSourceProxy::Create(g_signaling_thread.get(),
                                               g_worker_thread.get(), source);
 
     // link with VideoCapturer (Camera);
-    jmethodID link_camera_method = webrtc::jni::GetStaticMethodID(
+    jmethodID link_camera_method = webrtc::GetStaticMethodID(
         env, pc_factory_class, "LinkCamera",
         "(JLorg/webrtc/SurfaceTextureHelper;)Lorg/webrtc/VideoCapturer;");
     jobject camera_tmp =
@@ -489,7 +491,7 @@ void SimplePeerConnection::AddStreams(bool audio_only) {
   typedef std::pair<std::string,
                     rtc::scoped_refptr<webrtc::MediaStreamInterface>>
       MediaStreamPair;
-  active_streams_.insert(MediaStreamPair(stream->label(), stream));
+  active_streams_.insert(MediaStreamPair(stream->id(), stream));
 }
 
 bool SimplePeerConnection::CreateDataChannel() {

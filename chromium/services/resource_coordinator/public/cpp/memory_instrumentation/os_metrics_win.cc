@@ -12,7 +12,6 @@
 #include <base/strings/sys_string_conversions.h>
 #include <base/win/pe_image.h>
 #include <base/win/win_util.h>
-#include "base/process/process_metrics.h"
 
 namespace memory_instrumentation {
 
@@ -22,12 +21,14 @@ bool OSMetrics::FillOSMemoryDump(base::ProcessId pid,
   // Creating process metrics for child processes in mac or windows requires
   // additional information like ProcessHandle or port provider.
   DCHECK_EQ(base::kNullProcessId, pid);
-  auto process_metrics = base::ProcessMetrics::CreateCurrentProcessMetrics();
 
-  size_t private_bytes = 0;
-  process_metrics->GetMemoryBytes(&private_bytes, nullptr);
-  dump->platform_private_footprint->private_bytes = private_bytes;
-  dump->resident_set_kb = process_metrics->GetWorkingSetSize() / 1024;
+  PROCESS_MEMORY_COUNTERS_EX pmc;
+  if (::GetProcessMemoryInfo(::GetCurrentProcess(),
+                             reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc),
+                             sizeof(pmc))) {
+    dump->platform_private_footprint->private_bytes = pmc.PrivateUsage;
+    dump->resident_set_kb = pmc.WorkingSetSize / 1024;
+  }
   return true;
 }
 
@@ -38,15 +39,6 @@ std::vector<mojom::VmRegionPtr> OSMetrics::GetProcessMemoryMaps(
   std::vector<HMODULE> modules;
   if (!base::win::GetLoadedModulesSnapshot(::GetCurrentProcess(), &modules))
     return maps;
-
-  auto process_metrics = base::ProcessMetrics::CreateCurrentProcessMetrics();
-  uint64_t pss_bytes = 0;
-  bool res = process_metrics->GetProportionalSetSizeBytes(&pss_bytes);
-  if (res) {
-    mojom::VmRegionPtr region = mojom::VmRegion::New();
-    region->byte_stats_proportional_resident = pss_bytes;
-    maps.push_back(std::move(region));
-  }
 
   // Query the base address for each module, and attach it to the dump.
   for (size_t i = 0; i < modules.size(); ++i) {

@@ -55,7 +55,8 @@ struct RenderingHelperParams {
   RenderingHelperParams(const RenderingHelperParams& other);
   ~RenderingHelperParams();
 
-  // The rendering FPS.
+  // The target rendering FPS. A value of 0 makes the RenderingHelper return
+  // frames immediately.
   int rendering_fps;
 
   // The number of windows. We play each stream in its own window
@@ -83,7 +84,7 @@ class RenderingHelper {
   ~RenderingHelper();
 
   // Initialize GL. This method must be called on the rendering thread.
-  static void InitializeOneOff(base::WaitableEvent* done);
+  static void InitializeOneOff(bool use_gl, base::WaitableEvent* done);
 
   // Create the render context and windows by the specified
   // dimensions. This method must be called on the rendering thread.
@@ -171,6 +172,7 @@ class RenderingHelper {
   gfx::Size thumbnail_size_;
   GLuint vertex_buffer_;
   GLuint program_;
+  static bool use_gl_;
   base::TimeDelta frame_duration_;
   base::TimeTicks scheduled_render_time_;
   base::CancelableClosure render_task_;

@@ -14,19 +14,19 @@ import time
 
 extra_cq_trybots = [
   {
-    "mastername": "master.tryserver.chromium.win",
+    "mastername": "luci.chromium.try",
     "buildernames": ["win_optional_gpu_tests_rel"]
   },
   {
-    "mastername": "master.tryserver.chromium.mac",
+    "mastername": "luci.chromium.try",
     "buildernames": ["mac_optional_gpu_tests_rel"]
   },
   {
-    "mastername": "master.tryserver.chromium.linux",
+    "mastername": "luci.chromium.try",
     "buildernames": ["linux_optional_gpu_tests_rel"]
   },
   {
-    "mastername": "master.tryserver.chromium.android",
+    "mastername": "luci.chromium.try",
     "buildernames": ["android_optional_gpu_tests_rel"]
   }
 ]

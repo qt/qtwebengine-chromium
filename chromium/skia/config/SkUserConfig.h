@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef SkUserConfig_DEFINED
-#define SkUserConfig_DEFINED
+#ifndef SKIA_CONFIG_SKUSERCONFIG_H_
+#define SKIA_CONFIG_SKUSERCONFIG_H_
 
 /*  SkTypes.h, the root of the public header files, does the following trick:
 
@@ -213,8 +213,21 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #define SK_LEGACY_GPU_PIXEL_OPS
 #endif
 
+#ifndef SK_SUPPORT_LEGACY_YUV_COLORSPACE
+#define SK_SUPPORT_LEGACY_YUV_COLORSPACE
+#endif
+
+#ifndef SK_SUPPORT_LEGACY_BACKEND_OBJECTS
+#define SK_SUPPORT_LEGACY_BACKEND_OBJECTS
+#endif
+
 // Max. verb count for paths rendered by the edge-AA tessellating path renderer.
 #define GR_AA_TESSELLATOR_MAX_VERB_COUNT 10
+
+
+#ifndef SK_SUPPORT_LEGACY_PATH_DAA_BIT
+#define SK_SUPPORT_LEGACY_PATH_DAA_BIT
+#endif
 
 ///////////////////////// Imported from BUILD.gn and skia_common.gypi
 

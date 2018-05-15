@@ -6,61 +6,14 @@
 
 #include "base/test/scoped_command_line.h"
 #include "base/test/scoped_feature_list.h"
+#include "components/autofill/core/browser/test_sync_service.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/testing_pref_service.h"
-#include "components/sync/driver/fake_sync_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace autofill {
-
-namespace {
-
-class TestSyncService : public syncer::FakeSyncService {
- public:
-  TestSyncService()
-      : can_sync_start_(true),
-        preferred_data_types_(syncer::ModelTypeSet::All()),
-        is_engine_initialized_(true),
-        is_using_secondary_passphrase_(false) {}
-
-  bool CanSyncStart() const override { return can_sync_start_; }
-
-  syncer::ModelTypeSet GetPreferredDataTypes() const override {
-    return preferred_data_types_;
-  }
-
-  bool IsEngineInitialized() const override { return is_engine_initialized_; }
-
-  bool IsUsingSecondaryPassphrase() const override {
-    return is_using_secondary_passphrase_;
-  }
-
-  void SetCanSyncStart(bool can_sync_start) {
-    can_sync_start_ = can_sync_start;
-  }
-
-  void SetPreferredDataTypes(syncer::ModelTypeSet preferred_data_types) {
-    preferred_data_types_ = preferred_data_types;
-  }
-
-  void SetIsEngineInitialized(bool is_engine_initialized) {
-    is_engine_initialized_ = is_engine_initialized;
-  }
-
-  void SetIsUsingSecondaryPassphrase(bool is_using_secondary_passphrase) {
-    is_using_secondary_passphrase_ = is_using_secondary_passphrase;
-  }
-
- private:
-  bool can_sync_start_;
-  syncer::ModelTypeSet preferred_data_types_;
-  bool is_engine_initialized_;
-  bool is_using_secondary_passphrase_;
-};
-
-}  // namespace
 
 class AutofillExperimentsTest : public testing::Test {
  public:
@@ -100,14 +53,24 @@ TEST_F(AutofillExperimentsTest, DenyUpload_SyncServiceCannotStart) {
   EXPECT_FALSE(IsCreditCardUploadEnabled());
 }
 
+TEST_F(AutofillExperimentsTest, DenyUpload_AuthError) {
+  sync_service_.SetInAuthError(true);
+  EXPECT_FALSE(IsCreditCardUploadEnabled());
+}
+
 TEST_F(AutofillExperimentsTest,
        DenyUpload_SyncServiceDoesNotHaveAutofillProfilePreferredDataType) {
   sync_service_.SetPreferredDataTypes(syncer::ModelTypeSet());
   EXPECT_FALSE(IsCreditCardUploadEnabled());
 }
 
-TEST_F(AutofillExperimentsTest, DenyUpload_SyncServiceEngineNotInitialized) {
-  sync_service_.SetIsEngineInitialized(false);
+TEST_F(AutofillExperimentsTest, DenyUpload_SyncCycleNotComplete) {
+  sync_service_.SetSyncCycleComplete(false);
+  EXPECT_FALSE(IsCreditCardUploadEnabled());
+}
+
+TEST_F(AutofillExperimentsTest, DenyUpload_SyncConfigurationNotDone) {
+  sync_service_.SetConfigurationDone(false);
   EXPECT_FALSE(IsCreditCardUploadEnabled());
 }
 

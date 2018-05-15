@@ -28,6 +28,7 @@
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_message_filter.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/overscroll_configuration.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_widget_host.h"
@@ -36,7 +37,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
-#include "content/public/test/scoped_overscroll_mode.h"
+#include "content/public/test/scoped_overscroll_modes.h"
 #include "content/public/test/test_renderer_host.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
@@ -466,8 +467,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   blink::WebGestureEvent gesture_scroll_begin(
       blink::WebGestureEvent::kGestureScrollBegin,
       blink::WebInputEvent::kNoModifiers,
-      blink::WebInputEvent::GetStaticTimeStampForTests());
-  gesture_scroll_begin.source_device = blink::kWebGestureDeviceTouchscreen;
+      blink::WebInputEvent::GetStaticTimeStampForTests(),
+      blink::kWebGestureDeviceTouchscreen);
   gesture_scroll_begin.data.scroll_begin.delta_hint_units =
       blink::WebGestureEvent::ScrollUnits::kPrecisePixels;
   gesture_scroll_begin.data.scroll_begin.delta_x_hint = 0.f;
@@ -477,8 +478,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   blink::WebGestureEvent gesture_scroll_update(
       blink::WebGestureEvent::kGestureScrollUpdate,
       blink::WebInputEvent::kNoModifiers,
-      blink::WebInputEvent::GetStaticTimeStampForTests());
-  gesture_scroll_update.source_device = blink::kWebGestureDeviceTouchscreen;
+      blink::WebInputEvent::GetStaticTimeStampForTests(),
+      blink::kWebGestureDeviceTouchscreen);
   gesture_scroll_update.data.scroll_update.delta_units =
       blink::WebGestureEvent::ScrollUnits::kPrecisePixels;
   gesture_scroll_update.data.scroll_update.delta_y = 0.f;
@@ -612,7 +613,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
 #define MAYBE_OverscrollScreenshot OverscrollScreenshot
 #endif
 IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, MAYBE_OverscrollScreenshot) {
-  ScopedOverscrollMode scoped_mode(OverscrollConfig::Mode::kParallaxUi);
+  ScopedHistoryNavigationMode scoped_mode(
+      OverscrollConfig::HistoryNavigationMode::kParallaxUi);
 
   ASSERT_NO_FATAL_FAILURE(StartTestWithPage("/overscroll_navigation.html"));
   WebContentsImpl* web_contents =
@@ -703,7 +705,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, MAYBE_OverscrollScreenshot) {
 // RenderViewHost to be swapped out.
 IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
                        MAYBE_ScreenshotForSwappedOutRenderViews) {
-  ScopedOverscrollMode scoped_mode(OverscrollConfig::Mode::kParallaxUi);
+  ScopedHistoryNavigationMode scoped_mode(
+      OverscrollConfig::HistoryNavigationMode::kParallaxUi);
 
   ASSERT_NO_FATAL_FAILURE(StartTestWithPage("/overscroll_navigation.html"));
   // Create a new server with a different site.
@@ -775,7 +778,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
 // Tests that navigations resulting from reloads, history.replaceState,
 // and history.pushState do not capture screenshots.
 IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, ReplaceStateReloadPushState) {
-  ScopedOverscrollMode scoped_mode(OverscrollConfig::Mode::kParallaxUi);
+  ScopedHistoryNavigationMode scoped_mode(
+      OverscrollConfig::HistoryNavigationMode::kParallaxUi);
 
   ASSERT_NO_FATAL_FAILURE(StartTestWithPage("/overscroll_navigation.html"));
   WebContentsImpl* web_contents =
@@ -922,19 +926,6 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   EXPECT_EQ(2, GetCurrentIndex());
   EXPECT_TRUE(controller.CanGoBack());
   EXPECT_FALSE(controller.CanGoForward());
-}
-
-// Verify that hiding a parent of the renderer will hide the content too.
-IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, HideContentOnParenHide) {
-  ASSERT_NO_FATAL_FAILURE(StartTestWithPage("/title1.html"));
-  WebContentsImpl* web_contents =
-      static_cast<WebContentsImpl*>(shell()->web_contents());
-  aura::Window* content = web_contents->GetNativeView()->parent();
-  EXPECT_TRUE(web_contents->should_normally_be_visible());
-  content->Hide();
-  EXPECT_FALSE(web_contents->should_normally_be_visible());
-  content->Show();
-  EXPECT_TRUE(web_contents->should_normally_be_visible());
 }
 
 // Ensure that SnapToPhysicalPixelBoundary() is called on WebContentsView parent

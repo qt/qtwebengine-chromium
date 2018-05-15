@@ -25,7 +25,7 @@ source_set("qr_scanner") {
     "//ios/chrome/browser/ui",
     "//ios/chrome/browser/ui/icons",
     "//ios/chrome/browser/ui/qr_scanner/requirements",
-    "//ios/chrome/common:ios_app_bundle_id_prefix_header",
+    "//ios/chrome/common:ios_app_bundle_id_prefix_buildflags",
     "//ios/third_party/material_components_ios",
     "//ui/base",
   ]
@@ -49,6 +49,19 @@ source_set("coordinator") {
     "//ios/chrome/browser/ui/commands",
     "//ios/chrome/browser/ui/coordinators:chrome_coordinators",
     "//ios/chrome/browser/ui/qr_scanner/requirements",
+  ]
+}
+
+source_set("unit_tests") {
+  configs += [ "//build/config/compiler:enable_arc" ]
+  testonly = true
+  sources = [
+    "camera_controller_unittest.mm",
+  ]
+  deps = [
+    ":qr_scanner",
+    "//base",
+    "//testing/gtest:gtest",
   ]
 }
 

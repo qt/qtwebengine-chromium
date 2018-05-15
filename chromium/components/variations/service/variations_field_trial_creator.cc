@@ -187,12 +187,12 @@ bool VariationsFieldTrialCreator::CreateTrialsFromSeed(
 
   base::TimeTicks start_time = base::TimeTicks::Now();
 
-  const base::Version current_version(version_info::GetVersionNumber());
+  const base::Version& current_version = version_info::GetVersion();
   if (!current_version.IsValid())
     return false;
+
   std::unique_ptr<ClientFilterableState> client_filterable_state =
       GetClientFilterableStateForVersion(current_version);
-
   VariationsSeed seed;
   bool run_in_safe_mode = safe_seed_manager->ShouldRunInSafeMode() &&
                           LoadSafeSeed(&seed, client_filterable_state.get());
@@ -358,7 +358,7 @@ std::string VariationsFieldTrialCreator::GetShortHardwareClass() {
   if (index != std::string::npos)
     board.resize(index);
 
-  return base::ToLowerASCII(board);
+  return base::ToUpperASCII(board);
 #else
   return std::string();
 #endif  // OS_CHROMEOS
@@ -431,8 +431,13 @@ bool VariationsFieldTrialCreator::SetupFieldTrials(
     bool result = AssociateParamsFromString(
         command_line->GetSwitchValueASCII(switches::kForceFieldTrialParams));
     if (!result) {
-      ExitWithMessage(base::StringPrintf("Invalid --%s list specified.",
-                                         switches::kForceFieldTrialParams));
+      // Some field trial params implement things like csv or json with a
+      // particular param. If some control characters are not %-encoded, it can
+      // lead to confusing error messages, so add a hint here.
+      ExitWithMessage(base::StringPrintf(
+          "Invalid --%s list specified. Make sure you %%-"
+          "encode the following characters in param values: %%:/.,",
+          switches::kForceFieldTrialParams));
     }
   }
 

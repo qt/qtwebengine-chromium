@@ -46,23 +46,14 @@ class RTPReceiverAudio : public RTPReceiverStrategy,
 
   int32_t ParseRtpPacket(WebRtcRTPHeader* rtp_header,
                          const PayloadUnion& specific_payload,
-                         bool is_red,
                          const uint8_t* packet,
                          size_t payload_length,
                          int64_t timestamp_ms) override;
 
   RTPAliveType ProcessDeadOrAlive(uint16_t last_payload_length) const override;
 
-  bool ShouldReportCsrcChanges(uint8_t payload_type) const override;
-
   int32_t OnNewPayloadTypeCreated(int payload_type,
                                   const SdpAudioFormat& audio_format) override;
-
-  int32_t InvokeOnInitializeDecoder(
-      RtpFeedback* callback,
-      int8_t payload_type,
-      const char payload_name[RTP_PAYLOAD_NAME_SIZE],
-      const PayloadUnion& specific_payload) const override;
 
   // We need to look out for special payload types here and sometimes reset
   // statistics. In addition we sometimes need to tweak the frequency.
@@ -76,8 +67,7 @@ class RTPReceiverAudio : public RTPReceiverStrategy,
   int32_t ParseAudioCodecSpecific(WebRtcRTPHeader* rtp_header,
                                   const uint8_t* payload_data,
                                   size_t payload_length,
-                                  const AudioPayload& audio_specific,
-                                  bool is_red);
+                                  const AudioPayload& audio_specific);
 
   bool telephone_event_forward_to_decoder_;
   int8_t telephone_event_payload_type_;

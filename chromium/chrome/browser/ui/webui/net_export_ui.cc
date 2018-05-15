@@ -36,7 +36,7 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "extensions/features/features.h"
+#include "extensions/buildflags/buildflags.h"
 #include "net/log/net_log_capture_mode.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
@@ -185,23 +185,24 @@ void NetExportMessageHandler::RegisterMessages() {
 
   web_ui()->RegisterMessageCallback(
       net_log::kEnableNotifyUIWithStateHandler,
-      base::Bind(&NetExportMessageHandler::OnEnableNotifyUIWithState,
-                 base::Unretained(this)));
+      base::BindRepeating(&NetExportMessageHandler::OnEnableNotifyUIWithState,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       net_log::kStartNetLogHandler,
-      base::Bind(&NetExportMessageHandler::OnStartNetLog,
-                 base::Unretained(this)));
+      base::BindRepeating(&NetExportMessageHandler::OnStartNetLog,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       net_log::kStopNetLogHandler,
-      base::Bind(&NetExportMessageHandler::OnStopNetLog,
-                 base::Unretained(this)));
+      base::BindRepeating(&NetExportMessageHandler::OnStopNetLog,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       net_log::kSendNetLogHandler,
-      base::Bind(&NetExportMessageHandler::OnSendNetLog,
-                 base::Unretained(this)));
+      base::BindRepeating(&NetExportMessageHandler::OnSendNetLog,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       net_log::kShowFile,
-      base::Bind(&NetExportMessageHandler::OnShowFile, base::Unretained(this)));
+      base::BindRepeating(&NetExportMessageHandler::OnShowFile,
+                          base::Unretained(this)));
 }
 
 // The net-export UI is not notified of state changes until this function runs.
@@ -333,7 +334,7 @@ void NetExportMessageHandler::StartNetLog(const base::FilePath& path) {
   file_writer_->StartNetLog(
       path, capture_mode_, max_log_file_size_,
       base::CommandLine::ForCurrentProcess()->GetCommandLineString(),
-      chrome::GetChannelString(), GetURLRequestContexts());
+      chrome::GetChannelName(), GetURLRequestContexts());
 }
 
 void NetExportMessageHandler::ShowFileInShell(const base::FilePath& path) {

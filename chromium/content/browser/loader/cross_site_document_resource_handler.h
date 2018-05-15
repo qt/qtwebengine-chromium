@@ -12,9 +12,9 @@
 #include "base/memory/weak_ptr.h"
 #include "content/browser/loader/layered_resource_handler.h"
 #include "content/browser/loader/resource_request_info_impl.h"
-#include "content/common/cross_site_document_classifier.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/common/resource_type.h"
+#include "services/network/cross_origin_read_blocking.h"
 
 namespace net {
 class URLRequest;
@@ -55,6 +55,8 @@ namespace content {
 class CONTENT_EXPORT CrossSiteDocumentResourceHandler
     : public LayeredResourceHandler {
  public:
+  class ConfirmationSniffer;
+
   // This enum backs a histogram, so do not change the order of entries or
   // remove entries. Put new entries before |kCount| and update enums.xml (see
   // the SiteIsolationResponseAction enum).
@@ -134,16 +136,16 @@ class CONTENT_EXPORT CrossSiteDocumentResourceHandler
   static void LogBlockedResponseOnUIThread(
       ResourceRequestInfo::WebContentsGetter web_contents_getter,
       bool needed_sniffing,
-      CrossSiteDocumentMimeType canonical_mime_type,
+      network::CrossOriginReadBlocking::MimeType canonical_mime_type,
       ResourceType resource_type,
       int http_response_code,
       int64_t content_length);
-  static void LogBlockedResponse(ResourceRequestInfoImpl* resource_request_info,
-                                 bool needed_sniffing,
-                                 bool found_parser_breaker,
-                                 CrossSiteDocumentMimeType canonical_mime_type,
-                                 int http_response_code,
-                                 int64_t content_length);
+  static void LogBlockedResponse(
+      ResourceRequestInfoImpl* resource_request_info,
+      bool needed_sniffing,
+      network::CrossOriginReadBlocking::MimeType canonical_mime_type,
+      int http_response_code,
+      int64_t content_length);
 
   // WeakPtrFactory for |next_handler_|.
   base::WeakPtrFactory<ResourceHandler> weak_next_handler_;
@@ -169,11 +171,8 @@ class CONTENT_EXPORT CrossSiteDocumentResourceHandler
 
   // A canonicalization of the specified MIME type, to determine if blocking the
   // response is needed, as well as which type of sniffing to perform.
-  CrossSiteDocumentMimeType canonical_mime_type_ =
-      CROSS_SITE_DOCUMENT_MIME_TYPE_OTHERS;
-
-  // True if the response had a non-empty Content-Type other than text/css.
-  bool non_stylesheet_mime_type_ = false;
+  network::CrossOriginReadBlocking::MimeType canonical_mime_type_ =
+      network::CrossOriginReadBlocking::MimeType::kInvalid;
 
   // Indicates whether this request was made by a plugin and was not using CORS.
   // Such requests are exempt from blocking, while other plugin requests must be
@@ -213,6 +212,9 @@ class CONTENT_EXPORT CrossSiteDocumentResourceHandler
 
   // Content length if available. -1 if not available.
   int64_t content_length_ = -1;
+
+  // The sniffers to be used.
+  std::vector<std::unique_ptr<ConfirmationSniffer>> sniffers_;
 
   base::WeakPtrFactory<CrossSiteDocumentResourceHandler> weak_this_;
 

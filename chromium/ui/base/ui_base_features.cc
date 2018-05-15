@@ -12,9 +12,22 @@
 
 namespace features {
 
+// If enabled, the emoji picker context menu item may be shown for editable
+// text areas.
+const base::Feature kEnableEmojiContextMenu{"EnableEmojiContextMenu",
+                                            base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enables the floating virtual keyboard behavior.
 const base::Feature kEnableFloatingVirtualKeyboard = {
     "enable-floating-virtual-keyboard", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enables the full screen handwriting virtual keyboard behavior.
+const base::Feature kEnableFullscreenHandwritingVirtualKeyboard = {
+    "enable-fullscreen-handwriting-virtual-keyboard",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kEnableStylusVirtualKeyboard = {
+    "enable-stylus-virtual-keyboard", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Applies the material design mode to elements throughout Chrome (not just top
 // Chrome).
@@ -45,11 +58,22 @@ const base::Feature kDirectManipulationStylus = {
 // Enables using WM_POINTER instead of WM_TOUCH for touch events.
 const base::Feature kPointerEventsForTouch = {"PointerEventsForTouch",
                                               base::FEATURE_ENABLED_BY_DEFAULT};
+// Enables using TSF (over IMM32) for IME.
+const base::Feature kTSFImeSupport = {"TSFImeSupport",
+                                      base::FEATURE_DISABLED_BY_DEFAULT};
 
 bool IsUsingWMPointerForTouch() {
   return base::win::GetVersion() >= base::win::VERSION_WIN8 &&
          base::FeatureList::IsEnabled(kPointerEventsForTouch);
 }
+
+// Enables DirectManipulation API for processing Precision Touchpad events.
+const base::Feature kPrecisionTouchpad{"PrecisionTouchpad",
+                                       base::FEATURE_ENABLED_BY_DEFAULT};
+// Enables Swipe left/right to navigation back/forward API for processing
+// Precision Touchpad events.
+const base::Feature kPrecisionTouchpadScrollPhase{
+    "PrecisionTouchpadScrollPhase", base::FEATURE_ENABLED_BY_DEFAULT};
 #endif  // defined(OS_WIN)
 
 // Used to have ash run in its own process. This implicitly turns on the
@@ -68,5 +92,29 @@ bool IsMusEnabled() {
   return false;
 #endif
 }
+
+#if defined(OS_MACOSX)
+// When enabled, the NSWindows for apps will be created in the app's process,
+// and will forward input to the browser process.
+const base::Feature kHostWindowsInAppShimProcess{
+    "HostWindowsInAppShimProcess", base::FEATURE_DISABLED_BY_DEFAULT};
+
+bool HostWindowsInAppShimProcess() {
+  return base::FeatureList::IsEnabled(kHostWindowsInAppShimProcess);
+}
+
+#if BUILDFLAG(MAC_VIEWS_BROWSER)
+// Causes Views browser builds to use Views browser windows by default rather
+// than Cocoa browser windows.
+const base::Feature kViewsBrowserWindows{"ViewsBrowserWindows",
+                                         base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Returns whether a Views-capable browser build should use the Cocoa browser
+// UI.
+bool IsViewsBrowserCocoa() {
+  return !base::FeatureList::IsEnabled(kViewsBrowserWindows);
+}
+#endif  //  BUILDFLAG(MAC_VIEWS_BROWSER)
+#endif  //  defined(OS_MACOSX)
 
 }  // namespace features

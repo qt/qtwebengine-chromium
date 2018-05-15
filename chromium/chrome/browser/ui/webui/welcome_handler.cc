@@ -32,8 +32,8 @@ WelcomeHandler::~WelcomeHandler() {
   // construct-time on some platforms because this page is shown immediately
   // after a new installation of Chrome and loads while the user is deciding
   // whether or not to opt in to logging.
-  base::RecordAction(
-      base::UserMetricsAction("Signin_Impression_FromStartPage"));
+  signin_metrics::RecordSigninImpressionUserActionForAccessPoint(
+      signin_metrics::AccessPoint::ACCESS_POINT_START_PAGE);
 
   UMA_HISTOGRAM_ENUMERATION("Welcome.SignInPromptResult", result_,
                             WelcomeResult::WELCOME_RESULT_MAX);
@@ -80,11 +80,13 @@ void WelcomeHandler::HandleUserDecline(const base::ListValue* args) {
 // Override from WebUIMessageHandler.
 void WelcomeHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
-      "handleActivateSignIn", base::Bind(&WelcomeHandler::HandleActivateSignIn,
-                                         base::Unretained(this)));
+      "handleActivateSignIn",
+      base::BindRepeating(&WelcomeHandler::HandleActivateSignIn,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "handleUserDecline",
-      base::Bind(&WelcomeHandler::HandleUserDecline, base::Unretained(this)));
+      base::BindRepeating(&WelcomeHandler::HandleUserDecline,
+                          base::Unretained(this)));
 }
 
 void WelcomeHandler::GoToNewTabPage() {

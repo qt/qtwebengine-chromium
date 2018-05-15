@@ -13,13 +13,16 @@ import sys
 import tarfile
 import tempfile
 
-SDK_HASH = '9d4016533477903c796470e7ab46c2e1dad31761'
+SDK_HASH_FILE = os.path.join(os.path.dirname(__file__), 'sdk.sha1')
 
 REPOSITORY_ROOT = os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', '..'))
 sys.path.append(os.path.join(REPOSITORY_ROOT, 'build'))
 
 import find_depot_tools
+
+SDK_SUBDIRS = ["arch", "pkg", "qemu", "sysroot", "target",
+               "toolchain_libs", "tools"]
 
 
 def EnsureDirExists(path):
@@ -28,21 +31,46 @@ def EnsureDirExists(path):
     os.makedirs(path)
 
 
+# Removes previous SDK from the specified path if it's detected there.
+def Cleanup(path):
+  hash_file = os.path.join(path, '.hash')
+  if os.path.exists(hash_file):
+    print 'Removing old SDK from %s.' % path
+    for d in SDK_SUBDIRS:
+      to_remove = os.path.join(path, d)
+      if os.path.isdir(to_remove):
+        shutil.rmtree(to_remove)
+    os.remove(hash_file)
+
+
 def main():
   if len(sys.argv) != 1:
     print >>sys.stderr, 'usage: %s' % sys.argv[0]
     return 1
 
-  output_dir = os.path.join(REPOSITORY_ROOT, 'third_party', 'fuchsia-sdk')
+  # Previously SDK was unpacked in //third_party/fuchsia-sdk instead of
+  # //third_party/fuchsia-sdk/sdk . Remove the old files if they are still
+  # there.
+  Cleanup(os.path.join(REPOSITORY_ROOT, 'third_party', 'fuchsia-sdk'))
+
+  with open(SDK_HASH_FILE, 'r') as f:
+    sdk_hash = f.read().strip()
+
+  if not sdk_hash:
+    print >>sys.stderr, 'No SHA1 found in %s' % SDK_HASH_FILE
+    return 1
+
+  output_dir = os.path.join(REPOSITORY_ROOT, 'third_party', 'fuchsia-sdk',
+                            'sdk')
 
   hash_filename = os.path.join(output_dir, '.hash')
   if os.path.exists(hash_filename):
     with open(hash_filename, 'r') as f:
-      if f.read().strip() == SDK_HASH:
+      if f.read().strip() == sdk_hash:
         # Nothing to do.
         return 0
 
-  print 'Downloading SDK %s...' % SDK_HASH
+  print 'Downloading SDK %s...' % sdk_hash
 
   if os.path.isdir(output_dir):
     shutil.rmtree(output_dir)
@@ -53,7 +81,7 @@ def main():
   try:
     bucket = 'gs://fuchsia/sdk/linux-amd64/'
     cmd = [os.path.join(find_depot_tools.DEPOT_TOOLS_PATH, 'gsutil.py'),
-           'cp', bucket + SDK_HASH, tmp]
+           'cp', bucket + sdk_hash, tmp]
     subprocess.check_call(cmd)
     with open(tmp, 'rb') as f:
       EnsureDirExists(output_dir)
@@ -62,7 +90,7 @@ def main():
     os.remove(tmp)
 
   with open(hash_filename, 'w') as f:
-    f.write(SDK_HASH)
+    f.write(sdk_hash)
 
   return 0
 

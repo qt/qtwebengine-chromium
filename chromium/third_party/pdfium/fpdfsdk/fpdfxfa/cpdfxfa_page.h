@@ -9,11 +9,12 @@
 
 #include <memory>
 
+#include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
+#include "third_party/base/optional.h"
 
-class CFX_Matrix;
 class CPDFXFA_Context;
 class CPDF_Dictionary;
 class CPDF_Page;
@@ -38,30 +39,14 @@ class CPDFXFA_Page : public Retainable {
   float GetPageWidth() const;
   float GetPageHeight() const;
 
-  void DeviceToPage(int start_x,
-                    int start_y,
-                    int size_x,
-                    int size_y,
-                    int rotate,
-                    int device_x,
-                    int device_y,
-                    double* page_x,
-                    double* page_y);
-  void PageToDevice(int start_x,
-                    int start_y,
-                    int size_x,
-                    int size_y,
-                    int rotate,
-                    double page_x,
-                    double page_y,
-                    int* device_x,
-                    int* device_y);
+  Optional<CFX_PointF> DeviceToPage(const FX_RECT& rect,
+                                    int rotate,
+                                    const CFX_PointF& device_point) const;
+  Optional<CFX_PointF> PageToDevice(const FX_RECT& rect,
+                                    int rotate,
+                                    const CFX_PointF& page_point) const;
 
-  CFX_Matrix GetDisplayMatrix(int xPos,
-                              int yPos,
-                              int xSize,
-                              int ySize,
-                              int iRotate) const;
+  CFX_Matrix GetDisplayMatrix(const FX_RECT& rect, int iRotate) const;
 
  protected:
   // Refcounted class.

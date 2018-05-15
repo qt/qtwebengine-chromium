@@ -26,7 +26,7 @@
 #include "net/url_request/redirect_info.h"
 #include "services/network/public/cpp/resource_request_body.h"
 #include "services/network/public/cpp/resource_response_info.h"
-#include "third_party/WebKit/public/platform/WebMixedContentContextType.h"
+#include "third_party/blink/public/platform/web_mixed_content_context_type.h"
 #include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -267,6 +267,11 @@ struct CONTENT_EXPORT RequestNavigationParams {
   // size of the session history list.
   int current_history_list_offset = -1;
   int current_history_list_length = 0;
+
+  // Indicates that the tab was previously discarded.
+  // wasDiscarded is exposed on Document after discard, see:
+  // https://github.com/WICG/web-lifecycle
+  bool was_discarded = false;
 
   // Indicates whether the navigation is to a view-source:// scheme or not.
   // It is a separate boolean as the view-source scheme is stripped from the

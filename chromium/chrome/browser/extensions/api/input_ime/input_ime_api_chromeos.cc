@@ -24,7 +24,6 @@
 #include "ui/base/ime/chromeos/extension_ime_util.h"
 #include "ui/base/ime/chromeos/input_method_manager.h"
 #include "ui/base/ime/ime_engine_handler_interface.h"
-#include "ui/keyboard/content/keyboard_content_util.h"
 #include "ui/keyboard/keyboard_controller.h"
 
 namespace input_ime = extensions::api::input_ime;
@@ -387,14 +386,13 @@ ExtensionFunction::ResponseAction InputImeClearCompositionFunction::Run() {
                             : ErrorWithArguments(std::move(results), error));
 }
 
-bool InputImeHideInputViewFunction::RunAsync() {
+ExtensionFunction::ResponseAction InputImeHideInputViewFunction::Run() {
   InputMethodEngine* engine = GetActiveEngine(
       Profile::FromBrowserContext(browser_context()), extension_id());
-  if (!engine) {
-    return true;
-  }
+  if (!engine)
+    return RespondNow(NoArguments());
   engine->HideInputView();
-  return true;
+  return RespondNow(NoArguments());
 }
 
 ExtensionFunction::ResponseAction
@@ -680,7 +678,7 @@ void InputImeAPI::OnExtensionUnloaded(content::BrowserContext* browser_context,
       // Empties the content url and reload the controller to unload the
       // current page.
       // TODO(wuyingbing): Should add a new method to unload the document.
-      keyboard::SetOverrideContentUrl(GURL());
+      manager->GetActiveIMEState()->DisableInputView();
       keyboard_controller->Reload();
     }
     event_router->SetUnloadedExtensionId(extension->id());

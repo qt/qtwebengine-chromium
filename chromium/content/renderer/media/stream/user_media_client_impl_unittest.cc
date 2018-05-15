@@ -30,13 +30,13 @@
 #include "media/audio/audio_device_description.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebMediaStream.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
-#include "third_party/WebKit/public/web/WebHeap.h"
+#include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/web_media_stream.h"
+#include "third_party/blink/public/platform/web_media_stream_source.h"
+#include "third_party/blink/public/platform/web_media_stream_track.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_vector.h"
+#include "third_party/blink/public/web/web_heap.h"
 
 using testing::_;
 
@@ -149,7 +149,6 @@ const char kFakeAudioInputDeviceId1[] = "fake_audio_input 1";
 const char kFakeAudioInputDeviceId2[] = "fake_audio_input 2";
 const char kFakeVideoInputDeviceId1[] = "fake_video_input 1";
 const char kFakeVideoInputDeviceId2[] = "fake_video_input 2";
-const char kFakeAudioOutputDeviceId1[] = "fake_audio_output 1";
 
 class MockMediaDevicesDispatcherHost
     : public blink::mojom::MediaDevicesDispatcherHost {
@@ -158,25 +157,9 @@ class MockMediaDevicesDispatcherHost
   void EnumerateDevices(bool request_audio_input,
                         bool request_video_input,
                         bool request_audio_output,
+                        bool request_video_input_capabilities,
                         EnumerateDevicesCallback callback) override {
-    std::vector<std::vector<MediaDeviceInfo>> result(NUM_MEDIA_DEVICE_TYPES);
-    if (request_audio_input) {
-      result[MEDIA_DEVICE_TYPE_AUDIO_INPUT].push_back(MediaDeviceInfo(
-          kFakeAudioInputDeviceId1, "Fake Audio Input 1", "fake_group 1"));
-      result[MEDIA_DEVICE_TYPE_AUDIO_INPUT].push_back(MediaDeviceInfo(
-          kFakeAudioInputDeviceId2, "Fake Audio Input 2", "fake_group 2"));
-    }
-    if (request_video_input) {
-      result[MEDIA_DEVICE_TYPE_VIDEO_INPUT].push_back(
-          MediaDeviceInfo(kFakeVideoInputDeviceId1, "Fake Video Input 1", ""));
-      result[MEDIA_DEVICE_TYPE_VIDEO_INPUT].push_back(
-          MediaDeviceInfo(kFakeVideoInputDeviceId2, "Fake Video Input 2", ""));
-    }
-    if (request_audio_output) {
-      result[MEDIA_DEVICE_TYPE_AUDIO_OUTPUT].push_back(MediaDeviceInfo(
-          kFakeAudioOutputDeviceId1, "Fake Audio Input 1", "fake_group 1"));
-    }
-    std::move(callback).Run(result);
+    NOTREACHED();
   }
 
   void GetVideoInputCapabilities(
@@ -184,7 +167,7 @@ class MockMediaDevicesDispatcherHost
     blink::mojom::VideoInputDeviceCapabilitiesPtr device =
         blink::mojom::VideoInputDeviceCapabilities::New();
     device->device_id = kFakeVideoInputDeviceId1;
-    device->facing_mode = blink::mojom::FacingMode::USER;
+    device->facing_mode = media::MEDIA_VIDEO_FACING_USER;
     if (!video_source_ || !video_source_->IsRunning() ||
         !video_source_->GetCurrentFormat()) {
       device->formats.push_back(media::VideoCaptureFormat(
@@ -201,7 +184,7 @@ class MockMediaDevicesDispatcherHost
 
     device = blink::mojom::VideoInputDeviceCapabilities::New();
     device->device_id = kFakeVideoInputDeviceId2;
-    device->facing_mode = blink::mojom::FacingMode::ENVIRONMENT;
+    device->facing_mode = media::MEDIA_VIDEO_FACING_ENVIRONMENT;
     device->formats.push_back(media::VideoCaptureFormat(
         gfx::Size(640, 480), 30.0f, media::PIXEL_FORMAT_I420));
     result.push_back(std::move(device));
@@ -345,8 +328,7 @@ class UserMediaProcessorUnderTest : public UserMediaProcessor {
 
   MediaStreamAudioSource* CreateAudioSource(
       const MediaStreamDevice& device,
-      const MediaStreamSource::ConstraintsCallback& source_ready,
-      bool* has_sw_echo_cancellation) override {
+      const MediaStreamSource::ConstraintsCallback& source_ready) override {
     MediaStreamAudioSource* source;
     if (create_source_that_fails_) {
       class FailedAtLifeAudioSource : public MediaStreamAudioSource {
@@ -372,7 +354,6 @@ class UserMediaProcessorUnderTest : public UserMediaProcessor {
                          source_ready, source));
     }
 
-    *has_sw_echo_cancellation = false;
     return source;
   }
 
@@ -413,7 +394,10 @@ class UserMediaClientImplUnderTest : public UserMediaClientImpl {
  public:
   UserMediaClientImplUnderTest(UserMediaProcessor* user_media_processor,
                                RequestState* state)
-      : UserMediaClientImpl(nullptr, base::WrapUnique(user_media_processor)),
+      : UserMediaClientImpl(
+            nullptr,
+            base::WrapUnique(user_media_processor),
+            blink::scheduler::GetSingleThreadTaskRunnerForTesting()),
         state_(state) {}
 
   void RequestUserMediaForTest(

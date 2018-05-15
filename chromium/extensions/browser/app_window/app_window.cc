@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -242,6 +241,7 @@ AppWindow::AppWindow(BrowserContext* context,
                      const Extension* extension)
     : browser_context_(context),
       extension_id_(extension->id()),
+      session_id_(SessionID::NewUnique()),
       app_delegate_(app_delegate),
       image_loader_ptr_factory_(this) {
   ExtensionsBrowserClient* client = ExtensionsBrowserClient::Get();
@@ -349,11 +349,14 @@ void AppWindow::RequestMediaAccessPermission(
   helper_->RequestMediaAccessPermission(request, callback);
 }
 
-bool AppWindow::CheckMediaAccessPermission(content::WebContents* web_contents,
-                                           const GURL& security_origin,
-                                           content::MediaStreamType type) {
-  DCHECK_EQ(AppWindow::web_contents(), web_contents);
-  return helper_->CheckMediaAccessPermission(security_origin, type);
+bool AppWindow::CheckMediaAccessPermission(
+    content::RenderFrameHost* render_frame_host,
+    const GURL& security_origin,
+    content::MediaStreamType type) {
+  DCHECK_EQ(AppWindow::web_contents(),
+            content::WebContents::FromRenderFrameHost(render_frame_host));
+  return helper_->CheckMediaAccessPermission(render_frame_host, security_origin,
+                                             type);
 }
 
 WebContents* AppWindow::OpenURLFromTab(WebContents* source,
@@ -641,6 +644,10 @@ bool AppWindow::IsHtmlApiFullscreen() const {
   return (fullscreen_types_ & FULLSCREEN_TYPE_HTML_API) != 0;
 }
 
+bool AppWindow::IsOsFullscreen() const {
+  return (fullscreen_types_ & FULLSCREEN_TYPE_OS) != 0;
+}
+
 void AppWindow::Fullscreen() {
   SetFullscreen(FULLSCREEN_TYPE_WINDOW_API, true);
 }
@@ -786,8 +793,8 @@ void AppWindow::StartAppIconDownload() {
       true,   // is a favicon
       0,      // no maximum size
       false,  // normal cache policy
-      base::Bind(&AppWindow::DidDownloadFavicon,
-                 image_loader_ptr_factory_.GetWeakPtr()));
+      base::BindOnce(&AppWindow::DidDownloadFavicon,
+                     image_loader_ptr_factory_.GetWeakPtr()));
 }
 
 void AppWindow::DidDownloadFavicon(

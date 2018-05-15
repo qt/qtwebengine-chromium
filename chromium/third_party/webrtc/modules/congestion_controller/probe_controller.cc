@@ -125,9 +125,32 @@ void ProbeController::SetBitrates(int64_t min_bitrate_bps,
   }
 }
 
+void ProbeController::OnMaxTotalAllocatedBitrate(
+    int64_t max_total_allocated_bitrate) {
+  rtc::CritScope cs(&critsect_);
+  // TODO(philipel): Should |max_total_allocated_bitrate| be used as a limit for
+  //                 ALR probing?
+  if (state_ == State::kProbingComplete &&
+      max_total_allocated_bitrate != max_total_allocated_bitrate_ &&
+      estimated_bitrate_bps_ != 0 &&
+      (max_bitrate_bps_ <= 0 || estimated_bitrate_bps_ < max_bitrate_bps_) &&
+      estimated_bitrate_bps_ < max_total_allocated_bitrate) {
+    max_total_allocated_bitrate_ = max_total_allocated_bitrate;
+    InitiateProbing(clock_->TimeInMilliseconds(), {max_total_allocated_bitrate},
+                    false);
+  }
+}
+
 void ProbeController::OnNetworkStateChanged(NetworkState network_state) {
   rtc::CritScope cs(&critsect_);
   network_state_ = network_state;
+
+  if (network_state_ == kNetworkDown &&
+      state_ == State::kWaitingForProbingResult) {
+    state_ = State::kProbingComplete;
+    min_bitrate_to_probe_further_bps_ = kExponentialProbingDisabled;
+  }
+
   if (network_state_ == kNetworkUp && state_ == State::kInit)
     InitiateExponentialProbing();
 }
@@ -239,6 +262,7 @@ void ProbeController::Reset() {
   mid_call_probing_waiting_for_result_ = false;
   time_of_last_large_drop_ms_ = now_ms;
   bitrate_before_last_large_drop_bps_ = 0;
+  max_total_allocated_bitrate_ = 0;
 }
 
 void ProbeController::Process() {

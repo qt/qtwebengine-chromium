@@ -22,7 +22,7 @@
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/transport_security_state.h"
-#include "net/net_features.h"
+#include "net/net_buildflags.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/url_request.h"
@@ -144,8 +144,8 @@ class NET_EXPORT URLRequestContext
   SSLConfigService* ssl_config_service() const {
     return ssl_config_service_.get();
   }
-  void set_ssl_config_service(SSLConfigService* service) {
-    ssl_config_service_ = service;
+  void set_ssl_config_service(scoped_refptr<SSLConfigService> service) {
+    ssl_config_service_ = std::move(service);
   }
 
   // Gets the HTTP Authentication Handler Factory for this context.

@@ -4,7 +4,6 @@
 
 #include "ui/aura/mus/window_port_mus.h"
 
-#include "base/memory/ptr_util.h"
 #include "components/viz/client/local_surface_id_provider.h"
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "ui/aura/client/aura_constants.h"
@@ -96,11 +95,19 @@ void WindowPortMus::SetHitTestMask(const base::Optional<gfx::Rect>& rect) {
   window_tree_client_->SetHitTestMask(this, rect);
 }
 
-void WindowPortMus::Embed(
-    ui::mojom::WindowTreeClientPtr client,
+void WindowPortMus::Embed(ui::mojom::WindowTreeClientPtr client,
+                          uint32_t flags,
+                          ui::mojom::WindowTree::EmbedCallback callback) {
+  window_tree_client_->Embed(window_, std::move(client), flags,
+                             std::move(callback));
+}
+
+void WindowPortMus::EmbedUsingToken(
+    const base::UnguessableToken& token,
     uint32_t flags,
-    const ui::mojom::WindowTree::EmbedCallback& callback) {
-  window_tree_client_->Embed(window_, std::move(client), flags, callback);
+    ui::mojom::WindowTree::EmbedCallback callback) {
+  window_tree_client_->EmbedUsingToken(window_, token, flags,
+                                       std::move(callback));
 }
 
 std::unique_ptr<viz::ClientLayerTreeFrameSink>
@@ -409,6 +416,16 @@ void WindowPortMus::AllocateLocalSurfaceId() {
   UpdatePrimarySurfaceId();
 }
 
+bool WindowPortMus::IsLocalSurfaceIdAllocationSuppressed() const {
+  return parent_local_surface_id_allocator_.is_allocation_suppressed();
+}
+
+viz::ScopedSurfaceIdAllocator WindowPortMus::GetSurfaceIdAllocator(
+    base::OnceCallback<void()> allocation_task) {
+  return viz::ScopedSurfaceIdAllocator(&parent_local_surface_id_allocator_,
+                                       std::move(allocation_task));
+}
+
 const viz::LocalSurfaceId& WindowPortMus::GetLocalSurfaceId() {
   if (base::FeatureList::IsEnabled(features::kMash))
     return local_surface_id_;
@@ -647,7 +664,8 @@ void WindowPortMus::OnSurfaceChanged(const viz::SurfaceInfo& surface_info) {
   DCHECK_EQ(surface_info.id().local_surface_id(), local_surface_id_);
   window_->layer()->SetShowPrimarySurface(
       surface_info.id(), window_->bounds().size(), SK_ColorWHITE,
-      cc::DeadlinePolicy::UseDefaultDeadline());
+      cc::DeadlinePolicy::UseDefaultDeadline(),
+      false /* stretch_content_to_fill_bounds */);
   window_->layer()->SetFallbackSurfaceId(surface_info.id());
 }
 

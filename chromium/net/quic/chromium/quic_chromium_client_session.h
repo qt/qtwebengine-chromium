@@ -81,6 +81,35 @@ enum class ConnectionMigrationMode {
   FULL_MIGRATION_V2
 };
 
+// Cause of connection migration.
+enum ConnectionMigrationCause {
+  UNKNOWN,
+  ON_NETWORK_CONNECTED,                // No probing.
+  ON_NETWORK_DISCONNECTED,             // No probing.
+  ON_WRITE_ERROR,                      // No probing.
+  ON_NETWORK_MADE_DEFAULT,             // With probing.
+  ON_MIGRATE_BACK_TO_DEFAULT_NETWORK,  // With probing.
+  ON_PATH_DEGRADING,                   // With probing.
+  MIGRATION_CAUSE_MAX
+};
+
+// Result of connection migration.
+enum QuicConnectionMigrationStatus {
+  MIGRATION_STATUS_NO_MIGRATABLE_STREAMS,
+  MIGRATION_STATUS_ALREADY_MIGRATED,
+  MIGRATION_STATUS_INTERNAL_ERROR,
+  MIGRATION_STATUS_TOO_MANY_CHANGES,
+  MIGRATION_STATUS_SUCCESS,
+  MIGRATION_STATUS_NON_MIGRATABLE_STREAM,
+  MIGRATION_STATUS_NOT_ENABLED,
+  MIGRATION_STATUS_NO_ALTERNATE_NETWORK,
+  MIGRATION_STATUS_ON_PATH_DEGRADING_DISABLED,
+  MIGRATION_STATUS_DISABLED_BY_CONFIG,
+  MIGRATION_STATUS_PATH_DEGRADING_NOT_ENABLED,
+  MIGRATION_STATUS_TIMEOUT,
+  MIGRATION_STATUS_MAX
+};
+
 // Result of a connectivity probing attempt.
 enum class ProbingResult {
   PENDING,                          // Probing started, pending result.
@@ -426,7 +455,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
                       QuicReferenceCountedPointer<QuicAckListenerInterface>
                           ack_listener) override;
   void OnHeadersHeadOfLineBlocking(QuicTime::Delta delta) override;
-  void UnregisterStreamPriority(QuicStreamId id) override;
+  void UnregisterStreamPriority(QuicStreamId id, bool is_static) override;
   void UpdateStreamPriority(QuicStreamId id,
                             SpdyPriority new_priority) override;
 
@@ -687,6 +716,14 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
                             const NetLogWithSource& migration_net_log);
   void LogMetricsOnNetworkDisconnected();
   void LogMetricsOnNetworkMadeDefault();
+  void LogConnectionMigrationResultToHistogram(
+      QuicConnectionMigrationStatus status);
+  void HistogramAndLogMigrationFailure(const NetLogWithSource& net_log,
+                                       QuicConnectionMigrationStatus status,
+                                       QuicConnectionId connection_id,
+                                       const std::string& reason);
+  void HistogramAndLogMigrationSuccess(const NetLogWithSource& net_log,
+                                       QuicConnectionId connection_id);
 
   // Notifies the factory that this session is going away and no more streams
   // should be created from it.  This needs to be called before closing any
@@ -763,6 +800,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
   QuicConnectivityProbingManager probing_manager_;
   int retry_migrate_back_count_;
   base::OneShotTimer migrate_back_to_default_timer_;
+  ConnectionMigrationCause current_connection_migration_cause_;
   // TODO(jri): Replace use of migration_pending_ sockets_.size().
   // When a task is posted for MigrateSessionOnError, pass in
   // sockets_.size(). Then in MigrateSessionOnError, check to see if

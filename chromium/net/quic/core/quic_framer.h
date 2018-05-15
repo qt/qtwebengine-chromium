@@ -10,6 +10,8 @@
 #include <memory>
 
 #include "base/macros.h"
+#include "net/quic/core/crypto/quic_decrypter.h"
+#include "net/quic/core/crypto/quic_encrypter.h"
 #include "net/quic/core/quic_packets.h"
 #include "net/quic/platform/api/quic_endian.h"
 #include "net/quic/platform/api/quic_export.h"
@@ -24,8 +26,6 @@ class QuicFramerPeer;
 
 class QuicDataReader;
 class QuicDataWriter;
-class QuicDecrypter;
-class QuicEncrypter;
 class QuicFramer;
 class QuicStreamFrameDataProducer;
 
@@ -149,6 +149,14 @@ class QUIC_EXPORT_PRIVATE QuicFramerVisitorInterface {
 
   // Called when a packet has been completely processed.
   virtual void OnPacketComplete() = 0;
+
+  // Called to check whether |token| is a valid stateless reset token.
+  virtual bool IsValidStatelessResetToken(uint128 token) const = 0;
+
+  // Called when an IETF stateless reset packet has been parsed and validated
+  // with the stateless reset token.
+  virtual void OnAuthenticatedIetfStatelessResetPacket(
+      const QuicIetfStatelessResetPacket& packet) = 0;
 };
 
 // Class for parsing and constructing QUIC packets.  It has a
@@ -281,6 +289,7 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   // Returns a new version negotiation packet.
   static std::unique_ptr<QuicEncryptedPacket> BuildVersionNegotiationPacket(
       QuicConnectionId connection_id,
+      bool ietf_quic,
       const ParsedQuicVersionVector& versions);
 
   // If header.version_flag is set, the version in the
@@ -295,29 +304,30 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
                          bool last_frame_in_packet,
                          QuicDataWriter* writer);
 
-  // SetDecrypter sets the primary decrypter, replacing any that already exists,
-  // and takes ownership. If an alternative decrypter is in place then the
-  // function DCHECKs. This is intended for cases where one knows that future
-  // packets will be using the new decrypter and the previous decrypter is now
-  // obsolete. |level| indicates the encryption level of the new decrypter.
-  void SetDecrypter(EncryptionLevel level, QuicDecrypter* decrypter);
+  // SetDecrypter sets the primary decrypter, replacing any that already exists.
+  // If an alternative decrypter is in place then the function DCHECKs. This is
+  // intended for cases where one knows that future packets will be using the
+  // new decrypter and the previous decrypter is now obsolete. |level| indicates
+  // the encryption level of the new decrypter.
+  void SetDecrypter(EncryptionLevel level,
+                    std::unique_ptr<QuicDecrypter> decrypter);
 
   // SetAlternativeDecrypter sets a decrypter that may be used to decrypt
-  // future packets and takes ownership of it. |level| indicates the encryption
-  // level of the decrypter. If |latch_once_used| is true, then the first time
-  // that the decrypter is successful it will replace the primary decrypter.
-  // Otherwise both decrypters will remain active and the primary decrypter
-  // will be the one last used.
+  // future packets. |level| indicates the encryption level of the decrypter. If
+  // |latch_once_used| is true, then the first time that the decrypter is
+  // successful it will replace the primary decrypter.  Otherwise both
+  // decrypters will remain active and the primary decrypter will be the one
+  // last used.
   void SetAlternativeDecrypter(EncryptionLevel level,
-                               QuicDecrypter* decrypter,
+                               std::unique_ptr<QuicDecrypter> decrypter,
                                bool latch_once_used);
 
   const QuicDecrypter* decrypter() const;
   const QuicDecrypter* alternative_decrypter() const;
 
-  // Changes the encrypter used for level |level| to |encrypter|. The function
-  // takes ownership of |encrypter|.
-  void SetEncrypter(EncryptionLevel level, QuicEncrypter* encrypter);
+  // Changes the encrypter used for level |level| to |encrypter|.
+  void SetEncrypter(EncryptionLevel level,
+                    std::unique_ptr<QuicEncrypter> encrypter);
 
   // Encrypts a payload in |buffer|.  |ad_len| is the length of the associated
   // data. |total_len| is the length of the associated data plus plaintext.
@@ -364,6 +374,8 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   Perspective perspective() const { return perspective_; }
 
   QuicVersionLabel last_version_label() const { return last_version_label_; }
+
+  bool last_packet_is_ietf_quic() const { return last_packet_is_ietf_quic_; }
 
   void set_data_producer(QuicStreamFrameDataProducer* data_producer) {
     data_producer_ = data_producer;
@@ -514,30 +526,10 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   bool AppendPaddingFrame(const QuicPaddingFrame& frame,
                           QuicDataWriter* writer);
 
-  // IETF defined frame append/process methods.
+  // IETF frame processing methods.
   bool ProcessIetfStreamFrame(QuicDataReader* reader,
                               uint8_t frame_type,
                               QuicStreamFrame* frame);
-  // Append a stream frame and data to the packet.
-  bool AppendIetfStreamFrame(const QuicStreamFrame& frame,
-                             bool last_frame_in_packet,
-                             QuicDataWriter* writer);
-
-  // Add/process an IETF-Formatted Connection and Application close frames.
-  bool AppendIetfConnectionCloseFrame(const QuicConnectionCloseFrame& frame,
-                                      QuicDataWriter* writer);
-  bool AppendIetfConnectionCloseFrame(const QuicIetfTransportErrorCodes code,
-                                      const QuicString& phrase,
-                                      QuicDataWriter* writer);
-  bool AppendIetfApplicationCloseFrame(const QuicConnectionCloseFrame& frame,
-                                       QuicDataWriter* writer);
-  bool AppendIetfApplicationCloseFrame(const uint16_t code,
-                                       const QuicString& phrase,
-                                       QuicDataWriter* writer);
-  bool AppendIetfCloseFrame(const QuicIetfFrameType type,
-                            const uint16_t code,
-                            const QuicString& phrase,
-                            QuicDataWriter* writer);
   bool ProcessIetfConnectionCloseFrame(QuicDataReader* reader,
                                        const uint8_t frame_type,
                                        QuicConnectionCloseFrame* frame);
@@ -547,14 +539,73 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   bool ProcessIetfCloseFrame(QuicDataReader* reader,
                              const uint8_t frame_type,
                              QuicConnectionCloseFrame* frame);
-
-  // Parse an IETF-format Ack frame from the packet
   bool ProcessIetfAckFrame(QuicDataReader* reader,
                            uint8_t frame_type,
                            QuicAckFrame* ack_frame);
-  // Append an IETf-format Ack frame to the packet
-  bool AppendIetfAckFrameAndTypeByte(const QuicAckFrame& frame,
-                                     QuicDataWriter* writer);
+  void ProcessIetfPaddingFrame(QuicDataReader* reader, QuicPaddingFrame* frame);
+  bool ProcessIetfPathChallengeFrame(QuicDataReader* reader,
+                                     QuicPathChallengeFrame* frame);
+  bool ProcessIetfPathResponseFrame(QuicDataReader* reader,
+                                    QuicPathResponseFrame* frame);
+  bool ProcessIetfResetStreamFrame(QuicDataReader* reader,
+                                   QuicRstStreamFrame* frame);
+  bool ProcessIetfStopSendingFrame(QuicDataReader* reader,
+                                   QuicStopSendingFrame* stop_sending_frame);
+
+  // IETF frame appending methods.  All methods append the type byte as well.
+  bool AppendIetfStreamFrame(const QuicStreamFrame& frame,
+                             bool last_frame_in_packet,
+                             QuicDataWriter* writer);
+  bool AppendIetfConnectionCloseFrame(const QuicConnectionCloseFrame& frame,
+                                      QuicDataWriter* writer);
+  bool AppendIetfApplicationCloseFrame(const QuicConnectionCloseFrame& frame,
+                                       QuicDataWriter* writer);
+  bool AppendIetfCloseFrame(const QuicIetfFrameType type,
+                            const uint16_t code,
+                            const QuicString& phrase,
+                            QuicDataWriter* writer);
+  bool AppendIetfAckFrame(const QuicAckFrame& frame, QuicDataWriter* writer);
+  bool AppendIetfPaddingFrame(const QuicPaddingFrame& frame,
+                              QuicDataWriter* writer);
+  bool AppendIetfPathChallengeFrame(const QuicPathChallengeFrame& frame,
+                                    QuicDataWriter* writer);
+  bool AppendIetfPathResponseFrame(const QuicPathResponseFrame& frame,
+                                   QuicDataWriter* writer);
+  bool AppendIetfResetStreamFrame(const QuicRstStreamFrame& frame,
+                                  QuicDataWriter* writer);
+  bool AppendIetfStopSendingFrame(
+      const QuicStopSendingFrame& stop_sending_frame,
+      QuicDataWriter* writer);
+
+  // Append/consume IETF-Format MAX_DATA and MAX_STREAM_DATA frames
+  bool AppendIetfMaxDataFrame(const QuicWindowUpdateFrame& frame,
+                              QuicDataWriter* writer);
+  bool AppendIetfMaxStreamDataFrame(const QuicWindowUpdateFrame& frame,
+                                    QuicDataWriter* writer);
+  bool ProcessIetfMaxDataFrame(QuicDataReader* reader,
+                               QuicWindowUpdateFrame* frame);
+  bool ProcessIetfMaxStreamDataFrame(QuicDataReader* reader,
+                                     QuicWindowUpdateFrame* frame);
+
+  bool AppendIetfMaxStreamIdFrame(const QuicIetfMaxStreamIdFrame& frame,
+                                  QuicDataWriter* writer);
+  bool ProcessIetfMaxStreamIdFrame(QuicDataReader* reader,
+                                   QuicIetfMaxStreamIdFrame* frame);
+
+  bool AppendIetfBlockedFrame(const QuicIetfBlockedFrame& frame,
+                              QuicDataWriter* writer);
+  bool ProcessIetfBlockedFrame(QuicDataReader* reader,
+                               QuicIetfBlockedFrame* frame);
+
+  bool AppendIetfStreamBlockedFrame(const QuicWindowUpdateFrame& frame,
+                                    QuicDataWriter* writer);
+  bool ProcessIetfStreamBlockedFrame(QuicDataReader* reader,
+                                     QuicWindowUpdateFrame* frame);
+
+  bool AppendIetfStreamIdBlockedFrame(const QuicIetfStreamIdBlockedFrame& frame,
+                                      QuicDataWriter* writer);
+  bool ProcessIetfStreamIdBlockedFrame(QuicDataReader* reader,
+                                       QuicIetfStreamIdBlockedFrame* frame);
 
   bool RaiseError(QuicErrorCode error);
 
@@ -573,6 +624,8 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   QuicConnectionId last_serialized_connection_id_;
   // The last QUIC version label received.
   QuicVersionLabel last_version_label_;
+  // Whether last received packet is IETF QUIC packet.
+  bool last_packet_is_ietf_quic_;
   // Version of the protocol being used.
   ParsedQuicVersion version_;
   // This vector contains QUIC versions which we currently support.
@@ -612,7 +665,7 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   // owned. TODO(fayang): Consider add data producer to framer's constructor.
   QuicStreamFrameDataProducer* data_producer_;
 
-  // Latched value of quic_reloadable_flag_quic_use_incremental_ack_processing.
+  // Latched value of quic_reloadable_flag_quic_use_incremental_ack_processing3.
   const bool use_incremental_ack_processing_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicFramer);

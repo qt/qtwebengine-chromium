@@ -27,7 +27,7 @@
 #include "content/public/browser/navigation_type.h"
 #include "content/public/browser/restore_type.h"
 #include "content/public/common/request_context_type.h"
-#include "third_party/WebKit/public/platform/WebMixedContentContextType.h"
+#include "third_party/blink/public/platform/web_mixed_content_context_type.h"
 #include "url/gurl.h"
 
 struct FrameHostMsg_DidCommitProvisionalLoad_Params;
@@ -69,6 +69,7 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
       const base::Optional<std::string>& suggested_filename,
       std::unique_ptr<NavigationUIData> navigation_ui_data,
       const std::string& method = std::string(),
+      net::HttpRequestHeaders request_headers = net::HttpRequestHeaders(),
       scoped_refptr<network::ResourceRequestBody> resource_request_body =
           nullptr,
       const Referrer& sanitized_referrer = content::Referrer(),
@@ -129,6 +130,7 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   bool ShouldUpdateHistory() override;
   const GURL& GetPreviousURL() override;
   net::HostPortPair GetSocketAddress() override;
+  const net::HttpRequestHeaders& GetRequestHeaders() override;
   const net::HttpResponseHeaders* GetResponseHeaders() override;
   net::HttpResponseInfo::ConnectionInfo GetConnectionInfo() override;
   const net::SSLInfo& GetSSLInfo() override;
@@ -168,10 +170,11 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
                                 NavigationThrottle::ThrottleCheckResult result);
 
   NavigationData* GetNavigationData() override;
+  void RegisterSubresourceOverride(
+      mojom::TransferrableURLLoaderPtr transferrable_loader) override;
 
   // Used in tests.
   State state_for_testing() const { return state_; }
-  void SetOnDeferCallbackForTesting(const base::Closure& on_defer_callback);
 
   // The NavigatorDelegate to notify/query for various navigation events.
   // Normally this is the WebContents, except if this NavigationHandle was
@@ -381,6 +384,7 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
       const base::Optional<std::string>& suggested_filename,
       std::unique_ptr<NavigationUIData> navigation_ui_data,
       const std::string& method,
+      net::HttpRequestHeaders request_headers,
       scoped_refptr<network::ResourceRequestBody> resource_request_body,
       const Referrer& sanitized_referrer,
       bool has_user_gesture,
@@ -456,6 +460,9 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   // The HTTP method used for the navigation.
   std::string method_;
 
+  // The headers used for the request.
+  net::HttpRequestHeaders request_headers_;
+
   // The POST body associated with this navigation.  This will be null for GET
   // and/or other non-POST requests (or if a response to a POST request was a
   // redirect that changed the method to GET - for example 302).
@@ -463,10 +470,6 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
 
   // The state the navigation is in.
   State state_;
-
-  // Whether the navigation is in the middle of a transfer. Set to false when
-  // the DidStartProvisionalLoad is received from the new renderer.
-  bool is_transferring_;
 
   // The FrameTreeNode this navigation is happening in.
   FrameTreeNode* frame_tree_node_;
@@ -523,18 +526,8 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   // The id of the URLRequest tied to this navigation.
   GlobalRequestID request_id_;
 
-  // Whether the current NavigationEntry should be replaced upon commit.
-  bool should_replace_current_entry_;
-
   // The chain of redirects.
   std::vector<GURL> redirect_chain_;
-
-  // Whether the navigation ended up being a download or a stream.
-  bool is_download_;
-  bool is_stream_;
-
-  // False by default unless the navigation started within a context menu.
-  bool started_from_context_menu_;
 
   // Stores the reload type, or NONE if it's not a reload.
   ReloadType reload_type_;
@@ -556,9 +549,6 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   // in the main world should not apply.
   CSPDisposition should_check_main_world_csp_;
 
-  // Whether or not the navigation results from the submission of a form.
-  bool is_form_submission_;
-
   // Information about the JavaScript that started the navigation. For
   // navigations initiated by Javascript.
   SourceLocation source_location_;
@@ -567,14 +557,30 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   // in it.
   int expected_render_process_host_id_;
 
-  // Used in tests. Called when the navigation is deferred by one of the
-  // NavigationThrottles.
-  base::Closure on_defer_callback_for_testing_;
-
   // If this navigation was triggered by an anchor element with a download
   // attribute, the |suggested_filename_| contains the attribute's (possibly
   // empty) value.
   base::Optional<std::string> suggested_filename_;
+
+  // Whether the navigation is in the middle of a transfer. Set to false when
+  // the DidStartProvisionalLoad is received from the new renderer.
+  bool is_transferring_;
+
+  // Whether or not the navigation results from the submission of a form.
+  bool is_form_submission_;
+
+  // Whether the current NavigationEntry should be replaced upon commit.
+  bool should_replace_current_entry_;
+
+  // Whether the navigation ended up being a download or a stream.
+  bool is_download_;
+  bool is_stream_;
+
+  // False by default unless the navigation started within a context menu.
+  bool started_from_context_menu_;
+
+  // Set in ReadyToCommitNavigation.
+  bool is_same_process_;
 
   base::WeakPtrFactory<NavigationHandleImpl> weak_factory_;
 

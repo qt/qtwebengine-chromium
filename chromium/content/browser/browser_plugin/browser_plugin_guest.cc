@@ -20,7 +20,6 @@
 #include "components/viz/common/surfaces/surface_info.h"
 #include "components/viz/service/surfaces/surface.h"
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
-#include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/frame_host/render_frame_proxy_host.h"
@@ -37,6 +36,7 @@
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/drag_messages.h"
+#include "content/common/frame_resize_params.h"
 #include "content/common/input/ime_text_span_conversions.h"
 #include "content/common/input_messages.h"
 #include "content/common/text_input_state.h"
@@ -61,24 +61,6 @@
 #endif
 
 namespace content {
-
-namespace {
-
-std::vector<ui::ImeTextSpan> ConvertToUiImeTextSpan(
-    const std::vector<blink::WebImeTextSpan>& ime_text_spans) {
-  std::vector<ui::ImeTextSpan> ui_ime_text_spans;
-  for (const auto& ime_text_span : ime_text_spans) {
-    ui_ime_text_spans.emplace_back(ui::ImeTextSpan(
-        ConvertWebImeTextSpanTypeToUiType(ime_text_span.type),
-        ime_text_span.start_offset, ime_text_span.end_offset,
-        ime_text_span.underline_color, ime_text_span.thick,
-        ime_text_span.background_color,
-        ime_text_span.suggestion_highlight_color, ime_text_span.suggestions));
-  }
-  return ui_ime_text_spans;
-}
-
-};  // namespace
 
 class BrowserPluginGuest::EmbedderVisibilityObserver
     : public WebContentsObserver {
@@ -181,6 +163,17 @@ int BrowserPluginGuest::LoadURLWithParams(
     const NavigationController::LoadURLParams& load_params) {
   GetWebContents()->GetController().LoadURLWithParams(load_params);
   return GetGuestProxyRoutingID();
+}
+
+void BrowserPluginGuest::EnableAutoResize(const gfx::Size& min_size,
+                                          const gfx::Size& max_size) {
+  SendMessageToEmbedder(std::make_unique<BrowserPluginMsg_EnableAutoResize>(
+      browser_plugin_instance_id_, min_size, max_size));
+}
+
+void BrowserPluginGuest::DisableAutoResize() {
+  SendMessageToEmbedder(std::make_unique<BrowserPluginMsg_DisableAutoResize>(
+      browser_plugin_instance_id_));
 }
 
 void BrowserPluginGuest::ResizeDueToAutoResize(const gfx::Size& new_size,
@@ -439,8 +432,8 @@ void BrowserPluginGuest::ResendEventToEmbedder(
   if (event.GetType() == blink::WebInputEvent::kGestureScrollUpdate) {
     blink::WebGestureEvent resent_gesture_event;
     memcpy(&resent_gesture_event, &event, sizeof(blink::WebGestureEvent));
-    resent_gesture_event.x += offset_from_embedder.x();
-    resent_gesture_event.y += offset_from_embedder.y();
+    resent_gesture_event.SetPositionInWidget(
+        resent_gesture_event.PositionInWidget() + offset_from_embedder);
     // Mark the resend source with the browser plugin's instance id, so the
     // correct browser_plugin will know to ignore the event.
     resent_gesture_event.resending_plugin_id = browser_plugin_instance_id_;
@@ -637,7 +630,7 @@ void BrowserPluginGuest::SendTextInputTypeChangedToView(
 
   if (last_text_input_state_.get()) {
     guest_rwhv->TextInputStateChanged(*last_text_input_state_);
-    if (auto* rwh = guest_rwhv->GetRenderWidgetHostImpl()) {
+    if (auto* rwh = guest_rwhv->host()) {
       // We need composition range information for some IMEs. To get the
       // updates, we need to explicitly ask the renderer to monitor and send the
       // composition information changes. RenderWidgetHostView of the page will
@@ -913,7 +906,7 @@ void BrowserPluginGuest::OnImeSetComposition(
     int browser_plugin_instance_id,
     const BrowserPluginHostMsg_SetComposition_Params& params) {
   std::vector<ui::ImeTextSpan> ui_ime_text_spans =
-      ConvertToUiImeTextSpan(params.ime_text_spans);
+      ConvertBlinkImeTextSpansToUiImeTextSpans(params.ime_text_spans);
   GetWebContents()
       ->GetRenderViewHost()
       ->GetWidget()
@@ -930,7 +923,7 @@ void BrowserPluginGuest::OnImeCommitText(
     const gfx::Range& replacement_range,
     int relative_cursor_pos) {
   std::vector<ui::ImeTextSpan> ui_ime_text_spans =
-      ConvertToUiImeTextSpan(ime_text_spans);
+      ConvertBlinkImeTextSpansToUiImeTextSpans(ime_text_spans);
   GetWebContents()
       ->GetRenderViewHost()
       ->GetWidget()
@@ -1020,18 +1013,15 @@ void BrowserPluginGuest::OnSetVisibility(int browser_plugin_instance_id,
     return;
 
   guest_visible_ = visible;
-  // TODO(fdoray): Simplify the logic below. https://crbug.com/668690
-  if (!guest_visible_ || embedder_visibility_ == Visibility::HIDDEN) {
+
+  // Do not use WebContents::UpdateWebContentsVisibility() because it ignores
+  // visibility changes that come before the first change to VISIBLE.
+  if (!guest_visible_ || embedder_visibility_ == Visibility::HIDDEN)
     GetWebContents()->WasHidden();
-  } else if (embedder_visibility_ == Visibility::VISIBLE) {
+  else if (embedder_visibility_ == Visibility::VISIBLE)
     GetWebContents()->WasShown();
-    if (GetWebContents()->GetVisibility() == Visibility::OCCLUDED)
-      GetWebContents()->WasUnOccluded();
-  } else {
-    if (GetWebContents()->GetVisibility() == Visibility::HIDDEN)
-      GetWebContents()->WasShown();
+  else
     GetWebContents()->WasOccluded();
-  }
 }
 
 void BrowserPluginGuest::OnUnlockMouse() {
@@ -1053,13 +1043,11 @@ void BrowserPluginGuest::OnUnlockMouseAck(int browser_plugin_instance_id) {
 
 void BrowserPluginGuest::OnUpdateResizeParams(
     int browser_plugin_instance_id,
-    const gfx::Rect& frame_rect,
-    const ScreenInfo& screen_info,
-    uint64_t sequence_number,
-    const viz::LocalSurfaceId& local_surface_id) {
+    const viz::LocalSurfaceId& local_surface_id,
+    const FrameResizeParams& resize_params) {
   if (local_surface_id_ > local_surface_id ||
-      ((frame_rect_.size() != frame_rect.size() ||
-        screen_info_ != screen_info) &&
+      ((frame_rect_.size() != resize_params.screen_space_rect.size() ||
+        screen_info_ != resize_params.screen_info) &&
        local_surface_id_ == local_surface_id)) {
     SiteInstance* owner_site_instance = delegate_->GetOwnerSiteInstance();
     bad_message::ReceivedBadMessage(
@@ -1068,8 +1056,8 @@ void BrowserPluginGuest::OnUpdateResizeParams(
     return;
   }
 
-  screen_info_ = screen_info;
-  frame_rect_ = frame_rect;
+  screen_info_ = resize_params.screen_info;
+  frame_rect_ = resize_params.screen_space_rect;
   GetWebContents()->SendScreenRects();
   local_surface_id_ = local_surface_id;
 
@@ -1081,8 +1069,13 @@ void BrowserPluginGuest::OnUpdateResizeParams(
       RenderWidgetHostImpl::From(view->GetRenderWidgetHost());
   DCHECK(render_widget_host);
 
+  render_widget_host->SetAutoResize(resize_params.auto_resize_enabled,
+                                    resize_params.min_size_for_auto_resize,
+                                    resize_params.max_size_for_auto_resize);
+
   if (render_widget_host->auto_resize_enabled()) {
-    render_widget_host->DidAllocateLocalSurfaceIdForAutoResize(sequence_number);
+    render_widget_host->DidAllocateLocalSurfaceIdForAutoResize(
+        resize_params.auto_resize_sequence_number);
     return;
   }
 

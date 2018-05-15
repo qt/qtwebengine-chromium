@@ -13,6 +13,7 @@
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <vector>
@@ -28,8 +29,10 @@
 #include <openssl/nid.h>
 #include <openssl/obj.h>
 
-#include "../bn/internal.h"
+#include "../../test/file_test.h"
 #include "../../test/test_util.h"
+#include "../bn/internal.h"
+#include "internal.h"
 
 
 // kECKeyWithoutPublic is an ECPrivateKey with the optional publicKey field
@@ -359,7 +362,26 @@ TEST(ECTest, GroupMismatch) {
       EC_KEY_set_public_key(key.get(), EC_GROUP_get0_generator(p256.get())));
 }
 
-class ECCurveTest : public testing::TestWithParam<EC_builtin_curve> {};
+TEST(ECTest, EmptyKey) {
+  bssl::UniquePtr<EC_KEY> key(EC_KEY_new());
+  ASSERT_TRUE(key);
+  EXPECT_FALSE(EC_KEY_get0_group(key.get()));
+  EXPECT_FALSE(EC_KEY_get0_public_key(key.get()));
+  EXPECT_FALSE(EC_KEY_get0_private_key(key.get()));
+}
+
+class ECCurveTest : public testing::TestWithParam<EC_builtin_curve> {
+ public:
+  const EC_GROUP *group() const { return group_.get(); }
+
+  void SetUp() override {
+    group_.reset(EC_GROUP_new_by_curve_name(GetParam().nid));
+    ASSERT_TRUE(group_);
+  }
+
+ private:
+  bssl::UniquePtr<EC_GROUP> group_;
+};
 
 TEST_P(ECCurveTest, SetAffine) {
   // Generate an EC_KEY.
@@ -367,9 +389,8 @@ TEST_P(ECCurveTest, SetAffine) {
   ASSERT_TRUE(key);
   ASSERT_TRUE(EC_KEY_generate_key(key.get()));
 
-  const EC_GROUP *const group = EC_KEY_get0_group(key.get());
-  EXPECT_TRUE(
-      EC_POINT_is_on_curve(group, EC_KEY_get0_public_key(key.get()), nullptr));
+  EXPECT_TRUE(EC_POINT_is_on_curve(group(), EC_KEY_get0_public_key(key.get()),
+                                   nullptr));
 
   // Get the public key's coordinates.
   bssl::UniquePtr<BIGNUM> x(BN_new());
@@ -379,30 +400,30 @@ TEST_P(ECCurveTest, SetAffine) {
   bssl::UniquePtr<BIGNUM> p(BN_new());
   ASSERT_TRUE(p);
   EXPECT_TRUE(EC_POINT_get_affine_coordinates_GFp(
-      group, EC_KEY_get0_public_key(key.get()), x.get(), y.get(), nullptr));
+      group(), EC_KEY_get0_public_key(key.get()), x.get(), y.get(), nullptr));
   EXPECT_TRUE(
-      EC_GROUP_get_curve_GFp(group, p.get(), nullptr, nullptr, nullptr));
+      EC_GROUP_get_curve_GFp(group(), p.get(), nullptr, nullptr, nullptr));
 
   // Points on the curve should be accepted.
-  auto point = bssl::UniquePtr<EC_POINT>(EC_POINT_new(group));
+  auto point = bssl::UniquePtr<EC_POINT>(EC_POINT_new(group()));
   ASSERT_TRUE(point);
-  EXPECT_TRUE(EC_POINT_set_affine_coordinates_GFp(group, point.get(), x.get(),
+  EXPECT_TRUE(EC_POINT_set_affine_coordinates_GFp(group(), point.get(), x.get(),
                                                   y.get(), nullptr));
 
   // Subtract one from |y| to make the point no longer on the curve.
   EXPECT_TRUE(BN_sub(y.get(), y.get(), BN_value_one()));
 
   // Points not on the curve should be rejected.
-  bssl::UniquePtr<EC_POINT> invalid_point(EC_POINT_new(group));
+  bssl::UniquePtr<EC_POINT> invalid_point(EC_POINT_new(group()));
   ASSERT_TRUE(invalid_point);
-  EXPECT_FALSE(EC_POINT_set_affine_coordinates_GFp(group, invalid_point.get(),
+  EXPECT_FALSE(EC_POINT_set_affine_coordinates_GFp(group(), invalid_point.get(),
                                                    x.get(), y.get(), nullptr));
 
   // Coordinates out of range should be rejected.
   EXPECT_TRUE(BN_add(y.get(), y.get(), BN_value_one()));
   EXPECT_TRUE(BN_add(y.get(), y.get(), p.get()));
 
-  EXPECT_FALSE(EC_POINT_set_affine_coordinates_GFp(group, invalid_point.get(),
+  EXPECT_FALSE(EC_POINT_set_affine_coordinates_GFp(group(), invalid_point.get(),
                                                    x.get(), y.get(), nullptr));
   EXPECT_FALSE(
       EC_KEY_set_public_key_affine_coordinates(key.get(), x.get(), y.get()));
@@ -420,57 +441,52 @@ TEST_P(ECCurveTest, AddingEqualPoints) {
   ASSERT_TRUE(key);
   ASSERT_TRUE(EC_KEY_generate_key(key.get()));
 
-  const EC_GROUP *const group = EC_KEY_get0_group(key.get());
-
-  bssl::UniquePtr<EC_POINT> p1(EC_POINT_new(group));
+  bssl::UniquePtr<EC_POINT> p1(EC_POINT_new(group()));
   ASSERT_TRUE(p1);
   ASSERT_TRUE(EC_POINT_copy(p1.get(), EC_KEY_get0_public_key(key.get())));
 
-  bssl::UniquePtr<EC_POINT> p2(EC_POINT_new(group));
+  bssl::UniquePtr<EC_POINT> p2(EC_POINT_new(group()));
   ASSERT_TRUE(p2);
   ASSERT_TRUE(EC_POINT_copy(p2.get(), EC_KEY_get0_public_key(key.get())));
 
-  bssl::UniquePtr<EC_POINT> double_p1(EC_POINT_new(group));
+  bssl::UniquePtr<EC_POINT> double_p1(EC_POINT_new(group()));
   ASSERT_TRUE(double_p1);
   bssl::UniquePtr<BN_CTX> ctx(BN_CTX_new());
   ASSERT_TRUE(ctx);
-  ASSERT_TRUE(EC_POINT_dbl(group, double_p1.get(), p1.get(), ctx.get()));
+  ASSERT_TRUE(EC_POINT_dbl(group(), double_p1.get(), p1.get(), ctx.get()));
 
-  bssl::UniquePtr<EC_POINT> p1_plus_p2(EC_POINT_new(group));
+  bssl::UniquePtr<EC_POINT> p1_plus_p2(EC_POINT_new(group()));
   ASSERT_TRUE(p1_plus_p2);
   ASSERT_TRUE(
-      EC_POINT_add(group, p1_plus_p2.get(), p1.get(), p2.get(), ctx.get()));
+      EC_POINT_add(group(), p1_plus_p2.get(), p1.get(), p2.get(), ctx.get()));
 
   EXPECT_EQ(0,
-            EC_POINT_cmp(group, double_p1.get(), p1_plus_p2.get(), ctx.get()))
+            EC_POINT_cmp(group(), double_p1.get(), p1_plus_p2.get(), ctx.get()))
       << "A+A != 2A";
 }
 
 TEST_P(ECCurveTest, MulZero) {
-  bssl::UniquePtr<EC_GROUP> group(EC_GROUP_new_by_curve_name(GetParam().nid));
-  ASSERT_TRUE(group);
-
-  bssl::UniquePtr<EC_POINT> point(EC_POINT_new(group.get()));
+  bssl::UniquePtr<EC_POINT> point(EC_POINT_new(group()));
   ASSERT_TRUE(point);
   bssl::UniquePtr<BIGNUM> zero(BN_new());
   ASSERT_TRUE(zero);
   BN_zero(zero.get());
-  ASSERT_TRUE(EC_POINT_mul(group.get(), point.get(), zero.get(), nullptr,
-                           nullptr, nullptr));
+  ASSERT_TRUE(EC_POINT_mul(group(), point.get(), zero.get(), nullptr, nullptr,
+                           nullptr));
 
-  EXPECT_TRUE(EC_POINT_is_at_infinity(group.get(), point.get()))
+  EXPECT_TRUE(EC_POINT_is_at_infinity(group(), point.get()))
       << "g * 0 did not return point at infinity.";
 
   // Test that zero times an arbitrary point is also infinity. The generator is
   // used as the arbitrary point.
-  bssl::UniquePtr<EC_POINT> generator(EC_POINT_new(group.get()));
+  bssl::UniquePtr<EC_POINT> generator(EC_POINT_new(group()));
   ASSERT_TRUE(generator);
-  ASSERT_TRUE(EC_POINT_mul(group.get(), generator.get(), BN_value_one(),
-                           nullptr, nullptr, nullptr));
-  ASSERT_TRUE(EC_POINT_mul(group.get(), point.get(), nullptr, generator.get(),
+  ASSERT_TRUE(EC_POINT_mul(group(), generator.get(), BN_value_one(), nullptr,
+                           nullptr, nullptr));
+  ASSERT_TRUE(EC_POINT_mul(group(), point.get(), nullptr, generator.get(),
                            zero.get(), nullptr));
 
-  EXPECT_TRUE(EC_POINT_is_at_infinity(group.get(), point.get()))
+  EXPECT_TRUE(EC_POINT_is_at_infinity(group(), point.get()))
       << "p * 0 did not return point at infinity.";
 }
 
@@ -480,39 +496,32 @@ TEST_P(ECCurveTest, MulZero) {
 // 5.6.2.3.2. (Though all our curves have cofactor one, so this check isn't
 // useful.)
 TEST_P(ECCurveTest, MulOrder) {
-  bssl::UniquePtr<EC_GROUP> group(EC_GROUP_new_by_curve_name(GetParam().nid));
-  ASSERT_TRUE(group);
-
   // Test that g × order = ∞.
-  bssl::UniquePtr<EC_POINT> point(EC_POINT_new(group.get()));
+  bssl::UniquePtr<EC_POINT> point(EC_POINT_new(group()));
   ASSERT_TRUE(point);
-  ASSERT_TRUE(EC_POINT_mul(group.get(), point.get(),
-                           EC_GROUP_get0_order(group.get()), nullptr, nullptr,
-                           nullptr));
+  ASSERT_TRUE(EC_POINT_mul(group(), point.get(), EC_GROUP_get0_order(group()),
+                           nullptr, nullptr, nullptr));
 
-  EXPECT_TRUE(EC_POINT_is_at_infinity(group.get(), point.get()))
+  EXPECT_TRUE(EC_POINT_is_at_infinity(group(), point.get()))
       << "g * order did not return point at infinity.";
 
   // Test that p × order = ∞, for some arbitrary p.
   bssl::UniquePtr<BIGNUM> forty_two(BN_new());
   ASSERT_TRUE(forty_two);
   ASSERT_TRUE(BN_set_word(forty_two.get(), 42));
-  ASSERT_TRUE(EC_POINT_mul(group.get(), point.get(), forty_two.get(), nullptr,
+  ASSERT_TRUE(EC_POINT_mul(group(), point.get(), forty_two.get(), nullptr,
                            nullptr, nullptr));
-  ASSERT_TRUE(EC_POINT_mul(group.get(), point.get(), nullptr, point.get(),
-                           EC_GROUP_get0_order(group.get()), nullptr));
+  ASSERT_TRUE(EC_POINT_mul(group(), point.get(), nullptr, point.get(),
+                           EC_GROUP_get0_order(group()), nullptr));
 
-  EXPECT_TRUE(EC_POINT_is_at_infinity(group.get(), point.get()))
+  EXPECT_TRUE(EC_POINT_is_at_infinity(group(), point.get()))
       << "p * order did not return point at infinity.";
 }
 
 // Test that |EC_POINT_mul| works with out-of-range scalars. The operation will
 // not be constant-time, but we'll compute the right answer.
 TEST_P(ECCurveTest, MulOutOfRange) {
-  bssl::UniquePtr<EC_GROUP> group(EC_GROUP_new_by_curve_name(GetParam().nid));
-  ASSERT_TRUE(group);
-
-  bssl::UniquePtr<BIGNUM> n_minus_one(BN_dup(EC_GROUP_get0_order(group.get())));
+  bssl::UniquePtr<BIGNUM> n_minus_one(BN_dup(EC_GROUP_get0_order(group())));
   ASSERT_TRUE(n_minus_one);
   ASSERT_TRUE(BN_sub_word(n_minus_one.get(), 1));
 
@@ -526,81 +535,74 @@ TEST_P(ECCurveTest, MulOutOfRange) {
   ASSERT_TRUE(BN_set_word(seven.get(), 7));
 
   bssl::UniquePtr<BIGNUM> ten_n_plus_seven(
-      BN_dup(EC_GROUP_get0_order(group.get())));
+      BN_dup(EC_GROUP_get0_order(group())));
   ASSERT_TRUE(ten_n_plus_seven);
   ASSERT_TRUE(BN_mul_word(ten_n_plus_seven.get(), 10));
   ASSERT_TRUE(BN_add_word(ten_n_plus_seven.get(), 7));
 
-  bssl::UniquePtr<EC_POINT> point1(EC_POINT_new(group.get())),
-      point2(EC_POINT_new(group.get()));
+  bssl::UniquePtr<EC_POINT> point1(EC_POINT_new(group())),
+      point2(EC_POINT_new(group()));
   ASSERT_TRUE(point1);
   ASSERT_TRUE(point2);
 
-  ASSERT_TRUE(EC_POINT_mul(group.get(), point1.get(), n_minus_one.get(),
-                           nullptr, nullptr, nullptr));
-  ASSERT_TRUE(EC_POINT_mul(group.get(), point2.get(), minus_one.get(), nullptr,
+  ASSERT_TRUE(EC_POINT_mul(group(), point1.get(), n_minus_one.get(), nullptr,
                            nullptr, nullptr));
-  EXPECT_EQ(0, EC_POINT_cmp(group.get(), point1.get(), point2.get(), nullptr))
+  ASSERT_TRUE(EC_POINT_mul(group(), point2.get(), minus_one.get(), nullptr,
+                           nullptr, nullptr));
+  EXPECT_EQ(0, EC_POINT_cmp(group(), point1.get(), point2.get(), nullptr))
       << "-1 * G and (n-1) * G did not give the same result";
 
-  ASSERT_TRUE(EC_POINT_mul(group.get(), point1.get(), seven.get(), nullptr,
-                           nullptr, nullptr));
-  ASSERT_TRUE(EC_POINT_mul(group.get(), point2.get(), ten_n_plus_seven.get(),
+  ASSERT_TRUE(EC_POINT_mul(group(), point1.get(), seven.get(), nullptr, nullptr,
+                           nullptr));
+  ASSERT_TRUE(EC_POINT_mul(group(), point2.get(), ten_n_plus_seven.get(),
                            nullptr, nullptr, nullptr));
-  EXPECT_EQ(0, EC_POINT_cmp(group.get(), point1.get(), point2.get(), nullptr))
+  EXPECT_EQ(0, EC_POINT_cmp(group(), point1.get(), point2.get(), nullptr))
       << "7 * G and (10n + 7) * G did not give the same result";
 }
 
 // Test that 10×∞ + G = G.
 TEST_P(ECCurveTest, Mul) {
-  bssl::UniquePtr<EC_GROUP> group(EC_GROUP_new_by_curve_name(GetParam().nid));
-  ASSERT_TRUE(group);
-  bssl::UniquePtr<EC_POINT> p(EC_POINT_new(group.get()));
+  bssl::UniquePtr<EC_POINT> p(EC_POINT_new(group()));
   ASSERT_TRUE(p);
-  bssl::UniquePtr<EC_POINT> result(EC_POINT_new(group.get()));
+  bssl::UniquePtr<EC_POINT> result(EC_POINT_new(group()));
   ASSERT_TRUE(result);
   bssl::UniquePtr<BIGNUM> n(BN_new());
   ASSERT_TRUE(n);
-  ASSERT_TRUE(EC_POINT_set_to_infinity(group.get(), p.get()));
+  ASSERT_TRUE(EC_POINT_set_to_infinity(group(), p.get()));
   ASSERT_TRUE(BN_set_word(n.get(), 10));
 
   // First check that 10×∞ = ∞.
-  ASSERT_TRUE(EC_POINT_mul(group.get(), result.get(), nullptr, p.get(), n.get(),
-                           nullptr));
-  EXPECT_TRUE(EC_POINT_is_at_infinity(group.get(), result.get()));
+  ASSERT_TRUE(
+      EC_POINT_mul(group(), result.get(), nullptr, p.get(), n.get(), nullptr));
+  EXPECT_TRUE(EC_POINT_is_at_infinity(group(), result.get()));
 
   // Now check that 10×∞ + G = G.
-  const EC_POINT *generator = EC_GROUP_get0_generator(group.get());
-  ASSERT_TRUE(EC_POINT_mul(group.get(), result.get(), BN_value_one(), p.get(),
+  const EC_POINT *generator = EC_GROUP_get0_generator(group());
+  ASSERT_TRUE(EC_POINT_mul(group(), result.get(), BN_value_one(), p.get(),
                            n.get(), nullptr));
-  EXPECT_EQ(0, EC_POINT_cmp(group.get(), result.get(), generator, nullptr));
+  EXPECT_EQ(0, EC_POINT_cmp(group(), result.get(), generator, nullptr));
 }
 
-#if !defined(BORINGSSL_SHARED_LIBRARY)
 TEST_P(ECCurveTest, MulNonMinimal) {
-  bssl::UniquePtr<EC_GROUP> group(EC_GROUP_new_by_curve_name(GetParam().nid));
-  ASSERT_TRUE(group);
-
   bssl::UniquePtr<BIGNUM> forty_two(BN_new());
   ASSERT_TRUE(forty_two);
   ASSERT_TRUE(BN_set_word(forty_two.get(), 42));
 
   // Compute g × 42.
-  bssl::UniquePtr<EC_POINT> point(EC_POINT_new(group.get()));
+  bssl::UniquePtr<EC_POINT> point(EC_POINT_new(group()));
   ASSERT_TRUE(point);
-  ASSERT_TRUE(EC_POINT_mul(group.get(), point.get(), forty_two.get(), nullptr,
+  ASSERT_TRUE(EC_POINT_mul(group(), point.get(), forty_two.get(), nullptr,
                            nullptr, nullptr));
 
   // Compute it again with a non-minimal 42, much larger than the scalar.
   ASSERT_TRUE(bn_resize_words(forty_two.get(), 64));
 
-  bssl::UniquePtr<EC_POINT> point2(EC_POINT_new(group.get()));
+  bssl::UniquePtr<EC_POINT> point2(EC_POINT_new(group()));
   ASSERT_TRUE(point2);
-  ASSERT_TRUE(EC_POINT_mul(group.get(), point2.get(), forty_two.get(), nullptr,
+  ASSERT_TRUE(EC_POINT_mul(group(), point2.get(), forty_two.get(), nullptr,
                            nullptr, nullptr));
-  EXPECT_EQ(0, EC_POINT_cmp(group.get(), point.get(), point2.get(), nullptr));
+  EXPECT_EQ(0, EC_POINT_cmp(group(), point.get(), point2.get(), nullptr));
 }
-#endif  // BORINGSSL_SHARED_LIBRARY
 
 // Test that EC_KEY_set_private_key rejects invalid values.
 TEST_P(ECCurveTest, SetInvalidPrivateKey) {
@@ -622,40 +624,79 @@ TEST_P(ECCurveTest, SetInvalidPrivateKey) {
 }
 
 TEST_P(ECCurveTest, IgnoreOct2PointReturnValue) {
-  bssl::UniquePtr<EC_GROUP> group(EC_GROUP_new_by_curve_name(GetParam().nid));
-  ASSERT_TRUE(group);
-
   bssl::UniquePtr<BIGNUM> forty_two(BN_new());
   ASSERT_TRUE(forty_two);
   ASSERT_TRUE(BN_set_word(forty_two.get(), 42));
 
   // Compute g × 42.
-  bssl::UniquePtr<EC_POINT> point(EC_POINT_new(group.get()));
+  bssl::UniquePtr<EC_POINT> point(EC_POINT_new(group()));
   ASSERT_TRUE(point);
-  ASSERT_TRUE(EC_POINT_mul(group.get(), point.get(), forty_two.get(), nullptr,
+  ASSERT_TRUE(EC_POINT_mul(group(), point.get(), forty_two.get(), nullptr,
                            nullptr, nullptr));
 
   // Serialize the point.
-  size_t serialized_len =
-      EC_POINT_point2oct(group.get(), point.get(),
-                         POINT_CONVERSION_UNCOMPRESSED, nullptr, 0, nullptr);
+  size_t serialized_len = EC_POINT_point2oct(
+      group(), point.get(), POINT_CONVERSION_UNCOMPRESSED, nullptr, 0, nullptr);
   ASSERT_NE(0u, serialized_len);
 
   std::vector<uint8_t> serialized(serialized_len);
-  ASSERT_EQ(serialized_len,
-            EC_POINT_point2oct(group.get(), point.get(),
-                               POINT_CONVERSION_UNCOMPRESSED, serialized.data(),
-                               serialized_len, nullptr));
+  ASSERT_EQ(
+      serialized_len,
+      EC_POINT_point2oct(group(), point.get(), POINT_CONVERSION_UNCOMPRESSED,
+                         serialized.data(), serialized_len, nullptr));
 
   // Create a serialized point that is not on the curve.
   serialized[serialized_len - 1]++;
 
-  ASSERT_FALSE(EC_POINT_oct2point(group.get(), point.get(), serialized.data(),
+  ASSERT_FALSE(EC_POINT_oct2point(group(), point.get(), serialized.data(),
                                   serialized.size(), nullptr));
   // After a failure, |point| should have been set to the generator to defend
   // against code that doesn't check the return value.
-  ASSERT_EQ(0, EC_POINT_cmp(group.get(), point.get(),
-                            EC_GROUP_get0_generator(group.get()), nullptr));
+  ASSERT_EQ(0, EC_POINT_cmp(group(), point.get(),
+                            EC_GROUP_get0_generator(group()), nullptr));
+}
+
+TEST_P(ECCurveTest, DoubleSpecialCase) {
+  const EC_POINT *g = EC_GROUP_get0_generator(group());
+
+  bssl::UniquePtr<EC_POINT> two_g(EC_POINT_new(group()));
+  ASSERT_TRUE(two_g);
+  ASSERT_TRUE(EC_POINT_dbl(group(), two_g.get(), g, nullptr));
+
+  bssl::UniquePtr<EC_POINT> p(EC_POINT_new(group()));
+  ASSERT_TRUE(p);
+  ASSERT_TRUE(EC_POINT_mul(group(), p.get(), BN_value_one(), g, BN_value_one(),
+                           nullptr));
+  EXPECT_EQ(0, EC_POINT_cmp(group(), p.get(), two_g.get(), nullptr));
+
+  EC_SCALAR one;
+  ASSERT_TRUE(ec_bignum_to_scalar(group(), &one, BN_value_one()));
+  ASSERT_TRUE(
+      ec_point_mul_scalar_public(group(), p.get(), &one, g, &one, nullptr));
+  EXPECT_EQ(0, EC_POINT_cmp(group(), p.get(), two_g.get(), nullptr));
+}
+
+// This a regression test for a P-224 bug, but we may as well run it for all
+// curves.
+TEST_P(ECCurveTest, P224Bug) {
+  // P = -G
+  const EC_POINT *g = EC_GROUP_get0_generator(group());
+  bssl::UniquePtr<EC_POINT> p(EC_POINT_dup(g, group()));
+  ASSERT_TRUE(p);
+  ASSERT_TRUE(EC_POINT_invert(group(), p.get(), nullptr));
+
+  // Compute 31 * P + 32 * G = G
+  bssl::UniquePtr<EC_POINT> ret(EC_POINT_new(group()));
+  ASSERT_TRUE(ret);
+  bssl::UniquePtr<BIGNUM> bn31(BN_new()), bn32(BN_new());
+  ASSERT_TRUE(bn31);
+  ASSERT_TRUE(bn32);
+  ASSERT_TRUE(BN_set_word(bn31.get(), 31));
+  ASSERT_TRUE(BN_set_word(bn32.get(), 32));
+  ASSERT_TRUE(EC_POINT_mul(group(), ret.get(), bn32.get(), p.get(), bn31.get(),
+                           nullptr));
+
+  EXPECT_EQ(0, EC_POINT_cmp(group(), ret.get(), g, nullptr));
 }
 
 static std::vector<EC_builtin_curve> AllCurves() {
@@ -673,3 +714,113 @@ static std::string CurveToString(
 
 INSTANTIATE_TEST_CASE_P(, ECCurveTest, testing::ValuesIn(AllCurves()),
                         CurveToString);
+
+static bssl::UniquePtr<EC_GROUP> GetCurve(FileTest *t, const char *key) {
+  std::string curve_name;
+  if (!t->GetAttribute(&curve_name, key)) {
+    return nullptr;
+  }
+
+  if (curve_name == "P-224") {
+    return bssl::UniquePtr<EC_GROUP>(EC_GROUP_new_by_curve_name(NID_secp224r1));
+  }
+  if (curve_name == "P-256") {
+    return bssl::UniquePtr<EC_GROUP>(EC_GROUP_new_by_curve_name(
+        NID_X9_62_prime256v1));
+  }
+  if (curve_name == "P-384") {
+    return bssl::UniquePtr<EC_GROUP>(EC_GROUP_new_by_curve_name(NID_secp384r1));
+  }
+  if (curve_name == "P-521") {
+    return bssl::UniquePtr<EC_GROUP>(EC_GROUP_new_by_curve_name(NID_secp521r1));
+  }
+
+  t->PrintLine("Unknown curve '%s'", curve_name.c_str());
+  return nullptr;
+}
+
+static bssl::UniquePtr<BIGNUM> GetBIGNUM(FileTest *t, const char *key) {
+  std::vector<uint8_t> bytes;
+  if (!t->GetBytes(&bytes, key)) {
+    return nullptr;
+  }
+
+  return bssl::UniquePtr<BIGNUM>(
+      BN_bin2bn(bytes.data(), bytes.size(), nullptr));
+}
+
+TEST(ECTest, ScalarBaseMultVectors) {
+  bssl::UniquePtr<BN_CTX> ctx(BN_CTX_new());
+  ASSERT_TRUE(ctx);
+
+  FileTestGTest("crypto/fipsmodule/ec/ec_scalar_base_mult_tests.txt",
+                [&](FileTest *t) {
+    bssl::UniquePtr<EC_GROUP> group = GetCurve(t, "Curve");
+    ASSERT_TRUE(group);
+    bssl::UniquePtr<BIGNUM> n = GetBIGNUM(t, "N");
+    ASSERT_TRUE(n);
+    bssl::UniquePtr<BIGNUM> x = GetBIGNUM(t, "X");
+    ASSERT_TRUE(x);
+    bssl::UniquePtr<BIGNUM> y = GetBIGNUM(t, "Y");
+    ASSERT_TRUE(y);
+    bool is_infinity = BN_is_zero(x.get()) && BN_is_zero(y.get());
+
+    bssl::UniquePtr<BIGNUM> px(BN_new());
+    ASSERT_TRUE(px);
+    bssl::UniquePtr<BIGNUM> py(BN_new());
+    ASSERT_TRUE(py);
+    auto check_point = [&](const EC_POINT *p) {
+      if (is_infinity) {
+        EXPECT_TRUE(EC_POINT_is_at_infinity(group.get(), p));
+      } else {
+        ASSERT_TRUE(EC_POINT_get_affine_coordinates_GFp(
+            group.get(), p, px.get(), py.get(), ctx.get()));
+        EXPECT_EQ(0, BN_cmp(x.get(), px.get()));
+        EXPECT_EQ(0, BN_cmp(y.get(), py.get()));
+      }
+    };
+
+    const EC_POINT *g = EC_GROUP_get0_generator(group.get());
+    bssl::UniquePtr<EC_POINT> p(EC_POINT_new(group.get()));
+    ASSERT_TRUE(p);
+    // Test single-point multiplication.
+    ASSERT_TRUE(EC_POINT_mul(group.get(), p.get(), n.get(), nullptr, nullptr,
+                             ctx.get()));
+    check_point(p.get());
+
+    ASSERT_TRUE(
+        EC_POINT_mul(group.get(), p.get(), nullptr, g, n.get(), ctx.get()));
+    check_point(p.get());
+
+    // These tests take a very long time, but are worth running when we make
+    // non-trivial changes to the EC code.
+#if 0
+    // Test two-point multiplication.
+    bssl::UniquePtr<BIGNUM> a(BN_new()), b(BN_new());
+    for (int i = -64; i < 64; i++) {
+      SCOPED_TRACE(i);
+      ASSERT_TRUE(BN_set_word(a.get(), abs(i)));
+      if (i < 0) {
+        ASSERT_TRUE(BN_sub(a.get(), EC_GROUP_get0_order(group.get()), a.get()));
+      }
+
+      ASSERT_TRUE(BN_copy(b.get(), n.get()));
+      ASSERT_TRUE(BN_sub(b.get(), b.get(), a.get()));
+      if (BN_is_negative(b.get())) {
+        ASSERT_TRUE(BN_add(b.get(), b.get(), EC_GROUP_get0_order(group.get())));
+      }
+
+      ASSERT_TRUE(
+          EC_POINT_mul(group.get(), p.get(), a.get(), g, b.get(), ctx.get()));
+      check_point(p.get());
+
+      EC_SCALAR a_scalar, b_scalar;
+      ASSERT_TRUE(ec_bignum_to_scalar(group.get(), &a_scalar, a.get()));
+      ASSERT_TRUE(ec_bignum_to_scalar(group.get(), &b_scalar, b.get()));
+      ASSERT_TRUE(ec_point_mul_scalar_public(group.get(), p.get(), &a_scalar, g,
+                                             &b_scalar, ctx.get()));
+      check_point(p.get());
+    }
+#endif
+  });
+}

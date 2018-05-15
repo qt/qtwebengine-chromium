@@ -232,7 +232,7 @@ void ServiceWorkerControlleeRequestHandler::MaybeCreateLoader(
                          resource_request.site_for_cookies);
 
   if (url_job_->ShouldFallbackToNetwork()) {
-    // We're falling back to the next URLLoaderRequestHandler, forward
+    // We're falling back to the next NavigationLoaderInterceptor, forward
     // the request and clear job now.
     url_job_->FallbackToNetwork();
     ClearJob();
@@ -271,7 +271,7 @@ ServiceWorkerControlleeRequestHandler::MaybeCreateSubresourceLoaderParams() {
   controller_info->object_info = provider_host_->GetOrCreateServiceWorkerHandle(
       provider_host_->controller());
   params.controller_service_worker_info = std::move(controller_info);
-  return params;
+  return base::Optional<SubresourceLoaderParams>(std::move(params));
 }
 
 void ServiceWorkerControlleeRequestHandler::PrepareForMainResource(
@@ -288,7 +288,7 @@ void ServiceWorkerControlleeRequestHandler::PrepareForMainResource(
   // in redirect case, unassociate it now.
   provider_host_->DisassociateRegistration();
 
-  // Also prevent a registrater job for establishing an association to a new
+  // Also prevent a register job from establishing an association to a new
   // registration while we're finding an existing registration.
   provider_host_->SetAllowAssociation(false);
 
@@ -350,14 +350,13 @@ void ServiceWorkerControlleeRequestHandler::
     context_->UpdateServiceWorker(
         registration.get(), true /* force_bypass_cache */,
         true /* skip_script_comparison */,
-        base::Bind(&self::DidUpdateRegistration, weak_factory_.GetWeakPtr(),
-                   registration));
+        base::BindOnce(&self::DidUpdateRegistration, weak_factory_.GetWeakPtr(),
+                       registration));
     return;
   }
 
-  // Initiate activation of a waiting version.
-  // Usually a register job initiates activation but that
-  // doesn't happen if the browser exits prior to activation
+  // Initiate activation of a waiting version. Usually a register job initiates
+  // activation but that doesn't happen if the browser exits prior to activation
   // having occurred. This check handles that case.
   if (registration->waiting_version())
     registration->ActivateWaitingVersionWhenReady();

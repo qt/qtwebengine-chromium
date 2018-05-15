@@ -7,7 +7,7 @@
 #include <limits>
 
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/blink/public/platform/web_input_event.h"
 
 using blink::WebGestureEvent;
 using blink::WebInputEvent;
@@ -55,8 +55,7 @@ GestureEventWithLatencyInfo CreateGestureEvent(WebInputEvent::Type type,
                                                float y = 0.0f) {
   GestureEventWithLatencyInfo gesture(type, WebInputEvent::kNoModifiers,
                                       timestamp, ui::LatencyInfo());
-  gesture.event.x = x;
-  gesture.event.y = y;
+  gesture.event.SetPositionInWidget(gfx::PointF(x, y));
   return gesture;
 }
 

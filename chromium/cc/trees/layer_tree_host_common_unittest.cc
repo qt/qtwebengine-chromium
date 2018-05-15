@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <memory>
 #include <set>
+#include <tuple>
 #include <vector>
 
 #include "base/memory/ptr_util.h"
@@ -4489,7 +4490,7 @@ TEST_F(LayerTreeHostCommonTest, OpacityAnimatingOnPendingTree) {
       active_child->effect_tree_index()));
 }
 
-using LCDTextTestParam = std::tr1::tuple<bool, bool, bool>;
+using LCDTextTestParam = std::tuple<bool, bool, bool>;
 class LCDTextTest : public LayerTreeHostCommonTestBase,
                     public testing::TestWithParam<LCDTextTestParam> {
  public:
@@ -4505,8 +4506,8 @@ class LCDTextTest : public LayerTreeHostCommonTestBase,
   LayerTreeSettings LCDTextTestLayerTreeSettings() {
     LayerTreeSettings settings = VerifyTreeCalcsLayerTreeSettings();
 
-    can_use_lcd_text_ = std::tr1::get<0>(GetParam());
-    layers_always_allowed_lcd_text_ = std::tr1::get<1>(GetParam());
+    can_use_lcd_text_ = std::get<0>(GetParam());
+    layers_always_allowed_lcd_text_ = std::get<1>(GetParam());
     settings.can_use_lcd_text = can_use_lcd_text_;
     settings.layers_always_allowed_lcd_text = layers_always_allowed_lcd_text_;
     return settings;
@@ -4547,8 +4548,7 @@ class LCDTextTest : public LayerTreeHostCommonTestBase,
     child_->SetBounds(gfx::Size(1, 1));
     grand_child_->SetBounds(gfx::Size(1, 1));
 
-    child_->test_properties()->force_render_surface =
-        std::tr1::get<2>(GetParam());
+    child_->test_properties()->force_render_surface = std::get<2>(GetParam());
   }
 
   bool can_use_lcd_text_;
@@ -4885,10 +4885,16 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHiddenWithCopyRequest) {
   inputs.can_adjust_raster_scales = true;
   LayerTreeHostCommon::CalculateDrawPropertiesForTesting(&inputs);
 
-  EXPECT_TRUE(root_layer->has_copy_requests_in_target_subtree());
-  EXPECT_TRUE(copy_grand_parent_layer->has_copy_requests_in_target_subtree());
-  EXPECT_TRUE(copy_parent_layer->has_copy_requests_in_target_subtree());
-  EXPECT_TRUE(copy_layer->has_copy_requests_in_target_subtree());
+  auto& effect_tree =
+      root_layer->layer_tree_impl()->property_trees()->effect_tree;
+  EXPECT_TRUE(effect_tree.Node(root_layer->effect_tree_index())
+                  ->subtree_has_copy_request);
+  EXPECT_TRUE(effect_tree.Node(copy_grand_parent_layer->effect_tree_index())
+                  ->subtree_has_copy_request);
+  EXPECT_TRUE(effect_tree.Node(copy_parent_layer->effect_tree_index())
+                  ->subtree_has_copy_request);
+  EXPECT_TRUE(effect_tree.Node(copy_layer->effect_tree_index())
+                  ->subtree_has_copy_request);
 
   // We should have four render surfaces, one for the root, one for the grand
   // parent since it has opacity and two drawing descendants, one for the parent
@@ -10481,6 +10487,29 @@ TEST_F(LayerTreeHostCommonTest, RenderSurfaceListForTrilinearFiltering) {
   // scale matrix to (0,0 25x25).
   EXPECT_EQ(gfx::RectF(0, 0, 25, 25),
             GetRenderSurface(parent)->DrawableContentRect());
+}
+
+TEST_F(LayerTreeHostCommonTest, VisibleRectClippedByViewport) {
+  FakeImplTaskRunnerProvider task_runner_provider;
+  TestTaskGraphRunner task_graph_runner;
+  FakeLayerTreeHostImpl host_impl(&task_runner_provider, &task_graph_runner);
+
+  gfx::Size root_layer_size = gfx::Size(300, 500);
+  gfx::Size device_viewport_size = gfx::Size(300, 600);
+  gfx::Rect viewport_visible_rect = gfx::Rect(100, 100, 200, 200);
+
+  host_impl.SetViewportSize(device_viewport_size);
+  host_impl.SetViewportVisibleRect(viewport_visible_rect);
+  host_impl.active_tree()->SetRootLayerForTesting(
+      LayerImpl::Create(host_impl.active_tree(), 1));
+
+  LayerImpl* root = host_impl.active_tree()->root_layer_for_testing();
+  root->SetBounds(root_layer_size);
+  root->SetDrawsContent(true);
+  ExecuteCalculateDrawProperties(root);
+
+  EXPECT_EQ(viewport_visible_rect, root->visible_layer_rect());
+  EXPECT_EQ(gfx::Rect(root_layer_size), root->drawable_content_rect());
 }
 
 }  // namespace

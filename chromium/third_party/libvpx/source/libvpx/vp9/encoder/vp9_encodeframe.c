@@ -1244,7 +1244,7 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
 
   // For the variance computation under SVC mode, we treat the frame as key if
   // the reference (base layer frame) is key frame (i.e., is_key_frame == 1).
-  const int is_key_frame =
+  int is_key_frame =
       (cm->frame_type == KEY_FRAME ||
        (is_one_pass_cbr_svc(cpi) &&
         cpi->svc.layer_context[cpi->svc.temporal_layer_id].is_key_frame));
@@ -1254,6 +1254,19 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
   int variance4x4downsample[16];
   int segment_id;
   int sb_offset = (cm->mi_stride >> 3) * (mi_row >> 3) + (mi_col >> 3);
+
+  // For SVC: check if LAST frame is NULL or if the resolution of LAST is
+  // different than the current frame resolution, and if so, treat this frame
+  // as a key frame, for the purpose of the superblock partitioning.
+  // LAST == NULL can happen in some cases where enhancement spatial layers are
+  // enabled dyanmically in the stream and the only reference is the spatial
+  // reference (GOLDEN).
+  if (cpi->use_svc) {
+    const YV12_BUFFER_CONFIG *const ref = get_ref_frame_buffer(cpi, LAST_FRAME);
+    if (ref == NULL || ref->y_crop_height != cm->height ||
+        ref->y_crop_width != cm->width)
+      is_key_frame = 1;
+  }
 
   set_offsets(cpi, tile, x, mi_row, mi_col, BLOCK_64X64);
   segment_id = xd->mi[0]->segment_id;
@@ -3704,6 +3717,24 @@ static void hybrid_intra_mode_search(VP9_COMP *cpi, MACROBLOCK *const x,
     vp9_pick_intra_mode(cpi, x, rd_cost, bsize, ctx);
 }
 
+static void hybrid_search_svc_baseiskey(VP9_COMP *cpi, MACROBLOCK *const x,
+                                        RD_COST *rd_cost, BLOCK_SIZE bsize,
+                                        PICK_MODE_CONTEXT *ctx,
+                                        TileDataEnc *tile_data, int mi_row,
+                                        int mi_col) {
+  if (!cpi->sf.nonrd_keyframe && bsize <= BLOCK_8X8) {
+    vp9_rd_pick_intra_mode_sb(cpi, x, rd_cost, bsize, ctx, INT64_MAX);
+  } else {
+    if (cpi->svc.disable_inter_layer_pred == INTER_LAYER_PRED_OFF)
+      vp9_pick_intra_mode(cpi, x, rd_cost, bsize, ctx);
+    else if (bsize >= BLOCK_8X8)
+      vp9_pick_inter_mode(cpi, x, tile_data, mi_row, mi_col, rd_cost, bsize,
+                          ctx);
+    else
+      vp9_pick_inter_mode_sub8x8(cpi, x, mi_row, mi_col, rd_cost, bsize, ctx);
+  }
+}
+
 static void nonrd_pick_sb_modes(VP9_COMP *cpi, TileDataEnc *tile_data,
                                 MACROBLOCK *const x, int mi_row, int mi_col,
                                 RD_COST *rd_cost, BLOCK_SIZE bsize,
@@ -3736,6 +3767,9 @@ static void nonrd_pick_sb_modes(VP9_COMP *cpi, TileDataEnc *tile_data,
 
   if (cm->frame_type == KEY_FRAME)
     hybrid_intra_mode_search(cpi, x, rd_cost, bsize, ctx);
+  else if (cpi->svc.layer_context[cpi->svc.temporal_layer_id].is_key_frame)
+    hybrid_search_svc_baseiskey(cpi, x, rd_cost, bsize, ctx, tile_data, mi_row,
+                                mi_col);
   else if (segfeature_active(&cm->seg, mi->segment_id, SEG_LVL_SKIP))
     set_mode_info_seg_skip(x, cm->tx_mode, rd_cost, bsize);
   else if (bsize >= BLOCK_8X8)

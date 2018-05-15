@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env vpython
 # Copyright 2015 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -19,9 +19,9 @@ from test_utils import SimpleTestSymbol
 
 sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), os.pardir, os.pardir,
-                    'third_party', 'android_platform', 'development',
-                    'scripts'))
-import symbol
+                    'build', 'android'))
+
+import pylib.constants.host_paths as host_paths
 
 
 # Used for fake demangling on bots where c++filt does not exist.
@@ -44,7 +44,7 @@ class TestObjectFileProcessor(cyglog_to_orderfile.ObjectFileProcessor):
 class TestCyglogToOrderfile(unittest.TestCase):
   def setUp(self):
     self._old_demangle = None
-    if not os.path.exists(symbol.ToolPath('c++filt')):
+    if not os.path.exists(host_paths.ToolPath('c++filt', 'arm')):
       print 'Using fake demangling due to missing c++filt binary'
       self._old_demangle = symbol_extractor.DemangleSymbol
       symbol_extractor.DemangleSymbol = _FakeDemangle
@@ -75,17 +75,6 @@ class TestCyglogToOrderfile(unittest.TestCase):
       failure_items.append('Missing keys: {}'.format(' '.join(missing)))
     if failure_items:
       raise self.failureException('\n'.join(failure_items))
-
-  def testParseLogLines(self):
-    lines = """5086e000-52e92000 r-xp 00000000 b3:02 51276      libchromeview.so
-secs       usecs      pid:threadid    func
-START
-1314897086 795828     3587:1074648168 0x509e105c
-1314897086 795874     3587:1074648168 0x509e0eb4
-END""".split('\n')
-    offsets = cyglog_to_orderfile._ParseLogLines(lines)
-    self.assertListEqual(
-        offsets, [0x509e105c - 0x5086e000, 0x509e0eb4 - 0x5086e000])
 
   def testWarnAboutDuplicates(self):
     offsets = [0x1, 0x2, 0x3]

@@ -44,8 +44,8 @@ class Component {
   ~Component();
 
   // Handles the current state of the component and makes it transition
-  // to the next component state before |callback| is invoked.
-  void Handle(CallbackHandleComplete callback);
+  // to the next component state before |callback_handle_complete_| is invoked.
+  void Handle(CallbackHandleComplete callback_handle_complete);
 
   CrxUpdateItem GetCrxUpdateItem() const;
 
@@ -60,7 +60,7 @@ class Component {
 
   // Returns true if the component has reached a final state and no further
   // handling and state transitions are possible.
-  bool IsHandled() const { return state_->IsFinal(); }
+  bool IsHandled() const { return is_handled_; }
 
   // Returns true if an update is available for this component, meaning that
   // the update server has return a response containing an update.
@@ -97,13 +97,7 @@ class Component {
     update_check_error_ = update_check_error;
   }
 
-  // Returns the time when processing of an update for this component has
-  // begun, once the update has been discovered. Returns a null TimeTicks object
-  // if the handling of an update has not happened.
-  // base::TimeTicks update_begin() const { return update_begin_; }
-
-  bool on_demand() const { return on_demand_; }
-  void set_on_demand(bool on_demand) { on_demand_ = on_demand; }
+  bool is_foreground() const;
 
   const std::vector<std::string>& events() const { return events_; }
 
@@ -125,7 +119,7 @@ class Component {
   std::string session_id() const;
 
  private:
-  friend class FakePingManagerImpl;
+  friend class MockPingManagerImpl;
   friend class UpdateCheckerTest;
 
   FRIEND_TEST_ALL_PREFIXES(PingManagerTest, SendPing);
@@ -156,11 +150,13 @@ class Component {
 
     ComponentState state() const { return state_; }
 
-    bool IsFinal() const { return is_final_; }
-
    protected:
     // Initiates the transition to the new state.
     void TransitionState(std::unique_ptr<State> new_state);
+
+    // Makes the current state a final state where no other state transition
+    // can further occur.
+    void EndState();
 
     Component& component() { return component_; }
     const Component& component() const { return component_; }
@@ -173,9 +169,7 @@ class Component {
     virtual void DoHandle() = 0;
 
     Component& component_;
-    CallbackNextState callback_;
-
-    bool is_final_ = false;
+    CallbackNextState callback_next_state_;
   };
 
   class StateNew : public State {
@@ -407,9 +401,6 @@ class Component {
   // True if the update check response for this component includes an update.
   bool is_update_available_ = false;
 
-  // True if the current update check cycle is on-demand.
-  bool on_demand_ = false;
-
   // The error reported by the update checker.
   int update_check_error_ = 0;
 
@@ -438,6 +429,10 @@ class Component {
   base::OnceClosure update_check_complete_;
 
   ComponentState previous_state_ = ComponentState::kLastStatus;
+
+  // True if this component has reached a final state because all its states
+  // have been handled.
+  bool is_handled_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(Component);
 };

@@ -7,7 +7,6 @@
 #include <memory>
 #include <utility>
 
-#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "content/common/frame_messages.h"
 #include "content/public/common/bindings_policy.h"
@@ -20,11 +19,10 @@
 #include "content/renderer/web_ui_extension_data.h"
 #include "gin/arguments.h"
 #include "gin/function_template.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebKit.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
-#include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/blink/public/web/blink.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_view.h"
 #include "url/gurl.h"
 #include "v8/include/v8.h"
 
@@ -95,13 +93,6 @@ void WebUIExtension::Send(gin::Arguments* args) {
   std::string message;
   if (!args->GetNext(&message)) {
     args->ThrowError();
-    return;
-  }
-
-  if (base::EndsWith(message, "RequiringGesture",
-                     base::CompareCase::SENSITIVE) &&
-      !blink::WebUserGestureIndicator::IsProcessingUserGesture(frame)) {
-    NOTREACHED();
     return;
   }
 

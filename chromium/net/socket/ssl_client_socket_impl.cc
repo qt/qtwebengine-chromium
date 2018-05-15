@@ -25,7 +25,6 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
-#include "base/threading/thread_local.h"
 #include "base/trace_event/process_memory_dump.h"
 #include "base/trace_event/trace_event.h"
 #include "base/values.h"
@@ -64,10 +63,6 @@
 
 #if !defined(OS_NACL)
 #include "net/ssl/ssl_key_logger.h"
-#endif
-
-#if defined(USE_NSS_CERTS)
-#include "net/cert_net/nss_ocsp.h"
 #endif
 
 namespace net {
@@ -459,7 +454,6 @@ SSLClientSocketImpl::SSLClientSocketImpl(
       policy_enforcer_(context.ct_policy_enforcer),
       pkp_bypassed_(false),
       is_fatal_cert_error_(false),
-      connect_error_details_(SSLErrorDetails::kOther),
       net_log_(transport_->socket()->NetLog()),
       weak_factory_(this) {
   CHECK(cert_verifier_);
@@ -491,8 +485,7 @@ void SSLClientSocketImpl::GetSSLCertRequestInfo(
   cert_request_info->cert_authorities.clear();
   const STACK_OF(CRYPTO_BUFFER)* authorities =
       SSL_get0_server_requested_CAs(ssl_.get());
-  for (size_t i = 0; i < sk_CRYPTO_BUFFER_num(authorities); i++) {
-    const CRYPTO_BUFFER* ca_name = sk_CRYPTO_BUFFER_value(authorities, i);
+  for (const CRYPTO_BUFFER* ca_name : authorities) {
     cert_request_info->cert_authorities.push_back(
         std::string(reinterpret_cast<const char*>(CRYPTO_BUFFER_data(ca_name)),
                     CRYPTO_BUFFER_len(ca_name)));
@@ -547,10 +540,6 @@ Error SSLClientSocketImpl::GetTokenBindingSignature(crypto::ECPrivateKey* key,
 
 crypto::ECPrivateKey* SSLClientSocketImpl::GetChannelIDKey() const {
   return channel_id_key_.get();
-}
-
-SSLErrorDetails SSLClientSocketImpl::GetConnectErrorDetails() const {
-  return connect_error_details_;
 }
 
 int SSLClientSocketImpl::ExportKeyingMaterial(const base::StringPiece& label,
@@ -720,6 +709,7 @@ bool SSLClientSocketImpl::GetSSLInfo(SSLInfo* ssl_info) {
       SSL_is_token_binding_negotiated(ssl_.get());
   ssl_info->token_binding_key_param = static_cast<net::TokenBindingParam>(
       SSL_get_negotiated_token_binding_param(ssl_.get()));
+  ssl_info->dummy_pq_padding_received = SSL_dummy_pq_padding_used(ssl_.get());
   ssl_info->pinning_failure_log = pinning_failure_log_;
   ssl_info->ocsp_result = server_cert_verify_result_.ocsp_result;
   ssl_info->is_fatal_cert_error = is_fatal_cert_error_;
@@ -758,8 +748,7 @@ void SSLClientSocketImpl::DumpMemoryStats(SocketMemoryStats* stats) const {
   const STACK_OF(CRYPTO_BUFFER)* server_cert_chain =
       SSL_get0_peer_certificates(ssl_.get());
   if (server_cert_chain) {
-    for (size_t i = 0; i < sk_CRYPTO_BUFFER_num(server_cert_chain); ++i) {
-      const CRYPTO_BUFFER* cert = sk_CRYPTO_BUFFER_value(server_cert_chain, i);
+    for (const CRYPTO_BUFFER* cert : server_cert_chain) {
       stats->cert_size += CRYPTO_BUFFER_len(cert);
     }
     stats->cert_count = sk_CRYPTO_BUFFER_num(server_cert_chain);
@@ -846,14 +835,6 @@ void SSLClientSocketImpl::OnWriteReady() {
 
 int SSLClientSocketImpl::Init() {
   DCHECK(!ssl_);
-
-#if defined(USE_NSS_CERTS)
-  if (ssl_config_.cert_io_enabled) {
-    // TODO(davidben): Move this out of SSLClientSocket. See
-    // https://crbug.com/539520.
-    EnsureNSSHttpIOInit();
-  }
-#endif
 
   SSLContext* context = SSLContext::GetInstance();
   crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
@@ -975,10 +956,8 @@ int SSLClientSocketImpl::Init() {
                         wire_protos.size());
   }
 
-  if (ssl_config_.signed_cert_timestamps_enabled) {
-    SSL_enable_signed_cert_timestamps(ssl_.get());
-    SSL_enable_ocsp_stapling(ssl_.get());
-  }
+  SSL_enable_signed_cert_timestamps(ssl_.get());
+  SSL_enable_ocsp_stapling(ssl_.get());
 
   if (cert_verifier_->SupportsOCSPStapling())
     SSL_enable_ocsp_stapling(ssl_.get());
@@ -1012,29 +991,10 @@ void SSLClientSocketImpl::DoWriteCallback(int rv) {
   base::ResetAndReturn(&user_write_callback_).Run(rv);
 }
 
-// TODO(cbentzel): Remove including "base/threading/thread_local.h" and
-// g_first_run_completed once crbug.com/424386 is fixed.
-base::LazyInstance<base::ThreadLocalBoolean>::Leaky g_first_run_completed =
-    LAZY_INSTANCE_INITIALIZER;
-
 int SSLClientSocketImpl::DoHandshake() {
   crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
 
-  int rv;
-
-  // TODO(cbentzel): Leave only 1 call to SSL_do_handshake once crbug.com/424386
-  // is fixed.
-  if (ssl_config_.send_client_cert && ssl_config_.client_cert.get()) {
-    rv = SSL_do_handshake(ssl_.get());
-  } else {
-    if (g_first_run_completed.Get().Get()) {
-      rv = SSL_do_handshake(ssl_.get());
-    } else {
-      g_first_run_completed.Get().Set(true);
-      rv = SSL_do_handshake(ssl_.get());
-    }
-  }
-
+  int rv = SSL_do_handshake(ssl_.get());
   int net_error = OK;
   if (rv <= 0) {
     int ssl_error = SSL_get_error(ssl_.get(), rv);
@@ -1061,38 +1021,6 @@ int SSLClientSocketImpl::DoHandshake() {
       // If not done, stay in this state
       next_handshake_state_ = STATE_HANDSHAKE;
       return ERR_IO_PENDING;
-    }
-
-    switch (net_error) {
-      case ERR_CONNECTION_CLOSED:
-        connect_error_details_ = SSLErrorDetails::kConnectionClosed;
-        break;
-      case ERR_CONNECTION_RESET:
-        connect_error_details_ = SSLErrorDetails::kConnectionReset;
-        break;
-      case ERR_SSL_PROTOCOL_ERROR: {
-        int lib = ERR_GET_LIB(error_info.error_code);
-        int reason = ERR_GET_REASON(error_info.error_code);
-        if (lib == ERR_LIB_SSL && reason == SSL_R_TLSV1_ALERT_ACCESS_DENIED) {
-          connect_error_details_ = SSLErrorDetails::kAccessDeniedAlert;
-        } else if (lib == ERR_LIB_SSL &&
-                   reason == SSL_R_APPLICATION_DATA_INSTEAD_OF_HANDSHAKE) {
-          connect_error_details_ =
-              SSLErrorDetails::kApplicationDataInsteadOfHandshake;
-        } else {
-          connect_error_details_ = SSLErrorDetails::kProtocolError;
-        }
-        break;
-      }
-      case ERR_SSL_BAD_RECORD_MAC_ALERT:
-        connect_error_details_ = SSLErrorDetails::kBadRecordMACAlert;
-        break;
-      case ERR_SSL_VERSION_OR_CIPHER_MISMATCH:
-        connect_error_details_ = SSLErrorDetails::kVersionOrCipherMismatch;
-        break;
-      default:
-        connect_error_details_ = SSLErrorDetails::kOther;
-        break;
     }
 
     LOG(ERROR) << "handshake failed; returned " << rv << ", SSL error code "

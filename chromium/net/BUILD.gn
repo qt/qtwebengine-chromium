@@ -37,8 +37,8 @@ posix_avoid_mmap = is_android && current_cpu != "x86"
 use_v8_in_net = !is_ios && !is_proto_quic
 enable_built_in_dns = !is_ios && !is_proto_quic
 
-# Unix sockets are not supported on iOS, Fuchsia or NaCl.
-enable_unix_sockets = is_posix && !is_ios && !is_fuchsia && !is_nacl
+# Unix sockets are not supported on iOS or NaCl.
+enable_unix_sockets = is_posix && !is_ios && !is_nacl
 
 # Android and Fuchsia can't run testserver.py directly, so they use remote
 # test server.
@@ -47,8 +47,8 @@ use_remote_test_server = is_android || is_fuchsia
 # Python works only on Linux, MacOS and Windows.
 enable_python_utils = !is_android && !is_fuchsia && !is_ios
 
-buildflag_header("features") {
-  header = "net_features.h"
+buildflag_header("buildflags") {
+  header = "net_buildflags.h"
   flags = [
     "POSIX_AVOID_MMAP=$posix_avoid_mmap",
     "DISABLE_FILE_SUPPORT=$disable_file_support",
@@ -109,6 +109,8 @@ component("net") {
     "base/auth.h",
     "base/completion_callback.h",
     "base/completion_once_callback.h",
+    "base/datagram_buffer.cc",
+    "base/datagram_buffer.h",
     "base/escape.cc",
     "base/escape.h",
     "base/hash_value.cc",
@@ -238,10 +240,6 @@ component("net") {
     "cert/signed_certificate_timestamp_and_status.h",
     "cert/signed_tree_head.cc",
     "cert/signed_tree_head.h",
-    "cert/sth_distributor.cc",
-    "cert/sth_distributor.h",
-    "cert/sth_observer.h",
-    "cert/sth_reporter.h",
     "cert/symantec_certs.cc",
     "cert/symantec_certs.h",
     "cert/x509_cert_types.cc",
@@ -306,6 +304,8 @@ component("net") {
     "log/net_log_source_type_list.h",
     "log/net_log_with_source.cc",
     "log/net_log_with_source.h",
+    "quic/core/quic_error_codes.cc",
+    "quic/core/quic_error_codes.h",
     "socket/client_socket_handle.cc",
     "socket/client_socket_handle.h",
     "socket/connection_attempts.h",
@@ -471,8 +471,6 @@ component("net") {
       "base/network_delegate.h",
       "base/network_delegate_impl.cc",
       "base/network_delegate_impl.h",
-      "base/network_interfaces_getifaddrs.cc",
-      "base/network_interfaces_getifaddrs.h",
       "base/network_interfaces_linux.cc",
       "base/network_interfaces_linux.h",
       "base/network_interfaces_nacl.cc",
@@ -480,11 +478,6 @@ component("net") {
       "base/network_interfaces_posix.h",
       "base/network_interfaces_win.cc",
       "base/network_interfaces_win.h",
-      "base/network_throttle_manager.h",
-      "base/network_throttle_manager_impl.cc",
-      "base/network_throttle_manager_impl.h",
-      "base/percentile_estimator.cc",
-      "base/percentile_estimator.h",
       "base/platform_mime_util.h",
       "base/platform_mime_util_linux.cc",
       "base/platform_mime_util_mac.mm",
@@ -875,10 +868,10 @@ component("net") {
       "http/http_stream_factory_impl_job.h",
       "http/http_stream_factory_impl_job_controller.cc",
       "http/http_stream_factory_impl_job_controller.h",
-      "http/http_stream_factory_impl_request.cc",
-      "http/http_stream_factory_impl_request.h",
       "http/http_stream_parser.cc",
       "http/http_stream_parser.h",
+      "http/http_stream_request.cc",
+      "http/http_stream_request.h",
       "http/http_transaction.h",
       "http/http_transaction_factory.h",
       "http/http_version.h",
@@ -888,6 +881,8 @@ component("net") {
       "http/proxy_client_socket.h",
       "http/proxy_connect_redirect_http_stream.cc",
       "http/proxy_connect_redirect_http_stream.h",
+      "http/proxy_fallback.cc",
+      "http/proxy_fallback.h",
       "http/transport_security_persister.cc",
       "http/transport_security_persister.h",
       "http/url_security_manager.cc",
@@ -1077,12 +1072,14 @@ component("net") {
       "proxy_resolution/proxy_config_service_mac.h",
       "proxy_resolution/proxy_config_service_win.cc",
       "proxy_resolution/proxy_config_service_win.h",
-      "proxy_resolution/proxy_config_source.cc",
-      "proxy_resolution/proxy_config_source.h",
+      "proxy_resolution/proxy_config_with_annotation.cc",
+      "proxy_resolution/proxy_config_with_annotation.h",
       "proxy_resolution/proxy_info.cc",
       "proxy_resolution/proxy_info.h",
       "proxy_resolution/proxy_list.cc",
       "proxy_resolution/proxy_list.h",
+      "proxy_resolution/proxy_resolution_service.cc",
+      "proxy_resolution/proxy_resolution_service.h",
       "proxy_resolution/proxy_resolver.h",
       "proxy_resolution/proxy_resolver_error_observer.h",
       "proxy_resolution/proxy_resolver_factory.cc",
@@ -1092,8 +1089,6 @@ component("net") {
       "proxy_resolution/proxy_resolver_winhttp.cc",
       "proxy_resolution/proxy_resolver_winhttp.h",
       "proxy_resolution/proxy_retry_info.h",
-      "proxy_resolution/proxy_service.cc",
-      "proxy_resolution/proxy_service.h",
       "quic/chromium/bidirectional_stream_quic_impl.cc",
       "quic/chromium/bidirectional_stream_quic_impl.h",
       "quic/chromium/crypto/channel_id_chromium.cc",
@@ -1252,13 +1247,25 @@ component("net") {
       "quic/core/frames/quic_frame.h",
       "quic/core/frames/quic_goaway_frame.cc",
       "quic/core/frames/quic_goaway_frame.h",
+      "quic/core/frames/quic_ietf_blocked_frame.cc",
+      "quic/core/frames/quic_ietf_blocked_frame.h",
+      "quic/core/frames/quic_ietf_max_stream_id_frame.cc",
+      "quic/core/frames/quic_ietf_max_stream_id_frame.h",
+      "quic/core/frames/quic_ietf_stream_id_blocked_frame.cc",
+      "quic/core/frames/quic_ietf_stream_id_blocked_frame.h",
       "quic/core/frames/quic_mtu_discovery_frame.h",
       "quic/core/frames/quic_padding_frame.cc",
       "quic/core/frames/quic_padding_frame.h",
+      "quic/core/frames/quic_path_challenge_frame.cc",
+      "quic/core/frames/quic_path_challenge_frame.h",
+      "quic/core/frames/quic_path_response_frame.cc",
+      "quic/core/frames/quic_path_response_frame.h",
       "quic/core/frames/quic_ping_frame.cc",
       "quic/core/frames/quic_ping_frame.h",
       "quic/core/frames/quic_rst_stream_frame.cc",
       "quic/core/frames/quic_rst_stream_frame.h",
+      "quic/core/frames/quic_stop_sending_frame.cc",
+      "quic/core/frames/quic_stop_sending_frame.h",
       "quic/core/frames/quic_stop_waiting_frame.cc",
       "quic/core/frames/quic_stop_waiting_frame.h",
       "quic/core/frames/quic_stream_frame.cc",
@@ -1310,8 +1317,6 @@ component("net") {
       "quic/core/quic_data_reader.h",
       "quic/core/quic_data_writer.cc",
       "quic/core/quic_data_writer.h",
-      "quic/core/quic_error_codes.cc",
-      "quic/core/quic_error_codes.h",
       "quic/core/quic_flags_list.h",
       "quic/core/quic_flow_controller.cc",
       "quic/core/quic_flow_controller.h",
@@ -1461,6 +1466,7 @@ component("net") {
       "quic/platform/api/quic_ptr_util.h",
       "quic/platform/api/quic_reconstruct_object.h",
       "quic/platform/api/quic_reference_counted.h",
+      "quic/platform/api/quic_singleton.h",
       "quic/platform/api/quic_socket_address.cc",
       "quic/platform/api/quic_socket_address.h",
       "quic/platform/api/quic_stack_trace.h",
@@ -1504,6 +1510,7 @@ component("net") {
       "quic/platform/impl/quic_ptr_util_impl.h",
       "quic/platform/impl/quic_reconstruct_object_impl.h",
       "quic/platform/impl/quic_reference_counted_impl.h",
+      "quic/platform/impl/quic_singleton_impl.h",
       "quic/platform/impl/quic_socket_address_impl.cc",
       "quic/platform/impl/quic_socket_address_impl.h",
       "quic/platform/impl/quic_stack_trace_impl.h",
@@ -1577,6 +1584,7 @@ component("net") {
       "socket/tcp_socket_posix.h",
       "socket/tcp_socket_win.cc",
       "socket/tcp_socket_win.h",
+      "socket/transport_client_socket.h",
       "socket/transport_client_socket_pool.cc",
       "socket/transport_client_socket_pool.h",
       "socket/udp_client_socket.cc",
@@ -1767,6 +1775,7 @@ component("net") {
       "url_request/url_request_filter.h",
       "url_request/url_request_http_job.cc",
       "url_request/url_request_http_job.h",
+      "url_request/url_request_http_job_histogram.h",
       "url_request/url_request_intercepting_job_factory.cc",
       "url_request/url_request_intercepting_job_factory.h",
       "url_request/url_request_interceptor.cc",
@@ -1798,10 +1807,6 @@ component("net") {
       "url_request/view_cache_helper.h",
       "url_request/websocket_handshake_userdata_key.cc",
       "url_request/websocket_handshake_userdata_key.h",
-      "websockets/websocket_handshake_request_info.h",
-      "websockets/websocket_handshake_response_info.h",
-      "websockets/websocket_handshake_stream_base.h",
-      "websockets/websocket_stream.h",
     ]
     deps += [
       "//base/third_party/dynamic_annotations",
@@ -1854,7 +1859,7 @@ component("net") {
       ]
     }
 
-    if (is_posix) {
+    if (is_posix || is_fuchsia) {
       if (posix_avoid_mmap) {
         sources -= [ "disk_cache/blockfile/mapped_file_posix.cc" ]
       } else {
@@ -1899,8 +1904,8 @@ component("net") {
     }
 
     # Use getifaddrs() on POSIX platforms, except Linux and Android.
-    if (!is_posix || is_linux || is_android || is_fuchsia) {
-      sources -= [
+    if (is_posix && !is_linux && !is_android) {
+      sources += [
         "base/network_interfaces_getifaddrs.cc",
         "base/network_interfaces_getifaddrs.h",
       ]
@@ -2061,7 +2066,7 @@ component("net") {
   configs += net_configs
 
   public_deps += [
-    ":features",
+    ":buildflags",
     "//url",
   ]
 
@@ -2189,6 +2194,7 @@ component("net") {
         "websockets/websocket_handshake_request_info.h",
         "websockets/websocket_handshake_response_info.cc",
         "websockets/websocket_handshake_response_info.h",
+        "websockets/websocket_handshake_stream_base.cc",
         "websockets/websocket_handshake_stream_base.h",
         "websockets/websocket_handshake_stream_create_helper.cc",
         "websockets/websocket_handshake_stream_create_helper.h",
@@ -2362,6 +2368,7 @@ bundle_data("test_support_bundle_data") {
     "data/ssl/certificates/2048-rsa-intermediate.pem",
     "data/ssl/certificates/2048-rsa-root.pem",
     "data/ssl/certificates/39_months_after_2015_04.pem",
+    "data/ssl/certificates/39_months_based_on_last_day.pem",
     "data/ssl/certificates/40_months_after_2015_04.pem",
     "data/ssl/certificates/60_months_after_2012_07.pem",
     "data/ssl/certificates/61_months_after_2012_07.pem",
@@ -2409,6 +2416,7 @@ bundle_data("test_support_bundle_data") {
     "data/ssl/certificates/client_6_ca.pem",
     "data/ssl/certificates/client_root_ca.pem",
     "data/ssl/certificates/common_name_only.pem",
+    "data/ssl/certificates/comodo-chain.pem",
     "data/ssl/certificates/crit-codeSigning-chain.pem",
     "data/ssl/certificates/crlset_by_intermediate_serial.raw",
     "data/ssl/certificates/crlset_by_leaf_spki.raw",
@@ -2568,6 +2576,8 @@ static_library("test_support") {
     "cert/mock_client_cert_verifier.cc",
     "cert/mock_client_cert_verifier.h",
     "cookies/canonical_cookie_test_helpers.h",
+    "cookies/cookie_change_dispatcher_test_helpers.cc",
+    "cookies/cookie_change_dispatcher_test_helpers.h",
     "cookies/cookie_monster_store_test.cc",
     "cookies/cookie_monster_store_test.h",
     "cookies/cookie_store_change_unittest.h",
@@ -2646,6 +2656,8 @@ static_library("test_support") {
     "test/keychain_test_util_mac.h",
     "test/net_test_suite.cc",
     "test/net_test_suite.h",
+    "test/quic_simple_test_server.cc",
+    "test/quic_simple_test_server.h",
     "test/scoped_disable_exit_on_dfatal.cc",
     "test/scoped_disable_exit_on_dfatal.h",
     "test/tcp_socket_proxy.cc",
@@ -2685,6 +2697,7 @@ static_library("test_support") {
   ]
 
   deps = [
+    ":simple_quic_tools",
     "//third_party/zlib",
   ]
 
@@ -3558,6 +3571,22 @@ bundle_data("net_unittests_bundle_data") {
     "data/ocsp_unittest/revoke_response.pem",
     "data/ocsp_unittest/revoke_response_reason.pem",
     "data/ocsp_unittest/unknown_response.pem",
+    "data/ov_name_constraints/int-bmp-o1.pem",
+    "data/ov_name_constraints/int-cn.pem",
+    "data/ov_name_constraints/int-o1-o2.pem",
+    "data/ov_name_constraints/int-o1-plus-o2.pem",
+    "data/ov_name_constraints/int-o2-o1.pem",
+    "data/ov_name_constraints/int-o3.pem",
+    "data/ov_name_constraints/leaf-no-o.pem",
+    "data/ov_name_constraints/leaf-o1-o2.pem",
+    "data/ov_name_constraints/leaf-o1.pem",
+    "data/ov_name_constraints/nc-int-exclude-o1.pem",
+    "data/ov_name_constraints/nc-int-permit-bmp-o1.pem",
+    "data/ov_name_constraints/nc-int-permit-cn.pem",
+    "data/ov_name_constraints/nc-int-permit-dns.pem",
+    "data/ov_name_constraints/nc-int-permit-o1.pem",
+    "data/ov_name_constraints/nc-int-permit-o2-o1-o3.pem",
+    "data/ov_name_constraints/root.pem",
     "data/parse_certificate_unittest/bad_key_usage.pem",
     "data/parse_certificate_unittest/bad_policy_qualifiers.pem",
     "data/parse_certificate_unittest/bad_signature_algorithm_oid.pem",
@@ -4667,6 +4696,7 @@ test("net_unittests") {
     "base/backoff_entry_unittest.cc",
     "base/chunked_upload_data_stream_unittest.cc",
     "base/data_url_unittest.cc",
+    "base/datagram_buffer_unittest.cc",
     "base/directory_lister_unittest.cc",
     "base/directory_listing_unittest.cc",
     "base/elements_upload_data_stream_unittest.cc",
@@ -4691,13 +4721,10 @@ test("net_unittests") {
     "base/network_activity_monitor_unittest.cc",
     "base/network_change_notifier_unittest.cc",
     "base/network_change_notifier_win_unittest.cc",
-    "base/network_interfaces_getifaddrs_unittest.cc",
     "base/network_interfaces_linux_unittest.cc",
     "base/network_interfaces_unittest.cc",
     "base/network_interfaces_win_unittest.cc",
-    "base/network_throttle_manager_impl_unittest.cc",
     "base/parse_number_unittest.cc",
-    "base/percentile_estimator_unittest.cc",
     "base/port_util_unittest.cc",
     "base/prioritized_dispatcher_unittest.cc",
     "base/priority_queue_unittest.cc",
@@ -4712,7 +4739,7 @@ test("net_unittests") {
     "cert/caching_cert_verifier_unittest.cc",
     "cert/cert_verifier_unittest.cc",
     "cert/cert_verify_proc_android_unittest.cc",
-    "cert/cert_verify_proc_ios_unittest.cc",
+    "cert/cert_verify_proc_ios_unittest.mm",
     "cert/cert_verify_proc_mac_unittest.cc",
     "cert/cert_verify_proc_unittest.cc",
     "cert/crl_set_unittest.cc",
@@ -4763,7 +4790,6 @@ test("net_unittests") {
     "cert/nss_profile_filter_chromeos_unittest.cc",
     "cert/pem_tokenizer_unittest.cc",
     "cert/signed_certificate_timestamp_unittest.cc",
-    "cert/sth_distributor_unittest.cc",
     "cert/symantec_certs_unittest.cc",
     "cert/test_root_certs_unittest.cc",
     "cert/x509_cert_types_unittest.cc",
@@ -4878,9 +4904,9 @@ test("net_unittests") {
     "http/http_server_properties_manager_unittest.cc",
     "http/http_status_code_unittest.cc",
     "http/http_stream_factory_impl_job_controller_unittest.cc",
-    "http/http_stream_factory_impl_request_unittest.cc",
     "http/http_stream_factory_impl_unittest.cc",
     "http/http_stream_parser_unittest.cc",
+    "http/http_stream_request_unittest.cc",
     "http/http_util_unittest.cc",
     "http/http_vary_data_unittest.cc",
     "http/mock_allow_http_auth_preferences.cc",
@@ -5001,11 +5027,11 @@ test("net_unittests") {
     "proxy_resolution/proxy_config_unittest.cc",
     "proxy_resolution/proxy_info_unittest.cc",
     "proxy_resolution/proxy_list_unittest.cc",
+    "proxy_resolution/proxy_resolution_service_unittest.cc",
     "proxy_resolution/proxy_resolver_v8_tracing_unittest.cc",
     "proxy_resolution/proxy_resolver_v8_tracing_wrapper_unittest.cc",
     "proxy_resolution/proxy_resolver_v8_unittest.cc",
     "proxy_resolution/proxy_server_unittest.cc",
-    "proxy_resolution/proxy_service_unittest.cc",
     "quic/chromium/bidirectional_stream_quic_impl_unittest.cc",
     "quic/chromium/crypto/proof_test_chromium.cc",
     "quic/chromium/crypto/proof_verifier_chromium_test.cc",
@@ -5152,6 +5178,7 @@ test("net_unittests") {
     "quic/core/quic_sent_packet_manager_test.cc",
     "quic/core/quic_server_id_test.cc",
     "quic/core/quic_server_session_base_test.cc",
+    "quic/core/quic_session_test.cc",
     "quic/core/quic_simple_buffer_allocator_test.cc",
     "quic/core/quic_socket_address_coder_test.cc",
     "quic/core/quic_spdy_session_test.cc",
@@ -5175,6 +5202,7 @@ test("net_unittests") {
     "quic/platform/api/quic_mem_slice_span_test.cc",
     "quic/platform/api/quic_mem_slice_test.cc",
     "quic/platform/api/quic_reference_counted_test.cc",
+    "quic/platform/api/quic_singleton_test.cc",
     "quic/platform/api/quic_str_cat_test.cc",
     "quic/platform/api/quic_test_random.h",
     "quic/platform/api/quic_text_utils_test.cc",
@@ -5205,6 +5233,7 @@ test("net_unittests") {
     "socket/transport_client_socket_pool_test_util.h",
     "socket/transport_client_socket_pool_unittest.cc",
     "socket/transport_client_socket_unittest.cc",
+    "socket/udp_socket_posix_unittest.cc",
     "socket/udp_socket_unittest.cc",
     "socket/websocket_endpoint_lock_manager_unittest.cc",
     "socket/websocket_transport_client_socket_pool_unittest.cc",
@@ -5579,7 +5608,7 @@ test("net_unittests") {
     deps += [
       ":net_browser_services",
       ":net_utility_services",
-      "//mojo/edk/system",
+      "//mojo/edk",
     ]
   } else {
     sources -= [
@@ -5626,9 +5655,9 @@ test("net_unittests") {
     ]
   }
 
-  # Use getifaddrs() on POSIX platforms, except Linux, Android and Fuchsia.
-  if (!is_posix || is_linux || is_android || is_fuchsia) {
-    sources -= [ "base/network_interfaces_getifaddrs_unittest.cc" ]
+  # Use getifaddrs() on POSIX platforms, except Linux and Android.
+  if (is_posix && !is_linux && !is_android) {
+    sources += [ "base/network_interfaces_getifaddrs_unittest.cc" ]
   }
 
   # Unit tests that aren't supported by the current ICU alternatives on Android.
@@ -6222,6 +6251,10 @@ fuzzer_test("net_url_request_fuzzer") {
     "//net",
   ]
   dict = "data/fuzzer_dictionaries/net_url_request_fuzzer.dict"
+
+  # TODO(crbug.com/820089): Figure out why this fuzzer's corpus explodes to
+  # 10 GB. For now, disable it on ClusterFuzz.
+  additional_configs = [ "//testing/libfuzzer:no_clusterfuzz" ]
 }
 
 fuzzer_test("net_auth_challenge_tokenizer_fuzzer") {

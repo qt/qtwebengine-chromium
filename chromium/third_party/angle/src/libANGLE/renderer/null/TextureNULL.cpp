@@ -23,8 +23,7 @@ TextureNULL::~TextureNULL()
 }
 
 gl::Error TextureNULL::setImage(const gl::Context *context,
-                                GLenum target,
-                                size_t level,
+                                const gl::ImageIndex &index,
                                 GLenum internalFormat,
                                 const gl::Extents &size,
                                 GLenum format,
@@ -38,8 +37,7 @@ gl::Error TextureNULL::setImage(const gl::Context *context,
 }
 
 gl::Error TextureNULL::setSubImage(const gl::Context *context,
-                                   GLenum target,
-                                   size_t level,
+                                   const gl::ImageIndex &index,
                                    const gl::Box &area,
                                    GLenum format,
                                    GLenum type,
@@ -50,8 +48,7 @@ gl::Error TextureNULL::setSubImage(const gl::Context *context,
 }
 
 gl::Error TextureNULL::setCompressedImage(const gl::Context *context,
-                                          GLenum target,
-                                          size_t level,
+                                          const gl::ImageIndex &index,
                                           GLenum internalFormat,
                                           const gl::Extents &size,
                                           const gl::PixelUnpackState &unpack,
@@ -62,8 +59,7 @@ gl::Error TextureNULL::setCompressedImage(const gl::Context *context,
 }
 
 gl::Error TextureNULL::setCompressedSubImage(const gl::Context *context,
-                                             GLenum target,
-                                             size_t level,
+                                             const gl::ImageIndex &index,
                                              const gl::Box &area,
                                              GLenum format,
                                              const gl::PixelUnpackState &unpack,
@@ -74,27 +70,25 @@ gl::Error TextureNULL::setCompressedSubImage(const gl::Context *context,
 }
 
 gl::Error TextureNULL::copyImage(const gl::Context *context,
-                                 GLenum target,
-                                 size_t level,
+                                 const gl::ImageIndex &index,
                                  const gl::Rectangle &sourceArea,
                                  GLenum internalFormat,
-                                 const gl::Framebuffer *source)
+                                 gl::Framebuffer *source)
 {
     return gl::NoError();
 }
 
 gl::Error TextureNULL::copySubImage(const gl::Context *context,
-                                    GLenum target,
-                                    size_t level,
+                                    const gl::ImageIndex &index,
                                     const gl::Offset &destOffset,
                                     const gl::Rectangle &sourceArea,
-                                    const gl::Framebuffer *source)
+                                    gl::Framebuffer *source)
 {
     return gl::NoError();
 }
 
 gl::Error TextureNULL::setStorage(const gl::Context *context,
-                                  GLenum target,
+                                  gl::TextureType type,
                                   size_t levels,
                                   GLenum internalFormat,
                                   const gl::Extents &size)
@@ -103,14 +97,14 @@ gl::Error TextureNULL::setStorage(const gl::Context *context,
 }
 
 gl::Error TextureNULL::setEGLImageTarget(const gl::Context *context,
-                                         GLenum target,
+                                         gl::TextureType type,
                                          egl::Image *image)
 {
     return gl::NoError();
 }
 
 gl::Error TextureNULL::setImageExternal(const gl::Context *context,
-                                        GLenum target,
+                                        gl::TextureType type,
                                         egl::Stream *stream,
                                         const egl::Stream::GLTextureDescription &desc)
 {
@@ -142,7 +136,7 @@ void TextureNULL::syncState(const gl::Texture::DirtyBits &dirtyBits)
 }
 
 gl::Error TextureNULL::setStorageMultisample(const gl::Context *context,
-                                             GLenum target,
+                                             gl::TextureType type,
                                              GLsizei samples,
                                              GLint internalformat,
                                              const gl::Extents &size,

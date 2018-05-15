@@ -44,6 +44,9 @@ class CONTENT_EXPORT MediaWebContentsObserver : public WebContentsObserver {
   explicit MediaWebContentsObserver(WebContents* web_contents);
   ~MediaWebContentsObserver() override;
 
+  using PlayerSet = std::set<int>;
+  using ActiveMediaPlayerMap = std::map<RenderFrameHost*, PlayerSet>;
+
   // Called by WebContentsImpl when the audible state may have changed.
   void MaybeUpdateAudibleState();
 
@@ -62,6 +65,10 @@ class CONTENT_EXPORT MediaWebContentsObserver : public WebContentsObserver {
   // Gets the MediaPlayerId of the fullscreen video if it exists.
   const base::Optional<MediaPlayerId>& GetFullscreenVideoMediaPlayerId() const;
 
+  // Gets the MediaPlayerId of the picture in picture video if it exists.
+  const base::Optional<MediaPlayerId>& GetPictureInPictureVideoMediaPlayerId()
+      const;
+
   // WebContentsObserver implementation.
   void WebContentsDestroyed() override;
   void RenderFrameDeleted(RenderFrameHost* render_frame_host) override;
@@ -74,6 +81,9 @@ class CONTENT_EXPORT MediaWebContentsObserver : public WebContentsObserver {
   // merging the logic of effectively fullscreen, hiding media controls and
   // fullscreening video element to the same place.
   void RequestPersistentVideo(bool value);
+
+  // Returns whether or not the given player id is active.
+  bool IsPlayerActive(const MediaPlayerId& player_id) const;
 
   bool has_audio_wake_lock_for_testing() const {
     return has_audio_wake_lock_for_testing_;
@@ -109,6 +119,10 @@ class CONTENT_EXPORT MediaWebContentsObserver : public WebContentsObserver {
   void OnMediaMutedStatusChanged(RenderFrameHost* render_frame_host,
                                  int delegate_id,
                                  bool muted);
+  void OnPictureInPictureSourceChanged(RenderFrameHost* render_frame_host,
+                                       int delegate_id);
+  void OnPictureInPictureModeEnded(RenderFrameHost* render_frame_host,
+                                   int delegate_id);
 
   // Clear |render_frame_host|'s tracking entry for its WakeLocks.
   void ClearWakeLocks(RenderFrameHost* render_frame_host);
@@ -124,8 +138,6 @@ class CONTENT_EXPORT MediaWebContentsObserver : public WebContentsObserver {
   void MaybeCancelVideoLock();
 
   // Helper methods for adding or removing player entries in |player_map|.
-  using PlayerSet = std::set<int>;
-  using ActiveMediaPlayerMap = std::map<RenderFrameHost*, PlayerSet>;
   void AddMediaPlayerEntry(const MediaPlayerId& id,
                            ActiveMediaPlayerMap* player_map);
   // Returns true if an entry is actually removed.
@@ -146,6 +158,7 @@ class CONTENT_EXPORT MediaWebContentsObserver : public WebContentsObserver {
   device::mojom::WakeLockPtr audio_wake_lock_;
   device::mojom::WakeLockPtr video_wake_lock_;
   base::Optional<MediaPlayerId> fullscreen_player_;
+  base::Optional<MediaPlayerId> pip_player_;
   base::Optional<bool> picture_in_picture_allowed_in_fullscreen_;
   bool has_audio_wake_lock_for_testing_ = false;
   bool has_video_wake_lock_for_testing_ = false;

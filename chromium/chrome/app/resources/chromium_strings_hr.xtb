@@ -29,7 +29,6 @@
 <translation id="1966382378801805537">Chromium ne može utvrditi niti postaviti zadani preglednik</translation>
 <translation id="1967743265616885482">Modul s tim nazivom već je bio u konfliktu s preglednikom Chromium.</translation>
 <translation id="2008474315282236005">Time će se izbrisati jedna stavka s uređaja. Da biste kasnije dohvatili svoje podatke, prijavite se na Chromium kao <ph name="USER_EMAIL" />.</translation>
-<translation id="2077129598763517140">Upotrijebi hardversko ubrzanje kada je dostupno</translation>
 <translation id="2117378023188580026">Vaš administrator traži da ponovo pokrenete Chromium radi primjene tog ažuriranja</translation>
 <translation id="2119636228670142020">O OS-u &amp;Chromium</translation>
 <translation id="2158734852934720349">Licence otvorenog izvornog koda OS-a Chromium</translation>
@@ -77,7 +76,6 @@
 <translation id="3479552764303398839">Ne sada</translation>
 <translation id="3509308970982693815">Zatvorite sve prozore preglednika Chromium i pokušajte ponovo.</translation>
 <translation id="352783484088404971">Ukloni iz Chromiuma...</translation>
-<translation id="3549345495227188780">Počnite s upotrebom OS-a Chromium</translation>
 <translation id="3582788516608077514">Ažuriranje Chromiuma...</translation>
 <translation id="358997566136285270">Logotip Chromiuma</translation>
 <translation id="3713809861844741608">Otvori vezu na novoj &amp;kartici Chromiuma</translation>
@@ -87,15 +85,14 @@
 <translation id="3852700440713538496">Prikvačite Chromium na programsku traku</translation>
 <translation id="3889543394854987837">Kliknite svoje ime da biste otvorili Chromium i počeli s pregledavanjem.</translation>
 <translation id="3898493977366060150">Pregledavanje weba uz pametne Googleove značajke</translation>
-<translation id="390894725198123737">Na Mac računalima zaporke se mogu spremati u vaš Keychain, a drugi korisnici Chromiuma koji dijele ovaj OS X račun mogu im pristupiti ili ih sinkronizirati.</translation>
 <translation id="4036079820698952681">Pomognite poboljšati Chromium tako što ćete prijaviti <ph name="BEGIN_LINK" />trenutačne postavke<ph name="END_LINK" /></translation>
 <translation id="4050175100176540509">Najnovija verzija sadrži važna sigurnosna poboljšanja i nove značajke.</translation>
 <translation id="407254336480250557">Odaberite <ph name="SMALL_PRODUCT_LOGO" /> <ph name="BEGIN_BOLD" />Chromium<ph name="END_BOLD" /></translation>
-<translation id="4077262827416206768">Zatvorite sve prozore preglednika Chromium i ponovo pokrenite Chromium da bi ta promjena postala aktivna.</translation>
 <translation id="421369550622382712">Otkrijte sjajne aplikacije, igre, proširenja i teme za Chromium.</translation>
 <translation id="4222580632002216401">Sada ste prijavljeni na Chromium! Administrator je onemogućio sinkronizaciju.</translation>
 <translation id="4224199872375172890">Chromium je ažuran.</translation>
 <translation id="4230135487732243613">Želite li povezati svoje podatke sustava Chromium s tim računom?</translation>
+<translation id="4260985389288095068">Na vašem računalu ima štetnog softvera. Chromium ga može ukloniti i vratiti vaše postavke kako bi vaš preglednik ponovno funkcionirao normalno.</translation>
 <translation id="4271805377592243930">Potraži pomoć za upotrebu Chromiuma</translation>
 <translation id="4285930937574705105">Instalacija nije uspjela zbog nepoznate pogreške. Ako je Chromium trenutačno otvoren, zatvorite ga i pokušajte ponovo.</translation>
 <translation id="4330585738697551178">Za taj se modul već zna da je u konfliktu s Chromiumom.</translation>
@@ -104,7 +101,6 @@
 <translation id="4421155425831608516">Administrator ovog uređaja onemogućio je prijavu na Chromium.</translation>
 <translation id="4423735387467980091">Prilagodite Chromium i upravljajte njime</translation>
 <translation id="4449801103833300785">{0,plural, =1{Chromium će se ponovo pokrenuti za sat vremena}one{Chromium će se ponovo pokrenuti za # sat}few{Chromium će se ponovo pokrenuti za # sata}other{Chromium će se ponovo pokrenuti za # sati}}</translation>
-<translation id="4458285410772214805">Odjavite se i prijavite se ponovo da bi ta promjena postala aktivna.</translation>
 <translation id="4469812139324097969">Chromium je zastario jer dulje vrijeme nije ponovo pokrenut. Ažuriranje je dostupno i primijenit će se čim ponovo pokrenete proizvod.</translation>
 <translation id="4488554488975128561">Možete pomoći da Chromium bude sigurniji i jednostavniji za upotrebu tako što ćete omogućiti da se Googleu automatski šalju neki podaci o sustavu i sadržaju stranice u svrhu otkrivanja opasnih aplikacija i web-lokacija.</translation>
 <translation id="4567424176335768812">Prijavljeni ste kao <ph name="USER_EMAIL_ADDRESS" />. Sada možete pristupiti svojim oznakama, povijesti i drugim postavkama na svim uređajima na kojima se prijavljujete.</translation>
@@ -139,7 +135,6 @@
 <translation id="5698481217667032250">Prikaži Chromium na tom jeziku</translation>
 <translation id="5726838626470692954">Upravitelj vas mora ukloniti i vratiti u Chromium.</translation>
 <translation id="5768914737813585044">Prikaži OS Chromium na tom jeziku</translation>
-<translation id="5772805321386874569">(potrebno je <ph name="BEGIN_BUTTON" />ponovo pokrenuti<ph name="END_BUTTON" /> Chromium)</translation>
 <translation id="5796460469508169315">Chromium će uskoro biti spreman.</translation>
 <translation id="5820394555380036790">OS Chromium</translation>
 <translation id="5862307444128926510">Dobro došli u Chromium</translation>
@@ -239,7 +234,6 @@ Daljnje upute poslali smo vam na e-adresu <ph name="ACCOUNT_EMAIL" />.</translat
 <translation id="8563206822260884157">Upotrijebite snažnu zaporku koju generira Chromium</translation>
 <translation id="85843667276690461">Pomoć za upotrebu Chromiuma</translation>
 <translation id="8586442755830160949">Autorska prava <ph name="YEAR" />. Autori Chromiuma. Sva prava pridržana.</translation>
-<translation id="8590769996813453836">Chromium je pronašao štetni softver na računalu. Može ga ukloniti i vratiti vaše postavke kako bi vaš preglednik ponovno funkcionirao normalno.</translation>
 <translation id="8621669128220841554">Instalacija nije uspjela zbog nepoznate pogreške. Ponovo preuzmite Chromium.</translation>
 <translation id="8628626585870903697">Chromium ne uključuje pregledač PDF-a koji je potreban da bi pregled ispisa funkcionirao.</translation>
 <translation id="8667808506758191620"><ph name="DEVICE_TYPE" /> je ažuriran.</translation>

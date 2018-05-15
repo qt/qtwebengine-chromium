@@ -8,12 +8,15 @@ mojom("mojom") {
   sources = [
     "audio_device_description.mojom",
     "debug_recording.mojom",
+    "stream_factory.mojom",
     "system_info.mojom",
   ]
 
   public_deps = [
     ":constants",
     "//media/mojo/interfaces",
+    "//mojo/common:common_custom_types",
+    "//mojo/public/mojom/base",
   ]
 }
 

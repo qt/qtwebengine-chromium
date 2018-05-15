@@ -12,15 +12,14 @@
 
 #include "base/command_line.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
-#include "content/common/weak_wrapper_shared_url_loader_factory.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/weak_wrapper_shared_url_loader_factory.h"
 #include "content/public/renderer/fixed_received_data.h"
 #include "content/public/renderer/request_peer.h"
 #include "content/renderer/loader/request_extra_data.h"
@@ -38,12 +37,12 @@
 #include "services/network/public/cpp/resource_response_info.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebURLError.h"
-#include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
-#include "third_party/WebKit/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/public/platform/WebURLResponse.h"
-#include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_url_error.h"
+#include "third_party/blink/public/platform/web_url_loader_client.h"
+#include "third_party/blink/public/platform/web_url_request.h"
+#include "third_party/blink/public/platform/web_url_response.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -73,28 +72,29 @@ class TestResourceDispatcher : public ResourceDispatcher {
   void StartSync(
       std::unique_ptr<network::ResourceRequest> request,
       int routing_id,
-      const url::Origin& frame_origin,
       const net::NetworkTrafficAnnotationTag& traffic_annotation,
       SyncLoadResponse* response,
-      scoped_refptr<SharedURLLoaderFactory> url_loader_factory,
-      std::vector<std::unique_ptr<URLLoaderThrottle>> throttles) override {
-    *response = sync_load_response_;
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
+      double timeout,
+      blink::mojom::BlobRegistryPtrInfo download_to_blob_registry) override {
+    *response = std::move(sync_load_response_);
   }
 
   int StartAsync(
       std::unique_ptr<network::ResourceRequest> request,
       int routing_id,
       scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner,
-      const url::Origin& frame_origin,
       const net::NetworkTrafficAnnotationTag& traffic_annotation,
       bool is_sync,
+      bool pass_response_pipe_to_peer,
       std::unique_ptr<RequestPeer> peer,
-      scoped_refptr<SharedURLLoaderFactory> url_loader_factory,
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
       network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
       base::OnceClosure* continue_navigation_function) override {
     EXPECT_FALSE(peer_);
-    if (sync_load_response_.encoded_body_length != -1)
+    if (sync_load_response_.info.encoded_body_length != -1)
       EXPECT_TRUE(is_sync);
     peer_ = std::move(peer);
     url_ = request->url;
@@ -121,8 +121,8 @@ class TestResourceDispatcher : public ResourceDispatcher {
   }
   bool defers_loading() const { return defers_loading_; }
 
-  void set_sync_load_response(const SyncLoadResponse& sync_load_response) {
-    sync_load_response_ = sync_load_response;
+  void set_sync_load_response(SyncLoadResponse&& sync_load_response) {
+    sync_load_response_ = std::move(sync_load_response);
   }
 
  private:
@@ -700,11 +700,14 @@ TEST_F(WebURLLoaderImplTest, ResponseCert) {
   base::StringPiece cert1_der =
       net::x509_util::CryptoBufferAsStringPiece(certs[1]->cert_buffer());
 
-  network::ResourceResponseInfo info;
+  net::SSLInfo ssl_info;
+  ssl_info.cert =
+      net::X509Certificate::CreateFromDERCertChain({cert0_der, cert1_der});
   net::SSLConnectionStatusSetVersion(net::SSL_CONNECTION_VERSION_TLS1_2,
-                                     &info.ssl_connection_status);
-  info.certificate.emplace_back(cert0_der);
-  info.certificate.emplace_back(cert1_der);
+                                     &ssl_info.connection_status);
+
+  network::ResourceResponseInfo info;
+  info.ssl_info = ssl_info;
   blink::WebURLResponse web_url_response;
   WebURLLoaderImpl::PopulateURLResponse(url, info, &web_url_response, true);
 
@@ -736,10 +739,12 @@ TEST_F(WebURLLoaderImplTest, ResponseCertWithNoSANs) {
   base::StringPiece cert0_der =
       net::x509_util::CryptoBufferAsStringPiece(certs[0]->cert_buffer());
 
-  network::ResourceResponseInfo info;
+  net::SSLInfo ssl_info;
   net::SSLConnectionStatusSetVersion(net::SSL_CONNECTION_VERSION_TLS1_2,
-                                     &info.ssl_connection_status);
-  info.certificate.emplace_back(cert0_der);
+                                     &ssl_info.connection_status);
+  ssl_info.cert = certs[0];
+  network::ResourceResponseInfo info;
+  info.ssl_info = ssl_info;
   blink::WebURLResponse web_url_response;
   WebURLLoaderImpl::PopulateURLResponse(url, info, &web_url_response, true);
 
@@ -772,20 +777,25 @@ TEST_F(WebURLLoaderImplTest, SyncLengths) {
   sync_load_response.url = url;
   sync_load_response.data = kBodyData;
   ASSERT_EQ(17u, sync_load_response.data.size());
-  sync_load_response.encoded_body_length = kEncodedBodyLength;
-  sync_load_response.encoded_data_length = kEncodedDataLength;
-  dispatcher()->set_sync_load_response(sync_load_response);
+  sync_load_response.info.encoded_body_length = kEncodedBodyLength;
+  sync_load_response.info.encoded_data_length = kEncodedDataLength;
+  dispatcher()->set_sync_load_response(std::move(sync_load_response));
 
   blink::WebURLResponse response;
   base::Optional<blink::WebURLError> error;
   blink::WebData data;
   int64_t encoded_data_length = 0;
   int64_t encoded_body_length = 0;
+  base::Optional<int64_t> downloaded_file_length;
+  blink::WebBlobInfo downloaded_blob;
   client()->loader()->LoadSynchronously(
-      request, response, error, data, encoded_data_length, encoded_body_length);
+      request, response, error, data, encoded_data_length, encoded_body_length,
+      downloaded_file_length, downloaded_blob);
 
   EXPECT_EQ(kEncodedBodyLength, encoded_body_length);
   EXPECT_EQ(kEncodedDataLength, encoded_data_length);
+  EXPECT_FALSE(downloaded_file_length);
+  EXPECT_TRUE(downloaded_blob.Uuid().IsNull());
 }
 
 }  // namespace

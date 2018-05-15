@@ -25,6 +25,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "cc/trees/render_frame_metadata.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/quads/compositor_frame.h"
@@ -39,8 +40,8 @@
 #include "components/viz/test/compositor_frame_helpers.h"
 #include "components/viz/test/fake_external_begin_frame_source.h"
 #include "components/viz/test/fake_surface_observer.h"
+#include "components/viz/test/test_latest_local_surface_id_lookup_delegate.h"
 #include "content/browser/browser_main_loop.h"
-#include "content/browser/browser_thread_impl.h"
 #include "content/browser/compositor/test/test_image_transport_factory.h"
 #include "content/browser/frame_host/render_widget_host_view_guest.h"
 #include "content/browser/gpu/compositor_util.h"
@@ -50,6 +51,7 @@
 #include "content/browser/renderer_host/input/mouse_wheel_event_queue.h"
 #include "content/browser/renderer_host/overscroll_controller.h"
 #include "content/browser/renderer_host/overscroll_controller_delegate.h"
+#include "content/browser/renderer_host/render_frame_metadata_provider_impl.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
@@ -82,6 +84,7 @@
 #include "ui/aura/client/window_parenting_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
+#include "ui/aura/scoped_keyboard_hook.h"
 #include "ui/aura/test/aura_test_helper.h"
 #include "ui/aura/test/aura_test_utils.h"
 #include "ui/aura/test/test_cursor_client.h"
@@ -109,6 +112,7 @@
 #include "ui/events/gestures/motion_event_aura.h"
 #include "ui/events/keycodes/dom/dom_code.h"
 #include "ui/events/keycodes/dom/keycode_converter.h"
+#include "ui/events/keycodes/keyboard_code_conversion.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/selection_bound.h"
@@ -136,8 +140,6 @@ namespace content {
 void InstallDelegatedFrameHostClient(
     RenderWidgetHostViewAura* render_widget_host_view,
     std::unique_ptr<DelegatedFrameHostClient> delegated_frame_host_client);
-
-namespace {
 
 constexpr uint64_t kFrameIndexStart =
     viz::CompositorFrameSinkSupport::kFrameIndexStart;
@@ -289,6 +291,7 @@ class FakeRenderWidgetHostViewAura : public RenderWidgetHostViewAura {
       : RenderWidgetHostViewAura(widget,
                                  is_guest_view_hack,
                                  false /* is_mus_browser_plugin_guest */),
+        is_guest_view_hack_(is_guest_view_hack),
         delegated_frame_host_client_(
             new FakeDelegatedFrameHostClientAura(this)) {
     InstallDelegatedFrameHostClient(
@@ -352,12 +355,18 @@ class FakeRenderWidgetHostViewAura : public RenderWidgetHostViewAura {
     return event_handler()->pointer_state();
   }
 
+  void SetRenderFrameMetadata(cc::RenderFrameMetadata metadata) {
+    host()->render_frame_metadata_provider()->SetLastRenderFrameMetadataForTest(
+        metadata);
+  }
+
   bool resize_locked() const {
     return delegated_frame_host_client_->resize_locked();
   }
   bool compositor_locked() const {
     return delegated_frame_host_client_->compositor_locked();
   }
+  bool is_guest_view_hack() { return is_guest_view_hack_; }
 
   gfx::Size last_frame_size_;
   FakeWindowEventDispatcher* dispatcher_;
@@ -365,6 +374,7 @@ class FakeRenderWidgetHostViewAura : public RenderWidgetHostViewAura {
       renderer_compositor_frame_sink_;
 
  private:
+  bool is_guest_view_hack_;
   FakeDelegatedFrameHostClientAura* delegated_frame_host_client_;
   viz::mojom::CompositorFrameSinkClientPtr renderer_compositor_frame_sink_ptr_;
 
@@ -473,13 +483,50 @@ class MockRenderWidgetHostImpl : public RenderWidgetHostImpl {
   std::unique_ptr<MockWidgetImpl> widget_impl_;
 };
 
+class TestScopedKeyboardHook : public aura::ScopedKeyboardHook {
+ public:
+  TestScopedKeyboardHook();
+  ~TestScopedKeyboardHook() override;
+
+  // aura::ScopedKeyboardHook override.
+  bool IsKeyLocked(int native_key_code) override;
+
+  // Set up the keys being locked for testing.  One of these methods must be
+  // called before using an instance.
+  void LockAllKeys();
+  void LockSpecificKey(int new_key_to_lock);
+
+ private:
+  bool keyboard_lock_active_ = false;
+  base::Optional<int> locked_key_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestScopedKeyboardHook);
+};
+
+TestScopedKeyboardHook::TestScopedKeyboardHook() = default;
+
+TestScopedKeyboardHook::~TestScopedKeyboardHook() = default;
+
+bool TestScopedKeyboardHook::IsKeyLocked(int native_key_code) {
+  DCHECK(keyboard_lock_active_) << "Did you forget to reserve keys to lock?";
+  return !locked_key_ || (locked_key_.value() == native_key_code);
+}
+
+void TestScopedKeyboardHook::LockAllKeys() {
+  keyboard_lock_active_ = true;
+  locked_key_.reset();
+}
+
+void TestScopedKeyboardHook::LockSpecificKey(int key_to_lock) {
+  keyboard_lock_active_ = true;
+  locked_key_ = key_to_lock;
+}
+
 enum WheelScrollingMode {
   kWheelScrollingModeNone,
   kWheelScrollLatching,
   kAsyncWheelEvents,
 };
-
-}  // namespace
 
 class RenderWidgetHostViewAuraTest : public testing::Test {
  public:
@@ -490,10 +537,42 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
         is_guest_view_hack_(false) {}
 
   static void InstallDelegatedFrameHostClient(
-      RenderWidgetHostViewAura* render_widget_host_view,
+      RenderWidgetHostViewAura* view,
       std::unique_ptr<DelegatedFrameHostClient> delegated_frame_host_client) {
-    render_widget_host_view->delegated_frame_host_client_ =
-        std::move(delegated_frame_host_client);
+    view->delegated_frame_host_client_ = std::move(delegated_frame_host_client);
+    const bool enable_viz =
+        base::FeatureList::IsEnabled(features::kVizDisplayCompositor);
+    view->delegated_frame_host_ = nullptr;
+    view->delegated_frame_host_ = std::make_unique<DelegatedFrameHost>(
+        view->frame_sink_id_, view->delegated_frame_host_client_.get(),
+        features::IsSurfaceSynchronizationEnabled(), enable_viz,
+        false /* should_register_frame_sink_id */);
+  }
+
+  FakeRenderWidgetHostViewAura* CreateView(bool is_guest_view_hack) {
+    int32_t routing_id = process_host_->GetNextRoutingID();
+    delegates_.push_back(base::WrapUnique(new MockRenderWidgetHostDelegate));
+    auto* widget_host = MockRenderWidgetHostImpl::Create(
+        delegates_.back().get(), process_host_, routing_id);
+    delegates_.back()->set_widget_host(widget_host);
+    widget_host->Init();
+    return new FakeRenderWidgetHostViewAura(widget_host, is_guest_view_hack);
+  }
+
+  void DestroyView(FakeRenderWidgetHostViewAura* view) {
+    // For guest-views, |view_| is not the view used by |widget_host_|.
+    bool is_guest_view_hack = view->is_guest_view_hack();
+    RenderWidgetHostImpl* host = view->host();
+    if (!is_guest_view_hack)
+      EXPECT_EQ(view, host->GetView());
+    view->Destroy();
+    if (!is_guest_view_hack)
+      EXPECT_EQ(nullptr, host->GetView());
+
+    if (widget_host_uses_shutdown_to_destroy_)
+      host->ShutdownAndDestroyWidget(true);
+    else
+      delete host;
   }
 
   void SetUpEnvironment() {
@@ -524,14 +603,8 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
     aura::client::ParentWindowWithContext(parent_view_->GetNativeView(),
                                           aura_test_helper_->root_window(),
                                           gfx::Rect());
-
-    routing_id = process_host_->GetNextRoutingID();
-    delegates_.push_back(base::WrapUnique(new MockRenderWidgetHostDelegate));
-    widget_host_ = MockRenderWidgetHostImpl::Create(delegates_.back().get(),
-                                                    process_host_, routing_id);
-    delegates_.back()->set_widget_host(widget_host_);
-    widget_host_->Init();
-    view_ = new FakeRenderWidgetHostViewAura(widget_host_, is_guest_view_hack_);
+    view_ = CreateView(is_guest_view_hack_);
+    widget_host_ = static_cast<MockRenderWidgetHostImpl*>(view_->host());
     // Set the mouse_wheel_phase_handler_ timer timeout to 100ms.
     view_->event_handler()->set_mouse_wheel_wheel_phase_handler_timeout(
         base::TimeDelta::FromMilliseconds(100));
@@ -541,21 +614,8 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
   void TearDownEnvironment() {
     sink_ = nullptr;
     process_host_ = nullptr;
-    if (view_) {
-      // For guest-views, |view_| is not the view used by |widget_host_|.
-      if (!is_guest_view_hack_) {
-        EXPECT_EQ(view_, widget_host_->GetView());
-      }
-      view_->Destroy();
-      if (!is_guest_view_hack_) {
-        EXPECT_EQ(nullptr, widget_host_->GetView());
-      }
-    }
-
-    if (widget_host_uses_shutdown_to_destroy_)
-      widget_host_->ShutdownAndDestroyWidget(true);
-    else
-      delete widget_host_;
+    if (view_)
+      DestroyView(view_);
 
     parent_view_->Destroy();
     delete parent_host_;
@@ -567,7 +627,10 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
     ImageTransportFactory::Terminate();
   }
 
-  void SetUp() override { SetUpEnvironment(); }
+  void SetUp() override {
+    SetFeatureList();
+    SetUpEnvironment();
+  }
 
   void TearDown() override { TearDownEnvironment(); }
 
@@ -619,6 +682,7 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
 
   void TimerBasedWheelEventPhaseInfo();
   void TimerBasedLatchingBreaksWithMouseMove();
+  void TimerBasedLatchingBreaksWithModifiersChange();
   void TimerBasedLatchingBreaksWithDirectionChange();
   void TouchpadFlingStartResetsWheelPhaseState();
   void GSBWithTouchSourceStopsWheelScrollSequence();
@@ -641,8 +705,7 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
     // First mock-focus the widget if not already.
     if (render_widget_host_delegate()->GetFocusedRenderWidgetHost(
             widget_host_) != view->GetRenderWidgetHost()) {
-      render_widget_host_delegate()->set_focused_widget(
-          view->GetRenderWidgetHostImpl());
+      render_widget_host_delegate()->set_focused_widget(view->host());
     }
 
     TextInputManager* manager =
@@ -715,7 +778,7 @@ class RenderWidgetHostViewAuraWheelScrollLatchingEnabledTest
     SetFeatureList();
     ui::GestureConfiguration::GetInstance()->set_scroll_debounce_interval_in_ms(
         0);
-    RenderWidgetHostViewAuraTest::SetUp();
+    RenderWidgetHostViewAuraTest::SetUpEnvironment();
   }
 };
 
@@ -728,7 +791,7 @@ class RenderWidgetHostViewAuraAsyncWheelEventsEnabledTest
     SetFeatureList();
     ui::GestureConfiguration::GetInstance()->set_scroll_debounce_interval_in_ms(
         0);
-    RenderWidgetHostViewAuraTest::SetUp();
+    RenderWidgetHostViewAuraTest::SetUpEnvironment();
   }
 };
 
@@ -836,10 +899,13 @@ class RenderWidgetHostViewAuraOverscrollTest
 
   void SetUpOverscrollEnvironmentImpl(int debounce_interval_in_ms) {
     SetFeatureList();
+    scoped_feature_list_.InitAndEnableFeature(
+        features::kTouchpadOverscrollHistoryNavigation);
+
     ui::GestureConfiguration::GetInstance()->set_scroll_debounce_interval_in_ms(
         debounce_interval_in_ms);
 
-    RenderWidgetHostViewAuraTest::SetUp();
+    RenderWidgetHostViewAuraTest::SetUpEnvironment();
 
     view_->SetOverscrollControllerEnabled(true);
     gfx::Size display_size = display::Screen::GetScreen()
@@ -1173,6 +1239,8 @@ class RenderWidgetHostViewAuraOverscrollTest
   bool wheel_scroll_latching_enabled_;
 
  private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAuraOverscrollTest);
 };
 
@@ -1466,13 +1534,14 @@ TEST_F(RenderWidgetHostViewAuraTest, SetCompositionText) {
   composition_text.text = base::ASCIIToUTF16("|a|b");
 
   // Focused segment
-  composition_text.ime_text_spans.push_back(ui::ImeTextSpan(
-      ui::ImeTextSpan::Type::kComposition, 0, 3, 0xff000000, true, 0x78563412));
+  composition_text.ime_text_spans.push_back(
+      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 0, 3,
+                      ui::ImeTextSpan::Thickness::kThick, 0x78563412));
 
   // Non-focused segment, with different background color.
   composition_text.ime_text_spans.push_back(
-      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 3, 4, 0xff000000,
-                      false, 0xefcdab90));
+      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 3, 4,
+                      ui::ImeTextSpan::Thickness::kThin, 0xefcdab90));
 
   const ui::ImeTextSpans& ime_text_spans = composition_text.ime_text_spans;
 
@@ -1523,13 +1592,14 @@ TEST_F(RenderWidgetHostViewAuraTest, FinishCompositionByMouse) {
   composition_text.text = base::ASCIIToUTF16("|a|b");
 
   // Focused segment
-  composition_text.ime_text_spans.push_back(ui::ImeTextSpan(
-      ui::ImeTextSpan::Type::kComposition, 0, 3, 0xff000000, true, 0x78563412));
+  composition_text.ime_text_spans.push_back(
+      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 0, 3,
+                      ui::ImeTextSpan::Thickness::kThick, 0x78563412));
 
   // Non-focused segment, with different background color.
   composition_text.ime_text_spans.push_back(
-      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 3, 4, 0xff000000,
-                      false, 0xefcdab90));
+      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 3, 4,
+                      ui::ImeTextSpan::Thickness::kThin, 0xefcdab90));
 
   // Caret is at the end. (This emulates Japanese MSIME 2007 and later)
   composition_text.selection = gfx::Range(4);
@@ -1692,6 +1762,293 @@ TEST_F(RenderWidgetHostViewAuraTest, TouchEventState) {
   EXPECT_EQ(0U, pointer_state().GetPointerCount());
   events = GetAndResetDispatchedMessages();
   EXPECT_EQ(0U, events.size());
+}
+
+// The DOM KeyCode map for Fuchsia maps all DomCodes to 0.  This means that
+// tests which expect different behaviors for different keys will not work.
+// Tracked via crbug.com/829551
+#if defined(OS_FUCHSIA)
+#define MAYBE_KeyEventRoutingWithKeyboardLockActiveForOneKey \
+  DISABLED_KeyEventRoutingWithKeyboardLockActiveForOneKey
+#else
+#define MAYBE_KeyEventRoutingWithKeyboardLockActiveForOneKey \
+  KeyEventRoutingWithKeyboardLockActiveForOneKey
+#endif
+TEST_F(RenderWidgetHostViewAuraTest,
+       MAYBE_KeyEventRoutingWithKeyboardLockActiveForOneKey) {
+  view_->InitAsChild(nullptr);
+  view_->Show();
+
+  auto test_hook = std::make_unique<TestScopedKeyboardHook>();
+  test_hook->LockSpecificKey(
+      ui::KeycodeConverter::DomCodeToNativeKeycode(ui::DomCode::US_A));
+  view_->event_handler()->scoped_keyboard_hook_ = std::move(test_hook);
+
+  // This locked key will skip the prehandler and be sent to the input handler.
+  ui::KeyEvent key_event1(ui::ET_KEY_PRESSED,
+                          ui::DomCodeToUsLayoutKeyboardCode(ui::DomCode::US_A),
+                          ui::DomCode::US_A, ui::EF_NONE);
+  view_->OnKeyEvent(&key_event1);
+  const NativeWebKeyboardEvent* event1 =
+      render_widget_host_delegate()->last_event();
+  ASSERT_FALSE(event1);
+  // Run the runloop to ensure input messages are dispatched.  Otherwise the
+  // result of GetAndResetDispatchedMessages() will not be valid.
+  base::RunLoop().RunUntilIdle();
+  auto events = GetAndResetDispatchedMessages();
+  ASSERT_FALSE(events.empty());
+  const NativeWebKeyboardEvent* native_key_event1 =
+      static_cast<const NativeWebKeyboardEvent*>(
+          events[0]->ToEvent()->Event()->web_event.get());
+  ASSERT_TRUE(native_key_event1);
+  ASSERT_EQ(key_event1.key_code(), native_key_event1->windows_key_code);
+  ASSERT_EQ(ui::KeycodeConverter::DomCodeToNativeKeycode(key_event1.code()),
+            native_key_event1->native_key_code);
+
+  // These keys will pass through the prehandler since they aren't locked.
+  std::vector<ui::DomCode> dom_codes = {
+      ui::DomCode::US_B,     ui::DomCode::US_Z,  ui::DomCode::TAB,
+      ui::DomCode::ALT_LEFT, ui::DomCode::ENTER, ui::DomCode::ESCAPE};
+  for (ui::DomCode dom_code : dom_codes) {
+    ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
+                           ui::DomCodeToUsLayoutKeyboardCode(dom_code),
+                           dom_code, ui::EF_NONE);
+    view_->OnKeyEvent(&key_event);
+    const NativeWebKeyboardEvent* event =
+        render_widget_host_delegate()->last_event();
+    ASSERT_TRUE(event) << "Failed for DomCode: "
+                       << ui::KeycodeConverter::DomCodeToCodeString(dom_code);
+    ASSERT_EQ(key_event.key_code(), event->windows_key_code);
+    ASSERT_EQ(ui::KeycodeConverter::DomCodeToNativeKeycode(key_event.code()),
+              event->native_key_code);
+  }
+}
+
+// The DOM KeyCode map for Fuchsia maps all DomCodes to 0.  This means that
+// tests which expect different behaviors for different keys will not work.
+// Tracked via crbug.com/829551
+#if defined(OS_FUCHSIA)
+#define MAYBE_KeyEventRoutingWithKeyboardLockActiveForEscKey \
+  DISABLED_KeyEventRoutingWithKeyboardLockActiveForEscKey
+#else
+#define MAYBE_KeyEventRoutingWithKeyboardLockActiveForEscKey \
+  KeyEventRoutingWithKeyboardLockActiveForEscKey
+#endif
+TEST_F(RenderWidgetHostViewAuraTest,
+       MAYBE_KeyEventRoutingWithKeyboardLockActiveForEscKey) {
+  view_->InitAsChild(nullptr);
+  view_->Show();
+
+  auto test_hook = std::make_unique<TestScopedKeyboardHook>();
+  test_hook->LockSpecificKey(
+      ui::KeycodeConverter::DomCodeToNativeKeycode(ui::DomCode::ESCAPE));
+  view_->event_handler()->scoped_keyboard_hook_ = std::move(test_hook);
+
+  // Although this key was locked, it will still pass through the prehandler as
+  // we do not want to prevent ESC from being used to exit fullscreen.
+  ui::KeyEvent key_event1(
+      ui::ET_KEY_PRESSED,
+      ui::DomCodeToUsLayoutKeyboardCode(ui::DomCode::ESCAPE),
+      ui::DomCode::ESCAPE, ui::EF_NONE);
+  view_->OnKeyEvent(&key_event1);
+  const NativeWebKeyboardEvent* event1 =
+      render_widget_host_delegate()->last_event();
+  ASSERT_TRUE(event1);
+  ASSERT_EQ(key_event1.key_code(), event1->windows_key_code);
+  ASSERT_EQ(ui::KeycodeConverter::DomCodeToNativeKeycode(key_event1.code()),
+            event1->native_key_code);
+
+  // This event will pass through the prehandler since it isn't locked.
+  ui::KeyEvent key_event2(ui::ET_KEY_PRESSED,
+                          ui::DomCodeToUsLayoutKeyboardCode(ui::DomCode::US_B),
+                          ui::DomCode::US_B, ui::EF_NONE);
+  view_->OnKeyEvent(&key_event2);
+  const NativeWebKeyboardEvent* event2 =
+      render_widget_host_delegate()->last_event();
+  ASSERT_TRUE(event2);
+  ASSERT_EQ(key_event2.key_code(), event2->windows_key_code);
+  ASSERT_EQ(ui::KeycodeConverter::DomCodeToNativeKeycode(key_event2.code()),
+            event2->native_key_code);
+}
+
+TEST_F(RenderWidgetHostViewAuraTest,
+       KeyEventRoutingWithKeyboardLockActiveForAllKeys) {
+  view_->InitAsChild(nullptr);
+  view_->Show();
+
+  auto test_hook = std::make_unique<TestScopedKeyboardHook>();
+  test_hook->LockAllKeys();
+  view_->event_handler()->scoped_keyboard_hook_ = std::move(test_hook);
+
+  // These keys will skip the prehandler and be sent to the input handler.
+  std::vector<ui::DomCode> dom_codes = {ui::DomCode::US_A, ui::DomCode::US_B,
+                                        ui::DomCode::TAB, ui::DomCode::ALT_LEFT,
+                                        ui::DomCode::ENTER};
+  for (ui::DomCode dom_code : dom_codes) {
+    ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
+                           ui::DomCodeToUsLayoutKeyboardCode(dom_code),
+                           dom_code, ui::EF_NONE);
+    view_->OnKeyEvent(&key_event);
+    const NativeWebKeyboardEvent* event =
+        render_widget_host_delegate()->last_event();
+    ASSERT_FALSE(event) << "Failed for DomCode: "
+                        << ui::KeycodeConverter::DomCodeToCodeString(dom_code);
+    // Run the runloop to ensure input messages are dispatched.  Otherwise the
+    // result of GetAndResetDispatchedMessages() will not be valid.
+    base::RunLoop().RunUntilIdle();
+    auto events = GetAndResetDispatchedMessages();
+    ASSERT_FALSE(events.empty())
+        << "Failed for DomCode: "
+        << ui::KeycodeConverter::DomCodeToCodeString(dom_code);
+    const NativeWebKeyboardEvent* native_key_event =
+        static_cast<const NativeWebKeyboardEvent*>(
+            events[0]->ToEvent()->Event()->web_event.get());
+    ASSERT_TRUE(native_key_event)
+        << "Failed for DomCode: "
+        << ui::KeycodeConverter::DomCodeToCodeString(dom_code);
+    ASSERT_EQ(key_event.key_code(), native_key_event->windows_key_code);
+    ASSERT_EQ(ui::KeycodeConverter::DomCodeToNativeKeycode(key_event.code()),
+              native_key_event->native_key_code);
+  }
+
+  // Although this key was locked, it will still pass through the prehandler as
+  // we do not want to prevent ESC from being used to exit fullscreen.
+  ui::KeyEvent esc_key_event(
+      ui::ET_KEY_PRESSED,
+      ui::DomCodeToUsLayoutKeyboardCode(ui::DomCode::ESCAPE),
+      ui::DomCode::ESCAPE, ui::EF_NONE);
+  view_->OnKeyEvent(&esc_key_event);
+  const NativeWebKeyboardEvent* esc_event =
+      render_widget_host_delegate()->last_event();
+  ASSERT_TRUE(esc_event);
+  ASSERT_EQ(esc_key_event.key_code(), esc_event->windows_key_code);
+  ASSERT_EQ(ui::KeycodeConverter::DomCodeToNativeKeycode(esc_key_event.code()),
+            esc_event->native_key_code);
+}
+
+TEST_F(RenderWidgetHostViewAuraTest,
+       KeyEventRoutingKeyboardLockAndChildPopupWithInputGrab) {
+  parent_view_->SetBounds(gfx::Rect(10, 10, 400, 400));
+  parent_view_->Focus();
+  ASSERT_TRUE(parent_view_->HasFocus());
+
+  // kWebPopupTypePage means the child view (popup) will receive input.
+  view_->SetPopupType(blink::kWebPopupTypePage);
+  view_->InitAsPopup(parent_view_, gfx::Rect(10, 10, 100, 100));
+  ASSERT_NE(nullptr, view_->GetNativeView());
+  view_->Show();
+
+  MockRenderWidgetHostImpl* parent_host =
+      static_cast<MockRenderWidgetHostImpl*>(parent_host_);
+  // Run the runloop to ensure input messages are dispatched.  Otherwise the
+  // result of GetAndResetDispatchedMessages() will not be valid.
+  base::RunLoop().RunUntilIdle();
+  // A MouseCapture lost message is posted when the child gains focus, clear
+  // that message out so we can reliably test the number of messages
+  // dispatched later on in the test.
+  parent_host->input_handler()->GetAndResetDispatchedMessages();
+
+  // The parent view owns the KeyboardLock for this test.
+  auto test_hook = std::make_unique<TestScopedKeyboardHook>();
+  test_hook->LockAllKeys();
+  parent_view_->event_handler()->scoped_keyboard_hook_ = std::move(test_hook);
+
+  // These keys will not be processed by the parent view but will be handled in
+  // the child (popup) view.
+  std::vector<ui::DomCode> dom_codes = {
+      ui::DomCode::US_A,     ui::DomCode::ENTER, ui::DomCode::TAB,
+      ui::DomCode::ALT_LEFT, ui::DomCode::US_Z,  ui::DomCode::ESCAPE};
+  for (ui::DomCode dom_code : dom_codes) {
+    ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
+                           ui::DomCodeToUsLayoutKeyboardCode(dom_code),
+                           dom_code, ui::EF_NONE);
+    parent_view_->OnKeyEvent(&key_event);
+    const NativeWebKeyboardEvent* parent_event = delegates_[0]->last_event();
+    ASSERT_FALSE(parent_event)
+        << "Failed for DomCode: "
+        << ui::KeycodeConverter::DomCodeToCodeString(dom_code);
+
+    const NativeWebKeyboardEvent* child_event =
+        render_widget_host_delegate()->last_event();
+    ASSERT_TRUE(child_event)
+        << "Failed for DomCode: "
+        << ui::KeycodeConverter::DomCodeToCodeString(dom_code);
+    ASSERT_EQ(key_event.key_code(), child_event->windows_key_code);
+    ASSERT_EQ(ui::KeycodeConverter::DomCodeToNativeKeycode(key_event.code()),
+              child_event->native_key_code);
+    // Run the runloop to ensure input messages are dispatched.  Otherwise the
+    // result of GetAndResetDispatchedMessages() will not be valid.
+    base::RunLoop().RunUntilIdle();
+    auto parent_events =
+        parent_host->input_handler()->GetAndResetDispatchedMessages();
+    ASSERT_TRUE(parent_events.empty())
+        << "Failed for DomCode: "
+        << ui::KeycodeConverter::DomCodeToCodeString(dom_code);
+    auto child_events = GetAndResetDispatchedMessages();
+    ASSERT_FALSE(child_events.empty())
+        << "Failed for DomCode: "
+        << ui::KeycodeConverter::DomCodeToCodeString(dom_code);
+  }
+}
+
+TEST_F(RenderWidgetHostViewAuraTest,
+       KeyEventRoutingKeyboardLockAndChildPopupWithoutInputGrab) {
+  parent_view_->SetBounds(gfx::Rect(10, 10, 400, 400));
+  parent_view_->Focus();
+  ASSERT_TRUE(parent_view_->HasFocus());
+
+  // kWebPopupTypeNone means the child view (popup) will not receive input.
+  view_->SetPopupType(blink::kWebPopupTypeNone);
+  view_->InitAsPopup(parent_view_, gfx::Rect(10, 10, 100, 100));
+  ASSERT_NE(nullptr, view_->GetNativeView());
+  view_->Show();
+
+  // The parent view owns the KeyboardLock for this test.
+  auto test_hook = std::make_unique<TestScopedKeyboardHook>();
+  test_hook->LockAllKeys();
+  parent_view_->event_handler()->scoped_keyboard_hook_ = std::move(test_hook);
+
+  // These keys will be handled by the parent view and will not be sent through
+  // the prehandler input pipeline.
+  std::vector<ui::DomCode> dom_codes = {ui::DomCode::US_A, ui::DomCode::ENTER,
+                                        ui::DomCode::TAB, ui::DomCode::ALT_LEFT,
+                                        ui::DomCode::US_Z};
+  MockRenderWidgetHostImpl* parent_host =
+      static_cast<MockRenderWidgetHostImpl*>(parent_host_);
+  for (ui::DomCode dom_code : dom_codes) {
+    ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
+                           ui::DomCodeToUsLayoutKeyboardCode(dom_code),
+                           dom_code, ui::EF_NONE);
+    parent_view_->OnKeyEvent(&key_event);
+    const NativeWebKeyboardEvent* child_event =
+        render_widget_host_delegate()->last_event();
+    ASSERT_FALSE(child_event)
+        << "Failed for DomCode: "
+        << ui::KeycodeConverter::DomCodeToCodeString(dom_code);
+    // Run the runloop to ensure input messages are dispatched.  Otherwise the
+    // result of GetAndResetDispatchedMessages() will not be valid.
+    base::RunLoop().RunUntilIdle();
+    auto child_events = GetAndResetDispatchedMessages();
+    ASSERT_TRUE(child_events.empty())
+        << "Failed for DomCode: "
+        << ui::KeycodeConverter::DomCodeToCodeString(dom_code);
+
+    const NativeWebKeyboardEvent* parent_event = delegates_[0]->last_event();
+    ASSERT_FALSE(parent_event)
+        << "Failed for DomCode: "
+        << ui::KeycodeConverter::DomCodeToCodeString(dom_code);
+    auto events = parent_host->input_handler()->GetAndResetDispatchedMessages();
+    ASSERT_FALSE(events.empty());
+    const NativeWebKeyboardEvent* native_key_event =
+        static_cast<const NativeWebKeyboardEvent*>(
+            events.back()->ToEvent()->Event()->web_event.get());
+    ASSERT_TRUE(native_key_event)
+        << "Failed for DomCode: "
+        << ui::KeycodeConverter::DomCodeToCodeString(dom_code);
+    ASSERT_EQ(key_event.key_code(), native_key_event->windows_key_code);
+    ASSERT_EQ(ui::KeycodeConverter::DomCodeToNativeKeycode(key_event.code()),
+              native_key_event->native_key_code);
+  }
 }
 
 void RenderWidgetHostViewAuraTest::TimerBasedWheelEventPhaseInfo() {
@@ -1869,6 +2226,84 @@ TEST_F(RenderWidgetHostViewAuraWheelScrollLatchingEnabledTest,
 TEST_F(RenderWidgetHostViewAuraAsyncWheelEventsEnabledTest,
        TimerBasedLatchingBreaksWithMouseMove) {
   TimerBasedLatchingBreaksWithMouseMove();
+}
+
+// Tests that latching breaks when the current wheel event has different
+// modifiers.
+void RenderWidgetHostViewAuraTest::
+    TimerBasedLatchingBreaksWithModifiersChange() {
+  // The test is valid only when wheel scroll latching is enabled.
+  if (wheel_scrolling_mode_ == kWheelScrollingModeNone)
+    return;
+
+  // Set the mouse_wheel_phase_handler_ timer timeout to a large value to make
+  // sure that the timer is still running when the wheel event with different
+  // modifiers is sent.
+  view_->event_handler()->set_mouse_wheel_wheel_phase_handler_timeout(
+      TestTimeouts::action_max_timeout());
+
+  view_->InitAsChild(nullptr);
+  view_->Show();
+  sink_->ClearMessages();
+
+  ui::MouseWheelEvent event(gfx::Vector2d(0, 5), gfx::Point(2, 2),
+                            gfx::Point(2, 2), ui::EventTimeForNow(), 0, 0);
+  view_->OnMouseEvent(&event);
+  base::RunLoop().RunUntilIdle();
+  MockWidgetInputHandler::MessageVector events =
+      GetAndResetDispatchedMessages();
+
+  EXPECT_TRUE(events[0]->ToEvent());
+  const WebMouseWheelEvent* wheel_event =
+      static_cast<const WebMouseWheelEvent*>(
+          events[0]->ToEvent()->Event()->web_event.get());
+  EXPECT_EQ(WebMouseWheelEvent::kPhaseBegan, wheel_event->phase);
+  events[0]->ToEvent()->CallCallback(INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  events = GetAndResetDispatchedMessages();
+
+  // Send the second wheel event with the same modifiers. The second wheel event
+  // will still be part of the current scrolling sequence.
+  ui::MouseWheelEvent event2(gfx::Vector2d(0, 5), gfx::Point(2, 2),
+                             gfx::Point(2, 2), ui::EventTimeForNow(), 0, 0);
+  view_->OnMouseEvent(&event2);
+  base::RunLoop().RunUntilIdle();
+  events = GetAndResetDispatchedMessages();
+  if (wheel_scrolling_mode_ == kWheelScrollLatching)
+    EXPECT_EQ("MouseWheel", GetMessageNames(events));
+  else
+    EXPECT_EQ("MouseWheel GestureScrollUpdate", GetMessageNames(events));
+
+  wheel_event = static_cast<const WebMouseWheelEvent*>(
+      events[0]->ToEvent()->Event()->web_event.get());
+  EXPECT_EQ(WebMouseWheelEvent::kPhaseChanged, wheel_event->phase);
+  if (wheel_scrolling_mode_ == kWheelScrollLatching)
+    events[0]->ToEvent()->CallCallback(INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  events = GetAndResetDispatchedMessages();
+
+  // Send the third wheel event with a ctrl key down. The third wheel event will
+  // break the latching since the event modifiers have changed.
+  ui::MouseWheelEvent event3(gfx::Vector2d(0, 5), gfx::Point(2, 2),
+                             gfx::Point(2, 2), ui::EventTimeForNow(),
+                             ui::EF_CONTROL_DOWN, 0);
+  view_->OnMouseEvent(&event3);
+  base::RunLoop().RunUntilIdle();
+  events = GetAndResetDispatchedMessages();
+  EXPECT_EQ("MouseWheel GestureScrollEnd MouseWheel", GetMessageNames(events));
+  wheel_event = static_cast<const WebMouseWheelEvent*>(
+      events[0]->ToEvent()->Event()->web_event.get());
+  EXPECT_EQ(WebMouseWheelEvent::kPhaseEnded, wheel_event->phase);
+
+  wheel_event = static_cast<const WebMouseWheelEvent*>(
+      events[2]->ToEvent()->Event()->web_event.get());
+  EXPECT_EQ(WebMouseWheelEvent::kPhaseBegan, wheel_event->phase);
+}
+TEST_F(RenderWidgetHostViewAuraWheelScrollLatchingEnabledTest,
+       TimerBasedLatchingBreaksWithModifiersChange) {
+  TimerBasedLatchingBreaksWithModifiersChange();
+}
+TEST_F(RenderWidgetHostViewAuraAsyncWheelEventsEnabledTest,
+       TimerBasedLatchingBreaksWithModifiersChange) {
+  TimerBasedLatchingBreaksWithModifiersChange();
 }
 
 // Tests that latching breaks when the new wheel event goes a different
@@ -2114,12 +2549,12 @@ void RenderWidgetHostViewAuraTest::
   gesture_event = static_cast<const WebGestureEvent*>(
       events[1]->ToEvent()->Event()->web_event.get());
   EXPECT_EQ(WebInputEvent::kGestureScrollEnd, gesture_event->GetType());
-  EXPECT_EQ(blink::kWebGestureDeviceTouchpad, gesture_event->source_device);
+  EXPECT_EQ(blink::kWebGestureDeviceTouchpad, gesture_event->SourceDevice());
 
   gesture_event = static_cast<const WebGestureEvent*>(
       events[2]->ToEvent()->Event()->web_event.get());
   EXPECT_EQ(WebInputEvent::kGestureScrollBegin, gesture_event->GetType());
-  EXPECT_EQ(blink::kWebGestureDeviceTouchscreen, gesture_event->source_device);
+  EXPECT_EQ(blink::kWebGestureDeviceTouchscreen, gesture_event->SourceDevice());
 }
 
 TEST_F(RenderWidgetHostViewAuraWheelScrollLatchingEnabledTest,
@@ -2326,18 +2761,18 @@ TEST_F(RenderWidgetHostViewAuraTest, CompositorViewportPixelSizeWithScale) {
 }
 
 // This test verifies that in AutoResize mode a new
-// ViewMsg_SetLocalSurfaceIdForAutoResize message is sent when ScreenInfo
+// ViewMsg_Resize message is sent when ScreenInfo
 // changes and that message contains the latest ScreenInfo.
 TEST_F(RenderWidgetHostViewAuraTest, AutoResizeWithScale) {
   view_->InitAsChild(nullptr);
   aura::client::ParentWindowWithContext(
       view_->GetNativeView(), parent_view_->GetNativeView()->GetRootWindow(),
       gfx::Rect());
-  sink_->ClearMessages();
   viz::LocalSurfaceId local_surface_id1(view_->GetLocalSurfaceId());
   EXPECT_TRUE(local_surface_id1.is_valid());
 
-  widget_host_->SetAutoResize(true, gfx::Size(50, 50), gfx::Size(100, 100));
+  view_->EnableAutoResize(gfx::Size(50, 50), gfx::Size(100, 100));
+  sink_->ClearMessages();
   ViewHostMsg_ResizeOrRepaint_ACK_Params params;
   params.view_size = gfx::Size(75, 75);
   params.sequence_number = 1;
@@ -2354,16 +2789,19 @@ TEST_F(RenderWidgetHostViewAuraTest, AutoResizeWithScale) {
   ASSERT_EQ(1u, sink_->message_count());
   {
     const IPC::Message* msg = sink_->GetMessageAt(0);
-    EXPECT_EQ(static_cast<uint32_t>(ViewMsg_SetLocalSurfaceIdForAutoResize::ID),
-              msg->type());
-    ViewMsg_SetLocalSurfaceIdForAutoResize::Param params;
-    ViewMsg_SetLocalSurfaceIdForAutoResize::Read(msg, &params);
-    EXPECT_EQ(1u, std::get<0>(params));  // sequence_number
-    EXPECT_EQ("50x50", std::get<1>(params).ToString());
-    EXPECT_EQ("100x100", std::get<2>(params).ToString());
-    EXPECT_EQ(1, std::get<3>(params).device_scale_factor);
-    local_surface_id2 = std::get<5>(params);
+    EXPECT_EQ(static_cast<uint32_t>(ViewMsg_Resize::ID), msg->type());
+    ViewMsg_Resize::Param params;
+    ViewMsg_Resize::Read(msg, &params);
+    ResizeParams resize_params = std::get<0>(params);
+    EXPECT_EQ(1u,
+              resize_params.auto_resize_sequence_number);  // sequence_number
+    EXPECT_EQ("50x50", resize_params.min_size_for_auto_resize.ToString());
+    EXPECT_EQ("100x100", resize_params.max_size_for_auto_resize.ToString());
+    EXPECT_EQ(1, resize_params.screen_info.device_scale_factor);
+    local_surface_id2 =
+        resize_params.local_surface_id.value_or(viz::LocalSurfaceId());
     EXPECT_NE(local_surface_id1, local_surface_id2);
+    EXPECT_TRUE(local_surface_id2.is_valid());
   }
 
   sink_->ClearMessages();
@@ -2372,33 +2810,36 @@ TEST_F(RenderWidgetHostViewAuraTest, AutoResizeWithScale) {
   {
     // TODO(samans): There should be only one message in the sink, but some
     // testers are seeing two (crrev.com/c/839580). Investigate why.
-    const IPC::Message* msg = sink_->GetFirstMessageMatching(
-        ViewMsg_SetLocalSurfaceIdForAutoResize::ID);
+    const IPC::Message* msg =
+        sink_->GetFirstMessageMatching(ViewMsg_Resize::ID);
     ASSERT_TRUE(msg);
-    ViewMsg_SetLocalSurfaceIdForAutoResize::Param params;
-    ViewMsg_SetLocalSurfaceIdForAutoResize::Read(msg, &params);
-    EXPECT_EQ(1u, std::get<0>(params));  // sequence_number
-    EXPECT_EQ("50x50", std::get<1>(params).ToString());
-    EXPECT_EQ("100x100", std::get<2>(params).ToString());
-    EXPECT_EQ(2, std::get<3>(params).device_scale_factor);
-    EXPECT_NE(local_surface_id1, std::get<5>(params));
-    EXPECT_NE(local_surface_id2, std::get<5>(params));
+    ViewMsg_Resize::Param params;
+    ViewMsg_Resize::Read(msg, &params);
+    ResizeParams resize_params = std::get<0>(params);
+    EXPECT_EQ(1u,
+              resize_params.auto_resize_sequence_number);  // sequence_number
+    EXPECT_EQ("50x50", resize_params.min_size_for_auto_resize.ToString());
+    EXPECT_EQ("100x100", resize_params.max_size_for_auto_resize.ToString());
+    EXPECT_EQ(2, resize_params.screen_info.device_scale_factor);
+    EXPECT_NE(local_surface_id1,
+              resize_params.local_surface_id.value_or(viz::LocalSurfaceId()));
+    EXPECT_NE(local_surface_id2,
+              resize_params.local_surface_id.value_or(viz::LocalSurfaceId()));
   }
 }
 
 // This test verifies that in AutoResize mode a new
-// ViewMsg_SetLocalSurfaceIdForAutoResize message is sent when size
-// changes.
+// ViewMsg_Resize message is sent when size changes.
 TEST_F(RenderWidgetHostViewAuraTest, AutoResizeWithBrowserInitiatedResize) {
   view_->InitAsChild(nullptr);
   aura::client::ParentWindowWithContext(
       view_->GetNativeView(), parent_view_->GetNativeView()->GetRootWindow(),
       gfx::Rect());
-  sink_->ClearMessages();
   viz::LocalSurfaceId local_surface_id1(view_->GetLocalSurfaceId());
   EXPECT_TRUE(local_surface_id1.is_valid());
 
-  widget_host_->SetAutoResize(true, gfx::Size(50, 50), gfx::Size(100, 100));
+  view_->EnableAutoResize(gfx::Size(50, 50), gfx::Size(100, 100));
+  sink_->ClearMessages();
   ViewHostMsg_ResizeOrRepaint_ACK_Params params;
   params.view_size = gfx::Size(75, 75);
   params.sequence_number = 1;
@@ -2415,15 +2856,17 @@ TEST_F(RenderWidgetHostViewAuraTest, AutoResizeWithBrowserInitiatedResize) {
   ASSERT_EQ(1u, sink_->message_count());
   {
     const IPC::Message* msg = sink_->GetMessageAt(0);
-    EXPECT_EQ(static_cast<uint32_t>(ViewMsg_SetLocalSurfaceIdForAutoResize::ID),
-              msg->type());
-    ViewMsg_SetLocalSurfaceIdForAutoResize::Param params;
-    ViewMsg_SetLocalSurfaceIdForAutoResize::Read(msg, &params);
-    EXPECT_EQ(1u, std::get<0>(params));  // sequence_number
-    EXPECT_EQ("50x50", std::get<1>(params).ToString());
-    EXPECT_EQ("100x100", std::get<2>(params).ToString());
-    EXPECT_EQ(1, std::get<3>(params).device_scale_factor);
-    local_surface_id2 = std::get<5>(params);
+    EXPECT_EQ(static_cast<uint32_t>(ViewMsg_Resize::ID), msg->type());
+    ViewMsg_Resize::Param params;
+    ViewMsg_Resize::Read(msg, &params);
+    ResizeParams resize_params = std::get<0>(params);
+    EXPECT_EQ(1u, resize_params.auto_resize_sequence_number);
+    EXPECT_EQ("50x50", resize_params.min_size_for_auto_resize.ToString());
+    EXPECT_EQ("100x100", resize_params.max_size_for_auto_resize.ToString());
+    EXPECT_EQ(1, resize_params.screen_info.device_scale_factor);
+    local_surface_id2 =
+        resize_params.local_surface_id.value_or(viz::LocalSurfaceId());
+    EXPECT_TRUE(local_surface_id2.is_valid());
     EXPECT_NE(local_surface_id1, local_surface_id2);
   }
 
@@ -2431,19 +2874,20 @@ TEST_F(RenderWidgetHostViewAuraTest, AutoResizeWithBrowserInitiatedResize) {
 
   view_->SetSize(gfx::Size(120, 120));
   viz::LocalSurfaceId local_surface_id3;
-  // Find out what the second IPC is.
-  ASSERT_EQ(2u, sink_->message_count());
+  ASSERT_EQ(1u, sink_->message_count());
   {
     const IPC::Message* msg = sink_->GetMessageAt(0);
-    EXPECT_EQ(static_cast<uint32_t>(ViewMsg_SetLocalSurfaceIdForAutoResize::ID),
-              msg->type());
-    ViewMsg_SetLocalSurfaceIdForAutoResize::Param params;
-    ViewMsg_SetLocalSurfaceIdForAutoResize::Read(msg, &params);
-    EXPECT_EQ(1u, std::get<0>(params));  // sequence_number
-    EXPECT_EQ("50x50", std::get<1>(params).ToString());
-    EXPECT_EQ("100x100", std::get<2>(params).ToString());
-    EXPECT_EQ(1, std::get<3>(params).device_scale_factor);
-    local_surface_id3 = std::get<5>(params);
+    EXPECT_EQ(static_cast<uint32_t>(ViewMsg_Resize::ID), msg->type());
+    ViewMsg_Resize::Param params;
+    ViewMsg_Resize::Read(msg, &params);
+    ResizeParams resize_params = std::get<0>(params);
+    EXPECT_EQ(1u, resize_params.auto_resize_sequence_number);
+    EXPECT_EQ("50x50", resize_params.min_size_for_auto_resize.ToString());
+    EXPECT_EQ("100x100", resize_params.max_size_for_auto_resize.ToString());
+    EXPECT_EQ(1, resize_params.screen_info.device_scale_factor);
+    local_surface_id3 =
+        resize_params.local_surface_id.value_or(viz::LocalSurfaceId());
+    EXPECT_TRUE(local_surface_id3.is_valid());
     EXPECT_NE(local_surface_id1, local_surface_id3);
     EXPECT_NE(local_surface_id2, local_surface_id3);
   }
@@ -2769,6 +3213,11 @@ TEST_F(RenderWidgetHostViewAuraTest, DelegatedFrameGutter) {
   viz::CompositorFrame frame =
       MakeDelegatedFrame(1.f, small_size, gfx::Rect(small_size));
   frame.metadata.root_background_color = SK_ColorRED;
+
+  cc::RenderFrameMetadata metadata;
+  metadata.root_background_color = SK_ColorRED;
+  view_->SetRenderFrameMetadata(metadata);
+  view_->OnRenderFrameMetadataChanged();
   view_->SubmitCompositorFrame(small_id, std::move(frame), nullptr);
 
   ui::Layer* parent_layer = view_->GetNativeView()->layer();
@@ -2802,6 +3251,35 @@ TEST_F(RenderWidgetHostViewAuraTest, DelegatedFrameGutter) {
   ASSERT_EQ(0u, parent_layer->children().size());
 }
 
+TEST_F(RenderWidgetHostViewAuraTest, ZeroSizeStillGetsLocalSurfaceId) {
+  gfx::Size frame_size;
+  viz::LocalSurfaceId local_surface_id =
+      parent_local_surface_id_allocator_.GenerateId();
+
+  // Prevent the DelegatedFrameHost from skipping frames.
+  view_->DisableResizeLock();
+
+  view_->InitAsChild(nullptr);
+  aura::client::ParentWindowWithContext(
+      view_->GetNativeView(), parent_view_->GetNativeView()->GetRootWindow(),
+      gfx::Rect());
+  view_->SetSize(frame_size);
+  view_->Show();
+
+  ui::Layer* parent_layer = view_->GetNativeView()->layer();
+  EXPECT_EQ(gfx::Rect(), parent_layer->bounds());
+  EXPECT_EQ(2u, sink_->message_count());
+  {
+    const IPC::Message* msg = sink_->GetMessageAt(1);
+    EXPECT_EQ(static_cast<uint32_t>(ViewMsg_Resize::ID), msg->type());
+    ViewMsg_Resize::Param params;
+    ViewMsg_Resize::Read(msg, &params);
+    EXPECT_EQ(frame_size.ToString(), std::get<0>(params).new_size.ToString());
+    ASSERT_TRUE(std::get<0>(params).local_surface_id.has_value());
+    EXPECT_TRUE(std::get<0>(params).local_surface_id->is_valid());
+  }
+}
+
 TEST_F(RenderWidgetHostViewAuraTest, BackgroundColorMatchesCompositorFrame) {
   // TODO: fix for mash.
   if (base::FeatureList::IsEnabled(features::kMash))
@@ -2820,11 +3298,10 @@ TEST_F(RenderWidgetHostViewAuraTest, BackgroundColorMatchesCompositorFrame) {
       gfx::Rect());
   view_->SetSize(frame_size);
   view_->Show();
-  viz::CompositorFrame frame =
-      MakeDelegatedFrame(1.f, frame_size, gfx::Rect(frame_size));
-  frame.metadata.root_background_color = SK_ColorRED;
-  view_->SubmitCompositorFrame(local_surface_id, std::move(frame), nullptr);
-
+  cc::RenderFrameMetadata metadata;
+  metadata.root_background_color = SK_ColorRED;
+  view_->SetRenderFrameMetadata(metadata);
+  view_->OnRenderFrameMetadataChanged();
   ui::Layer* parent_layer = view_->GetNativeView()->layer();
 
   EXPECT_EQ(gfx::Rect(0, 0, 100, 100), parent_layer->bounds());
@@ -4558,8 +5035,8 @@ TEST_F(RenderWidgetHostViewAuraOverscrollTest,
   {
     // Start over, except instead of ending the gesture with ScrollEnd, end it
     // with a FlingStart, with velocity in the reverse direction. This should
-    // initiate an overscroll, but it should be cancelled because of the fling
-    // in the opposite direction.
+    // initiate an overscroll, the overscroll mode should get reset after the
+    // first GSU event generated by the fling controller.
     overscroll_delegate()->Reset();
     SimulateGestureEvent(WebInputEvent::kGestureScrollBegin,
                          blink::kWebGestureDeviceTouchscreen);
@@ -4576,8 +5053,17 @@ TEST_F(RenderWidgetHostViewAuraOverscrollTest,
 
     SimulateGestureFlingStartEvent(100, 0, blink::kWebGestureDeviceTouchscreen);
     events = GetAndResetDispatchedMessages();
-    EXPECT_EQ("GestureFlingStart", GetMessageNames(events));
-    EXPECT_EQ(OVERSCROLL_NONE, overscroll_delegate()->completed_mode());
+    // The fling start event is not sent to the renderer.
+    EXPECT_EQ(0U, events.size());
+    EXPECT_EQ(OVERSCROLL_WEST, overscroll_mode());
+    EXPECT_EQ(OverscrollSource::TOUCHSCREEN, overscroll_source());
+    EXPECT_EQ(OVERSCROLL_WEST, overscroll_delegate()->current_mode());
+
+    // The overscrolling mode will reset after the first GSU from fling
+    // progress.
+    base::TimeTicks progress_time =
+        base::TimeTicks::Now() + base::TimeDelta::FromMilliseconds(17);
+    widget_host_->ProgressFling(progress_time);
     EXPECT_EQ(OVERSCROLL_NONE, overscroll_delegate()->current_mode());
   }
 }
@@ -5969,12 +6455,16 @@ TEST_F(RenderWidgetHostViewAuraTest, HitTestRegionListSubmitted) {
                                MakeDelegatedFrame(1.f, frame_size, view_rect),
                                std::move(hit_test_region_list));
 
-  const viz::mojom::HitTestRegionList* active_hit_test_region_list =
+  viz::TestLatestLocalSurfaceIdLookupDelegate delegate;
+  delegate.SetSurfaceIdMap(
+      viz::SurfaceId(view_->GetFrameSinkId(), kArbitraryLocalSurfaceId));
+  viz::FrameSinkManagerImpl* frame_sink_manager =
       view_->GetDelegatedFrameHost()
           ->GetCompositorFrameSinkSupportForTesting()
-          ->frame_sink_manager()
-          ->hit_test_manager()
-          ->GetActiveHitTestRegionList(surface_id);
+          ->frame_sink_manager();
+  const viz::mojom::HitTestRegionList* active_hit_test_region_list =
+      frame_sink_manager->hit_test_manager()->GetActiveHitTestRegionList(
+          &delegate, surface_id.frame_sink_id());
   EXPECT_EQ(active_hit_test_region_list->flags, viz::mojom::kHitTestMine);
   EXPECT_EQ(active_hit_test_region_list->bounds, view_rect);
 }
@@ -5987,16 +6477,31 @@ TEST_F(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
   if (base::FeatureList::IsEnabled(features::kMash))
     return;
 
+  constexpr base::TimeDelta kTimeout = base::TimeDelta::FromMicroseconds(10);
+
   view_->InitAsChild(nullptr);
   aura::client::ParentWindowWithContext(
       view_->GetNativeView(), parent_view_->GetNativeView()->GetRootWindow(),
       gfx::Rect());
 
-  viz::LocalSurfaceId id1 = view_->GetLocalSurfaceId();
-  EXPECT_TRUE(id1.is_valid());
+  widget_host_->set_new_content_rendering_delay_for_testing(kTimeout);
 
-  widget_host_->set_new_content_rendering_delay_for_testing(
-      base::TimeDelta::FromMicroseconds(10));
+  viz::LocalSurfaceId id0 = view_->GetLocalSurfaceId();
+  EXPECT_TRUE(id0.is_valid());
+
+  // No new LocalSurfaceId should be allocated for the first navigation but the
+  // timer should fire.
+  widget_host_->DidNavigate(1);
+  viz::LocalSurfaceId id1 = view_->GetLocalSurfaceId();
+  EXPECT_EQ(id0, id1);
+  {
+    base::RunLoop run_loop;
+    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+        FROM_HERE, run_loop.QuitClosure(), 2 * kTimeout);
+    run_loop.Run();
+  }
+  EXPECT_TRUE(widget_host_->new_content_rendering_timeout_fired());
+  widget_host_->reset_new_content_rendering_timeout_fired();
 
   // Start the timer. Verify that a new LocalSurfaceId is allocated.
   widget_host_->DidNavigate(5);
@@ -6012,8 +6517,7 @@ TEST_F(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
   {
     base::RunLoop run_loop;
     base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-        FROM_HERE, run_loop.QuitClosure(),
-        base::TimeDelta::FromMicroseconds(20));
+        FROM_HERE, run_loop.QuitClosure(), 2 * kTimeout);
     run_loop.Run();
   }
   EXPECT_TRUE(widget_host_->new_content_rendering_timeout_fired());
@@ -6030,8 +6534,7 @@ TEST_F(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
   {
     base::RunLoop run_loop;
     base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-        FROM_HERE, run_loop.QuitClosure(),
-        base::TimeDelta::FromMicroseconds(20));
+        FROM_HERE, run_loop.QuitClosure(), 2 * kTimeout);
     run_loop.Run();
   }
   EXPECT_FALSE(widget_host_->new_content_rendering_timeout_fired());
@@ -6094,6 +6597,39 @@ TEST_F(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
   view_->Hide();
   view_->Show();
   EXPECT_TRUE(view_->window_->layer()->GetFallbackSurfaceId()->is_valid());
+}
+
+// Check that TakeFallbackContentFrom() copies the fallback SurfaceId and
+// background color from the previous view to the new view.
+TEST_F(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
+       TakeFallbackContent) {
+  // Initialize the first view.
+  view_->InitAsChild(nullptr);
+  aura::client::ParentWindowWithContext(
+      view_->GetNativeView(), parent_view_->GetNativeView()->GetRootWindow(),
+      gfx::Rect());
+  view_->Show();
+
+  // Create and initialize the second view.
+  FakeRenderWidgetHostViewAura* view2 = CreateView(false);
+  view2->InitAsChild(nullptr);
+  aura::client::ParentWindowWithContext(
+      view2->GetNativeView(), parent_view_->GetNativeView()->GetRootWindow(),
+      gfx::Rect());
+
+  // Set fallback for the first view.
+  viz::LocalSurfaceId id = view_->GetLocalSurfaceId();
+  view_->delegated_frame_host_->OnFirstSurfaceActivation(viz::SurfaceInfo(
+      viz::SurfaceId(view_->GetFrameSinkId(), id), 1, gfx::Size(20, 20)));
+  EXPECT_TRUE(view_->window_->layer()->GetFallbackSurfaceId()->is_valid());
+
+  // Call TakeFallbackContentFrom(). The second view should now have the same
+  // fallback as the first view.
+  view2->TakeFallbackContentFrom(view_);
+  EXPECT_EQ(*view_->window_->layer()->GetFallbackSurfaceId(),
+            *view2->window_->layer()->GetFallbackSurfaceId());
+
+  DestroyView(view2);
 }
 
 // This class provides functionality to test a RenderWidgetHostViewAura
@@ -6218,31 +6754,12 @@ TEST_F(RenderWidgetHostViewAuraWithViewHarnessTest,
   // A context menu request with the MENU_SOURCE_LONG_PRESS source type should
   // result in the MockWebContentsViewDelegate::ShowContextMenu method
   // getting called on non Windows platforms. This means that the request
-  //  worked correctly. On Windows this should be blocked.
+  //  worked correctly.
   delegate->ClearState();
   context_menu_params.source_type = ui::MENU_SOURCE_LONG_PRESS;
   contents()->ShowContextMenu(contents()->GetRenderViewHost()->GetMainFrame(),
                               context_menu_params);
-#if defined(OS_WIN)
-  EXPECT_FALSE(delegate->context_menu_request_received());
-#else
   EXPECT_TRUE(delegate->context_menu_request_received());
-#endif
-
-#if defined(OS_WIN)
-  // On Windows the context menu request blocked above should be received when
-  // the ET_GESTURE_LONG_TAP gesture is sent to the RenderWidgetHostViewAura
-  // instance. This means that the touch was released.
-  delegate->ClearState();
-
-  ui::GestureEventDetails event_details(ui::ET_GESTURE_LONG_TAP);
-  ui::GestureEvent gesture_event(
-      100, 100, 0, ui::EventTimeForNow(), event_details);
-  view()->OnGestureEvent(&gesture_event);
-
-  EXPECT_TRUE(delegate->context_menu_request_received());
-  EXPECT_EQ(delegate->context_menu_source_type(), ui::MENU_SOURCE_TOUCH);
-#endif
 
   RenderViewHostFactory::set_is_real_render_view_host(false);
 }

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/ui.gni")
+import("//testing/libfuzzer/fuzzer_test.gni")
 import("//testing/test.gni")
 import("//third_party/protobuf/proto_library.gni")
 
@@ -19,14 +20,17 @@ component("chromeos") {
     "//dbus",
   ]
   deps = [
+    ":account_manager_proto",
     ":attestation_proto",
     ":authpolicy_proto",
     ":biod_proto",
+    ":concierge_proto",
     ":cryptohome_proto",
     ":login_manager_proto",
     ":media_perception_proto",
     ":power_manager_proto",
     ":smbprovider_proto",
+    ":vm_applications_apps_proto",
     "//base",
     "//base:i18n",
     "//base/third_party/dynamic_annotations",
@@ -59,6 +63,8 @@ component("chromeos") {
     "accelerometer/accelerometer_reader.h",
     "accelerometer/accelerometer_types.cc",
     "accelerometer/accelerometer_types.h",
+    "account_manager/account_manager.cc",
+    "account_manager/account_manager.h",
     "app_mode/kiosk_oem_manifest_parser.cc",
     "app_mode/kiosk_oem_manifest_parser.h",
     "attestation/attestation_constants.cc",
@@ -145,6 +151,8 @@ component("chromeos") {
     "dbus/biod/fake_biod_client.h",
     "dbus/blocking_method_caller.cc",
     "dbus/blocking_method_caller.h",
+    "dbus/concierge_client.cc",
+    "dbus/concierge_client.h",
     "dbus/cras_audio_client.cc",
     "dbus/cras_audio_client.h",
     "dbus/cros_disks_client.cc",
@@ -172,6 +180,8 @@ component("chromeos") {
     "dbus/fake_arc_oemcrypto_client.h",
     "dbus/fake_auth_policy_client.cc",
     "dbus/fake_auth_policy_client.h",
+    "dbus/fake_concierge_client.cc",
+    "dbus/fake_concierge_client.h",
     "dbus/fake_cras_audio_client.cc",
     "dbus/fake_cras_audio_client.h",
     "dbus/fake_cros_disks_client.cc",
@@ -262,6 +272,8 @@ component("chromeos") {
     "dbus/services/proxy_resolution_service_provider.h",
     "dbus/services/virtual_file_request_service_provider.cc",
     "dbus/services/virtual_file_request_service_provider.h",
+    "dbus/services/vm_applications_service_provider.cc",
+    "dbus/services/vm_applications_service_provider.h",
     "dbus/session_manager_client.cc",
     "dbus/session_manager_client.h",
     "dbus/shill_client_helper.cc",
@@ -316,6 +328,8 @@ component("chromeos") {
     "login/auth/authenticator.h",
     "login/auth/authpolicy_login_helper.cc",
     "login/auth/authpolicy_login_helper.h",
+    "login/auth/challenge_response_key.cc",
+    "login/auth/challenge_response_key.h",
     "login/auth/cryptohome_authenticator.cc",
     "login/auth/cryptohome_authenticator.h",
     "login/auth/extended_authenticator.cc",
@@ -511,6 +525,8 @@ component("chromeos") {
     "timezone/timezone_request.h",
     "timezone/timezone_resolver.cc",
     "timezone/timezone_resolver.h",
+    "tools/variable_expander.cc",
+    "tools/variable_expander.h",
     "tpm/tpm_password_fetcher.cc",
     "tpm/tpm_password_fetcher.h",
     "tpm/tpm_token_info_getter.cc",
@@ -534,6 +550,7 @@ copy("dbus_service_files") {
     "dbus/services/org.chromium.LivenessService.conf",
     "dbus/services/org.chromium.NetworkProxyService.conf",
     "dbus/services/org.chromium.VirtualFileRequestService.conf",
+    "dbus/services/org.chromium.VmApplicationsService.conf",
   ]
   outputs = [
     "$root_out_dir/dbus/{{source_file_part}}",
@@ -644,8 +661,8 @@ test("chromeos_unittests") {
     ":power_manager_proto",
     ":test_support",
     ":test_support_without_gmock",
-    "//base/test:run_all_unittests",
     "//base/test:test_support",
+    "//chromeos/services:unit_tests",
     "//components/onc",
     "//components/prefs:test_support",
     "//components/proxy_config",
@@ -655,6 +672,7 @@ test("chromeos_unittests") {
     "//dbus:test_support",
     "//google_apis",
     "//media/base:video_facing",
+    "//mojo/edk",
     "//net",
     "//net:test_support",
     "//testing/gmock",
@@ -663,6 +681,7 @@ test("chromeos_unittests") {
     "//url",
   ]
   sources = [
+    "account_manager/account_manager_unittest.cc",
     "app_mode/kiosk_oem_manifest_parser_unittest.cc",
     "attestation/attestation_flow_unittest.cc",
     "audio/audio_devices_pref_handler_impl_unittest.cc",
@@ -736,11 +755,13 @@ test("chromeos_unittests") {
     "printing/printer_translator_unittest.cc",
     "process_proxy/process_output_watcher_unittest.cc",
     "process_proxy/process_proxy_unittest.cc",
+    "run_all_unittests.cc",
     "settings/timezone_settings_unittest.cc",
     "system/cpu_temperature_reader_unittest.cc",
     "system/name_value_pairs_parser_unittest.cc",
     "system/version_loader_unittest.cc",
     "timezone/timezone_unittest.cc",
+    "tools/variable_expander_unittest.cc",
     "tpm/tpm_token_info_getter_unittest.cc",
   ]
   if (use_binder) {
@@ -765,8 +786,21 @@ test("chromeos_unittests") {
   ]
 }
 
+fuzzer_test("variable_expander_fuzzer") {
+  sources = [
+    "tools/variable_expander_fuzzer.cc",
+  ]
+  seed_corpus = "//chromeos/test/data/variable_expander/fuzzer_corpus"
+  dict = "//chromeos/test/data/variable_expander/fuzzer.dict"
+  deps = [
+    ":chromeos",
+    "//base/test:test_support",
+  ]
+}
+
 proto_library("power_manager_proto") {
   sources = [
+    "//third_party/cros_system_api/dbus/power_manager/backlight.proto",
     "//third_party/cros_system_api/dbus/power_manager/idle.proto",
     "//third_party/cros_system_api/dbus/power_manager/input_event.proto",
     "//third_party/cros_system_api/dbus/power_manager/peripheral_battery_status.proto",
@@ -844,4 +878,28 @@ proto_library("smbprovider_proto") {
   ]
 
   proto_out_dir = "chromeos/dbus/smbprovider"
+}
+
+proto_library("account_manager_proto") {
+  sources = [
+    "account_manager/tokens.proto",
+  ]
+
+  proto_out_dir = "chromeos/account_manager"
+}
+
+proto_library("concierge_proto") {
+  sources = [
+    "//third_party/cros_system_api/dbus/vm_concierge/service.proto",
+  ]
+
+  proto_out_dir = "chromeos/dbus/concierge"
+}
+
+proto_library("vm_applications_apps_proto") {
+  sources = [
+    "//third_party/cros_system_api/dbus/vm_applications/apps.proto",
+  ]
+
+  proto_out_dir = "chromeos/dbus/vm_applications"
 }

@@ -6,10 +6,10 @@ import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//chrome/common/features.gni")
 import("//components/nacl/features.gni")
-import("//extensions/features/features.gni")
+import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
-import("//rlz/features/features.gni")
+import("//rlz/buildflags/buildflags.gni")
 
 assert(enable_extensions)
 
@@ -163,22 +163,10 @@ static_library("extensions") {
     "api/developer_private/inspectable_views_finder.h",
     "api/developer_private/show_permissions_dialog_helper.cc",
     "api/developer_private/show_permissions_dialog_helper.h",
-    "api/dial/dial_api.cc",
-    "api/dial/dial_api.h",
-    "api/dial/dial_api_factory.cc",
-    "api/dial/dial_api_factory.h",
     "api/downloads/downloads_api.cc",
     "api/downloads/downloads_api.h",
     "api/downloads_internal/downloads_internal_api.cc",
     "api/downloads_internal/downloads_internal_api.h",
-    "api/easy_unlock_private/easy_unlock_private_api.cc",
-    "api/easy_unlock_private/easy_unlock_private_api.h",
-    "api/easy_unlock_private/easy_unlock_private_connection.cc",
-    "api/easy_unlock_private/easy_unlock_private_connection.h",
-    "api/easy_unlock_private/easy_unlock_private_connection_manager.cc",
-    "api/easy_unlock_private/easy_unlock_private_connection_manager.h",
-    "api/easy_unlock_private/easy_unlock_private_crypto_delegate.h",
-    "api/easy_unlock_private/easy_unlock_private_crypto_delegate_chromeos.cc",
     "api/extension_action/extension_action_api.cc",
     "api/extension_action/extension_action_api.h",
     "api/extension_action/extension_page_actions_api_constants.cc",
@@ -452,10 +440,14 @@ static_library("extensions") {
     "blacklist_factory.h",
     "blacklist_state_fetcher.cc",
     "blacklist_state_fetcher.h",
+    "bookmark_app_experimental_navigation_throttle.cc",
+    "bookmark_app_experimental_navigation_throttle.h",
     "bookmark_app_helper.cc",
     "bookmark_app_helper.h",
     "bookmark_app_navigation_throttle.cc",
     "bookmark_app_navigation_throttle.h",
+    "bookmark_app_navigation_throttle_utils.cc",
+    "bookmark_app_navigation_throttle_utils.h",
     "browser_context_keyed_service_factories.cc",
     "browser_context_keyed_service_factories.h",
     "browser_extension_window_controller.cc",
@@ -521,12 +513,6 @@ static_library("extensions") {
     "device_permissions_dialog_controller.h",
     "devtools_util.cc",
     "devtools_util.h",
-    "display_info_provider_chromeos.cc",
-    "display_info_provider_chromeos.h",
-    "display_info_provider_mac.cc",
-    "display_info_provider_mac.h",
-    "display_info_provider_win.cc",
-    "display_info_provider_win.h",
     "error_console/error_console.cc",
     "error_console/error_console.h",
     "error_console/error_console_factory.cc",
@@ -646,6 +632,8 @@ static_library("extensions") {
     "external_registry_loader_win.h",
     "favicon_downloader.cc",
     "favicon_downloader.h",
+    "forced_extensions/installation_tracker.cc",
+    "forced_extensions/installation_tracker.h",
     "global_shortcut_listener.cc",
     "global_shortcut_listener.h",
     "global_shortcut_listener_mac.h",
@@ -705,8 +693,6 @@ static_library("extensions") {
     "settings_api_helpers.h",
     "shared_module_service.cc",
     "shared_module_service.h",
-    "shared_user_script_master.cc",
-    "shared_user_script_master.h",
     "signin/gaia_auth_extension_loader.cc",
     "signin/gaia_auth_extension_loader.h",
     "signin/scoped_gaia_auth_extension.cc",
@@ -721,6 +707,12 @@ static_library("extensions") {
     "suspicious_extension_bubble_delegate.h",
     "sync_bundle.cc",
     "sync_bundle.h",
+    "system_display/display_info_provider_chromeos.cc",
+    "system_display/display_info_provider_chromeos.h",
+    "system_display/display_info_provider_mac.cc",
+    "system_display/display_info_provider_mac.h",
+    "system_display/display_info_provider_win.cc",
+    "system_display/display_info_provider_win.h",
     "tab_helper.cc",
     "tab_helper.h",
     "theme_installed_infobar_delegate.cc",
@@ -814,7 +806,6 @@ static_library("extensions") {
     "//components/bubble",
     "//components/content_settings/core/browser",
     "//components/crx_file",
-    "//components/cryptauth",
     "//components/data_reduction_proxy/core/browser",
     "//components/dom_distiller/core",
     "//components/download/content/public",
@@ -839,8 +830,6 @@ static_library("extensions") {
     "//components/policy:generated",
     "//components/policy/core/browser",
     "//components/pref_registry",
-    "//components/proximity_auth",
-    "//components/proximity_auth/logging",
     "//components/proxy_config",
     "//components/rappor",
     "//components/resources",
@@ -849,6 +838,7 @@ static_library("extensions") {
     "//components/safe_browsing/common:safe_browsing_prefs",
     "//components/safe_browsing/db:database_manager",
     "//components/search_engines",
+    "//components/services/unzip/public/cpp",
     "//components/sessions",
     "//components/signin/core/browser",
     "//components/spellcheck/browser",
@@ -872,16 +862,16 @@ static_library("extensions") {
     "//extensions:extensions_resources",
     "//extensions/browser",
     "//extensions/browser/api:api_registration",
+    "//extensions/buildflags",
     "//extensions/common",
     "//extensions/common/api",
-    "//extensions/features",
     "//extensions/strings",
     "//google_apis",
-    "//media:media_features",
+    "//media:media_buildflags",
     "//net",
-    "//ppapi/features",
-    "//printing/features",
-    "//rlz/features",
+    "//ppapi/buildflags",
+    "//printing/buildflags",
+    "//rlz/buildflags",
     "//services/audio/public/cpp",
     "//services/data_decoder/public/cpp",
     "//services/device/public/mojom",
@@ -893,8 +883,8 @@ static_library("extensions") {
     "//sql",
     "//storage/browser",
     "//storage/common",
-    "//third_party/WebKit/public:resources",
-    "//third_party/WebKit/public:scaled_resources",
+    "//third_party/blink/public:resources",
+    "//third_party/blink/public:scaled_resources",
     "//third_party/cacheinvalidation",
     "//third_party/icu",
     "//third_party/leveldatabase",
@@ -920,6 +910,15 @@ static_library("extensions") {
     sources += [
       "api/certificate_provider/certificate_provider_api.cc",
       "api/certificate_provider/certificate_provider_api.h",
+      "api/easy_unlock_private/easy_unlock_private_api.cc",
+      "api/easy_unlock_private/easy_unlock_private_api.h",
+      "api/easy_unlock_private/easy_unlock_private_connection.cc",
+      "api/easy_unlock_private/easy_unlock_private_connection.h",
+      "api/easy_unlock_private/easy_unlock_private_connection_manager.cc",
+      "api/easy_unlock_private/easy_unlock_private_connection_manager.h",
+      "api/easy_unlock_private/easy_unlock_private_crypto_delegate.h",
+      "api/easy_unlock_private/easy_unlock_private_crypto_delegate_chromeos.cc",
+      "api/easy_unlock_private/easy_unlock_private_crypto_delegate_stub.cc",
       "api/enterprise_device_attributes/enterprise_device_attributes_api.cc",
       "api/enterprise_device_attributes/enterprise_device_attributes_api.h",
       "api/enterprise_platform_keys/enterprise_platform_keys_api.cc",
@@ -984,9 +983,12 @@ static_library("extensions") {
     deps += [
       "//ash",
       "//ash/public/cpp",
+      "//chromeos/components/proximity_auth",
+      "//chromeos/components/proximity_auth/logging",
       "//components/arc",
       "//components/chrome_apps",
       "//components/constrained_window",
+      "//components/cryptauth",
       "//components/drive",
       "//components/user_manager",
       "//remoting/base",
@@ -1005,7 +1007,10 @@ static_library("extensions") {
     }
   } else {
     sources += [
-      "api/easy_unlock_private/easy_unlock_private_crypto_delegate_stub.cc",
+      "api/enterprise_reporting_private/chrome_desktop_report_request_helper.cc",
+      "api/enterprise_reporting_private/chrome_desktop_report_request_helper.h",
+      "api/enterprise_reporting_private/enterprise_reporting_private_api.cc",
+      "api/enterprise_reporting_private/enterprise_reporting_private_api.h",
       "api/image_writer_private/operation_nonchromeos.cc",
       "api/image_writer_private/removable_storage_provider_linux.cc",
       "api/messaging/native_message_process_host.cc",
@@ -1090,8 +1095,8 @@ static_library("extensions") {
     ]
   } else if (use_aura && !is_chromeos) {
     sources += [
-      "display_info_provider_aura.cc",
-      "display_info_provider_aura.h",
+      "system_display/display_info_provider_aura.cc",
+      "system_display/display_info_provider_aura.h",
     ]
   }
 
@@ -1140,7 +1145,6 @@ static_library("extensions") {
     deps += [
       "//ui/aura",
       "//ui/keyboard",
-      "//ui/keyboard:keyboard_with_content",
       "//ui/keyboard:resources",
     ]
   }

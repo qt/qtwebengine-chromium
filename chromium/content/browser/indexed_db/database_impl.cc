@@ -4,7 +4,6 @@
 
 #include "content/browser/indexed_db/database_impl.h"
 
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_math.h"
 #include "base/sequence_checker.h"
@@ -16,10 +15,11 @@
 #include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
 #include "content/browser/indexed_db/indexed_db_transaction.h"
 #include "content/browser/indexed_db/indexed_db_value.h"
+#include "content/public/browser/browser_thread.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
-#include "third_party/WebKit/public/mojom/quota/quota_types.mojom.h"
-#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBDatabaseException.h"
+#include "third_party/blink/public/mojom/quota/quota_types.mojom.h"
+#include "third_party/blink/public/platform/modules/indexeddb/web_idb_database_exception.h"
 
 using std::swap;
 
@@ -912,8 +912,8 @@ void DatabaseImpl::IDBSequenceHelper::Commit(int64_t transaction_id) {
   indexed_db_context_->quota_manager_proxy()->GetUsageAndQuota(
       indexed_db_context_->TaskRunner(), origin_,
       blink::mojom::StorageType::kTemporary,
-      base::Bind(&IDBSequenceHelper::OnGotUsageAndQuotaForCommit,
-                 weak_factory_.GetWeakPtr(), transaction_id));
+      base::BindOnce(&IDBSequenceHelper::OnGotUsageAndQuotaForCommit,
+                     weak_factory_.GetWeakPtr(), transaction_id));
 }
 
 void DatabaseImpl::IDBSequenceHelper::OnGotUsageAndQuotaForCommit(

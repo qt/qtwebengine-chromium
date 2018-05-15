@@ -33,7 +33,7 @@
 #include "net/cert/x509_certificate.h"
 #include "net/dns/dns_util.h"
 #include "net/http/http_security_headers.h"
-#include "net/net_features.h"
+#include "net/net_buildflags.h"
 #include "net/ssl/ssl_info.h"
 
 namespace net {
@@ -766,28 +766,16 @@ TransportSecurityState::TransportSecurityState()
 // Both HSTS and HPKP cause fatal SSL errors, so return true if a
 // host has either.
 bool TransportSecurityState::ShouldSSLErrorsBeFatal(const std::string& host) {
-  STSState sts_state;
-  PKPState pkp_state;
-  if (GetStaticDomainState(host, &sts_state, &pkp_state))
-    return true;
-  if (GetDynamicSTSState(host, &sts_state))
-    return true;
-  return GetDynamicPKPState(host, &pkp_state);
+  STSState unused_sts;
+  PKPState unused_pkp;
+  return GetStaticDomainState(host, &unused_sts, &unused_pkp) ||
+         GetDynamicSTSState(host, &unused_sts) ||
+         GetDynamicPKPState(host, &unused_pkp);
 }
 
 bool TransportSecurityState::ShouldUpgradeToSSL(const std::string& host) {
-  STSState dynamic_sts_state;
-  if (GetDynamicSTSState(host, &dynamic_sts_state))
-    return dynamic_sts_state.ShouldUpgradeToSSL();
-
-  STSState static_sts_state;
-  PKPState unused;
-  if (GetStaticDomainState(host, &static_sts_state, &unused) &&
-      static_sts_state.ShouldUpgradeToSSL()) {
-    return true;
-  }
-
-  return false;
+  STSState sts_state;
+  return GetSTSState(host, &sts_state) && sts_state.ShouldUpgradeToSSL();
 }
 
 TransportSecurityState::PKPStatus TransportSecurityState::CheckPublicKeyPins(
@@ -857,18 +845,8 @@ void TransportSecurityState::CheckExpectStaple(
 }
 
 bool TransportSecurityState::HasPublicKeyPins(const std::string& host) {
-  PKPState dynamic_state;
-  if (GetDynamicPKPState(host, &dynamic_state))
-    return dynamic_state.HasPublicKeyPins();
-
-  STSState unused;
-  PKPState static_pkp_state;
-  if (GetStaticDomainState(host, &unused, &static_pkp_state)) {
-    if (static_pkp_state.HasPublicKeyPins())
-      return true;
-  }
-
-  return false;
+  PKPState pkp_state;
+  return GetPKPState(host, &pkp_state) && pkp_state.HasPublicKeyPins();
 }
 
 TransportSecurityState::CTRequirementsStatus
@@ -885,6 +863,12 @@ TransportSecurityState::CheckCTRequirements(
   using CTRequirementLevel = RequireCTDelegate::CTRequirementLevel;
   std::string hostname = host_port_pair.host();
 
+  // CT is not required if the certificate does not chain to a publicly
+  // trusted root certificate. Testing can override this, as certain tests
+  // rely on using a non-publicly-trusted root.
+  if (!is_issued_by_known_root && g_ct_required_for_testing == 0)
+    return CT_NOT_REQUIRED;
+
   // A connection is considered compliant if it has sufficient SCTs or if the
   // build is outdated. Other statuses are not considered compliant; this
   // includes COMPLIANCE_DETAILS_NOT_AVAILABLE because compliance must have been
@@ -896,9 +880,9 @@ TransportSecurityState::CheckCTRequirements(
 
   // Check Expect-CT first so that other CT requirements do not prevent
   // Expect-CT reports from being sent.
+  bool required_via_expect_ct = false;
   ExpectCTState state;
-  if (is_issued_by_known_root && IsDynamicExpectCTEnabled() &&
-      GetDynamicExpectCTState(hostname, &state)) {
+  if (IsDynamicExpectCTEnabled() && GetDynamicExpectCTState(hostname, &state)) {
     UMA_HISTOGRAM_ENUMERATION(
         "Net.ExpectCTHeader.PolicyComplianceOnConnectionSetup",
         policy_compliance, ct::CTPolicyCompliance::CT_POLICY_MAX);
@@ -909,17 +893,28 @@ TransportSecurityState::CheckCTRequirements(
                                 served_certificate_chain,
                                 signed_certificate_timestamps);
     }
-    if (state.enforce)
-      return complies ? CT_REQUIREMENTS_MET : CT_REQUIREMENTS_NOT_MET;
+    required_via_expect_ct = state.enforce;
   }
 
   CTRequirementLevel ct_required = CTRequirementLevel::DEFAULT;
-  if (require_ct_delegate_)
-    ct_required = require_ct_delegate_->IsCTRequiredForHost(hostname);
-  if (ct_required != CTRequirementLevel::DEFAULT) {
-    if (ct_required == CTRequirementLevel::REQUIRED)
+  if (require_ct_delegate_) {
+    // Allow the delegate to override the CT requirement state, including
+    // overriding any Expect-CT enforcement.
+    ct_required = require_ct_delegate_->IsCTRequiredForHost(
+        hostname, validated_certificate_chain, public_key_hashes);
+  }
+  switch (ct_required) {
+    case CTRequirementLevel::REQUIRED:
       return complies ? CT_REQUIREMENTS_MET : CT_REQUIREMENTS_NOT_MET;
-    return CT_NOT_REQUIRED;
+    case CTRequirementLevel::NOT_REQUIRED:
+      return CT_NOT_REQUIRED;
+    case CTRequirementLevel::DEFAULT:
+      if (required_via_expect_ct) {
+        // If Expect-CT is set, short-circuit checking additional policies,
+        // since they will only enable CT requirement, not exclude from it.
+        return complies ? CT_REQUIREMENTS_MET : CT_REQUIREMENTS_NOT_MET;
+      }
+      break;
   }
 
   // Allow unittests to override the default result.
@@ -1581,11 +1576,7 @@ TransportSecurityState::CheckPublicKeyPinsImpl(
     const PublicKeyPinReportStatus report_status,
     std::string* failure_log) {
   PKPState pkp_state;
-  STSState unused;
-
-  bool found_state =
-      GetDynamicPKPState(host_port_pair.host(), &pkp_state) ||
-      GetStaticDomainState(host_port_pair.host(), &unused, &pkp_state);
+  bool found_state = GetPKPState(host_port_pair.host(), &pkp_state);
 
   // HasPublicKeyPins should have returned true in order for this method to have
   // been called.
@@ -1597,13 +1588,9 @@ TransportSecurityState::CheckPublicKeyPinsImpl(
 }
 
 bool TransportSecurityState::GetStaticDomainState(const std::string& host,
-                                                  STSState* sts_state,
-                                                  PKPState* pkp_state) const {
+                                                  STSState* sts_result,
+                                                  PKPState* pkp_result) const {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-
-  sts_state->upgrade_mode = STSState::MODE_FORCE_HTTPS;
-  sts_state->include_subdomains = false;
-  pkp_state->include_subdomains = false;
 
   if (!IsBuildTimely())
     return false;
@@ -1612,44 +1599,57 @@ bool TransportSecurityState::GetStaticDomainState(const std::string& host,
   if (!DecodeHSTSPreload(host, &result))
     return false;
 
-  sts_state->domain = host.substr(result.hostname_offset);
-  pkp_state->domain = sts_state->domain;
-  sts_state->include_subdomains = result.sts_include_subdomains;
-  sts_state->last_observed = base::GetBuildTime();
-  sts_state->upgrade_mode = STSState::MODE_DEFAULT;
   if (result.force_https) {
-    sts_state->upgrade_mode = STSState::MODE_FORCE_HTTPS;
+    sts_result->domain = host.substr(result.hostname_offset);
+    sts_result->include_subdomains = result.sts_include_subdomains;
+    sts_result->last_observed = base::GetBuildTime();
+    sts_result->upgrade_mode = STSState::MODE_FORCE_HTTPS;
   }
 
   if (enable_static_pins_ && result.has_pins) {
-    pkp_state->include_subdomains = result.pkp_include_subdomains;
-    pkp_state->last_observed = base::GetBuildTime();
-
     if (result.pinset_id >= g_hsts_source->pinsets_count)
       return false;
+
+    pkp_result->domain = host.substr(result.hostname_offset);
+    pkp_result->include_subdomains = result.pkp_include_subdomains;
+    pkp_result->last_observed = base::GetBuildTime();
+
     const TransportSecurityStateSource::Pinset* pinset =
         &g_hsts_source->pinsets[result.pinset_id];
-
     if (pinset->report_uri != kNoReportURI)
-      pkp_state->report_uri = GURL(pinset->report_uri);
+      pkp_result->report_uri = GURL(pinset->report_uri);
 
     if (pinset->accepted_pins) {
       const char* const* sha256_hash = pinset->accepted_pins;
       while (*sha256_hash) {
-        AddHash(*sha256_hash, &pkp_state->spki_hashes);
+        AddHash(*sha256_hash, &pkp_result->spki_hashes);
         sha256_hash++;
       }
     }
     if (pinset->rejected_pins) {
       const char* const* sha256_hash = pinset->rejected_pins;
       while (*sha256_hash) {
-        AddHash(*sha256_hash, &pkp_state->bad_spki_hashes);
+        AddHash(*sha256_hash, &pkp_result->bad_spki_hashes);
         sha256_hash++;
       }
     }
   }
 
   return true;
+}
+
+bool TransportSecurityState::GetSTSState(const std::string& host,
+                                         STSState* result) {
+  PKPState unused;
+  return GetDynamicSTSState(host, result) ||
+         GetStaticDomainState(host, result, &unused);
+}
+
+bool TransportSecurityState::GetPKPState(const std::string& host,
+                                         PKPState* result) {
+  STSState unused;
+  return GetDynamicPKPState(host, result) ||
+         GetStaticDomainState(host, &unused, result);
 }
 
 bool TransportSecurityState::GetDynamicSTSState(const std::string& host,

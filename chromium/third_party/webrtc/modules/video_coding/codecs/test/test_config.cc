@@ -12,7 +12,10 @@
 
 #include <sstream>
 
+#include "media/base/h264_profile_level_id.h"
+#include "media/base/mediaconstants.h"
 #include "media/engine/simulcast.h"
+#include "modules/video_coding/codecs/vp9/svc_config.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "rtc_base/checks.h"
 #include "system_wrappers/include/cpu_info.h"
@@ -22,12 +25,45 @@ namespace webrtc {
 namespace test {
 
 namespace {
+
 const int kBaseKeyFrameInterval = 3000;
 const int kMaxBitrateBps = 5000 * 1000;  // From kSimulcastFormats.
 const int kMaxFramerateFps = 30;
 const int kMaxQp = 56;
 
-std::string CodecSpecificToString(const webrtc::VideoCodec& codec) {
+void ConfigureSimulcast(VideoCodec* codec_settings) {
+  const std::vector<webrtc::VideoStream> streams = cricket::GetSimulcastConfig(
+      codec_settings->numberOfSimulcastStreams, codec_settings->width,
+      codec_settings->height, kMaxBitrateBps, kMaxQp, kMaxFramerateFps, false);
+
+  for (size_t i = 0; i < streams.size(); ++i) {
+    SimulcastStream* ss = &codec_settings->simulcastStream[i];
+    ss->width = static_cast<uint16_t>(streams[i].width);
+    ss->height = static_cast<uint16_t>(streams[i].height);
+    ss->numberOfTemporalLayers =
+        static_cast<unsigned char>(*streams[i].num_temporal_layers);
+    ss->maxBitrate = streams[i].max_bitrate_bps / 1000;
+    ss->targetBitrate = streams[i].target_bitrate_bps / 1000;
+    ss->minBitrate = streams[i].min_bitrate_bps / 1000;
+    ss->qpMax = streams[i].max_qp;
+    ss->active = true;
+  }
+}
+
+void ConfigureSvc(VideoCodec* codec_settings) {
+  RTC_CHECK_EQ(kVideoCodecVP9, codec_settings->codecType);
+
+  const std::vector<SpatialLayer> layers =
+      GetSvcConfig(codec_settings->width, codec_settings->height,
+                   codec_settings->VP9()->numberOfSpatialLayers,
+                   codec_settings->VP9()->numberOfTemporalLayers);
+
+  for (size_t i = 0; i < layers.size(); ++i) {
+    codec_settings->spatialLayers[i] = layers[i];
+  }
+}
+
+std::string CodecSpecificToString(const VideoCodec& codec) {
   std::stringstream ss;
   switch (codec.codecType) {
     case kVideoCodecVP8:
@@ -65,6 +101,7 @@ std::string CodecSpecificToString(const webrtc::VideoCodec& codec) {
   ss << "\n";
   return ss.str();
 }
+
 }  // namespace
 
 void TestConfig::SetCodecSettings(VideoCodecType codec_type,
@@ -87,16 +124,14 @@ void TestConfig::SetCodecSettings(VideoCodecType codec_type,
   RTC_CHECK(num_simulcast_streams >= 1 &&
             num_simulcast_streams <= kMaxSimulcastStreams);
   RTC_CHECK(num_spatial_layers >= 1 && num_spatial_layers <= kMaxSpatialLayers);
+  RTC_CHECK(num_temporal_layers >= 1 &&
+            num_temporal_layers <= kMaxTemporalStreams);
 
   // Simulcast is only available with VP8.
   RTC_CHECK(num_simulcast_streams < 2 || codec_type == kVideoCodecVP8);
 
   // Spatial scalability is only available with VP9.
   RTC_CHECK(num_spatial_layers < 2 || codec_type == kVideoCodecVP9);
-
-  // Simulcast/SVC is only supposed to work with software codecs.
-  RTC_CHECK((!hw_encoder && !hw_decoder) ||
-            (num_simulcast_streams == 1 && num_spatial_layers == 1));
 
   // Some base code requires numberOfSimulcastStreams to be set to zero
   // when simulcast is not used.
@@ -136,26 +171,10 @@ void TestConfig::SetCodecSettings(VideoCodecType codec_type,
   }
 
   if (codec_settings.numberOfSimulcastStreams > 1) {
-    ConfigureSimulcast();
-  }
-}
-
-void TestConfig::ConfigureSimulcast() {
-  std::vector<webrtc::VideoStream> stream = cricket::GetSimulcastConfig(
-      codec_settings.numberOfSimulcastStreams, codec_settings.width,
-      codec_settings.height, kMaxBitrateBps, kMaxQp, kMaxFramerateFps, false);
-
-  for (size_t i = 0; i < stream.size(); ++i) {
-    SimulcastStream* ss = &codec_settings.simulcastStream[i];
-    ss->width = static_cast<uint16_t>(stream[i].width);
-    ss->height = static_cast<uint16_t>(stream[i].height);
-    ss->numberOfTemporalLayers = static_cast<unsigned char>(
-        stream[i].temporal_layer_thresholds_bps.size() + 1);
-    ss->maxBitrate = stream[i].max_bitrate_bps / 1000;
-    ss->targetBitrate = stream[i].target_bitrate_bps / 1000;
-    ss->minBitrate = stream[i].min_bitrate_bps / 1000;
-    ss->qpMax = stream[i].max_qp;
-    ss->active = true;
+    ConfigureSimulcast(&codec_settings);
+  } else if (codec_settings.codecType == kVideoCodecVP9 &&
+             codec_settings.VP9()->numberOfSpatialLayers > 1) {
+    ConfigureSvc(&codec_settings);
   }
 }
 
@@ -197,7 +216,12 @@ std::string TestConfig::ToString() const {
   std::stringstream ss;
   ss << "filename: " << filename;
   ss << "\nnum_frames: " << num_frames;
+  ss << "\nmax_payload_size_bytes: " << max_payload_size_bytes;
+  ss << "\ndecode: " << decode;
+  ss << "\nuse_single_core: " << use_single_core;
+  ss << "\nmeasure_cpu: " << measure_cpu;
   ss << "\nnum_cores: " << NumberOfCores();
+  ss << "\nkeyframe_interval: " << keyframe_interval;
   ss << "\ncodec_type: " << codec_type;
   ss << "\n--> codec_settings";
   ss << "\nwidth: " << codec_settings.width;
@@ -213,6 +237,33 @@ std::string TestConfig::ToString() const {
      << "--> codec_settings." << codec_type << "\n";
   ss << CodecSpecificToString(codec_settings);
   return ss.str();
+}
+
+SdpVideoFormat TestConfig::ToSdpVideoFormat() const {
+  switch (codec_settings.codecType) {
+    case kVideoCodecVP8:
+      return SdpVideoFormat(cricket::kVp8CodecName);
+
+    case kVideoCodecVP9:
+      return SdpVideoFormat(cricket::kVp9CodecName);
+
+    case kVideoCodecH264: {
+      const char* packetization_mode =
+          h264_codec_settings.packetization_mode ==
+                  H264PacketizationMode::NonInterleaved
+              ? "1"
+              : "0";
+      return SdpVideoFormat(
+          cricket::kH264CodecName,
+          {{cricket::kH264FmtpProfileLevelId,
+            *H264::ProfileLevelIdToString(H264::ProfileLevelId(
+                h264_codec_settings.profile, H264::kLevel3_1))},
+           {cricket::kH264FmtpPacketizationMode, packetization_mode}});
+    }
+    default:
+      RTC_NOTREACHED();
+      return SdpVideoFormat("");
+  }
 }
 
 std::string TestConfig::CodecName() const {

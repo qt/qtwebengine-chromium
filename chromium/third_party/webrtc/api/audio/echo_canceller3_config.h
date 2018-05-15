@@ -62,29 +62,41 @@ struct EchoCanceller3Config {
   } erle;
 
   struct EpStrength {
-    float lf = 2.f;
-    float mf = 2.f;
-    float hf = 2.f;
+    float lf = 1.f;
+    float mf = 1.f;
+    float hf = 1.f;
     float default_len = 0.f;
     bool echo_can_saturate = true;
     bool bounded_erl = false;
   } ep_strength;
 
   struct Mask {
+    Mask();
+    Mask(const Mask& m);
+    float m0 = 0.1f;
     float m1 = 0.01f;
     float m2 = 0.0001f;
     float m3 = 0.01f;
-    float m4 = 0.1f;
-    float m5 = 0.1f;
+    float m5 = 0.01f;
     float m6 = 0.0001f;
     float m7 = 0.01f;
     float m8 = 0.0001f;
     float m9 = 0.1f;
+
+    float gain_curve_offset = 1.45f;
+    float gain_curve_slope = 5.f;
+    float temporal_masking_lf = 0.9f;
+    float temporal_masking_hf = 0.6f;
+    size_t temporal_masking_lf_bands = 3;
   } gain_mask;
 
   struct EchoAudibility {
     float low_render_limit = 4 * 64.f;
     float normal_render_limit = 64.f;
+    float floor_power = 2 * 64.f;
+    float audibility_threshold_lf = 10;
+    float audibility_threshold_mf = 10;
+    float audibility_threshold_hf = 10;
   } echo_audibility;
 
   struct RenderLevels {
@@ -108,6 +120,8 @@ struct EchoCanceller3Config {
     GainChanges saturation = {1.2f, 1.2f, 1.5f, 1.5f, 1.f, 1.f};
     GainChanges nonlinear = {1.5f, 1.5f, 1.2f, 1.2f, 1.1f, 1.1f};
 
+    float max_inc_factor = 2.0f;
+    float max_dec_factor_lf = 0.25f;
     float floor_first_increase = 0.00001f;
   } gain_updates;
 
@@ -132,6 +146,10 @@ struct EchoCanceller3Config {
     float nonlinear_hold = 1;
     float nonlinear_release = 0.001f;
   } echo_model;
+
+  struct Suppressor {
+    size_t bands_with_reliable_coherence = 5;
+  } suppressor;
 };
 }  // namespace webrtc
 

@@ -179,7 +179,7 @@ void VideoCaptureGpuJpegDecoder::DecodeCapturedData(
   out_frame_info->storage_type = media::VideoPixelStorage::CPU;
   out_frame_info->coded_size = dimensions;
   out_frame_info->visible_rect = gfx::Rect(dimensions);
-  out_frame_info->metadata = out_frame->metadata()->CopyInternalValues();
+  out_frame_info->metadata = out_frame->metadata()->GetInternalValues().Clone();
 
   {
     base::AutoLock lock(lock_);
@@ -275,7 +275,7 @@ void VideoCaptureGpuJpegDecoder::DidReceiveGPUInfoOnIOThread(
   task_runner->PostTask(
       FROM_HERE,
       base::BindOnce(&VideoCaptureGpuJpegDecoder::FinishInitialization,
-                     weak_this, base::Passed(remote_decoder.PassInterface())));
+                     weak_this, remote_decoder.PassInterface()));
 }
 
 void VideoCaptureGpuJpegDecoder::FinishInitialization(

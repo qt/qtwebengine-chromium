@@ -11,7 +11,6 @@
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "base/time/time.h"
@@ -60,9 +59,9 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/escape.h"
-#include "third_party/WebKit/public/platform/WebGestureEvent.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
-#include "third_party/WebKit/public/public_features.h"
+#include "third_party/blink/public/platform/web_gesture_event.h"
+#include "third_party/blink/public/platform/web_input_event.h"
+#include "third_party/blink/public/public_buildflags.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/events/keycodes/dom/keycode_converter.h"
 #include "ui/events/keycodes/keyboard_code_conversion.h"
@@ -1043,11 +1042,14 @@ GURL DevToolsWindow::GetDevToolsURL(Profile* profile,
       "?remoteBase=" + DevToolsUI::GetRemoteBaseURL().spec();
 #endif
 
+  const std::string valid_frontend =
+      frontend_url.empty() ? chrome::kChromeUIDevToolsURL : frontend_url;
+
   // remoteFrontend is here for backwards compatibility only.
   std::string remote_frontend =
-      frontend_url + ((frontend_url.find("?") == std::string::npos)
-                          ? "?remoteFrontend=true"
-                          : "&remoteFrontend=true");
+      valid_frontend + ((valid_frontend.find("?") == std::string::npos)
+                            ? "?remoteFrontend=true"
+                            : "&remoteFrontend=true");
   switch (frontend_type) {
     case kFrontendDefault:
       url = kDefaultFrontendURL + remote_base;
@@ -1180,6 +1182,13 @@ void DevToolsWindow::WebContentsCreated(WebContents* source_contents,
         toolbox_web_contents_);
     data_use_measurement::DataUseWebContentsObserver::CreateForWebContents(
         toolbox_web_contents_);
+
+    // The toolbox holds a placeholder for the inspected WebContents. When the
+    // placeholder is resized, a frame is requested. The inspected WebContents
+    // is resized when the frame is rendered. Force rendering of the toolbox at
+    // all times, to make sure that a frame can be rendered even when the
+    // inspected WebContents fully covers the toolbox. https://crbug.com/828307
+    toolbox_web_contents_->IncrementCapturerCount(gfx::Size());
   }
 }
 

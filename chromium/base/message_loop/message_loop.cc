@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/message_loop/message_pump_default.h"
+#include "base/message_loop/message_pump_for_ui.h"
 #include "base/run_loop.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/thread_id_name_manager.h"
@@ -21,18 +22,6 @@
 
 #if defined(OS_MACOSX)
 #include "base/message_loop/message_pump_mac.h"
-#endif
-#if defined(OS_POSIX) && !defined(OS_IOS) && !defined(OS_FUCHSIA)
-#include "base/message_loop/message_pump_libevent.h"
-#endif
-#if defined(OS_FUCHSIA)
-#include "base/message_loop/message_pump_fuchsia.h"
-#endif
-#if defined(OS_ANDROID)
-#include "base/message_loop/message_pump_android.h"
-#endif
-#if defined(USE_GLIB)
-#include "base/message_loop/message_pump_glib.h"
 #endif
 
 namespace base {
@@ -46,22 +35,6 @@ base::ThreadLocalPointer<MessageLoop>* GetTLSMessageLoop() {
   return lazy_tls_ptr;
 }
 MessageLoop::MessagePumpFactory* message_pump_for_ui_factory_ = nullptr;
-
-#if defined(OS_IOS)
-using MessagePumpForIO = MessagePumpIOSForIO;
-#elif defined(OS_NACL_SFI)
-using MessagePumpForIO = MessagePumpDefault;
-#elif defined(OS_FUCHSIA)
-using MessagePumpForIO = MessagePumpFuchsia;
-#elif defined(OS_POSIX)
-using MessagePumpForIO = MessagePumpLibevent;
-#endif
-
-#if !defined(OS_NACL_SFI)
-MessagePumpForIO* ToPumpIO(MessagePump* pump) {
-  return static_cast<MessagePumpForIO*>(pump);
-}
-#endif  // !defined(OS_NACL_SFI)
 
 std::unique_ptr<MessagePump> ReturnPump(std::unique_ptr<MessagePump> pump) {
   return pump;
@@ -161,30 +134,21 @@ bool MessageLoop::InitMessagePumpForUIFactory(MessagePumpFactory* factory) {
 
 // static
 std::unique_ptr<MessagePump> MessageLoop::CreateMessagePumpForType(Type type) {
-// TODO(rvargas): Get rid of the OS guards.
-#if defined(USE_GLIB) && !defined(OS_NACL)
-  using MessagePumpForUI = MessagePumpGlib;
-#elif (defined(OS_LINUX) && !defined(OS_NACL)) || defined(OS_BSD)
-  using MessagePumpForUI = MessagePumpLibevent;
-#elif defined(OS_FUCHSIA)
-  using MessagePumpForUI = MessagePumpFuchsia;
-#endif
-
-#if defined(OS_IOS) || defined(OS_MACOSX)
-#define MESSAGE_PUMP_UI std::unique_ptr<MessagePump>(MessagePumpMac::Create())
-#elif defined(OS_NACL) || defined(OS_AIX)
-// Currently NaCl and AIX don't have a UI MessageLoop.
-// TODO(abarth): Figure out if we need this.
-#define MESSAGE_PUMP_UI std::unique_ptr<MessagePump>()
-#else
-#define MESSAGE_PUMP_UI std::unique_ptr<MessagePump>(new MessagePumpForUI())
-#endif
-
   if (type == MessageLoop::TYPE_UI) {
     if (message_pump_for_ui_factory_)
       return message_pump_for_ui_factory_();
-    return MESSAGE_PUMP_UI;
+#if defined(OS_IOS) || defined(OS_MACOSX)
+    return MessagePumpMac::Create();
+#elif defined(OS_NACL) || defined(OS_AIX)
+    // Currently NaCl and AIX don't have a UI MessageLoop.
+    // TODO(abarth): Figure out if we need this.
+    NOTREACHED();
+    return nullptr;
+#else
+    return std::make_unique<MessagePumpForUI>();
+#endif
   }
+
   if (type == MessageLoop::TYPE_IO)
     return std::unique_ptr<MessagePump>(new MessagePumpForIO());
 
@@ -225,8 +189,6 @@ Closure MessageLoop::QuitWhenIdleClosure() {
 
 void MessageLoop::SetNestableTasksAllowed(bool allowed) {
   if (allowed) {
-    CHECK(RunLoop::IsNestingAllowedOnCurrentThread());
-
     // Kick the native pump just in case we enter a OS-driven nested message
     // loop that does not go through RunLoop::Run().
     pump_->ScheduleWork();
@@ -243,13 +205,11 @@ bool MessageLoop::NestableTasksAllowed() const {
 // implementation detail. http://crbug.com/703346
 void MessageLoop::AddTaskObserver(TaskObserver* task_observer) {
   DCHECK_EQ(this, current());
-  CHECK(allow_task_observers_);
   task_observers_.AddObserver(task_observer);
 }
 
 void MessageLoop::RemoveTaskObserver(TaskObserver* task_observer) {
   DCHECK_EQ(this, current());
-  CHECK(allow_task_observers_);
   task_observers_.RemoveObserver(task_observer);
 }
 
@@ -383,7 +343,6 @@ bool MessageLoop::ProcessNextDelayedNonNestableTask() {
 
 void MessageLoop::RunTask(PendingTask* pending_task) {
   DCHECK(task_execution_allowed_);
-  current_pending_task_ = pending_task;
 
   // Execute the task and assume the worst: It is probably not reentrant.
   task_execution_allowed_ = false;
@@ -397,8 +356,6 @@ void MessageLoop::RunTask(PendingTask* pending_task) {
     observer.DidProcessTask(*pending_task);
 
   task_execution_allowed_ = true;
-
-  current_pending_task_ = nullptr;
 }
 
 bool MessageLoop::DeferOrRunPendingTask(PendingTask pending_task) {
@@ -543,14 +500,10 @@ bool MessageLoopForUI::WatchFileDescriptor(
     int fd,
     bool persistent,
     MessagePumpLibevent::Mode mode,
-    MessagePumpLibevent::FileDescriptorWatcher *controller,
-    MessagePumpLibevent::Watcher *delegate) {
-  return static_cast<MessagePumpLibevent*>(pump_.get())->WatchFileDescriptor(
-      fd,
-      persistent,
-      mode,
-      controller,
-      delegate);
+    MessagePumpLibevent::FdWatchController* controller,
+    MessagePumpLibevent::FdWatcher* delegate) {
+  return static_cast<MessagePumpForUI*>(pump_.get())
+      ->WatchFileDescriptor(fd, persistent, mode, controller, delegate);
 }
 #endif
 
@@ -561,24 +514,37 @@ bool MessageLoopForUI::WatchFileDescriptor(
 
 #if !defined(OS_NACL_SFI)
 
+namespace {
+
+MessagePumpForIO* ToPumpIO(MessagePump* pump) {
+  return static_cast<MessagePumpForIO*>(pump);
+}
+
+}  // namespace
+
 #if defined(OS_WIN)
-void MessageLoopForIO::RegisterIOHandler(HANDLE file, IOHandler* handler) {
+void MessageLoopForIO::RegisterIOHandler(HANDLE file,
+                                         MessagePumpForIO::IOHandler* handler) {
   ToPumpIO(pump_.get())->RegisterIOHandler(file, handler);
 }
 
-bool MessageLoopForIO::RegisterJobObject(HANDLE job, IOHandler* handler) {
+bool MessageLoopForIO::RegisterJobObject(HANDLE job,
+                                         MessagePumpForIO::IOHandler* handler) {
   return ToPumpIO(pump_.get())->RegisterJobObject(job, handler);
 }
 
-bool MessageLoopForIO::WaitForIOCompletion(DWORD timeout, IOHandler* filter) {
+bool MessageLoopForIO::WaitForIOCompletion(
+    DWORD timeout,
+    MessagePumpForIO::IOHandler* filter) {
   return ToPumpIO(pump_.get())->WaitForIOCompletion(timeout, filter);
 }
 #elif defined(OS_POSIX)
-bool MessageLoopForIO::WatchFileDescriptor(int fd,
-                                           bool persistent,
-                                           Mode mode,
-                                           FileDescriptorWatcher* controller,
-                                           Watcher* delegate) {
+bool MessageLoopForIO::WatchFileDescriptor(
+    int fd,
+    bool persistent,
+    MessagePumpForIO::Mode mode,
+    MessagePumpForIO::FdWatchController* controller,
+    MessagePumpForIO::FdWatcher* delegate) {
   return ToPumpIO(pump_.get())->WatchFileDescriptor(
       fd,
       persistent,
@@ -592,11 +558,12 @@ bool MessageLoopForIO::WatchFileDescriptor(int fd,
 
 #if defined(OS_FUCHSIA)
 // Additional watch API for native platform resources.
-bool MessageLoopForIO::WatchZxHandle(zx_handle_t handle,
-                                     bool persistent,
-                                     zx_signals_t signals,
-                                     ZxHandleWatchController* controller,
-                                     ZxHandleWatcher* delegate) {
+bool MessageLoopForIO::WatchZxHandle(
+    zx_handle_t handle,
+    bool persistent,
+    zx_signals_t signals,
+    MessagePumpForIO::ZxHandleWatchController* controller,
+    MessagePumpForIO::ZxHandleWatcher* delegate) {
   return ToPumpIO(pump_.get())
       ->WatchZxHandle(handle, persistent, signals, controller, delegate);
 }

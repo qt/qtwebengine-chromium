@@ -10,6 +10,7 @@
 
 #include "base/auto_reset.h"
 #include "base/bind.h"
+#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "components/content_settings/core/browser/content_settings_info.h"
 #include "components/content_settings/core/browser/content_settings_registry.h"
@@ -196,6 +197,10 @@ DefaultProvider::DefaultProvider(PrefService* prefs, bool incognito)
   UMA_HISTOGRAM_ENUMERATION("ContentSettings.DefaultSoundSetting",
                             IntToContentSetting(prefs_->GetInteger(
                                 GetPrefName(CONTENT_SETTINGS_TYPE_SOUND))),
+                            CONTENT_SETTING_NUM_SETTINGS);
+  UMA_HISTOGRAM_ENUMERATION("ContentSettings.DefaultUsbGuardSetting",
+                            IntToContentSetting(prefs_->GetInteger(
+                                GetPrefName(CONTENT_SETTINGS_TYPE_USB_GUARD))),
                             CONTENT_SETTING_NUM_SETTINGS);
 #endif
   pref_change_registrar_.Init(prefs_);

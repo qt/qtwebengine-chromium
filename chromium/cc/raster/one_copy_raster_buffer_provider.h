@@ -44,6 +44,7 @@ class CC_EXPORT OneCopyRasterBufferProvider : public RasterBufferProvider {
   void Flush() override;
   viz::ResourceFormat GetResourceFormat(bool must_support_alpha) const override;
   bool IsResourceSwizzleRequired(bool must_support_alpha) const override;
+  bool IsResourcePremultiplied(bool must_support_alpha) const override;
   bool CanPartialRasterIntoProvidedResource() const override;
   bool IsResourceReadyToDraw(
       const ResourcePool::InUsePoolResource& resource) const override;
@@ -80,7 +81,6 @@ class CC_EXPORT OneCopyRasterBufferProvider : public RasterBufferProvider {
                      LayerTreeResourceProvider* resource_provider,
                      const ResourcePool::InUsePoolResource& in_use_resource,
                      OneCopyGpuBacking* backing,
-                     const gpu::SyncToken& before_raster_sync_token,
                      uint64_t previous_content_id);
     ~RasterBufferImpl() override;
 

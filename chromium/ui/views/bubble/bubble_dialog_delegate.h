@@ -10,6 +10,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "build/build_config.h"
+#include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
@@ -127,10 +128,19 @@ class VIEWS_EXPORT BubbleDialogDelegateView : public DialogDelegateView,
 
  protected:
   BubbleDialogDelegateView();
-  BubbleDialogDelegateView(View* anchor_view, BubbleBorder::Arrow arrow);
+  // |shadow| usually doesn't need to be explicitly set, just uses the default
+  // argument. Unless on Mac when the bubble needs to use Views base shadow,
+  // override it with suitable bubble border type.
+  BubbleDialogDelegateView(
+      View* anchor_view,
+      BubbleBorder::Arrow arrow,
+      BubbleBorder::Shadow shadow = BubbleBorder::DIALOG_SHADOW);
 
   // Get bubble bounds from the anchor rect and client view's preferred size.
   virtual gfx::Rect GetBubbleBounds();
+
+  // DialogDelegateView overrides:
+  ax::mojom::Role GetAccessibleWindowRole() const override;
 
   // View overrides:
   void OnNativeThemeChanged(const ui::NativeTheme* theme) override;

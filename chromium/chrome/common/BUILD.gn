@@ -7,12 +7,13 @@ import("//build/util/process_version.gni")
 import("//chrome/common/features.gni")
 import("//chrome/process_version_rc_template.gni")  # For branding_file_path.
 import("//components/nacl/features.gni")
-import("//device/vr/features/features.gni")
-import("//extensions/features/features.gni")
+import("//components/offline_pages/buildflags/features.gni")
+import("//device/vr/buildflags/buildflags.gni")
+import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 import("//pdf/features.gni")
-import("//ppapi/features/features.gni")
+import("//ppapi/buildflags/buildflags.gni")
 import("//tools/grit/grit_rule.gni")
 
 if (enable_pdf) {
@@ -210,6 +211,7 @@ static_library("common") {
     ":ini_parser",
     ":mojo_bindings",
     ":page_load_metrics_mojom",
+    ":supervised_user_commands_mojom",
     "//base:base",
     "//base:base_static",
     "//base:i18n",
@@ -218,7 +220,6 @@ static_library("common") {
     "//chrome/app/theme:theme_resources",
     "//chrome/common:constants",
     "//chrome/common/net",
-    "//chrome/common/profiling",
     "//chrome/installer/util:with_no_strings",
     "//components/cast_certificate",
     "//components/cdm/common",
@@ -247,6 +248,7 @@ static_library("common") {
     "//components/policy/core/common",
     "//components/prefs",
     "//components/safe_browsing/web_ui:constants",
+    "//components/services/heap_profiling/public/cpp",
     "//components/strings",
     "//components/translate/content/common",
     "//components/translate/core/common",
@@ -254,18 +256,18 @@ static_library("common") {
     "//components/variations",
     "//components/visitedlink/common",
     "//content/public/common",
+    "//extensions/buildflags",
     "//extensions/common:common_constants",
-    "//extensions/features",
     "//google_apis",
     "//gpu/command_buffer/service",
     "//gpu/config",
     "//ipc",
     "//media",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//mojo/public/cpp/bindings",
-    "//pdf:features",
-    "//ppapi/features",
-    "//printing/features",
+    "//pdf:buildflags",
+    "//ppapi/buildflags",
+    "//printing/buildflags",
     "//services/service_manager/sandbox",
     "//skia",
     "//third_party/icu",
@@ -338,10 +340,6 @@ static_library("common") {
       "extensions/manifest_handlers/app_launch_info.h",
       "extensions/manifest_handlers/app_theme_color_info.cc",
       "extensions/manifest_handlers/app_theme_color_info.h",
-      "extensions/manifest_handlers/automation.cc",
-      "extensions/manifest_handlers/automation.h",
-      "extensions/manifest_handlers/content_scripts_handler.cc",
-      "extensions/manifest_handlers/content_scripts_handler.h",
       "extensions/manifest_handlers/extension_action_handler.cc",
       "extensions/manifest_handlers/extension_action_handler.h",
       "extensions/manifest_handlers/linked_app_icons.cc",
@@ -389,7 +387,7 @@ static_library("common") {
     }
     if (use_aura) {
       # This dependency is for a header used only by extensions code.
-      public_deps += [ "//ui/keyboard:keyboard_with_content" ]
+      public_deps += [ "//ui/keyboard:keyboard" ]
     }
   }
 
@@ -477,13 +475,6 @@ static_library("common") {
       "pepper_permission_util.h",
     ]
   }
-  if (enable_library_cdms) {
-    sources += [
-      "widevine_cdm_constants.cc",
-      "widevine_cdm_constants.h",
-    ]
-    public_deps += [ "//media/cdm:cdm_paths" ]
-  }
   if (!enable_webrtc) {
     sources -= [ "media/webrtc_logging_messages.h" ]
   }
@@ -537,11 +528,11 @@ static_library("non_code_constants") {
     ":buildflags",
     ":version_header",
     "//base",
-    "//ppapi/features",
+    "//ppapi/buildflags",
   ]
 
   public_deps = [
-    "//printing/features",
+    "//printing/buildflags",
     "//ui/base:ui_features",
   ]
 }
@@ -568,9 +559,9 @@ static_library("constants") {
     ":buildflags",
     ":non_code_constants",
     "//content/public/common:result_codes",
-    "//extensions/features",
-    "//printing/features",
-    "//rlz/features",
+    "//extensions/buildflags",
+    "//printing/buildflags",
+    "//rlz/buildflags",
     "//ui/base:ui_features",
   ]
   deps = [
@@ -581,10 +572,10 @@ static_library("constants") {
     "//components/bookmarks/common",
     "//components/nacl/common:switches",
     "//components/offline_pages/buildflags",
-    "//device/vr/features",
-    "//media:media_features",
+    "//device/vr/buildflags",
+    "//media:media_buildflags",
     "//media/cdm:cdm_paths",  # Needed by chrome_paths.cc.
-    "//ppapi/features",
+    "//ppapi/buildflags",
     "//third_party/widevine/cdm:headers",
   ]
 
@@ -692,11 +683,16 @@ mojom("mojo_bindings") {
     sources += [ "conflicts/module_event_sink_win.mojom" ]
   }
 
+  if (enable_offline_pages) {
+    sources += [ "mhtml_page_notifier.mojom" ]
+  }
+
   public_deps = [
     "//components/content_settings/core/common:mojo_bindings",
     "//content/public/common:interfaces",
     "//mojo/common:common_custom_types",
-    "//third_party/WebKit/public:mojo_bindings",
+    "//mojo/public/mojom/base",
+    "//third_party/blink/public:mojo_bindings",
     "//ui/gfx/geometry/mojo",
     "//url/mojom:url_mojom_gurl",
     "//url/mojom:url_mojom_origin",
@@ -707,7 +703,7 @@ mojom("mojo_bindings") {
   }
 
   overridden_deps = [
-    "//third_party/WebKit/public:mojo_bindings",
+    "//third_party/blink/public:mojo_bindings",
     "//content/public/common:interfaces",
   ]
 
@@ -724,6 +720,7 @@ mojom("search_mojom") {
 
   public_deps = [
     "//mojo/common:common_custom_types",
+    "//mojo/public/mojom/base",
     "//url/mojom:url_mojom_gurl",
   ]
 }
@@ -734,8 +731,8 @@ mojom("page_load_metrics_mojom") {
   ]
 
   public_deps = [
-    "//mojo/common:common_custom_types",
-    "//third_party/WebKit/public:web_feature_mojo_bindings",
+    "//mojo/public/mojom/base",
+    "//third_party/blink/public:web_feature_mojo_bindings",
   ]
 }
 
@@ -745,8 +742,8 @@ mojom("client_hints_mojom") {
   ]
 
   public_deps = [
-    "//mojo/common:common_custom_types",
-    "//third_party/WebKit/public:web_client_hints_types_mojo_bindings",
+    "//mojo/public/mojom/base",
+    "//third_party/blink/public:web_client_hints_types_mojo_bindings",
     "//url/mojom:url_mojom_origin",
   ]
 }
@@ -758,7 +755,13 @@ if (enable_print_preview && !is_chromeos) {
       "service_process.mojom",
     ]
     public_deps = [
-      "//mojo/common:common_custom_types",
+      "//mojo/public/mojom/base",
     ]
   }
+}
+
+mojom("supervised_user_commands_mojom") {
+  sources = [
+    "supervised_user_commands.mojom",
+  ]
 }

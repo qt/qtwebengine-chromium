@@ -9,6 +9,7 @@
 #include "ui/gfx/buffer_format_util.h"
 #include "ui/gl/egl_util.h"
 #include "ui/gl/gl_context.h"
+#include "ui/gl/gl_enums.h"
 #include "ui/gl/gl_surface_egl.h"
 
 #define FOURCC(a, b, c, d)                                        \
@@ -57,36 +58,6 @@ bool ValidInternalFormat(unsigned internalformat, gfx::BufferFormat format) {
     default:
       return false;
   }
-}
-
-bool ValidFormat(gfx::BufferFormat format) {
-  switch (format) {
-    case gfx::BufferFormat::R_8:
-    case gfx::BufferFormat::R_16:
-    case gfx::BufferFormat::RG_88:
-    case gfx::BufferFormat::BGR_565:
-    case gfx::BufferFormat::RGBA_8888:
-    case gfx::BufferFormat::RGBX_8888:
-    case gfx::BufferFormat::BGRA_8888:
-    case gfx::BufferFormat::BGRX_8888:
-    case gfx::BufferFormat::BGRX_1010102:
-    case gfx::BufferFormat::RGBX_1010102:
-    case gfx::BufferFormat::YVU_420:
-    case gfx::BufferFormat::YUV_420_BIPLANAR:
-      return true;
-    case gfx::BufferFormat::ATC:
-    case gfx::BufferFormat::ATCIA:
-    case gfx::BufferFormat::DXT1:
-    case gfx::BufferFormat::DXT5:
-    case gfx::BufferFormat::ETC1:
-    case gfx::BufferFormat::RGBA_4444:
-    case gfx::BufferFormat::RGBA_F16:
-    case gfx::BufferFormat::UYVY_422:
-      return false;
-  }
-
-  NOTREACHED();
-  return false;
 }
 
 EGLint FourCC(gfx::BufferFormat format) {
@@ -190,7 +161,8 @@ bool GLImageNativePixmap::Initialize(gfx::NativePixmap* pixmap,
     }
 
     if (!ValidInternalFormat(internalformat_, format)) {
-      LOG(ERROR) << "Invalid internalformat: " << internalformat_
+      LOG(ERROR) << "Invalid internalformat: "
+                 << GLEnums::GetStringEnum(internalformat_)
                  << " for format: " << gfx::BufferFormatToString(format);
       return false;
     }
@@ -299,7 +271,7 @@ gfx::NativePixmapHandle GLImageNativePixmap::ExportHandle() {
   if (num_planes > 0 && static_cast<size_t>(num_planes) !=
                             gfx::NumberOfPlanesForBufferFormat(format)) {
     LOG(ERROR) << "Invalid number of planes: " << num_planes
-               << " for format: " << static_cast<int>(format);
+               << " for format: " << gfx::BufferFormatToString(format);
     return gfx::NativePixmapHandle();
   }
 
@@ -308,8 +280,9 @@ gfx::NativePixmapHandle GLImageNativePixmap::ExportHandle() {
     // This can happen if RGBX is implemented using RGBA. Otherwise there is
     // a real mistake from the user and we have to fail.
     if (internalformat_ == GL_RGB && format != gfx::BufferFormat::RGBA_8888) {
-      LOG(ERROR) << "Invalid internalformat: 0x" << std::hex << internalformat_
-                 << " for format: " << static_cast<int>(format);
+      LOG(ERROR) << "Invalid internalformat: "
+                 << GLEnums::GetStringEnum(internalformat_)
+                 << " for format: " << gfx::BufferFormatToString(format);
       return gfx::NativePixmapHandle();
     }
   }
@@ -377,10 +350,11 @@ bool GLImageNativePixmap::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
                                                int z_order,
                                                gfx::OverlayTransform transform,
                                                const gfx::Rect& bounds_rect,
-                                               const gfx::RectF& crop_rect) {
+                                               const gfx::RectF& crop_rect,
+                                               bool enable_blend) {
   DCHECK(pixmap_);
   return pixmap_->ScheduleOverlayPlane(widget, z_order, transform, bounds_rect,
-                                       crop_rect);
+                                       crop_rect, enable_blend);
 }
 
 void GLImageNativePixmap::Flush() {
@@ -446,6 +420,37 @@ unsigned GLImageNativePixmap::GetInternalFormatForTesting(
 
   NOTREACHED();
   return GL_NONE;
+}
+
+// static
+bool GLImageNativePixmap::ValidFormat(gfx::BufferFormat format) {
+  switch (format) {
+    case gfx::BufferFormat::R_8:
+    case gfx::BufferFormat::R_16:
+    case gfx::BufferFormat::RG_88:
+    case gfx::BufferFormat::BGR_565:
+    case gfx::BufferFormat::RGBA_8888:
+    case gfx::BufferFormat::RGBX_8888:
+    case gfx::BufferFormat::BGRA_8888:
+    case gfx::BufferFormat::BGRX_8888:
+    case gfx::BufferFormat::BGRX_1010102:
+    case gfx::BufferFormat::RGBX_1010102:
+    case gfx::BufferFormat::YVU_420:
+    case gfx::BufferFormat::YUV_420_BIPLANAR:
+      return true;
+    case gfx::BufferFormat::ATC:
+    case gfx::BufferFormat::ATCIA:
+    case gfx::BufferFormat::DXT1:
+    case gfx::BufferFormat::DXT5:
+    case gfx::BufferFormat::ETC1:
+    case gfx::BufferFormat::RGBA_4444:
+    case gfx::BufferFormat::RGBA_F16:
+    case gfx::BufferFormat::UYVY_422:
+      return false;
+  }
+
+  NOTREACHED();
+  return false;
 }
 
 }  // namespace gl

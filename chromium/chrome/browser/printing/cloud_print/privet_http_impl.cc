@@ -24,7 +24,7 @@
 #include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "net/base/url_util.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 #include "url/gurl.h"
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
@@ -506,10 +506,13 @@ void PrivetLocalPrintOperationImpl::StartConvertToPWG() {
   if (!pwg_raster_converter_)
     pwg_raster_converter_ = PwgRasterConverter::CreateDefault();
 
+  printing::PwgRasterSettings bitmap_settings =
+      PwgRasterConverter::GetBitmapSettings(capabilities_, ticket_);
   pwg_raster_converter_->Start(
       data_.get(),
-      PwgRasterConverter::GetConversionSettings(capabilities_, page_size_),
-      PwgRasterConverter::GetBitmapSettings(capabilities_, ticket_),
+      PwgRasterConverter::GetConversionSettings(capabilities_, page_size_,
+                                                bitmap_settings.use_color),
+      bitmap_settings,
       base::BindOnce(&PrivetLocalPrintOperationImpl::OnPWGRasterConverted,
                      weak_factory_.GetWeakPtr()));
 }
@@ -605,7 +608,7 @@ void PrivetLocalPrintOperationImpl::OnNeedPrivetToken(
 }
 
 void PrivetLocalPrintOperationImpl::SetData(
-    const scoped_refptr<base::RefCountedBytes>& data) {
+    const scoped_refptr<base::RefCountedMemory>& data) {
   DCHECK(!started_);
   data_ = data;
 }

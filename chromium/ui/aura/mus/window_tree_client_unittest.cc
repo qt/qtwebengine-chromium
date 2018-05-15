@@ -27,6 +27,8 @@
 #include "ui/aura/client/transient_window_client.h"
 #include "ui/aura/mus/capture_synchronizer.h"
 #include "ui/aura/mus/client_surface_embedder.h"
+#include "ui/aura/mus/embed_root.h"
+#include "ui/aura/mus/embed_root_delegate.h"
 #include "ui/aura/mus/focus_synchronizer.h"
 #include "ui/aura/mus/property_converter.h"
 #include "ui/aura/mus/window_mus.h"
@@ -36,6 +38,7 @@
 #include "ui/aura/mus/window_tree_host_mus.h"
 #include "ui/aura/mus/window_tree_host_mus_init_params.h"
 #include "ui/aura/test/aura_mus_test_base.h"
+#include "ui/aura/test/aura_test_suite.h"
 #include "ui/aura/test/mus/test_window_tree.h"
 #include "ui/aura/test/mus/window_tree_client_private.h"
 #include "ui/aura/test/test_window_delegate.h"
@@ -53,6 +56,8 @@
 #include "ui/display/screen.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/platform/platform_event_observer.h"
+#include "ui/events/platform/platform_event_source.h"
 #include "ui/events/test/test_event_handler.h"
 #include "ui/gfx/geometry/dip_util.h"
 #include "ui/gfx/geometry/rect.h"
@@ -2894,7 +2899,7 @@ TEST_F(WindowTreeClientDestructionTest, WindowsFromOtherConnectionsDeleted) {
   EXPECT_TRUE(window_tracker.windows().empty());
 }
 
-TEST_F(WindowTreeClientWmTest, ObservedPointerEvents) {
+TEST_F(WindowTreeClientWmTestHighDPI, ObservedPointerEvents) {
   const gfx::Rect bounds(1, 2, 101, 102);
   std::unique_ptr<DisplayInitParams> display_params =
       std::make_unique<DisplayInitParams>();
@@ -2965,5 +2970,110 @@ TEST_F(WindowTreeClientWmTest, ObservedPointerEvents) {
                                    root_location_pixels),
             last_event->root_location());
 }
+
+class TestEmbedRootDelegate : public EmbedRootDelegate {
+ public:
+  TestEmbedRootDelegate() = default;
+  ~TestEmbedRootDelegate() override = default;
+
+  // EmbedRootDelegate:
+  void OnEmbedTokenAvailable(const base::UnguessableToken& token) override {}
+  void OnEmbed(Window* window) override {}
+  void OnUnembed() override {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TestEmbedRootDelegate);
+};
+
+// Verifies we don't crash when focus changes to a window in an EmbedRoot.
+TEST_F(WindowTreeClientClientTest, ChangeFocusInEmbedRootWindow) {
+  TestEmbedRootDelegate embed_root_delegate;
+  std::unique_ptr<EmbedRoot> embed_root =
+      window_tree_client_impl()->CreateEmbedRoot(&embed_root_delegate);
+  WindowTreeClientPrivate(window_tree_client_impl())
+      .CallOnEmbedFromToken(embed_root.get());
+  ASSERT_TRUE(embed_root->window());
+  window_tree_client()->OnWindowFocused(server_id(embed_root->window()));
+}
+
+#if defined(USE_OZONE)
+
+class TestPlatformEventObserver : public ui::PlatformEventObserver {
+ public:
+  TestPlatformEventObserver() = default;
+  ~TestPlatformEventObserver() override = default;
+
+  int will_process_count() const { return will_process_count_; }
+  int did_process_count() const { return did_process_count_; }
+  ui::EventType will_process_type() const { return will_process_type_; }
+  ui::EventType did_process_type() const { return did_process_type_; }
+
+  // PlatformEventObserver:
+  void WillProcessEvent(const ui::PlatformEvent& event) override {
+    will_process_count_++;
+    will_process_type_ = static_cast<const ui::Event*>(event)->type();
+  }
+  void DidProcessEvent(const ui::PlatformEvent& event) override {
+    did_process_count_++;
+    did_process_type_ = static_cast<const ui::Event*>(event)->type();
+  }
+
+ private:
+  int will_process_count_ = 0;
+  int did_process_count_ = 0;
+  ui::EventType will_process_type_ = ui::ET_UNKNOWN;
+  ui::EventType did_process_type_ = ui::ET_UNKNOWN;
+
+  DISALLOW_COPY_AND_ASSIGN(TestPlatformEventObserver);
+};
+
+// Base class that installs a new version of Env configured for Mus in SetUp()
+// (and installs a new version of Env configured for Local during TearDown()).
+// This is necessary as when Env is created with a Model of Local it installs
+// a PlatformEventSource, not the one that WindowTreeClient installs.
+class WindowTreeClientWmOzoneTest : public test::AuraMusWmTestBase {
+ public:
+  WindowTreeClientWmOzoneTest() = default;
+  ~WindowTreeClientWmOzoneTest() override = default;
+
+  // test::AuraMusWmTestBase:
+  void SetUp() override {
+    env_reinstaller_ = std::make_unique<test::EnvReinstaller>();
+    env_ = Env::CreateInstance(Env::Mode::MUS);
+    AuraMusWmTestBase::SetUp();
+  }
+
+  void TearDown() override {
+    AuraMusWmTestBase::TearDown();
+    env_.reset();
+    env_reinstaller_.reset();
+  }
+
+ private:
+  std::unique_ptr<test::EnvReinstaller> env_reinstaller_;
+  std::unique_ptr<Env> env_;
+
+  DISALLOW_COPY_AND_ASSIGN(WindowTreeClientWmOzoneTest);
+};
+
+// Used to verify PlatformEventSource is correctly wired up in ozone.
+TEST_F(WindowTreeClientWmOzoneTest, PlatformEventSourceInstalled) {
+  ASSERT_TRUE(ui::PlatformEventSource::GetInstance());
+  TestPlatformEventObserver test_observer;
+  ui::PlatformEventSource::GetInstance()->AddPlatformEventObserver(
+      &test_observer);
+  ui::MouseEvent event(ui::ET_MOUSE_MOVED, gfx::Point(), gfx::Point(),
+                       ui::EventTimeForNow(), ui::EF_NONE, 0);
+  window_tree_client()->OnWindowInputEvent(1, server_id(root_window()), 0,
+                                           ui::Id(), gfx::PointF(),
+                                           ui::Event::Clone(event), 0);
+  ui::PlatformEventSource::GetInstance()->RemovePlatformEventObserver(
+      &test_observer);
+  EXPECT_EQ(1, test_observer.will_process_count());
+  EXPECT_EQ(1, test_observer.did_process_count());
+  EXPECT_EQ(ui::ET_MOUSE_MOVED, test_observer.will_process_type());
+  EXPECT_EQ(ui::ET_MOUSE_MOVED, test_observer.did_process_type());
+}
+#endif
 
 }  // namespace aura

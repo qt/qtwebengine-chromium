@@ -9,7 +9,7 @@
 #include "base/test/scoped_task_environment.h"
 #include "content/child/child_process.h"
 #include "content/renderer/media/video_capture_impl.h"
-#include "media/capture/mojo/video_capture.mojom.h"
+#include "media/capture/mojom/video_capture.mojom.h"
 #include "mojo/public/cpp/system/platform_handle.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -158,7 +158,7 @@ class VideoCaptureImplTest : public ::testing::Test {
     const base::TimeTicks now = base::TimeTicks::Now();
     media::VideoFrameMetadata frame_metadata;
     frame_metadata.SetTimeTicks(media::VideoFrameMetadata::REFERENCE_TIME, now);
-    info->metadata = frame_metadata.CopyInternalValues();
+    info->metadata = frame_metadata.GetInternalValues().Clone();
 
     info->timestamp = now - base::TimeTicks();
     info->pixel_format = media::PIXEL_FORMAT_I420;

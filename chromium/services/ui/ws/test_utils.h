@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "base/atomicops.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/optional.h"
 #include "base/single_thread_task_runner.h"
@@ -24,7 +23,8 @@
 #include "services/ui/ws/display.h"
 #include "services/ui/ws/display_binding.h"
 #include "services/ui/ws/drag_controller.h"
-#include "services/ui/ws/event_dispatcher.h"
+#include "services/ui/ws/event_dispatcher_impl_test_api.h"
+#include "services/ui/ws/event_processor.h"
 #include "services/ui/ws/event_targeter.h"
 #include "services/ui/ws/gpu_host.h"
 #include "services/ui/ws/platform_display.h"
@@ -167,41 +167,26 @@ class WindowTreeTestApi {
 
 // -----------------------------------------------------------------------------
 
-class DisplayTestApi {
+class EventProcessorTestApi {
  public:
-  explicit DisplayTestApi(Display* display);
-  ~DisplayTestApi();
+  explicit EventProcessorTestApi(EventProcessor* ep) : ep_(ep) {}
+  ~EventProcessorTestApi() {}
 
-  void OnEvent(ui::Event* event) { display_->OnEventFromSource(event); }
-
- private:
-  Display* display_;
-
-  DISALLOW_COPY_AND_ASSIGN(DisplayTestApi);
-};
-
-// -----------------------------------------------------------------------------
-
-class EventDispatcherTestApi {
- public:
-  explicit EventDispatcherTestApi(EventDispatcher* ed) : ed_(ed) {}
-  ~EventDispatcherTestApi() {}
-
-  bool AreAnyPointersDown() const { return ed_->AreAnyPointersDown(); }
-  bool is_mouse_button_down() const { return ed_->mouse_button_down_; }
+  bool AreAnyPointersDown() const { return ep_->AreAnyPointersDown(); }
+  bool is_mouse_button_down() const { return ep_->mouse_button_down_; }
   bool IsWindowPointerTarget(const ServerWindow* window) const;
   int NumberPointerTargetsForWindow(ServerWindow* window);
   ModalWindowController* modal_window_controller() const {
-    return &ed_->modal_window_controller_;
+    return &ep_->modal_window_controller_;
   }
-  ServerWindow* capture_window() { return ed_->capture_window_; }
-  EventTargeter* event_targeter() { return ed_->event_targeter_.get(); }
+  ServerWindow* capture_window() { return ep_->capture_window_; }
+  EventTargeter* event_targeter() { return ep_->event_targeter_.get(); }
   bool IsObservingWindow(ServerWindow* window);
 
  private:
-  EventDispatcher* ed_;
+  EventProcessor* ep_;
 
-  DISALLOW_COPY_AND_ASSIGN(EventDispatcherTestApi);
+  DISALLOW_COPY_AND_ASSIGN(EventProcessorTestApi);
 };
 
 // -----------------------------------------------------------------------------
@@ -247,15 +232,6 @@ class WindowManagerStateTestApi {
   explicit WindowManagerStateTestApi(WindowManagerState* wms) : wms_(wms) {}
   ~WindowManagerStateTestApi() {}
 
-  void DispatchInputEventToWindow(ServerWindow* target,
-                                  ClientSpecificId client_id,
-                                  const EventLocation& event_location,
-                                  const ui::Event& event,
-                                  Accelerator* accelerator) {
-    wms_->DispatchInputEventToWindow(target, client_id, event_location, event,
-                                     accelerator);
-  }
-
   ClientSpecificId GetEventTargetClientId(ServerWindow* window,
                                           bool in_nonclient_area) {
     return wms_->GetEventTargetClientId(window, in_nonclient_area);
@@ -265,33 +241,42 @@ class WindowManagerStateTestApi {
     wms_->ProcessEvent(event, display_id);
   }
 
-  void OnEventAckTimeout(ClientSpecificId client_id) {
-    wms_->OnEventAckTimeout(client_id);
-  }
-
   ClientSpecificId GetEventTargetClientId(const ServerWindow* window,
                                           bool in_nonclient_area) {
     return wms_->GetEventTargetClientId(window, in_nonclient_area);
   }
 
-  WindowTree* tree_awaiting_input_ack() {
-    return wms_->in_flight_event_dispatch_details_
-               ? wms_->in_flight_event_dispatch_details_->tree
-               : nullptr;
+  void OnEventAckTimeout(ClientSpecificId client_id) {
+    EventDispatcherImplTestApi(&wms_->event_dispatcher_)
+        .OnDispatchInputEventTimeout();
   }
-
-  bool is_event_queue_empty() const { return wms_->event_queue_.empty(); }
 
   const std::vector<std::unique_ptr<WindowManagerDisplayRoot>>&
   window_manager_display_roots() const {
     return wms_->window_manager_display_roots_;
   }
 
+  // TODO(sky): convert calling code to use EventDispatcherImplTestApi directly.
+  void DispatchInputEventToWindow(ServerWindow* target,
+                                  ClientSpecificId client_id,
+                                  const EventLocation& event_location,
+                                  const ui::Event& event,
+                                  Accelerator* accelerator) {
+    EventDispatcherImplTestApi(&wms_->event_dispatcher_)
+        .DispatchInputEventToWindow(target, client_id, event_location, event,
+                                    accelerator);
+  }
+  WindowTree* tree_awaiting_input_ack() {
+    return EventDispatcherImplTestApi(&wms_->event_dispatcher_)
+        .GetTreeThatWillAckEvent();
+  }
+  bool is_event_tasks_empty() const {
+    return EventDispatcherImplTestApi(&wms_->event_dispatcher_)
+        .is_event_tasks_empty();
+  }
   bool AckInFlightEvent(mojom::EventResult result) {
-    if (!wms_->in_flight_event_dispatch_details_)
-      return false;
-    wms_->OnEventAck(wms_->in_flight_event_dispatch_details_->tree, result);
-    return true;
+    return EventDispatcherImplTestApi(&wms_->event_dispatcher_)
+        .OnDispatchInputEventDone(result);
   }
 
  private:
@@ -426,7 +411,7 @@ class TestWindowManager : public mojom::WindowManager {
                         const gfx::Vector2d& drag_image_offset,
                         ui::mojom::PointerKind source) override;
   void WmMoveDragImage(const gfx::Point& screen_location,
-                       const WmMoveDragImageCallback& callback) override;
+                       WmMoveDragImageCallback callback) override;
   void WmDestroyDragImage() override;
   void WmPerformMoveLoop(uint32_t change_id,
                          Id window_id,
@@ -487,6 +472,11 @@ class TestWindowTreeClient : public ui::mojom::WindowTreeClient {
       int64_t display_id,
       Id focused_window_id,
       bool drawn,
+      const base::Optional<viz::LocalSurfaceId>& local_surface_id) override;
+  void OnEmbedFromToken(
+      const base::UnguessableToken& token,
+      mojom::WindowDataPtr root,
+      int64_t display_id,
       const base::Optional<viz::LocalSurfaceId>& local_surface_id) override;
   void OnEmbeddedAppDisconnected(Id window) override;
   void OnUnembed(Id window_id) override;
@@ -554,18 +544,18 @@ class TestWindowTreeClient : public ui::mojom::WindowTreeClient {
                    uint32_t key_state,
                    const gfx::Point& position,
                    uint32_t effect_bitmask,
-                   const OnDragEnterCallback& callback) override;
+                   OnDragEnterCallback callback) override;
   void OnDragOver(Id window,
                   uint32_t key_state,
                   const gfx::Point& position,
                   uint32_t effect_bitmask,
-                  const OnDragOverCallback& callback) override;
+                  OnDragOverCallback callback) override;
   void OnDragLeave(Id window) override;
   void OnCompleteDrop(Id window,
                       uint32_t key_state,
                       const gfx::Point& position,
                       uint32_t effect_bitmask,
-                      const OnCompleteDropCallback& callback) override;
+                      OnCompleteDropCallback callback) override;
   void OnPerformDragDropCompleted(uint32_t change_id,
                                   bool success,
                                   uint32_t action_taken) override;

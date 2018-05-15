@@ -13,7 +13,7 @@ namespace features {
 // Enables running draw occlusion algorithm to remove Draw Quads that are not
 // shown on screen from CompositorFrame.
 const base::Feature kEnableDrawOcclusion{"DrawOcclusion",
-                                         base::FEATURE_DISABLED_BY_DEFAULT};
+                                         base::FEATURE_ENABLED_BY_DEFAULT};
 
 #if defined(USE_AURA) || defined(OS_MACOSX)
 const base::Feature kEnableSurfaceSynchronization{
@@ -36,6 +36,9 @@ const base::Feature kVizDisplayCompositor{"VizDisplayCompositor",
 // Enables running the Viz-assisted hit-test logic.
 const base::Feature kEnableVizHitTestDrawQuad{
     "VizHitTestDrawQuad", base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kEnableVizHitTestSurfaceLayer{
+    "VizHitTestSurfaceLayer", base::FEATURE_DISABLED_BY_DEFAULT};
 
 bool IsSurfaceSynchronizationEnabled() {
   auto* command_line = base::CommandLine::ForCurrentProcess();
@@ -64,7 +67,8 @@ bool IsVizHitTestingSurfaceLayerEnabled() {
   // TODO(riajiang): Check kVizDisplayCompositor feature when it works with
   // that config.
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kUseVizHitTestSurfaceLayer);
+             switches::kUseVizHitTestSurfaceLayer) ||
+         base::FeatureList::IsEnabled(kEnableVizHitTestSurfaceLayer);
 }
 
 bool IsDrawOcclusionEnabled() {

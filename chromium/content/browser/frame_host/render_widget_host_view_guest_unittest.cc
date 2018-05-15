@@ -10,7 +10,6 @@
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
-#include "base/test/scoped_task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
@@ -19,6 +18,7 @@
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/compositor/test/test_image_transport_factory.h"
 #include "content/browser/gpu/compositor_util.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/view_messages.h"
@@ -26,6 +26,7 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "content/test/fake_renderer_compositor_frame_sink.h"
 #include "content/test/mock_render_widget_host_delegate.h"
 #include "content/test/mock_widget_impl.h"
@@ -40,9 +41,7 @@ namespace {
 
 class RenderWidgetHostViewGuestTest : public testing::Test {
  public:
-  RenderWidgetHostViewGuestTest()
-      : scoped_task_environment_(
-            base::test::ScopedTaskEnvironment::MainThreadType::UI) {}
+  RenderWidgetHostViewGuestTest() {}
 
   void SetUp() override {
 #if !defined(OS_ANDROID)
@@ -79,8 +78,7 @@ class RenderWidgetHostViewGuestTest : public testing::Test {
   }
 
  protected:
-  // Needed by base::PostTaskWithTraits in RenderWidgetHostImpl constructor.
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
+  TestBrowserThreadBundle thread_bundle_;
 
   std::unique_ptr<BrowserContext> browser_context_;
   MockRenderWidgetHostDelegate delegate_;
@@ -201,6 +199,7 @@ class RenderWidgetHostViewGuestSurfaceTest
   }
 
  protected:
+  ScopedMockRenderProcessHostFactory rph_factory_;
   TestBrowserThreadBundle thread_bundle_;
   std::unique_ptr<BrowserContext> browser_context_;
   MockRenderWidgetHostDelegate delegate_;
@@ -218,6 +217,7 @@ class RenderWidgetHostViewGuestSurfaceTest
 
  private:
   viz::mojom::CompositorFrameSinkClientPtr renderer_compositor_frame_sink_ptr_;
+
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewGuestSurfaceTest);
 };
 
@@ -295,13 +295,6 @@ TEST_F(RenderWidgetHostViewGuestSurfaceTest, TestGuestSurface) {
 
   browser_plugin_guest_->set_attached(false);
   browser_plugin_guest_->ResetTestData();
-
-  view_->SubmitCompositorFrame(
-      local_surface_id,
-      CreateDelegatedFrame(scale_factor, view_size, view_rect), nullptr);
-  // Since guest is not attached, the CompositorFrame must be processed but the
-  // frame must be evicted to return the resources immediately.
-  EXPECT_FALSE(view_->has_frame());
 }
 
 }  // namespace content

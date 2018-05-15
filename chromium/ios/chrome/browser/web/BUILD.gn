@@ -108,12 +108,21 @@ source_set("unit_tests") {
   ]
 }
 
-js_compile_bundle("chrome_bundle") {
-  closure_entry_point = "__crWeb.chromeBundle"
+js_compile_bundle("chrome_bundle_all_frames") {
+  closure_entry_point = "__crWeb.chromeBundleAllFrames"
+  sources = [
+    "//components/autofill/ios/fill/resources/form.js",
+    "resources/chrome_bundle_all_frames.js",
+  ]
+}
+
+js_compile_bundle("chrome_bundle_main_frame") {
+  closure_entry_point = "__crWeb.chromeBundleMainFrame"
   sources = [
     "//components/autofill/ios/browser/resources/autofill_controller.js",
     "//components/autofill/ios/fill/resources/fill.js",
-    "resources/chrome_bundle.js",
+    "//ios/chrome/browser/passwords/resources/password_controller.js",
+    "resources/chrome_bundle_main_frame.js",
     "resources/print.js",
   ]
 
@@ -150,13 +159,13 @@ source_set("web_internal") {
     "external_app_launching_state.mm",
     "external_apps_launch_policy_decider.h",
     "external_apps_launch_policy_decider.mm",
-    "passkit_dialog_provider.h",
     "print_tab_helper.h",
     "print_tab_helper.mm",
     "web_state_printer.h",
   ]
   deps = [
-    ":chrome_bundle",
+    ":chrome_bundle_all_frames",
+    ":chrome_bundle_main_frame",
     "//base",
     "//components/content_settings/core/browser",
     "//components/dom_distiller/core",
@@ -281,6 +290,7 @@ source_set("eg_tests") {
     "//ios/chrome/browser/browser_state",
     "//ios/chrome/browser/ui",
     "//ios/chrome/browser/ui/commands",
+    "//ios/chrome/browser/ui/popup_menu:constants",
     "//ios/chrome/test:test_support",
     "//ios/chrome/test/app:test_support",
     "//ios/chrome/test/earl_grey:test_support",

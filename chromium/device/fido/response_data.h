@@ -10,28 +10,39 @@
 #include <string>
 #include <vector>
 
+#include "base/component_export.h"
 #include "base/macros.h"
 
 namespace device {
 
-// Base class for RegisterResponseData and SignResponseData.
-class ResponseData {
+// Base class for AuthenticatorMakeCredentialResponse and
+// AuthenticatorGetAssertionResponse.
+class COMPONENT_EXPORT(DEVICE_FIDO) ResponseData {
  public:
+  virtual ~ResponseData();
+
+  virtual const std::vector<uint8_t>& GetRpIdHash() const = 0;
+
   std::string GetId() const;
-  const std::vector<uint8_t>& raw_id() const { return raw_id_; }
+
+  // Checks that the SHA256 hash of the relying party id obtained from the
+  // request parameter matches the application parameter returned from the
+  // authenticator.
+  bool CheckRpIdHash(const std::string& rp_id) const;
+
+  const std::vector<uint8_t>& raw_credential_id() const {
+    return raw_credential_id_;
+  }
 
  protected:
-  explicit ResponseData(std::vector<uint8_t> credential_id);
-
+  explicit ResponseData(std::vector<uint8_t> raw_credential_id);
   ResponseData();
 
   // Moveable.
   ResponseData(ResponseData&& other);
   ResponseData& operator=(ResponseData&& other);
 
-  ~ResponseData();
-
-  std::vector<uint8_t> raw_id_;
+  std::vector<uint8_t> raw_credential_id_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ResponseData);

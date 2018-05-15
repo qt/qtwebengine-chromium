@@ -60,6 +60,7 @@
 #include "components/download/public/common/download_item.h"
 #include "components/download/public/common/download_url_parameters.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -332,11 +333,11 @@ bool DownloadFileIconExtractorImpl::ExtractIconURLForPath(
   // The contents of the file at |path| may have changed since a previous
   // request, in which case the associated icon may also have changed.
   // Therefore, always call LoadIcon instead of attempting a LookupIcon.
-  im->LoadIcon(path,
-               icon_size,
-               base::Bind(&DownloadFileIconExtractorImpl::OnIconLoadComplete,
-                          base::Unretained(this), scale, callback),
-               &cancelable_task_tracker_);
+  im->LoadIcon(
+      path, icon_size,
+      base::BindOnce(&DownloadFileIconExtractorImpl::OnIconLoadComplete,
+                     base::Unretained(this), scale, callback),
+      &cancelable_task_tracker_);
   return true;
 }
 

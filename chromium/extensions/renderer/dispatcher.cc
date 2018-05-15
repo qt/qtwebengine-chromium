@@ -102,18 +102,18 @@
 #include "extensions/renderer/worker_thread_dispatcher.h"
 #include "gin/converter.h"
 #include "mojo/public/js/grit/mojo_bindings_resources.h"
-#include "third_party/WebKit/public/platform/WebRuntimeFeatures.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/public/web/WebCustomElement.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebScopedUserGesture.h"
-#include "third_party/WebKit/public/web/WebScriptController.h"
-#include "third_party/WebKit/public/web/WebSecurityPolicy.h"
-#include "third_party/WebKit/public/web/WebSettings.h"
-#include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/blink/public/platform/web_runtime_features.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_url_request.h"
+#include "third_party/blink/public/web/web_custom_element.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_frame.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_scoped_user_gesture.h"
+#include "third_party/blink/public/web/web_script_controller.h"
+#include "third_party/blink/public/web/web_security_policy.h"
+#include "third_party/blink/public/web/web_settings.h"
+#include "third_party/blink/public/web/web_view.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "v8/include/v8.h"
@@ -659,6 +659,7 @@ std::vector<Dispatcher::JsResourceInfo> Dispatcher::GetJsResources() {
       {"extensionViewConstants", IDR_EXTENSION_VIEW_CONSTANTS_JS},
       {"extensionViewEvents", IDR_EXTENSION_VIEW_EVENTS_JS},
       {"extensionViewInternal", IDR_EXTENSION_VIEW_INTERNAL_CUSTOM_BINDINGS_JS},
+      {"feedbackPrivate", IDR_FEEDBACK_PRIVATE_CUSTOM_BINDINGS_JS},
       {"fileEntryBindingUtil", IDR_FILE_ENTRY_BINDING_UTIL_JS},
       {"fileSystem", IDR_FILE_SYSTEM_CUSTOM_BINDINGS_JS},
       {"guestView", IDR_GUEST_VIEW_JS},
@@ -667,8 +668,6 @@ std::vector<Dispatcher::JsResourceInfo> Dispatcher::GetJsResources() {
       {"guestViewDeny", IDR_GUEST_VIEW_DENY_JS},
       {"guestViewEvents", IDR_GUEST_VIEW_EVENTS_JS},
       {"imageUtil", IDR_IMAGE_UTIL_JS},
-      {"json_schema", IDR_JSON_SCHEMA_JS},
-      {kSchemaUtils, IDR_SCHEMA_UTILS_JS},
       {"setIcon", IDR_SET_ICON_JS},
       {"test", IDR_TEST_CUSTOM_BINDINGS_JS},
       {"test_environment_specific_bindings",
@@ -714,6 +713,8 @@ std::vector<Dispatcher::JsResourceInfo> Dispatcher::GetJsResources() {
     resources.push_back({kEventBindings, IDR_EVENT_BINDINGS_JS});
     resources.push_back({"lastError", IDR_LAST_ERROR_JS});
     resources.push_back({"sendRequest", IDR_SEND_REQUEST_JS});
+    resources.push_back({kSchemaUtils, IDR_SCHEMA_UTILS_JS});
+    resources.push_back({"json_schema", IDR_JSON_SCHEMA_JS});
 
     resources.push_back({"messaging", IDR_MESSAGING_JS});
     resources.push_back({"messaging_utils", IDR_MESSAGING_UTILS_JS});
@@ -1236,6 +1237,15 @@ void Dispatcher::UpdateActiveExtensions() {
 void Dispatcher::InitOriginPermissions(const Extension* extension) {
   delegate_->InitOriginPermissions(extension,
                                    IsExtensionActive(extension->id()));
+
+  const GURL webstore_launch_url = extension_urls::GetWebstoreLaunchURL();
+  WebSecurityPolicy::AddOriginAccessBlacklistEntry(
+      extension->url(), WebString::FromUTF8(webstore_launch_url.scheme()),
+      WebString::FromUTF8(webstore_launch_url.host()), true);
+
+  // TODO(devlin): Should we also block the webstore update URL here? See
+  // https://crbug.com/826946 for a related instance.
+
   UpdateOriginPermissions(
       extension->url(),
       URLPatternSet(),  // No old permissions.
@@ -1256,6 +1266,7 @@ void Dispatcher::UpdateOriginPermissions(const GURL& extension_url,
 #endif
     extensions::kExtensionScheme,
   };
+
   for (size_t i = 0; i < arraysize(kSchemes); ++i) {
     const char* scheme = kSchemes[i];
     // Remove all old patterns...

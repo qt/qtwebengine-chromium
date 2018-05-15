@@ -17,6 +17,7 @@
 #include "net/base/host_mapping_rules.h"
 #include "net/http/bidirectional_stream_impl.h"
 #include "net/http/transport_security_state.h"
+#include "net/log/net_log.h"
 #include "net/log/net_log_capture_mode.h"
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_source.h"
@@ -113,8 +114,7 @@ HttpStreamFactoryImpl::JobController::~JobController() {
   net_log_.EndEvent(NetLogEventType::HTTP_STREAM_JOB_CONTROLLER);
 }
 
-std::unique_ptr<HttpStreamFactoryImpl::Request>
-HttpStreamFactoryImpl::JobController::Start(
+std::unique_ptr<HttpStreamRequest> HttpStreamFactoryImpl::JobController::Start(
     HttpStreamRequest::Delegate* delegate,
     WebSocketHandshakeStreamBase::CreateHelper*
         websocket_handshake_stream_create_helper,
@@ -127,10 +127,10 @@ HttpStreamFactoryImpl::JobController::Start(
   stream_type_ = stream_type;
   priority_ = priority;
 
-  auto request = std::make_unique<Request>(
+  auto request = std::make_unique<HttpStreamRequest>(
       request_info_.url, this, delegate,
       websocket_handshake_stream_create_helper, source_net_log, stream_type);
-  // Keep a raw pointer but release ownership of Request instance.
+  // Keep a raw pointer but release ownership of HttpStreamRequest instance.
   request_ = request.get();
 
   // Associates |net_log_| with |source_net_log|.
@@ -243,7 +243,8 @@ void HttpStreamFactoryImpl::JobController::OnStreamReady(
   factory_->OnStreamReady(job->proxy_info(), request_info_.privacy_mode);
 
   if (IsJobOrphaned(job)) {
-    // We have bound a job to the associated Request, |job| has been orphaned.
+    // We have bound a job to the associated HttpStreamRequest, |job| has been
+    // orphaned.
     OnOrphanedJobComplete(job);
     return;
   }
@@ -270,7 +271,8 @@ void HttpStreamFactoryImpl::JobController::OnBidirectionalStreamImplReady(
   DCHECK(job);
 
   if (IsJobOrphaned(job)) {
-    // We have bound a job to the associated Request, |job| has been orphaned.
+    // We have bound a job to the associated HttpStreamRequest, |job| has been
+    // orphaned.
     OnOrphanedJobComplete(job);
     return;
   }
@@ -329,7 +331,8 @@ void HttpStreamFactoryImpl::JobController::OnStreamFailed(
   MaybeResumeMainJob(job, base::TimeDelta());
 
   if (IsJobOrphaned(job)) {
-    // We have bound a job to the associated Request, |job| has been orphaned.
+    // We have bound a job to the associated HttpStreamRequest, |job| has been
+    // orphaned.
     OnOrphanedJobComplete(job);
     return;
   }
@@ -374,7 +377,8 @@ void HttpStreamFactoryImpl::JobController::OnCertificateError(
   MaybeResumeMainJob(job, base::TimeDelta());
 
   if (IsJobOrphaned(job)) {
-    // We have bound a job to the associated Request, |job| has been orphaned.
+    // We have bound a job to the associated HttpStreamRequest, |job| has been
+    // orphaned.
     OnOrphanedJobComplete(job);
     return;
   }
@@ -397,7 +401,8 @@ void HttpStreamFactoryImpl::JobController::OnHttpsProxyTunnelResponse(
   MaybeResumeMainJob(job, base::TimeDelta());
 
   if (IsJobOrphaned(job)) {
-    // We have bound a job to the associated Request, |job| has been orphaned.
+    // We have bound a job to the associated HttpStreamRequest, |job| has been
+    // orphaned.
     OnOrphanedJobComplete(job);
     return;
   }
@@ -417,7 +422,8 @@ void HttpStreamFactoryImpl::JobController::OnNeedsClientAuth(
   MaybeResumeMainJob(job, base::TimeDelta());
 
   if (IsJobOrphaned(job)) {
-    // We have bound a job to the associated Request, |job| has been orphaned.
+    // We have bound a job to the associated HttpStreamRequest, |job| has been
+    // orphaned.
     OnOrphanedJobComplete(job);
     return;
   }
@@ -438,7 +444,8 @@ void HttpStreamFactoryImpl::JobController::OnNeedsProxyAuth(
   MaybeResumeMainJob(job, base::TimeDelta());
 
   if (IsJobOrphaned(job)) {
-    // We have bound a job to the associated Request, |job| has been orphaned.
+    // We have bound a job to the associated HttpStreamRequest, |job| has been
+    // orphaned.
     OnOrphanedJobComplete(job);
     return;
   }

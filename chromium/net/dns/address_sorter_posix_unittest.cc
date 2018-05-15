@@ -66,6 +66,33 @@ class TestUDPClientSocket : public DatagramClientSocket {
     return OK;
   }
   void UseNonBlockingIO() override {}
+  int WriteAsync(
+      const char* buffer,
+      size_t buf_len,
+      const CompletionCallback& callback,
+      const NetworkTrafficAnnotationTag& traffic_annotation) override {
+    NOTIMPLEMENTED();
+    return OK;
+  }
+  int WriteAsync(
+      DatagramBuffers buffers,
+      const CompletionCallback& callback,
+      const NetworkTrafficAnnotationTag& traffic_annotation) override {
+    NOTIMPLEMENTED();
+    return OK;
+  }
+  DatagramBuffers GetUnwrittenBuffers() override {
+    DatagramBuffers result;
+    NOTIMPLEMENTED();
+    return result;
+  }
+  void SetWriteAsyncEnabled(bool enabled) override {}
+  void SetMaxPacketSize(size_t max_packet_size) override {}
+  bool WriteAsyncEnabled() override { return false; }
+  void SetWriteMultiCoreEnabled(bool enabled) override {}
+  void SetSendmmsgEnabled(bool enabled) override {}
+  void SetWriteBatchingActive(bool active) override {}
+
   int ConnectUsingNetwork(NetworkChangeNotifier::NetworkHandle network,
                           const IPEndPoint& address) override {
     NOTIMPLEMENTED();
@@ -79,6 +106,7 @@ class TestUDPClientSocket : public DatagramClientSocket {
     return NetworkChangeNotifier::kInvalidNetworkHandle;
   }
   void ApplySocketTag(const SocketTag& tag) override {}
+  void SetMsgConfirm(bool confirm) override {}
 
   int Connect(const IPEndPoint& remote) override {
     if (connected_)
@@ -110,19 +138,18 @@ class TestSocketFactory : public ClientSocketFactory {
 
   std::unique_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType,
-      const RandIntCallback&,
       NetLog*,
       const NetLogSource&) override {
     return std::unique_ptr<DatagramClientSocket>(
         new TestUDPClientSocket(&mapping_));
   }
-  std::unique_ptr<StreamSocket> CreateTransportClientSocket(
+  std::unique_ptr<TransportClientSocket> CreateTransportClientSocket(
       const AddressList&,
       std::unique_ptr<SocketPerformanceWatcher>,
       NetLog*,
       const NetLogSource&) override {
     NOTIMPLEMENTED();
-    return std::unique_ptr<StreamSocket>();
+    return nullptr;
   }
   std::unique_ptr<SSLClientSocket> CreateSSLClientSocket(
       std::unique_ptr<ClientSocketHandle>,

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/callback_forward.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
 #include "base/task_scheduler/task_scheduler.h"
@@ -21,10 +22,10 @@
 #include "content/public/renderer/url_loader_throttle_provider.h"
 #include "media/base/decode_capabilities.h"
 #include "services/service_manager/public/mojom/service.mojom.h"
-#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
-#include "third_party/WebKit/public/platform/WebContentSettingsClient.h"
-#include "third_party/WebKit/public/web/WebNavigationPolicy.h"
-#include "third_party/WebKit/public/web/WebNavigationType.h"
+#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
+#include "third_party/blink/public/platform/web_content_settings_client.h"
+#include "third_party/blink/public/web/web_navigation_policy.h"
+#include "third_party/blink/public/web/web_navigation_type.h"
 #include "ui/base/page_transition_types.h"
 #include "v8/include/v8.h"
 
@@ -33,6 +34,7 @@ class SkBitmap;
 
 namespace base {
 class FilePath;
+class SingleThreadTaskRunner;
 }
 
 namespace blink {
@@ -65,6 +67,7 @@ class BrowserPluginDelegate;
 class MediaStreamRendererFactory;
 class RenderFrame;
 class RenderView;
+struct WebPluginInfo;
 
 // Embedder API for participating in renderer logic.
 class CONTENT_EXPORT ContentRendererClient {
@@ -106,6 +109,7 @@ class CONTENT_EXPORT ContentRendererClient {
   // Creates a delegate for browser plugin.
   virtual BrowserPluginDelegate* CreateBrowserPluginDelegate(
       RenderFrame* render_frame,
+      const WebPluginInfo& info,
       const std::string& mime_type,
       const GURL& original_url);
 
@@ -143,6 +147,13 @@ class CONTENT_EXPORT ContentRendererClient {
       std::string* error_html,
       base::string16* error_description) {}
 
+  // Returns as |error_description| a brief description of the error that
+  // ocurred. The out parameter may be not written to in certain cases (lack of
+  // information on the error code)
+  virtual void GetErrorDescription(const blink::WebURLRequest& failed_request,
+                                   const blink::WebURLError& error,
+                                   base::string16* error_description) {}
+
   // Allows the embedder to control when media resources are loaded. Embedders
   // can run |closure| immediately if they don't wish to defer media resource
   // loading.  If |has_played_media_before| is true, the render frame has
@@ -178,6 +189,11 @@ class CONTENT_EXPORT ContentRendererClient {
   // If it returns NULL the content layer will provide an engine.
   virtual std::unique_ptr<blink::WebSpeechSynthesizer>
   OverrideSpeechSynthesizer(blink::WebSpeechSynthesizerClient* client);
+
+  // Called on the main-thread immediately after the io thread is
+  // created.
+  virtual void PostIOThreadCreated(
+      base::SingleThreadTaskRunner* io_thread_task_runner);
 
   // Called on the main-thread immediately after the compositor thread is
   // created.
@@ -228,12 +244,18 @@ class CONTENT_EXPORT ContentRendererClient {
                           bool* send_referrer);
 
   // Notifies the embedder that the given frame is requesting the resource at
-  // |url|. If the function returns true, the url is changed to |new_url|.
-  virtual bool WillSendRequest(
-      blink::WebLocalFrame* frame,
-      ui::PageTransition transition_type,
-      const blink::WebURL& url,
-      GURL* new_url);
+  // |url|. If the function returns a valid |new_url|, the request must be
+  // updated to use it. The |attach_same_site_cookies| output parameter
+  // determines whether SameSite cookies should be attached to the request.
+  // TODO(nasko): When moved over to Network Service, find a way to perform
+  // this check on the browser side, so untrusted renderer processes cannot
+  // influence whether SameSite cookies are attached.
+  virtual void WillSendRequest(blink::WebLocalFrame* frame,
+                               ui::PageTransition transition_type,
+                               const blink::WebURL& url,
+                               const url::Origin* initiator_origin,
+                               GURL* new_url,
+                               bool* attach_same_site_cookies);
 
   // Returns true if the request is associated with a document that is in
   // ""prefetch only" mode, and will not be rendered.
@@ -252,6 +274,12 @@ class CONTENT_EXPORT ContentRendererClient {
   // Returns true if the given Pepper plugin is external (requiring special
   // startup steps).
   virtual bool IsExternalPepperPlugin(const std::string& module_name);
+
+  // Returns true if the given Pepper plugin should process content from
+  // different origins in different PPAPI processes. This is generally a
+  // worthwhile precaution when the plugin provides an active scripting
+  // language.
+  virtual bool IsOriginIsolatedPepperPlugin(const base::FilePath& plugin_path);
 
   // Returns true if the page at |url| can use Pepper MediaStream APIs.
   virtual bool AllowPepperMediaStreamAPI(const GURL& url);
@@ -285,11 +313,6 @@ class CONTENT_EXPORT ContentRendererClient {
   // and can be external or internal.
   virtual bool ShouldReportDetailedMessageForSource(
       const base::string16& source) const;
-
-  // Returns true if we should gather stats during resource loads as if the
-  // cross-site document blocking policy were enabled. Does not actually block
-  // any pages.
-  virtual bool ShouldGatherSiteIsolationStats() const;
 
   // Creates a permission client for in-renderer worker.
   virtual std::unique_ptr<blink::WebContentSettingsClient>

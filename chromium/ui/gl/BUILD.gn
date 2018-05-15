@@ -11,9 +11,10 @@ import("//ui/ozone/ozone.gni")
 import("//testing/test.gni")
 
 declare_args() {
-  enable_swiftshader = (is_win || (is_linux && use_x11) ||
-                        (is_chromeos && ozone_platform_x11)) &&
-                       (target_cpu == "x86" || target_cpu == "x64")
+  enable_swiftshader =
+      (is_win || (is_linux && use_x11) || (is_mac && use_egl) ||
+       (is_chromeos && ozone_platform_x11)) &&
+      (target_cpu == "x86" || target_cpu == "x64")
 }
 
 use_glx = use_x11 || ozone_platform_x11
@@ -25,6 +26,7 @@ if (is_android) {
 
 buildflag_header("gl_features") {
   header = "gl_features.h"
+  use_egl_on_mac = use_egl && is_mac
   flags = [
     "ENABLE_SWIFTSHADER=$enable_swiftshader",
     "USE_EGL_ON_MAC=$use_egl_on_mac",
@@ -196,7 +198,7 @@ component("gl") {
       "gl_surface_egl.h",
     ]
 
-    if (is_linux) {
+    if (is_linux || (is_win && use_ozone)) {
       sources += [
         "gl_image_native_pixmap.cc",
         "gl_image_native_pixmap.h",
@@ -214,7 +216,7 @@ component("gl") {
       }
     }
 
-    if (is_posix) {
+    if (is_posix || is_fuchsia) {
       # Windows has USE_EGL but doesn't support base::FileDescriptor
       sources += [
         "gl_fence_android_native_fence_sync.cc",
@@ -222,7 +224,15 @@ component("gl") {
       ]
     }
   }
-  if (is_android || is_linux || is_fuchsia) {
+  if (is_mac || use_egl) {
+    sources += [
+      "yuv_to_rgb_converter.cc",
+      "yuv_to_rgb_converter.h",
+    ]
+  }
+
+  # TODO(camurcu): Windows/Ozone uses OSMesa for now. Will be updated.
+  if (is_android || is_linux || is_fuchsia || (is_win && use_ozone)) {
     sources += [
       "gl_implementation_osmesa.cc",
       "gl_implementation_osmesa.h",
@@ -311,8 +321,6 @@ component("gl") {
       "gl_image_io_surface.mm",
       "scoped_cgl.cc",
       "scoped_cgl.h",
-      "yuv_to_rgb_converter.cc",
-      "yuv_to_rgb_converter.h",
     ]
 
     libs = [
@@ -331,6 +339,7 @@ component("gl") {
       data_deps += [
         "//third_party/angle:libEGL",
         "//third_party/angle:libGLESv2",
+        "//third_party/swiftshader",
       ]
     }
   }
@@ -429,7 +438,7 @@ source_set("run_all_unittests") {
 
   if (use_ozone) {
     deps += [
-      "//mojo/edk/system",
+      "//mojo/edk",
       "//services/service_manager/public/cpp/test:test_support",
       "//ui/ozone",
     ]

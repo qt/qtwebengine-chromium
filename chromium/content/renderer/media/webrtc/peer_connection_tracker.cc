@@ -12,7 +12,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/memory/ptr_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -21,17 +20,17 @@
 #include "content/common/media/peer_connection_tracker_messages.h"
 #include "content/renderer/media/webrtc/rtc_peer_connection_handler.h"
 #include "content/renderer/render_thread_impl.h"
-#include "third_party/WebKit/public/platform/WebMediaConstraints.h"
-#include "third_party/WebKit/public/platform/WebMediaStream.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
-#include "third_party/WebKit/public/platform/WebRTCAnswerOptions.h"
-#include "third_party/WebKit/public/platform/WebRTCICECandidate.h"
-#include "third_party/WebKit/public/platform/WebRTCOfferOptions.h"
-#include "third_party/WebKit/public/platform/WebRTCPeerConnectionHandlerClient.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebUserMediaRequest.h"
+#include "third_party/blink/public/platform/web_media_constraints.h"
+#include "third_party/blink/public/platform/web_media_stream.h"
+#include "third_party/blink/public/platform/web_media_stream_source.h"
+#include "third_party/blink/public/platform/web_media_stream_track.h"
+#include "third_party/blink/public/platform/web_rtc_answer_options.h"
+#include "third_party/blink/public/platform/web_rtc_ice_candidate.h"
+#include "third_party/blink/public/platform/web_rtc_offer_options.h"
+#include "third_party/blink/public/platform/web_rtc_peer_connection_handler_client.h"
+#include "third_party/blink/public/web/web_document.h"
+#include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_user_media_request.h"
 
 using webrtc::MediaConstraintsInterface;
 using webrtc::StatsReport;
@@ -460,11 +459,15 @@ void PeerConnectionTracker::RegisterPeerConnection(
     const blink::WebMediaConstraints& constraints,
     const blink::WebLocalFrame* frame) {
   DCHECK(main_thread_.CalledOnValidThread());
+  DCHECK(pc_handler);
   DCHECK_EQ(GetLocalIDForHandler(pc_handler), -1);
   DVLOG(1) << "PeerConnectionTracker::RegisterPeerConnection()";
   PeerConnectionInfo info;
 
   info.lid = GetNextLocalID();
+  // RTCPeerConnection.id is guaranteed to be an ASCII string. The ID's origin
+  // is local, so this conversion is safe.
+  info.peer_connection_id = pc_handler->Id().Ascii();
   info.rtc_configuration = SerializeConfiguration(config);
 
   info.constraints = SerializeMediaConstraints(constraints);

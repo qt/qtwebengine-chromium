@@ -1,8 +1,0 @@
-include_rules = [
-    "-modules",
-    "+modules/EventTargetModules.h",
-    "+modules/ModulesExport.h",
-    "+modules/battery",
-    "+services/device/public/mojom/battery_monitor.mojom-blink.h",
-    "+services/device/public/mojom/constants.mojom-blink.h",
-]

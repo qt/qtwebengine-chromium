@@ -17,12 +17,12 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "components/services/filesystem/public/interfaces/types.mojom.h"
 #include "net/base/directory_listing.h"
 #include "net/base/io_buffer.h"
 #include "net/url_request/url_request.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_operation_runner.h"
-#include "storage/common/fileapi/directory_entry.h"
 #include "storage/common/fileapi/file_system_util.h"
 #include "url/gurl.h"
 
@@ -82,8 +82,10 @@ void FileSystemDirURLRequestJob::StartAsync() {
     return;
   url_ = file_system_context_->CrackURL(request_->url());
   if (!url_.is_valid()) {
+    const FileSystemRequestInfo request_info = {request_->url(), request_,
+                                                storage_domain_, 0};
     file_system_context_->AttemptAutoMountForURLRequest(
-        request_, storage_domain_,
+        request_info,
         base::BindOnce(&FileSystemDirURLRequestJob::DidAttemptAutoMount,
                        weak_factory_.GetWeakPtr()));
     return;
@@ -93,8 +95,7 @@ void FileSystemDirURLRequestJob::StartAsync() {
     if (url_.is_valid() && VirtualPath::IsRootPath(url_.virtual_path())) {
       // Return an empty directory if the filesystem root is queried.
       DidReadDirectory(base::File::FILE_OK,
-                       std::vector<DirectoryEntry>(),
-                       false);
+                       std::vector<filesystem::mojom::DirectoryEntry>(), false);
       return;
     }
     NotifyStartError(URLRequestStatus::FromError(net::ERR_FILE_NOT_FOUND));
@@ -116,7 +117,7 @@ void FileSystemDirURLRequestJob::DidAttemptAutoMount(base::File::Error result) {
 
 void FileSystemDirURLRequestJob::DidReadDirectory(
     base::File::Error result,
-    std::vector<DirectoryEntry> entries,
+    std::vector<filesystem::mojom::DirectoryEntry> entries,
     bool has_more) {
   if (result != base::File::FILE_OK) {
     int rv = net::ERR_FILE_NOT_FOUND;
@@ -152,7 +153,7 @@ void FileSystemDirURLRequestJob::DidReadDirectory(
 }
 
 void FileSystemDirURLRequestJob::GetMetadata(size_t index) {
-  const DirectoryEntry& entry = entries_[index];
+  const filesystem::mojom::DirectoryEntry& entry = entries_[index];
   const FileSystemURL url = file_system_context_->CreateCrackedFileSystemURL(
       url_.origin(), url_.type(),
       url_.path().Append(base::FilePath(entry.name)));
@@ -178,11 +179,12 @@ void FileSystemDirURLRequestJob::DidGetMetadata(
   if (!request_)
     return;
 
-  const DirectoryEntry& entry = entries_[index];
+  const filesystem::mojom::DirectoryEntry& entry = entries_[index];
   const base::string16& name = base::FilePath(entry.name).LossyDisplayName();
-  data_.append(net::GetDirectoryListingEntry(name, std::string(),
-                                             entry.is_directory, file_info.size,
-                                             file_info.last_modified));
+  data_.append(net::GetDirectoryListingEntry(
+      name, std::string(),
+      entry.type == filesystem::mojom::FsFileType::DIRECTORY, file_info.size,
+      file_info.last_modified));
 
   if (index < entries_.size() - 1) {
     GetMetadata(index + 1);

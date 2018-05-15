@@ -26,9 +26,8 @@
 #include "mojo/public/c/system/data_pipe.h"
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/c/system/platform_handle.h"
+#include "mojo/public/c/system/trap.h"
 #include "mojo/public/c/system/types.h"
-#include "mojo/public/c/system/watcher.h"
-#include "mojo/public/cpp/system/message_pipe.h"
 
 namespace base {
 class PortProvider;
@@ -43,6 +42,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
  public:
   Core();
   virtual ~Core();
+
+  static Core* Get();
 
   // Called exactly once, shortly after construction, and before any other
   // methods are called on this object.
@@ -61,11 +62,11 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   //
   // The value returned in |*peer| may be passed along with a broker client
   // invitation. See SendBrokerClientInvitation() below.
-  ScopedMessagePipeHandle CreatePartialMessagePipe(ports::PortRef* peer);
+  MojoHandle CreatePartialMessagePipe(ports::PortRef* peer);
 
   // Like above but exchanges an existing ports::PortRef for a message pipe
   // handle which wraps it.
-  ScopedMessagePipeHandle CreatePartialMessagePipe(const ports::PortRef& port);
+  MojoHandle CreatePartialMessagePipe(const ports::PortRef& port);
 
   // Sends a broker client invitation to |target_process| over the connection
   // medium in |connection_params|. The other end of the connection medium in
@@ -90,8 +91,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   // Extracts a named message pipe endpoint from the broker client invitation
   // accepted by this process. Must only be called after
   // AcceptBrokerClientInvitation.
-  ScopedMessagePipeHandle ExtractMessagePipeFromInvitation(
-      const std::string& name);
+  MojoHandle ExtractMessagePipeFromInvitation(const std::string& name);
 
   // Called to connect to a peer process. This should be called only if there
   // is no common ancestor for the processes involved within this mojo system.
@@ -179,52 +179,50 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   MojoResult Close(MojoHandle handle);
   MojoResult QueryHandleSignalsState(MojoHandle handle,
                                      MojoHandleSignalsState* signals_state);
-  MojoResult CreateWatcher(MojoWatcherCallback callback,
-                           MojoHandle* watcher_handle);
-  MojoResult Watch(MojoHandle watcher_handle,
-                   MojoHandle handle,
-                   MojoHandleSignals signals,
-                   MojoWatchCondition condition,
-                   uintptr_t context);
-  MojoResult CancelWatch(MojoHandle watcher_handle, uintptr_t context);
-  MojoResult ArmWatcher(MojoHandle watcher_handle,
-                        uint32_t* num_ready_contexts,
-                        uintptr_t* ready_contexts,
-                        MojoResult* ready_results,
-                        MojoHandleSignalsState* ready_signals_states);
-  MojoResult CreateMessage(MojoMessageHandle* message_handle);
+  MojoResult CreateTrap(MojoTrapEventHandler handler,
+                        const MojoCreateTrapOptions* options,
+                        MojoHandle* trap_handle);
+  MojoResult AddTrigger(MojoHandle trap_handle,
+                        MojoHandle handle,
+                        MojoHandleSignals signals,
+                        MojoTriggerCondition condition,
+                        uintptr_t context,
+                        const MojoAddTriggerOptions* options);
+  MojoResult RemoveTrigger(MojoHandle trap_handle,
+                           uintptr_t context,
+                           const MojoRemoveTriggerOptions* options);
+  MojoResult ArmTrap(MojoHandle trap_handle,
+                     const MojoArmTrapOptions* options,
+                     uint32_t* num_ready_triggers,
+                     uintptr_t* ready_triggers,
+                     MojoResult* ready_results,
+                     MojoHandleSignalsState* ready_signals_states);
+  MojoResult CreateMessage(const MojoCreateMessageOptions* options,
+                           MojoMessageHandle* message_handle);
   MojoResult DestroyMessage(MojoMessageHandle message_handle);
-  MojoResult SerializeMessage(MojoMessageHandle message_handle);
-  MojoResult AttachSerializedMessageBuffer(MojoMessageHandle message_handle,
-                                           uint32_t payload_size,
-                                           const MojoHandle* handles,
-                                           uint32_t num_handles,
-                                           void** buffer,
-                                           uint32_t* buffer_size);
-  MojoResult ExtendSerializedMessagePayload(MojoMessageHandle message_handle,
-                                            uint32_t new_payload_size,
-                                            const MojoHandle* handles,
-                                            uint32_t num_handles,
-                                            void** new_buffer,
-                                            uint32_t* new_buffer_size);
-  MojoResult CommitSerializedMessageContents(MojoMessageHandle message_handle,
-                                             uint32_t final_payload_size,
-                                             void** buffer,
-                                             uint32_t* buffer_size);
-  MojoResult GetSerializedMessageContents(
-      MojoMessageHandle message_handle,
-      void** buffer,
-      uint32_t* num_bytes,
-      MojoHandle* handles,
-      uint32_t* num_handles,
-      MojoGetSerializedMessageContentsFlags flags);
-  MojoResult AttachMessageContext(MojoMessageHandle message_handle,
-                                  uintptr_t context,
-                                  MojoMessageContextSerializer serializer,
-                                  MojoMessageContextDestructor destructor);
+  MojoResult SerializeMessage(MojoMessageHandle message_handle,
+                              const MojoSerializeMessageOptions* options);
+  MojoResult AppendMessageData(MojoMessageHandle message_handle,
+                               uint32_t additional_payload_size,
+                               const MojoHandle* handles,
+                               uint32_t num_handles,
+                               const MojoAppendMessageDataOptions* options,
+                               void** buffer,
+                               uint32_t* buffer_size);
+  MojoResult GetMessageData(MojoMessageHandle message_handle,
+                            const MojoGetMessageDataOptions* options,
+                            void** buffer,
+                            uint32_t* num_bytes,
+                            MojoHandle* handles,
+                            uint32_t* num_handles);
+  MojoResult SetMessageContext(MojoMessageHandle message_handle,
+                               uintptr_t context,
+                               MojoMessageContextSerializer serializer,
+                               MojoMessageContextDestructor destructor,
+                               const MojoSetMessageContextOptions* options);
   MojoResult GetMessageContext(MojoMessageHandle message_handle,
-                               uintptr_t* context,
-                               MojoGetMessageContextFlags flags);
+                               const MojoGetMessageContextOptions* options,
+                               uintptr_t* context);
   MojoResult GetProperty(MojoPropertyType type, void* value);
 
   // These methods correspond to the API functions defined in
@@ -284,6 +282,9 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
                        void** buffer,
                        MojoMapBufferFlags flags);
   MojoResult UnmapBuffer(void* buffer);
+  MojoResult GetBufferInfo(MojoHandle buffer_handle,
+                           const MojoSharedBufferOptions* options,
+                           MojoSharedBufferInfo* info);
 
   // These methods correspond to the API functions defined in
   // "mojo/public/c/system/platform_handle.h".

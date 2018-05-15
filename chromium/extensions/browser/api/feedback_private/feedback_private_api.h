@@ -133,7 +133,7 @@ class FeedbackPrivateSendFeedbackFunction : public UIThreadExtensionFunction {
   ResponseAction Run() override;
 
  private:
-  void OnCompleted(bool success);
+  void OnCompleted(api::feedback_private::LandingPageType type, bool success);
 };
 
 class FeedbackPrivateLogSrtPromptResultFunction
@@ -144,7 +144,7 @@ class FeedbackPrivateLogSrtPromptResultFunction
 
  protected:
   ~FeedbackPrivateLogSrtPromptResultFunction() override {}
-  AsyncExtensionFunction::ResponseAction Run() override;
+  ResponseAction Run() override;
 };
 
 }  // namespace extensions

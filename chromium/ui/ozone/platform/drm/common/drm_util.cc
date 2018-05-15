@@ -14,7 +14,7 @@
 #include <utility>
 
 #include "base/containers/flat_map.h"
-#include "base/memory/ptr_util.h"
+#include "ui/display/types/display_constants.h"
 #include "ui/display/types/display_mode.h"
 #include "ui/display/util/edid_parser.h"
 
@@ -381,7 +381,7 @@ std::unique_ptr<display::DisplaySnapshot> CreateDisplaySnapshot(
     const base::FilePath& sys_path,
     size_t device_index,
     const gfx::Point& origin) {
-  int64_t display_id = ConnectorIndex(device_index, info->index());
+  const uint8_t display_index = ConnectorIndex(device_index, info->index());
   const gfx::Size physical_size =
       gfx::Size(info->connector()->mmWidth, info->connector()->mmHeight);
   const display::DisplayConnectionType type = GetDisplayType(info->connector());
@@ -391,29 +391,31 @@ std::unique_ptr<display::DisplaySnapshot> CreateDisplaySnapshot(
       HasColorCorrectionMatrix(fd, info->crtc());
   const gfx::Size maximum_cursor_size = GetMaximumCursorSize(fd);
 
-  std::vector<uint8_t> edid;
   std::string display_name;
-  int64_t product_id = display::DisplaySnapshot::kInvalidProductID;
+  int64_t display_id = display_index;
+  int64_t product_code = display::DisplaySnapshot::kInvalidProductCode;
+  int32_t year_of_manufacture = display::kInvalidYearOfManufacture;
   bool has_overscan = false;
   gfx::ColorSpace display_color_space;
-
-  // This is the size of the active pixels from the first detailed timing
-  // descriptor in the EDID.
+  // Active pixels size from the first detailed timing descriptor in the EDID.
   gfx::Size active_pixel_size;
 
   ScopedDrmPropertyBlobPtr edid_blob(
       GetDrmPropertyBlob(fd, info->connector(), "EDID"));
+  std::vector<uint8_t> edid;
   if (edid_blob) {
     edid.assign(static_cast<uint8_t*>(edid_blob->data),
                 static_cast<uint8_t*>(edid_blob->data) + edid_blob->length);
 
-    display::GetDisplayIdFromEDID(edid, display_id, &display_id, &product_id);
-
-    display::ParseOutputDeviceData(edid, nullptr, nullptr, &display_name,
-                                   &active_pixel_size, nullptr);
-    display::ParseOutputOverscanFlag(edid, &has_overscan);
-
-    display_color_space = GetColorSpaceFromEdid(edid);
+    display::EdidParser edid_parser(edid);
+    display_name = edid_parser.display_name();
+    active_pixel_size = edid_parser.active_pixel_size();
+    product_code = edid_parser.GetProductCode();
+    display_id = edid_parser.GetDisplayId(display_index);
+    year_of_manufacture = edid_parser.year_of_manufacture();
+    has_overscan =
+        edid_parser.has_overscan_flag() && edid_parser.overscan_flag();
+    display_color_space = GetColorSpaceFromEdid(edid_parser);
   } else {
     VLOG(1) << "Failed to get EDID blob for connector "
             << info->connector()->connector_id;
@@ -428,7 +430,7 @@ std::unique_ptr<display::DisplaySnapshot> CreateDisplaySnapshot(
       display_id, origin, physical_size, type, is_aspect_preserving_scaling,
       has_overscan, has_color_correction_matrix, display_color_space,
       display_name, sys_path, std::move(modes), edid, current_mode, native_mode,
-      product_id, maximum_cursor_size);
+      product_code, year_of_manufacture, maximum_cursor_size);
 }
 
 // TODO(rjkroege): Remove in a subsequent CL once Mojo IPC is used everywhere.
@@ -464,7 +466,8 @@ std::vector<DisplaySnapshot_Params> CreateDisplaySnapshotParams(
     if (d->native_mode())
       p.native_mode = GetDisplayModeParams(*d->native_mode());
 
-    p.product_id = d->product_id();
+    p.product_code = d->product_code();
+    p.year_of_manufacture = d->year_of_manufacture();
     p.maximum_cursor_size = d->maximum_cursor_size();
 
     params.push_back(p);
@@ -490,7 +493,8 @@ std::unique_ptr<display::DisplaySnapshot> CreateDisplaySnapshot(
       params.is_aspect_preserving_scaling, params.has_overscan,
       params.has_color_correction_matrix, params.color_space,
       params.display_name, params.sys_path, std::move(modes), params.edid,
-      current_mode, native_mode, params.product_id, params.maximum_cursor_size);
+      current_mode, native_mode, params.product_code,
+      params.year_of_manufacture, params.maximum_cursor_size);
 }
 
 int GetFourCCFormatFromBufferFormat(gfx::BufferFormat format) {
@@ -631,10 +635,8 @@ std::vector<OverlayCheckReturn_Params> CreateParamsFromOverlayStatusList(
   return params;
 }
 
-gfx::ColorSpace GetColorSpaceFromEdid(const std::vector<uint8_t>& edid) {
-  SkColorSpacePrimaries primaries = {0};
-  if (!display::ParseChromaticityCoordinates(edid, &primaries))
-    return gfx::ColorSpace();
+gfx::ColorSpace GetColorSpaceFromEdid(const display::EdidParser& edid_parser) {
+  const SkColorSpacePrimaries primaries = edid_parser.primaries();
 
   // Sanity check: primaries should verify By <= Ry <= Gy, Bx <= Rx and Gx <=
   // Rx, to guarantee that the R, G and B colors are each in the correct region.
@@ -653,12 +655,25 @@ gfx::ColorSpace GetColorSpaceFromEdid(const std::vector<uint8_t>& edid) {
   if (primaries_area_twice < kBT709PrimariesArea)
     return gfx::ColorSpace();
 
+  // Sanity check: https://crbug.com/809909, the blue primary coordinates should
+  // not be too far left/upwards of the expected location (namely [0.15, 0.06]
+  // for sRGB/ BT.709/ Adobe RGB/ DCI-P3, and [0.131, 0.046] for BT.2020).
+  constexpr float kExpectedBluePrimaryX = 0.15f;
+  constexpr float kBluePrimaryXDelta = 0.02f;
+  constexpr float kExpectedBluePrimaryY = 0.06f;
+  constexpr float kBluePrimaryYDelta = 0.031f;
+  const bool is_blue_primary_broken =
+      (std::abs(primaries.fBX - kExpectedBluePrimaryX) > kBluePrimaryXDelta) ||
+      (std::abs(primaries.fBY - kExpectedBluePrimaryY) > kBluePrimaryYDelta);
+  if (is_blue_primary_broken)
+    return gfx::ColorSpace();
+
   SkMatrix44 color_space_as_matrix;
   if (!primaries.toXYZD50(&color_space_as_matrix))
     return gfx::ColorSpace();
 
-  double gamma = 0.0;
-  if (!display::ParseGammaValue(edid, &gamma))
+  const double gamma = edid_parser.gamma();
+  if (gamma < 1.0)
     return gfx::ColorSpace();
 
   SkColorSpaceTransferFn transfer = {gamma, 1.f, 0.f, 0.f, 0.f, 0.f, 0.f};

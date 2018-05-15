@@ -38,59 +38,59 @@ class GitCLTest(unittest.TestCase):
         git_cl.run(['issue'])
         self.assertEqual(host.executive.calls, [['git', 'cl', 'issue']])
 
+    def test_trigger_try_jobs_with_list(self):
+        # When no bucket is specified, master.tryserver.blink is used by
+        # default. Besides, `git cl try` invocations are grouped by buckets.
+        host = MockHost()
+        git_cl = GitCL(host, auth_refresh_token_json='token.json')
+        git_cl.trigger_try_jobs(['android_blink_rel', 'fake_blink_try_linux',
+                                 'fake_blink_try_win', 'fake_mac_cq'])
+        self.assertEqual(host.executive.calls, [
+            [
+                'git', 'cl', 'try',
+                '-B', 'master.tryserver.blink',
+                '-b', 'fake_blink_try_linux', '-b', 'fake_blink_try_win',
+                '--auth-refresh-token-json', 'token.json'
+            ],
+            [
+                'git', 'cl', 'try',
+                '-B', 'master.tryserver.chromium.android',
+                '-b', 'android_blink_rel',
+                '--auth-refresh-token-json', 'token.json'
+            ],
+            [
+                'git', 'cl', 'try',
+                '-B', 'master.tryserver.chromium.mac',
+                '-b', 'fake_mac_cq',
+                '--auth-refresh-token-json', 'token.json'
+            ],
+        ])
+
     def test_trigger_try_jobs_with_frozenset(self):
         # The trigger_try_jobs method may be called with an immutable set.
-        # It has special logic which assumes most builders to trigger are
-        # on the master tryserver.blink.
         host = MockHost()
         git_cl = GitCL(host, auth_refresh_token_json='token.json')
-        git_cl.trigger_try_jobs(frozenset(['builder-a', 'builder-b']))
+        git_cl.trigger_try_jobs(frozenset(['fake_blink_try_linux', 'fake_blink_try_win']))
         self.assertEqual(host.executive.calls, [
             [
                 'git', 'cl', 'try',
-                '-m', 'tryserver.blink',
-                '-b', 'builder-a', '-b', 'builder-b',
+                '-B', 'master.tryserver.blink',
+                '-b', 'fake_blink_try_linux', '-b', 'fake_blink_try_win',
                 '--auth-refresh-token-json', 'token.json'
             ],
         ])
 
-    def test_trigger_try_jobs_with_list(self):
+    def test_trigger_try_jobs_with_explicit_bucket(self):
+        # An explicit bucket overrides configured or default buckets.
         host = MockHost()
         git_cl = GitCL(host, auth_refresh_token_json='token.json')
-        git_cl.trigger_try_jobs(['builder-a', 'android_blink_rel'])
+        git_cl.trigger_try_jobs(['fake_blink_try_linux', 'fake_mac_cq'],
+                                bucket='luci.dummy')
         self.assertEqual(host.executive.calls, [
             [
                 'git', 'cl', 'try',
-                '-m', 'tryserver.chromium.android',
-                '-b', 'android_blink_rel',
-                '--auth-refresh-token-json', 'token.json'
-            ],
-            [
-                'git', 'cl', 'try',
-                '-m', 'tryserver.blink',
-                '-b', 'builder-a',
-                '--auth-refresh-token-json', 'token.json'
-            ],
-        ])
-
-    def test_trigger_try_jobs_with_android_blink_rel(self):
-        # The trigger_try_jobs method may be called with an immutable set.
-        # It has special logic which assumes most builders to trigger are
-        # on the master tryserver.blink.
-        host = MockHost()
-        git_cl = GitCL(host, auth_refresh_token_json='token.json')
-        git_cl.trigger_try_jobs(frozenset(['builder-a', 'android_blink_rel']))
-        self.assertEqual(host.executive.calls, [
-            [
-                'git', 'cl', 'try',
-                '-m', 'tryserver.chromium.android',
-                '-b', 'android_blink_rel',
-                '--auth-refresh-token-json', 'token.json'
-            ],
-            [
-                'git', 'cl', 'try',
-                '-m', 'tryserver.blink',
-                '-b', 'builder-a',
+                '-B', 'luci.dummy',
+                '-b', 'fake_blink_try_linux', '-b', 'fake_mac_cq',
                 '--auth-refresh-token-json', 'token.json'
             ],
         ])
@@ -288,19 +288,51 @@ class GitCLTest(unittest.TestCase):
                 'url': None,
             },
             {
+                'builder_name': 'cq-b',
+                'experimental': False,
+                'result': None,
+                'status': 'SCHEDULED',
+                'tags': ['cq_experimental:false', 'user_agent:cq'],
+                'url': None,
+            },
+            {
+                'builder_name': 'cq-c',
+                'experimental': True,
+                'result': None,
+                'status': 'SCHEDULED',
+                'tags': ['cq_experimental:false', 'user_agent:cq'],
+                'url': None,
+            },
+            {
                 'builder_name': 'cq-a-experimental',
                 'experimental': True,
                 'result': None,
                 'status': 'SCHEDULED',
-                'tags': ['user_agent:cq'],
+                'tags': ['cq_experimental:true', 'user_agent:cq'],
                 'url': None,
             },
             {
-                'builder_name': 'other',
+                'builder_name': 'cq-b-experimental',
+                'experimental': False,
+                'result': None,
+                'status': 'SCHEDULED',
+                'tags': ['cq_experimental:true', 'user_agent:cq'],
+                'url': None,
+            },
+            {
+                'builder_name': 'other-a',
                 'experimental': False,
                 'status': 'SCHEDULED',
                 'result': None,
                 'tags': ['user_agent:git_cl_try'],
+                'url': None,
+            },
+            {
+                'builder_name': 'other-b',
+                'experimental': False,
+                'status': 'SCHEDULED',
+                'result': None,
+                'tags': ['is_experimental:false', 'user_agent:git_cl_try'],
                 'url': None,
             },
         ]
@@ -308,6 +340,8 @@ class GitCLTest(unittest.TestCase):
             git_cl.latest_try_jobs(cq_only=True),
             {
                 Build('cq-a'): TryJobStatus('SCHEDULED'),
+                Build('cq-b'): TryJobStatus('SCHEDULED'),
+                Build('cq-c'): TryJobStatus('SCHEDULED'),
             })
 
     def test_latest_try_jobs(self):

@@ -18,7 +18,7 @@
 #include "base/threading/thread_local.h"
 #include "base/trace_event/trace_event.h"
 #include "mojo/public/cpp/bindings/lib/may_auto_lock.h"
-#include "mojo/public/cpp/bindings/mojo_features.h"
+#include "mojo/public/cpp/bindings/mojo_buildflags.h"
 #include "mojo/public/cpp/bindings/sync_handle_watcher.h"
 #include "mojo/public/cpp/system/wait.h"
 
@@ -89,10 +89,8 @@ class Connector::RunLoopNestingObserver
   }
 
   static RunLoopNestingObserver* GetForThread() {
-    if (!base::MessageLoop::current() ||
-        !base::RunLoop::IsNestingAllowedOnCurrentThread()) {
+    if (!base::MessageLoop::current())
       return nullptr;
-    }
     auto* observer = static_cast<RunLoopNestingObserver*>(
         g_tls_nesting_observer.Get().Get());
     if (!observer) {

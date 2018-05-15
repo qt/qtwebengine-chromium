@@ -12,9 +12,9 @@
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_reference.h"
-#include "core/fpdfapi/parser/cpdf_simple_parser.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
+#include "core/fpdfdoc/cpdf_defaultappearance.h"
 #include "core/fpdfdoc/cpdf_formfield.h"
 #include "core/fxge/cfx_substfont.h"
 #include "fpdfsdk/cpdfsdk_annot.h"
@@ -216,12 +216,15 @@ CPDF_Font* CBA_FontMap::GetAnnotDefaultFont(ByteString* sAlias) {
   if (sDA.IsEmpty())
     return nullptr;
 
-  CPDF_SimpleParser syntax(sDA.AsStringView());
-  syntax.FindTagParamFromStart("Tf", 2);
-
-  ByteString sFontName(syntax.GetWord());
-  ByteString sDecodedFontName = PDF_NameDecode(sFontName);
-  *sAlias = sDecodedFontName.Right(sDecodedFontName.GetLength() - 1);
+  CPDF_DefaultAppearance appearance(sDA);
+  float font_size;
+  Optional<ByteString> font = appearance.GetFont(&font_size);
+  if (font) {
+    ByteString sDecodedFontName = PDF_NameDecode(font->AsStringView());
+    *sAlias = sDecodedFontName.Right(sDecodedFontName.GetLength() - 1);
+  } else {
+    *sAlias = ByteString();
+  }
 
   CPDF_Dictionary* pFontDict = nullptr;
   if (CPDF_Dictionary* pAPDict = m_pAnnotDict->GetDictFor("AP")) {

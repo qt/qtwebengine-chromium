@@ -44,6 +44,9 @@ const char kSetUserPassword[] = "SetUserPassword";
 const char kEnableChromeDevFeatures[] = "EnableChromeDevFeatures";
 const char kQueryDevFeatures[] = "QueryDevFeatures";
 const char kSetOomScoreAdj[] = "SetOomScoreAdj";
+const char kStartVmConcierge[] = "StartVmConcierge";
+const char kStopVmConcierge[] = "StopVmConcierge";
+const char kSetRlzPingSent[] = "SetRlzPingSent";
 
 // Values.
 enum DevFeatureFlag {

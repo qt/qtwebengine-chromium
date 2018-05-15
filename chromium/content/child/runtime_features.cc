@@ -18,7 +18,7 @@
 #include "media/base/media_switches.h"
 #include "services/device/public/cpp/device_features.h"
 #include "services/network/public/cpp/features.h"
-#include "third_party/WebKit/public/platform/WebRuntimeFeatures.h"
+#include "third_party/blink/public/platform/web_runtime_features.h"
 #include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/native_theme/native_theme_features.h"
@@ -81,10 +81,6 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
 #if !defined(OS_MACOSX)
   WebRuntimeFeatures::EnableNotificationContentImage(true);
 #endif
-
-#if defined(OS_ANDROID)
-  WebRuntimeFeatures::EnableDoubleTapToJumpOnVideo(true);
-#endif
 }
 
 void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
@@ -129,9 +125,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kDisableFileSystem))
     WebRuntimeFeatures::EnableFileSystem(false);
-
-  if (command_line.HasSwitch(switches::kEnableExperimentalCanvasFeatures))
-    WebRuntimeFeatures::EnableExperimentalCanvasFeatures(true);
 
   if (!command_line.HasSwitch(switches::kDisableAcceleratedJpegDecoding))
     WebRuntimeFeatures::EnableDecodeToYUV(true);
@@ -211,8 +204,11 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableWebVR))
     WebRuntimeFeatures::EnableWebVR(true);
 
-  WebRuntimeFeatures::EnableWebXR(
-      base::FeatureList::IsEnabled(features::kWebXr));
+  if (base::FeatureList::IsEnabled(features::kWebXr))
+    WebRuntimeFeatures::EnableWebXR(true);
+
+  if (base::FeatureList::IsEnabled(features::kWebXrGamepadSupport))
+    WebRuntimeFeatures::EnableWebXRGamepadSupport(true);
 
   if (command_line.HasSwitch(switches::kDisablePresentationAPI))
     WebRuntimeFeatures::EnablePresentationAPI(false);
@@ -253,10 +249,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
       "FramebustingNeedsSameOriginOrUserGesture",
       base::FeatureList::IsEnabled(
           features::kFramebustingNeedsSameOriginOrUserGesture));
-
-  WebRuntimeFeatures::EnableFeatureFromString(
-      "VibrateRequiresUserGesture",
-      base::FeatureList::IsEnabled(features::kVibrateRequiresUserGesture));
 
   if (command_line.HasSwitch(switches::kDisableBackgroundTimerThrottling))
     WebRuntimeFeatures::EnableTimerThrottlingForBackgroundTabs(false);
@@ -338,6 +330,13 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
                                                 false);
   }
 
+  if (base::FeatureList::IsEnabled(
+          features::kTurnOff2DAndOpacityCompositorAnimations))
+    WebRuntimeFeatures::EnableTurnOff2DAndOpacityCompositorAnimations(true);
+
+  if (base::FeatureList::IsEnabled(features::kRasterInducingScroll))
+    WebRuntimeFeatures::EnableRasterInducingScroll(true);
+
   WebRuntimeFeatures::EnableFeatureFromString(
       "AllowContentInitiatedDataUrlNavigations",
       base::FeatureList::IsEnabled(
@@ -353,9 +352,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     WebRuntimeFeatures::EnableAutoplayMutedVideos(true);
   }
 
-  if (!base::FeatureList::IsEnabled(features::kWebAuth) &&
-      !enableExperimentalWebPlatformFeatures)
-    WebRuntimeFeatures::EnableWebAuth(false);
+  WebRuntimeFeatures::EnableWebAuth(
+      base::FeatureList::IsEnabled(features::kWebAuth));
 
   WebRuntimeFeatures::EnableClientPlaceholdersForServerLoFi(
       base::GetFieldTrialParamValue("PreviewsClientLoFi",
@@ -401,6 +399,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (base::FeatureList::IsEnabled(features::kKeyboardLockAPI))
     WebRuntimeFeatures::EnableFeatureFromString("KeyboardLock", true);
 
+  if (base::FeatureList::IsEnabled(features::kLazyFrameLoading))
+    WebRuntimeFeatures::EnableLazyFrameLoading(true);
+
   // Enable explicitly enabled features, and then disable explicitly disabled
   // ones.
   for (const std::string& feature :
@@ -421,6 +422,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (base::FeatureList::IsEnabled(features::kStopLoadingInBackground))
     WebRuntimeFeatures::EnableStopLoadingInBackground(true);
 
+  if (base::FeatureList::IsEnabled(features::kStopNonTimersInBackground))
+    WebRuntimeFeatures::EnableStopNonTimersInBackground(true);
+
   WebRuntimeFeatures::EnablePWAFullCodeCache(
       base::FeatureList::IsEnabled(features::kPWAFullCodeCache));
 
@@ -433,8 +437,18 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   WebRuntimeFeatures::EnableCodeCacheAfterExecute(
       base::FeatureList::IsEnabled(features::kCodeCacheAfterExecute));
 
+  WebRuntimeFeatures::EnableCacheInlineScriptCode(
+      base::FeatureList::IsEnabled(features::kCacheInlineScriptCode));
+
   if (base::FeatureList::IsEnabled(features::kUnifiedTouchAdjustment))
     WebRuntimeFeatures::EnableUnifiedTouchAdjustment(true);
+
+  // Make srcset on link rel=preload work with SignedHTTPExchange flag too.
+  if (base::FeatureList::IsEnabled(features::kSignedHTTPExchange))
+    WebRuntimeFeatures::EnablePreloadImageSrcSetEnabled(true);
+
+  WebRuntimeFeatures::EnableOffMainThreadWebSocket(
+      base::FeatureList::IsEnabled(features::kOffMainThreadWebSocket));
 };
 
 }  // namespace content

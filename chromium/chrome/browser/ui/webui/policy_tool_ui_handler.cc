@@ -11,62 +11,35 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task_scheduler/post_task.h"
 #include "build/build_config.h"
+#include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/chrome_select_file_policy.h"
+#include "components/strings/grit/components_strings.h"
+#include "content/public/browser/web_contents.h"
+#include "ui/base/l10n/l10n_util.h"
+#include "ui/shell_dialogs/select_file_policy.h"
 
-// static
-const base::FilePath::CharType PolicyToolUIHandler::kPolicyToolSessionsDir[] =
+namespace {
+
+const base::FilePath::CharType kPolicyToolSessionsDir[] =
     FILE_PATH_LITERAL("Policy sessions");
 
-// static
-const base::FilePath::CharType
-    PolicyToolUIHandler::kPolicyToolDefaultSessionName[] =
-        FILE_PATH_LITERAL("policy");
+const base::FilePath::CharType kPolicyToolDefaultSessionName[] =
+    FILE_PATH_LITERAL("policy");
 
-// static
-const base::FilePath::CharType
-    PolicyToolUIHandler::kPolicyToolSessionExtension[] =
-        FILE_PATH_LITERAL("json");
+const base::FilePath::CharType kPolicyToolSessionExtension[] =
+    FILE_PATH_LITERAL("json");
 
-PolicyToolUIHandler::PolicyToolUIHandler() : callback_weak_ptr_factory_(this) {}
+const base::FilePath::CharType kPolicyToolLinuxExtension[] =
+    FILE_PATH_LITERAL("json");
 
-PolicyToolUIHandler::~PolicyToolUIHandler() {}
-
-void PolicyToolUIHandler::RegisterMessages() {
-  // Set directory for storing sessions.
-  sessions_dir_ =
-      Profile::FromWebUI(web_ui())->GetPath().Append(kPolicyToolSessionsDir);
-
-  web_ui()->RegisterMessageCallback(
-      "initialized", base::Bind(&PolicyToolUIHandler::HandleInitializedAdmin,
-                                base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "loadSession", base::Bind(&PolicyToolUIHandler::HandleLoadSession,
-                                base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "updateSession", base::Bind(&PolicyToolUIHandler::HandleUpdateSession,
-                                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "resetSession", base::Bind(&PolicyToolUIHandler::HandleResetSession,
-                                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "deleteSession", base::Bind(&PolicyToolUIHandler::HandleDeleteSession,
-                                  base::Unretained(this)));
-}
-
-void PolicyToolUIHandler::OnJavascriptDisallowed() {
-  callback_weak_ptr_factory_.InvalidateWeakPtrs();
-}
-
-base::FilePath PolicyToolUIHandler::GetSessionPath(
-    const base::FilePath::StringType& name) const {
-  return sessions_dir_.Append(name).AddExtension(kPolicyToolSessionExtension);
-}
-
-base::ListValue PolicyToolUIHandler::GetSessionsList() {
+// Returns the current list of all sessions sorted by last access time in
+// decreasing order.
+base::ListValue GetSessionsList(const base::FilePath& sessions_dir) {
   base::FilePath::StringType sessions_pattern =
       FILE_PATH_LITERAL("*.") +
       base::FilePath::StringType(kPolicyToolSessionExtension);
-  base::FileEnumerator enumerator(sessions_dir_, /*recursive=*/false,
+  base::FileEnumerator enumerator(sessions_dir, /*recursive=*/false,
                                   base::FileEnumerator::FILES,
                                   sessions_pattern);
   // A vector of session names and their last access times.
@@ -89,8 +62,58 @@ base::ListValue PolicyToolUIHandler::GetSessionsList() {
   return session_names;
 }
 
+}  // namespace
+
+PolicyToolUIHandler::PolicyToolUIHandler() : callback_weak_ptr_factory_(this) {}
+
+PolicyToolUIHandler::~PolicyToolUIHandler() {}
+
+void PolicyToolUIHandler::RegisterMessages() {
+  // Set directory for storing sessions.
+  sessions_dir_ =
+      Profile::FromWebUI(web_ui())->GetPath().Append(kPolicyToolSessionsDir);
+
+  web_ui()->RegisterMessageCallback(
+      "initialized",
+      base::BindRepeating(&PolicyToolUIHandler::HandleInitializedAdmin,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "loadSession",
+      base::BindRepeating(&PolicyToolUIHandler::HandleLoadSession,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "renameSession",
+      base::BindRepeating(&PolicyToolUIHandler::HandleRenameSession,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "updateSession",
+      base::BindRepeating(&PolicyToolUIHandler::HandleUpdateSession,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "resetSession",
+      base::BindRepeating(&PolicyToolUIHandler::HandleResetSession,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "deleteSession",
+      base::BindRepeating(&PolicyToolUIHandler::HandleDeleteSession,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "exportLinux",
+      base::BindRepeating(&PolicyToolUIHandler::HandleExportLinux,
+                          base::Unretained(this)));
+}
+
+void PolicyToolUIHandler::OnJavascriptDisallowed() {
+  callback_weak_ptr_factory_.InvalidateWeakPtrs();
+}
+
+base::FilePath PolicyToolUIHandler::GetSessionPath(
+    const base::FilePath::StringType& name) const {
+  return sessions_dir_.Append(name).AddExtension(kPolicyToolSessionExtension);
+}
+
 void PolicyToolUIHandler::SetDefaultSessionName() {
-  base::ListValue sessions = GetSessionsList();
+  base::ListValue sessions = GetSessionsList(sessions_dir_);
   if (sessions.empty()) {
     // If there are no sessions, fallback to the default session name.
     session_name_ = kPolicyToolDefaultSessionName;
@@ -165,10 +188,11 @@ void PolicyToolUIHandler::OnFileRead(const std::string& contents) {
     // TODO(urusant): convert the policy values so that the types are
     // consistent with actual policy types.
     CallJavascriptFunction("policy.Page.setPolicyValues", *value);
+    CallJavascriptFunction("policy.Page.setSessionTitle",
+                           base::Value(session_name_));
     base::PostTaskWithTraitsAndReplyWithResult(
         FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-        base::BindOnce(&PolicyToolUIHandler::GetSessionsList,
-                       base::Unretained(this)),
+        base::BindOnce(&GetSessionsList, sessions_dir_),
         base::BindOnce(&PolicyToolUIHandler::OnSessionsListReceived,
                        callback_weak_ptr_factory_.GetWeakPtr()));
   }
@@ -199,8 +223,14 @@ bool PolicyToolUIHandler::IsValidSessionName(
     const base::FilePath::StringType& name) const {
   // Check if the session name is valid, which means that it doesn't use
   // filesystem navigation (e.g. ../ or nested folder).
+
+  // Sanity check to avoid that GetSessionPath(|name|) crashed.
+  if (base::FilePath(name).IsAbsolute())
+    return false;
   base::FilePath session_path = GetSessionPath(name);
-  return !session_path.empty() && session_path.DirName() == sessions_dir_;
+  return !session_path.empty() && session_path.DirName() == sessions_dir_ &&
+         session_path.BaseName().RemoveExtension() == base::FilePath(name) &&
+         !session_path.EndsWithSeparator();
 }
 
 void PolicyToolUIHandler::HandleLoadSession(const base::ListValue* args) {
@@ -213,6 +243,79 @@ void PolicyToolUIHandler::HandleLoadSession(const base::ListValue* args) {
   }
   session_name_ = new_session_name;
   ImportFile();
+}
+
+// static
+PolicyToolUIHandler::SessionErrors PolicyToolUIHandler::DoRenameSession(
+    const base::FilePath& old_session_path,
+    const base::FilePath& new_session_path) {
+  // Check if a session files with the new name exist. If |old_session_path|
+  // doesn't exist, it means that is not a valid session. If |new_session_path|
+  // exists, it means that we can't do the rename because that will cause a file
+  // overwrite.
+  if (!PathExists(old_session_path))
+    return SessionErrors::kSessionNameNotExist;
+  if (PathExists(new_session_path))
+    return SessionErrors::kSessionNameExist;
+  if (!base::Move(old_session_path, new_session_path))
+    return SessionErrors::kRenamedSessionError;
+  return SessionErrors::kNone;
+}
+
+void PolicyToolUIHandler::OnSessionRenamed(
+    PolicyToolUIHandler::SessionErrors result) {
+  if (result == SessionErrors::kNone) {
+    base::PostTaskWithTraitsAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+        base::BindOnce(&GetSessionsList, sessions_dir_),
+        base::BindOnce(&PolicyToolUIHandler::OnSessionsListReceived,
+                       callback_weak_ptr_factory_.GetWeakPtr()));
+    CallJavascriptFunction("policy.Page.closeRenameSessionDialog");
+    return;
+  }
+  int error_message_id;
+  if (result == SessionErrors::kSessionNameNotExist) {
+    error_message_id = IDS_POLICY_TOOL_SESSION_NOT_EXIST;
+  } else if (result == SessionErrors::kSessionNameExist) {
+    error_message_id = IDS_POLICY_TOOL_SESSION_EXIST;
+  } else {
+    error_message_id = IDS_POLICY_TOOL_RENAME_FAILED;
+  }
+
+  CallJavascriptFunction(
+      "policy.Page.showRenameSessionError",
+      base::Value(l10n_util::GetStringUTF16(error_message_id)));
+}
+
+void PolicyToolUIHandler::HandleRenameSession(const base::ListValue* args) {
+  DCHECK_EQ(2U, args->GetSize());
+  base::FilePath::StringType old_session_name, new_session_name;
+  old_session_name =
+      base::FilePath::FromUTF8Unsafe(args->GetList()[0].GetString()).value();
+  new_session_name =
+      base::FilePath::FromUTF8Unsafe(args->GetList()[1].GetString()).value();
+
+  if (!IsValidSessionName(new_session_name) ||
+      !IsValidSessionName(old_session_name)) {
+    CallJavascriptFunction("policy.Page.showRenameSessionError",
+                           base::Value(l10n_util::GetStringUTF16(
+                               IDS_POLICY_TOOL_INVALID_SESSION_NAME)));
+    return;
+  }
+
+  // This is important in case the user renames the current active session.
+  // If we don't clear the current session name, after the rename, a new file
+  // will be created with the old name and with an empty dictionary in it.
+  session_name_.clear();
+  base::PostTaskWithTraitsAndReplyWithResult(
+      FROM_HERE,
+      {base::MayBlock(), base::TaskPriority::USER_BLOCKING,
+       base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
+      base::BindOnce(&PolicyToolUIHandler::DoRenameSession,
+                     GetSessionPath(old_session_name),
+                     GetSessionPath(new_session_name)),
+      base::BindOnce(&PolicyToolUIHandler::OnSessionRenamed,
+                     callback_weak_ptr_factory_.GetWeakPtr()));
 }
 
 bool PolicyToolUIHandler::DoUpdateSession(const std::string& contents) {
@@ -284,4 +387,73 @@ void PolicyToolUIHandler::HandleDeleteSession(const base::ListValue* args) {
                      /*recursive=*/false),
       base::BindOnce(&PolicyToolUIHandler::OnSessionDeleted,
                      callback_weak_ptr_factory_.GetWeakPtr()));
+}
+
+void PolicyToolUIHandler::HandleExportLinux(const base::ListValue* args) {
+  DCHECK_EQ(1U, args->GetSize());
+
+  base::JSONWriter::Write(args->GetList()[0], &session_dict_for_exporting_);
+  ExportSessionToFile(kPolicyToolLinuxExtension);
+}
+
+void DoWriteSessionPolicyToFile(const base::FilePath& path,
+                                const std::string& data) {
+  // TODO(rodmartin): Handle when WriteFile fail.
+  base::WriteFile(path, data.c_str(), data.size());
+}
+
+void PolicyToolUIHandler::WriteSessionPolicyToFile(
+    const base::FilePath& path) const {
+  const std::string data = session_dict_for_exporting_;
+  base::PostTaskWithTraits(
+      FROM_HERE,
+      {base::MayBlock(), base::TaskPriority::BACKGROUND,
+       base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
+      base::BindOnce(&DoWriteSessionPolicyToFile, path, data));
+}
+
+void PolicyToolUIHandler::FileSelected(const base::FilePath& path,
+                                       int index,
+                                       void* params) {
+  DCHECK(export_policies_select_file_dialog_);
+  WriteSessionPolicyToFile(path);
+  session_dict_for_exporting_.clear();
+  export_policies_select_file_dialog_ = nullptr;
+}
+
+void PolicyToolUIHandler::FileSelectionCanceled(void* params) {
+  DCHECK(export_policies_select_file_dialog_);
+  session_dict_for_exporting_.clear();
+  export_policies_select_file_dialog_ = nullptr;
+}
+
+void PolicyToolUIHandler::ExportSessionToFile(
+    const base::FilePath::StringType& file_extension) {
+  // If the "select file" dialog window is already opened, we don't want to open
+  // it again.
+  if (export_policies_select_file_dialog_)
+    return;
+
+  content::WebContents* webcontents = web_ui()->GetWebContents();
+
+  // Building initial path based on download preferences.
+  base::FilePath initial_dir =
+      DownloadPrefs::FromBrowserContext(webcontents->GetBrowserContext())
+          ->DownloadPath();
+  base::FilePath initial_path =
+      initial_dir.Append(kPolicyToolDefaultSessionName)
+          .AddExtension(file_extension);
+
+  // TODO(rodmartin): Put an error message when the user is not allowed
+  // to open select file dialogs.
+  export_policies_select_file_dialog_ = ui::SelectFileDialog::Create(
+      this, std::make_unique<ChromeSelectFilePolicy>(webcontents));
+  ui::SelectFileDialog::FileTypeInfo file_type_info;
+  file_type_info.extensions = {{file_extension}};
+  gfx::NativeWindow owning_window = webcontents->GetTopLevelNativeWindow();
+  export_policies_select_file_dialog_->SelectFile(
+      ui::SelectFileDialog::SELECT_SAVEAS_FILE, /*title=*/base::string16(),
+      initial_path, &file_type_info, /*file_type_index=*/0,
+      /*default_extension=*/base::FilePath::StringType(), owning_window,
+      /*params=*/nullptr);
 }

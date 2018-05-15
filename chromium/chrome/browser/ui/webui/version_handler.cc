@@ -26,7 +26,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/content_constants.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
@@ -62,8 +62,8 @@ VersionHandler::~VersionHandler() {
 void VersionHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       version_ui::kRequestVersionInfo,
-      base::Bind(&VersionHandler::HandleRequestVersionInfo,
-                 base::Unretained(this)));
+      base::BindRepeating(&VersionHandler::HandleRequestVersionInfo,
+                          base::Unretained(this)));
 }
 
 void VersionHandler::HandleRequestVersionInfo(const base::ListValue* args) {

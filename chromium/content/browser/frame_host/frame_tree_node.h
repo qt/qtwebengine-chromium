@@ -20,8 +20,8 @@
 #include "content/common/content_export.h"
 #include "content/common/frame_owner_properties.h"
 #include "content/common/frame_replication_state.h"
-#include "third_party/WebKit/public/common/frame/frame_policy.h"
-#include "third_party/WebKit/public/platform/WebInsecureRequestPolicy.h"
+#include "third_party/blink/public/common/frame/frame_policy.h"
+#include "third_party/blink/public/platform/web_insecure_request_policy.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -125,6 +125,8 @@ class CONTENT_EXPORT FrameTreeNode {
   size_t child_count() const {
     return children_.size();
   }
+
+  unsigned int depth() const { return depth_; }
 
   FrameTreeNode* parent() const { return parent_; }
 
@@ -370,6 +372,14 @@ class CONTENT_EXPORT FrameTreeNode {
     return replication_state_.has_received_user_gesture;
   }
 
+  // When a tab is discarded, WebContents sets was_discarded on its
+  // root FrameTreeNode.
+  // In addition, when a child frame is created, this bit is passed on from
+  // parent to child.
+  // When a navigation request is created, was_discarded is passed on to the
+  // request and reset to false in FrameTreeNode.
+  void set_was_discarded() { was_discarded_ = true; }
+
  private:
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessFeaturePolicyBrowserTest,
                            ContainerPolicyDynamic);
@@ -402,6 +412,9 @@ class CONTENT_EXPORT FrameTreeNode {
 
   // The parent node of this frame. |nullptr| if this node is the root.
   FrameTreeNode* const parent_;
+
+  // Number of edges from this node to the root. 0 if this is the root.
+  const unsigned int depth_;
 
   // The frame that opened this frame, if any.  Will be set to null if the
   // opener is closed, or if this frame disowns its opener by setting its
@@ -476,6 +489,8 @@ class CONTENT_EXPORT FrameTreeNode {
   base::ObserverList<Observer> observers_;
 
   base::TimeTicks last_focus_time_;
+
+  bool was_discarded_;
 
   // A helper for tracing the snapshots of this FrameTreeNode and attributing
   // browser process activities to this node (when possible).  It is unrelated

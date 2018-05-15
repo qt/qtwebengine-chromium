@@ -11,7 +11,6 @@
 #include <utility>
 
 #include "base/json/json_reader.h"
-#include "base/memory/ptr_util.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
@@ -494,10 +493,6 @@ void LayerImpl::ResetChangeTracking() {
   damage_rect_.SetRect(0, 0, 0, 0);
 }
 
-bool LayerImpl::has_copy_requests_in_target_subtree() {
-  return GetEffectTree().Node(effect_tree_index())->subtree_has_copy_request;
-}
-
 bool LayerImpl::IsActive() const {
   return layer_tree_impl_->IsActiveTree();
 }
@@ -636,10 +631,6 @@ float LayerImpl::Opacity() const {
     return node->opacity;
   else
     return 1.f;
-}
-
-const gfx::Transform& LayerImpl::Transform() const {
-  return GetTransformTree().Node(transform_tree_index())->local;
 }
 
 void LayerImpl::SetElementId(ElementId element_id) {
@@ -945,6 +936,10 @@ void LayerImpl::EnsureValidPropertyTreeIndices() const {
   DCHECK(GetEffectTree().Node(effect_tree_index()));
   DCHECK(GetClipTree().Node(clip_tree_index()));
   DCHECK(GetScrollTree().Node(scroll_tree_index()));
+}
+
+bool LayerImpl::is_surface_layer() const {
+  return false;
 }
 
 }  // namespace cc

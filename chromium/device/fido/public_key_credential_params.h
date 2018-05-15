@@ -9,27 +9,29 @@
 #include <tuple>
 #include <vector>
 
+#include "base/component_export.h"
 #include "base/macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "components/cbor/cbor_values.h"
-#include "device/fido/ctap_constants.h"
+#include "device/fido/fido_constants.h"
 
 namespace device {
 
 // Data structure containing public key credential type(string) and
 // cryptographic algorithm(integer) as specified by the CTAP spec. Used as a
 // request parameter for AuthenticatorMakeCredential.
-class PublicKeyCredentialParams {
+class COMPONENT_EXPORT(DEVICE_FIDO) PublicKeyCredentialParams {
  public:
   struct CredentialInfo {
-    std::string type;
-    int algorithm =
-        base::strict_cast<int>(kCoseAlgorithmIdentifier::kCoseEs256);
+    CredentialType type = CredentialType::kPublicKey;
+    int algorithm = base::strict_cast<int>(CoseAlgorithmIdentifier::kCoseEs256);
   };
 
   explicit PublicKeyCredentialParams(
       std::vector<CredentialInfo> credential_params);
+  PublicKeyCredentialParams(const PublicKeyCredentialParams& other);
   PublicKeyCredentialParams(PublicKeyCredentialParams&& other);
+  PublicKeyCredentialParams& operator=(const PublicKeyCredentialParams& other);
   PublicKeyCredentialParams& operator=(PublicKeyCredentialParams&& other);
   ~PublicKeyCredentialParams();
 
@@ -40,8 +42,6 @@ class PublicKeyCredentialParams {
 
  private:
   std::vector<CredentialInfo> public_key_credential_params_;
-
-  DISALLOW_COPY_AND_ASSIGN(PublicKeyCredentialParams);
 };
 
 }  // namespace device

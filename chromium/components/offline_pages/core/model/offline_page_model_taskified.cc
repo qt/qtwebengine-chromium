@@ -22,15 +22,17 @@
 #include "components/offline_pages/core/archive_manager.h"
 #include "components/offline_pages/core/client_namespace_constants.h"
 #include "components/offline_pages/core/model/add_page_task.h"
-#include "components/offline_pages/core/model/clear_legacy_temporary_pages_task.h"
+#include "components/offline_pages/core/model/cleanup_thumbnails_task.h"
 #include "components/offline_pages/core/model/delete_page_task.h"
 #include "components/offline_pages/core/model/get_pages_task.h"
+#include "components/offline_pages/core/model/get_thumbnail_task.h"
 #include "components/offline_pages/core/model/mark_page_accessed_task.h"
 #include "components/offline_pages/core/model/offline_page_model_utils.h"
-#include "components/offline_pages/core/model/persistent_pages_consistency_check_task.h"
-#include "components/offline_pages/core/model/temporary_pages_consistency_check_task.h"
+#include "components/offline_pages/core/model/persistent_page_consistency_check_task.h"
+#include "components/offline_pages/core/model/startup_maintenance_task.h"
+#include "components/offline_pages/core/model/store_thumbnail_task.h"
+#include "components/offline_pages/core/model/update_file_path_task.h"
 #include "components/offline_pages/core/offline_page_feature.h"
-#include "components/offline_pages/core/offline_page_metadata_store.h"
 #include "components/offline_pages/core/offline_page_metadata_store_sql.h"
 #include "components/offline_pages/core/offline_page_model.h"
 #include "components/offline_pages/core/offline_store_utils.h"
@@ -117,6 +119,59 @@ void ReportSavedPagesCount(const MultipleOfflinePageItemCallback& callback,
   callback.Run(all_items);
 }
 
+void ReportStorageUsage(const ArchiveManager::StorageStats& storage_stats) {
+  const int kMiB = 1024 * 1024;
+  int internal_free_disk_space_mib =
+      static_cast<int>(storage_stats.internal_free_disk_space / kMiB);
+  UMA_HISTOGRAM_CUSTOM_COUNTS("OfflinePages.StorageInfo.InternalFreeSpaceMiB",
+                              internal_free_disk_space_mib, 1, 500000, 50);
+  int external_free_disk_space_mib =
+      static_cast<int>(storage_stats.external_free_disk_space / kMiB);
+  UMA_HISTOGRAM_CUSTOM_COUNTS("OfflinePages.StorageInfo.ExternalFreeSpaceMiB",
+                              external_free_disk_space_mib, 1, 500000, 50);
+  int internal_page_size_mib =
+      static_cast<int>(storage_stats.internal_archives_size() / kMiB);
+  UMA_HISTOGRAM_COUNTS_10000("OfflinePages.StorageInfo.InternalArchiveSizeMiB",
+                             internal_page_size_mib);
+  int external_page_size_mib =
+      static_cast<int>(storage_stats.public_archives_size / kMiB);
+  UMA_HISTOGRAM_COUNTS_10000("OfflinePages.StorageInfo.ExternalArchiveSizeMiB",
+                             external_page_size_mib);
+
+  int64_t internal_volume_storage = storage_stats.internal_archives_size() +
+                                    storage_stats.internal_free_disk_space;
+  if (internal_volume_storage > 0) {
+    int internal_percentage =
+        static_cast<int>(100.0 * storage_stats.internal_archives_size() /
+                         internal_volume_storage);
+    UMA_HISTOGRAM_PERCENTAGE("OfflinePages.StorageInfo.InternalUsagePercentage",
+                             internal_percentage);
+  }
+
+  int64_t external_volume_storage = storage_stats.public_archives_size +
+                                    storage_stats.external_free_disk_space;
+  if (external_volume_storage > 0) {
+    int external_percentage = static_cast<int>(
+        100.0 * storage_stats.public_archives_size / external_volume_storage);
+    UMA_HISTOGRAM_PERCENTAGE("OfflinePages.StorageInfo.ExternalUsagePercentage",
+                             external_percentage);
+  }
+}
+
+void OnUpdateFilePathDone(PublishPageCallback publish_done_callback,
+                          const base::FilePath& new_file_path,
+                          SavePageResult result,
+                          bool update_file_result) {
+  if (update_file_result) {
+    std::move(publish_done_callback).Run(new_file_path, result);
+    return;
+  }
+  // If the file path wasn't updated successfully, just invoke the callback with
+  // store failure.
+  std::move(publish_done_callback)
+      .Run(new_file_path, SavePageResult::STORE_FAILURE);
+}
+
 }  // namespace
 
 // static
@@ -134,14 +189,15 @@ OfflinePageModelTaskified::OfflinePageModelTaskified(
     std::unique_ptr<ArchiveManager> archive_manager,
     std::unique_ptr<SystemDownloadManager> download_manager,
     const scoped_refptr<base::SequencedTaskRunner>& task_runner,
-    std::unique_ptr<base::Clock> clock)
+    base::Clock* clock)
     : store_(std::move(store)),
       archive_manager_(std::move(archive_manager)),
       download_manager_(std::move(download_manager)),
       policy_controller_(new ClientPolicyController()),
-      clock_(std::move(clock)),
+      clock_(clock),
       task_queue_(this),
       skip_clearing_original_url_for_testing_(false),
+      skip_maintenance_tasks_for_testing_(false),
       task_runner_(task_runner),
       weak_ptr_factory_(this) {
   DCHECK_LT(kMaintenanceTasksDelay, OfflinePageMetadataStoreSQL::kClosingDelay);
@@ -165,6 +221,7 @@ void OfflinePageModelTaskified::OnTaskQueueIsIdle() {}
 void OfflinePageModelTaskified::SavePage(
     const SavePageParams& save_page_params,
     std::unique_ptr<OfflinePageArchiver> archiver,
+    content::WebContents* web_contents,
     const SavePageCallback& callback) {
   // Skip saving the page that is not intended to be saved, like local file
   // page.
@@ -194,7 +251,7 @@ void OfflinePageModelTaskified::SavePage(
       save_page_params.use_page_problem_detectors;
   archiver->CreateArchive(
       GetInternalArchiveDirectory(save_page_params.client_id.name_space),
-      create_archive_params,
+      create_archive_params, web_contents,
       base::Bind(&OfflinePageModelTaskified::OnCreateArchiveDone,
                  weak_ptr_factory_.GetWeakPtr(), save_page_params, offline_id,
                  GetCurrentTime(), callback));
@@ -277,6 +334,14 @@ void OfflinePageModelTaskified::GetPageByOfflineId(
   task_queue_.AddTask(std::move(task));
 }
 
+void OfflinePageModelTaskified::GetPageByGuid(
+    const std::string& guid,
+    const SingleOfflinePageItemCallback& callback) {
+  auto task =
+      GetPagesTask::CreateTaskMatchingGuid(store_.get(), callback, guid);
+  task_queue_.AddTask(std::move(task));
+}
+
 void OfflinePageModelTaskified::GetPagesByClientIds(
     const std::vector<ClientId>& client_ids,
     const MultipleOfflinePageItemCallback& callback) {
@@ -346,6 +411,21 @@ void OfflinePageModelTaskified::GetOfflineIdsForClientId(
   task_queue_.AddTask(std::move(task));
 }
 
+void OfflinePageModelTaskified::StoreThumbnail(
+    const OfflinePageThumbnail& thumb) {
+  task_queue_.AddTask(std::make_unique<StoreThumbnailTask>(
+      store_.get(), thumb,
+      base::BindOnce(&OfflinePageModelTaskified::OnStoreThumbnailDone,
+                     weak_ptr_factory_.GetWeakPtr(), thumb)));
+}
+
+void OfflinePageModelTaskified::GetThumbnailByOfflineId(
+    int64_t offline_id,
+    base::OnceCallback<void(std::unique_ptr<OfflinePageThumbnail>)> callback) {
+  task_queue_.AddTask(std::make_unique<GetThumbnailTask>(
+      store_.get(), offline_id, std::move(callback)));
+}
+
 const base::FilePath& OfflinePageModelTaskified::GetInternalArchiveDirectory(
     const std::string& name_space) const {
   if (policy_controller_->IsRemovedOnCacheReset(name_space))
@@ -383,6 +463,10 @@ void OfflinePageModelTaskified::InformSavePageDone(
       model_utils::AddHistogramSuffix(client_id.name_space,
                                       "OfflinePages.SavePageResult"),
       result, SavePageResult::RESULT_COUNT);
+
+  // Report storage usage if saving page succeeded.
+  if (result == SavePageResult::SUCCESS)
+    archive_manager_->GetStorageStats(base::BindOnce(&ReportStorageUsage));
 
   if (result == SavePageResult::ARCHIVE_CREATION_FAILED)
     CreateArchivesDirectoryIfNeeded();
@@ -484,6 +568,40 @@ void OfflinePageModelTaskified::PublishArchiveDone(
                      weak_ptr_factory_.GetWeakPtr(), save_page_callback, page));
 }
 
+void OfflinePageModelTaskified::PublishInternalArchive(
+    const OfflinePageItem& offline_page,
+    std::unique_ptr<OfflinePageArchiver> archiver,
+    PublishPageCallback publish_done_callback) {
+  archiver->PublishArchive(
+      offline_page, task_runner_, archive_manager_->GetPublicArchivesDir(),
+      download_manager_.get(),
+      base::BindOnce(&OfflinePageModelTaskified::PublishInternalArchiveDone,
+                     weak_ptr_factory_.GetWeakPtr(),
+                     std::move(publish_done_callback)));
+}
+
+void OfflinePageModelTaskified::PublishInternalArchiveDone(
+    PublishPageCallback publish_done_callback,
+    const OfflinePageItem& offline_page,
+    PublishArchiveResult* publish_results) {
+  base::FilePath file_path = publish_results->new_file_path;
+  SavePageResult result = publish_results->move_result;
+  // Call the callback with success == false if we failed to move the page.
+  if (result != SavePageResult::SUCCESS) {
+    std::move(publish_done_callback).Run(file_path, result);
+    return;
+  }
+
+  // Update the OfflinePageModel with the new location for the page, which is
+  // found in move_results.new_file_path, and with the download ID found at
+  // move_results.download_id.  Return the updated offline_page to the callback.
+  auto task = std::make_unique<UpdateFilePathTask>(
+      store_.get(), offline_page.offline_id, file_path,
+      base::BindOnce(&OnUpdateFilePathDone, std::move(publish_done_callback),
+                     file_path, result));
+  task_queue_.AddTask(std::move(task));
+}
+
 void OfflinePageModelTaskified::OnAddPageForSavePageDone(
     const SavePageCallback& callback,
     const OfflinePageItem& page_attempted,
@@ -546,6 +664,15 @@ void OfflinePageModelTaskified::OnDeleteDone(
     callback.Run(result);
 }
 
+void OfflinePageModelTaskified::OnStoreThumbnailDone(
+    const OfflinePageThumbnail& thumbnail,
+    bool success) {
+  if (success) {
+    for (Observer& observer : observers_)
+      observer.ThumbnailAdded(this, thumbnail);
+  }
+}
+
 void OfflinePageModelTaskified::RemoveFromDownloadManager(
     SystemDownloadManager* download_manager,
     const std::vector<int64_t>& system_download_ids) {
@@ -554,6 +681,8 @@ void OfflinePageModelTaskified::RemoveFromDownloadManager(
 }
 
 void OfflinePageModelTaskified::ScheduleMaintenanceTasks() {
+  if (skip_maintenance_tasks_for_testing_)
+    return;
   // If not enough time has passed, don't queue maintenance tasks.
   base::Time now = GetCurrentTime();
   if (now - last_maintenance_tasks_schedule_time_ < kClearStorageInterval)
@@ -571,27 +700,39 @@ void OfflinePageModelTaskified::ScheduleMaintenanceTasks() {
 
 void OfflinePageModelTaskified::RunMaintenanceTasks(const base::Time now,
                                                     bool first_run) {
-  // If this is the first run of this session, enqueue the run-once tasks.
+  DCHECK(!skip_maintenance_tasks_for_testing_);
+  // If this is the first run of this session, enqueue the startup maintenance
+  // task, including consistency checks, legacy archive directory cleaning and
+  // reporting storage usage UMA.
   if (first_run) {
-    // TODO(romax): When we have external directory, adding the support of
-    // getting 'legacy' directory and replace the persistent one here.
-    // TODO(carlosk): these tasks implementations look very similar so we should
-    // probably consolidate them all into a single one.
-    task_queue_.AddTask(std::make_unique<ClearLegacyTemporaryPagesTask>(
-        store_.get(), policy_controller_.get(),
-        archive_manager_->GetPrivateArchivesDir()));
-    task_queue_.AddTask(std::make_unique<TemporaryPagesConsistencyCheckTask>(
-        store_.get(), policy_controller_.get(),
-        archive_manager_->GetTemporaryArchivesDir()));
-    task_queue_.AddTask(std::make_unique<PersistentPagesConsistencyCheckTask>(
-        store_.get(), policy_controller_.get(),
-        archive_manager_->GetPrivateArchivesDir()));
+    task_queue_.AddTask(std::make_unique<StartupMaintenanceTask>(
+        store_.get(), archive_manager_.get(), policy_controller_.get()));
+
+    task_queue_.AddTask(std::make_unique<CleanupThumbnailsTask>(
+        store_.get(), GetCurrentTime(), base::DoNothing()));
   }
 
   task_queue_.AddTask(std::make_unique<ClearStorageTask>(
       store_.get(), archive_manager_.get(), policy_controller_.get(), now,
       base::BindOnce(&OfflinePageModelTaskified::OnClearCachedPagesDone,
                      weak_ptr_factory_.GetWeakPtr())));
+
+  // TODO(https://crbug.com/834902) This might need a better execution plan.
+  task_queue_.AddTask(std::make_unique<PersistentPageConsistencyCheckTask>(
+      store_.get(), archive_manager_.get(), policy_controller_.get(), now,
+      base::BindOnce(
+          &OfflinePageModelTaskified::OnPersistentPageConsistencyCheckDone,
+          weak_ptr_factory_.GetWeakPtr())));
+}
+
+void OfflinePageModelTaskified::OnPersistentPageConsistencyCheckDone(
+    bool success,
+    const std::vector<int64_t>& pages_deleted) {
+  // If there's no persistent page expired, save some effort by exiting early.
+  // TODO(https://crbug.com/834909), use the temporary hidden bit in
+  // DownloadUIAdapter instead of calling remove directly.
+  if (pages_deleted.size() > 0)
+    download_manager_->Remove(pages_deleted);
 }
 
 void OfflinePageModelTaskified::OnClearCachedPagesDone(

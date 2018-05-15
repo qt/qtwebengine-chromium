@@ -56,21 +56,28 @@ class QemuTarget(target.Target):
         'qemu-system-' + self._GetTargetSdkArch())
     kernel_args = boot_data.GetKernelArgs(self._output_dir)
 
+    # TERM=dumb tells the guest OS to not emit ANSI commands that trigger
+    # noisy ANSI spew from the user's terminal emulator.
+    kernel_args.append('TERM=dumb')
+
+    # Enable logging to the serial port.
+    # TODO(sergeyu): Use loglistener instead of serial port to get zircon logs.
+    kernel_args.append('kernel.serial=legacy')
+
     qemu_command = [qemu_path,
         '-m', str(self._ram_size_mb),
         '-nographic',
         '-kernel', boot_data.GetTargetFile(self._GetTargetSdkArch(),
                                            'zircon.bin'),
         '-initrd', boot_data.GetTargetFile(self._GetTargetSdkArch(),
-                                           'bootdata-blobstore.bin'),
+                                           'bootdata-blob.bin'),
         '-smp', '4',
 
         # Attach the blobstore and data volumes. Use snapshot mode to discard
         # any changes.
         '-snapshot',
         '-drive', 'file=%s,format=qcow2,if=none,id=data,snapshot=on' %
-            boot_data.GetTargetFile(self._GetTargetSdkArch(),
-                                    'fvm.blk.qcow2'),
+            os.path.join(self._output_dir, 'fvm.blk.qcow2'),
         '-drive', 'file=%s,format=qcow2,if=none,id=blobstore,snapshot=on' %
             self._MakeQcowDisk(boot_data.ConfigureDataFVM(self._output_dir,
                                                           False)),
@@ -82,9 +89,7 @@ class QemuTarget(target.Target):
         '-serial', 'stdio',
         '-monitor', 'none',
 
-        # TERM=dumb tells the guest OS to not emit ANSI commands that trigger
-        # noisy ANSI spew from the user's terminal emulator.
-        '-append', 'TERM=dumb ' + ' '.join(kernel_args)
+        '-append', ' '.join(kernel_args)
       ]
 
     # Configure the machine & CPU to emulate, based on the target architecture.
@@ -126,10 +131,14 @@ class QemuTarget(target.Target):
     # See crbug.com/741194.
     logging.debug('Launching QEMU.')
     logging.debug(' '.join(qemu_command))
-    self._qemu_process = subprocess.Popen(
-        qemu_command, stdout=open(os.devnull), stdin=open(os.devnull),
-        stderr=open(os.devnull))
 
+    stdio_flags = {'stdin': open(os.devnull)}
+    if logging.getLogger().getEffectiveLevel() != logging.DEBUG:
+      # Output the Fuchsia debug log.
+      stdio_flags['stdout'] = open(os.devnull)
+      stdio_flags['stderr'] = open(os.devnull)
+
+    self._qemu_process = subprocess.Popen(qemu_command, **stdio_flags)
     self._WaitUntilReady();
 
   def Shutdown(self):

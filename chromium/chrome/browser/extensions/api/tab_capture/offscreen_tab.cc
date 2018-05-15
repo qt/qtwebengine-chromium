@@ -10,7 +10,6 @@
 
 #include "base/bind.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/stl_util.h"
 #include "chrome/browser/extensions/api/tab_capture/tab_capture_registry.h"
 #include "chrome/browser/media/router/presentation/presentation_navigation_policy.h"
@@ -23,7 +22,7 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/process_manager.h"
-#include "third_party/WebKit/public/web/WebPresentationReceiverFlags.h"
+#include "third_party/blink/public/web/web_presentation_receiver_flags.h"
 
 using content::WebContents;
 
@@ -347,10 +346,11 @@ void OffscreenTab::RequestMediaAccessPermission(
 }
 
 bool OffscreenTab::CheckMediaAccessPermission(
-    WebContents* contents,
+    content::RenderFrameHost* render_frame_host,
     const GURL& security_origin,
     content::MediaStreamType type) {
-  DCHECK_EQ(offscreen_tab_web_contents_.get(), contents);
+  DCHECK_EQ(offscreen_tab_web_contents_.get(),
+            content::WebContents::FromRenderFrameHost(render_frame_host));
   return type == content::MEDIA_TAB_AUDIO_CAPTURE ||
       type == content::MEDIA_TAB_VIDEO_CAPTURE;
 }

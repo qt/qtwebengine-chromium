@@ -5,7 +5,6 @@
 #include <stddef.h>
 
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "cc/layers/effect_tree_layer_list_iterator.h"
@@ -185,6 +184,36 @@ TEST_F(LayerTreeHostCopyRequestTestMultipleRequests,
 TEST_F(LayerTreeHostCopyRequestTestMultipleRequests,
        GLRenderer_RunMultiThread_OutOfOrderCallbacks) {
   use_gl_renderer_ = true;
+  out_of_order_callbacks_ = true;
+  RunTest(CompositorMode::THREADED);
+}
+
+TEST_F(LayerTreeHostCopyRequestTestMultipleRequests,
+       SkiaRenderer_RunSingleThread) {
+  use_gl_renderer_ = true;
+  use_skia_renderer_ = true;
+  RunTest(CompositorMode::SINGLE_THREADED);
+}
+
+TEST_F(LayerTreeHostCopyRequestTestMultipleRequests,
+       SkiaRenderer_RunMultiThread) {
+  use_gl_renderer_ = true;
+  use_skia_renderer_ = true;
+  RunTest(CompositorMode::THREADED);
+}
+
+TEST_F(LayerTreeHostCopyRequestTestMultipleRequests,
+       SkiaRenderer_RunSingleThread_OutOfOrderCallbacks) {
+  use_gl_renderer_ = true;
+  use_skia_renderer_ = true;
+  out_of_order_callbacks_ = true;
+  RunTest(CompositorMode::SINGLE_THREADED);
+}
+
+TEST_F(LayerTreeHostCopyRequestTestMultipleRequests,
+       SkiaRenderer_RunMultiThread_OutOfOrderCallbacks) {
+  use_gl_renderer_ = true;
+  use_skia_renderer_ = true;
   out_of_order_callbacks_ = true;
   RunTest(CompositorMode::THREADED);
 }

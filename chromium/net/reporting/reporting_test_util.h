@@ -36,6 +36,7 @@ namespace net {
 class ReportingCache;
 struct ReportingClient;
 class ReportingGarbageCollector;
+class TestURLRequestContext;
 
 // Finds a particular client (by origin and endpoint) in the cache and returns
 // it (or nullptr if not found).
@@ -72,9 +73,10 @@ class TestReportingUploader : public ReportingUploader {
 
   void StartUpload(const GURL& url,
                    const std::string& json,
+                   int max_depth,
                    UploadCallback callback) override;
 
-  bool RequestIsUpload(const URLRequest& request) override;
+  int GetUploadDepth(const URLRequest& request) override;
 
  private:
   std::vector<std::unique_ptr<PendingUpload>> pending_uploads_;
@@ -82,6 +84,9 @@ class TestReportingUploader : public ReportingUploader {
   DISALLOW_COPY_AND_ASSIGN(TestReportingUploader);
 };
 
+// Allows all permissions unless set_disallow_report_uploads is called; uses
+// the real ReportingDelegate for JSON parsing to exercise depth and size
+// limits.
 class TestReportingDelegate : public ReportingDelegate {
  public:
   TestReportingDelegate();
@@ -118,6 +123,8 @@ class TestReportingDelegate : public ReportingDelegate {
                  const JsonFailureCallback& failure_callback) const override;
 
  private:
+  std::unique_ptr<TestURLRequestContext> test_request_context_;
+  std::unique_ptr<ReportingDelegate> real_delegate_;
   bool disallow_report_uploads_ = false;
   bool pause_permissions_check_ = false;
 
@@ -133,7 +140,7 @@ class TestReportingDelegate : public ReportingDelegate {
 class TestReportingContext : public ReportingContext {
  public:
   TestReportingContext(base::Clock* clock,
-                       base::TickClock* tick_clock,
+                       const base::TickClock* tick_clock,
                        const ReportingPolicy& policy);
   ~TestReportingContext();
 

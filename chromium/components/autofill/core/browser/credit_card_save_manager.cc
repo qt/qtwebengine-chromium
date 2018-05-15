@@ -97,9 +97,11 @@ void CreditCardSaveManager::OfferCardLocalSave(const CreditCard& card) {
 
 void CreditCardSaveManager::AttemptToOfferCardUploadSave(
     const FormStructure& submitted_form,
-    const CreditCard& card) {
+    const CreditCard& card,
+    const bool uploading_local_card) {
   upload_request_ = payments::PaymentsClient::UploadRequestDetails();
   upload_request_.card = card;
+  uploading_local_card_ = uploading_local_card;
 
   // In order to prompt the user to upload their card, we must have both:
   //  1) Card with CVC
@@ -192,6 +194,10 @@ void CreditCardSaveManager::AttemptToOfferCardUploadSave(
     upload_request_.active_experiments.push_back(
         kAutofillUpstreamSendPanFirstSix.name);
   }
+  if (IsAutofillUpstreamUpdatePromptExplanationExperimentEnabled()) {
+    upload_request_.active_experiments.push_back(
+        kAutofillUpstreamUpdatePromptExplanation.name);
+  }
 
   // All required data is available, start the upload process.
   if (observer_for_testing_)
@@ -249,6 +255,9 @@ void CreditCardSaveManager::OnDidGetUploadDetails(
         base::Bind(&CreditCardSaveManager::OnDidGetUploadRiskData,
                    weak_ptr_factory_.GetWeakPtr()));
     upload_decision_metrics_ |= AutofillMetrics::UPLOAD_OFFERED;
+    AutofillMetrics::LogUploadOfferedCardOriginMetric(
+        uploading_local_card_ ? AutofillMetrics::OFFERING_UPLOAD_OF_LOCAL_CARD
+                              : AutofillMetrics::OFFERING_UPLOAD_OF_NEW_CARD);
   } else {
     // If the upload details request failed, fall back to a local save. The
     // reasoning here is as follows:
@@ -521,11 +530,15 @@ void CreditCardSaveManager::SendUploadCardRequest() {
     upload_request_.cvc =
         client_->GetSaveCardBubbleController()->GetCvcEnteredByUser();
   }
-  if (IsAutofillSendBillingCustomerNumberExperimentEnabled()) {
-    upload_request_.billing_customer_number =
-        static_cast<int64_t>(payments_client_->GetPrefService()->GetDouble(
-            prefs::kAutofillBillingCustomerNumber));
-  }
+
+  upload_request_.billing_customer_number =
+      static_cast<int64_t>(payments_client_->GetPrefService()->GetDouble(
+          prefs::kAutofillBillingCustomerNumber));
+
+  AutofillMetrics::LogUploadAcceptedCardOriginMetric(
+      uploading_local_card_
+          ? AutofillMetrics::USER_ACCEPTED_UPLOAD_OF_LOCAL_CARD
+          : AutofillMetrics::USER_ACCEPTED_UPLOAD_OF_NEW_CARD);
   payments_client_->UploadCard(upload_request_);
 }
 

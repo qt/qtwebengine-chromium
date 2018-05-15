@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 // This file intentionally does not have header guards, it's included
-// inside a macro to generate values.
+// inside a macro to generate values. The following line silences a
+// presubmit warning that would otherwise be triggered by this:
+// no-include-guard-because-multiply-included
 
 // This file contains the list of QUIC protocol flags.
 
@@ -96,10 +98,6 @@ QUIC_FLAG(uint32_t, FLAGS_quic_send_buffer_max_data_slice_size, 4096u)
 // protocol.
 QUIC_FLAG(bool, FLAGS_quic_supports_tls_handshake, false)
 
-// If true, QUIC can take ownership of data provided in a reference counted
-// memory to avoid data copy.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_use_mem_slices, false)
-
 // Allow QUIC to accept initial packet numbers that are random, not 1.
 QUIC_FLAG(bool, FLAGS_quic_restart_flag_quic_enable_accept_random_ipn, false)
 
@@ -116,65 +114,133 @@ QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_stream_too_long, false)
 // TLP instead of 2.
 QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_one_tlp, false)
 
-// If true, QuicStreamSendBuffer keeps track of the slice which next write
-// should get data from if writing new data.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_use_write_index, true)
-
-// If true, when WINDOW_UPDATE is received, add stream to session's write
-// blocked list and let session unblock it later.
-QUIC_FLAG(bool,
-          FLAGS_quic_reloadable_flag_quic_streams_unblocked_by_session2,
-          false)
-
-// If true, inspects CHLO packets for indicator tags to allow early session
-// creation.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_inspect_chlo_tags, true)
-
-// When true, ignore the specified ack delay if it causes the RTT sample to be
-// less than min_rtt.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_min_rtt_ack_delay, true)
-
-// If true, plugin control frame manager to QuicSession, and let it manage sent
-// control frames.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_use_control_frame_manager, true)
 // When true, allows two connection options to run experiments with using max
 // ack delay as described in QUIC IETF.
 QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_max_ack_delay, false)
-
-// If ture, sender will close connection when there are too many outstanding
-// sent packets
-QUIC_FLAG(
-    bool,
-    FLAGS_quic_reloadable_flag_quic_close_session_on_too_many_outstanding_sent_packets,
-    false)
 
 // If true, enable QUIC v99.
 QUIC_FLAG(bool, FLAGS_quic_enable_version_99, false)
 
 // If true, enable QUIC version 42.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_enable_version_42_2, false)
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_enable_version_42_2, true)
 
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_disable_version_37, false)
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_disable_version_38, false)
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_disable_version_37, true)
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_disable_version_38, true)
 QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_disable_version_41, false)
 
 // Delays construction of QuicCryptoServerStream::HandshakerDelegate
 // until QuicCryptoServerStream::OnSuccessfulVersionNegotiation is called
 QUIC_FLAG(bool,
           FLAGS_quic_reloadable_flag_delay_quic_server_handshaker_construction,
-          false)
+          true)
 // Controls whether QuicConnection::OnProtocolVersionMismatch calls
 // QuicFramer::set_version before or after calling
 // OnSuccessfulVersionNegotiation.
 QUIC_FLAG(bool,
           FLAGS_quic_reloadable_flag_quic_store_version_before_signalling,
-          false)
+          true)
 
 // When true, enable connection options to have no min TLP and RTO,
 // and also allow IETF style TLP.
 QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_max_ack_delay2, false)
 
+// If true, MemSlices in the send buffer is freed out of order.
+QUIC_FLAG(bool,
+          FLAGS_quic_reloadable_flag_quic_free_mem_slice_out_of_order,
+          false)
+
 // If true, framer will process and report ack frame incrementally.
 QUIC_FLAG(bool,
-          FLAGS_quic_reloadable_flag_quic_use_incremental_ack_processing,
+          FLAGS_quic_reloadable_flag_quic_use_incremental_ack_processing3,
           false)
+
+// If true, Http2FrameDecoderAdapter will pass decoded HTTP/2 SETTINGS through
+// the SpdyFramerVisitorInterface callback OnSetting(), which will also accept
+// unknown SETTINGS IDs.
+QUIC_FLAG(bool, FLAGS_quic_restart_flag_http2_propagate_unknown_settings, true)
+
+// If true, enable fast path in QuicStream::OnStreamDataAcked.
+QUIC_FLAG(bool,
+          FLAGS_quic_reloadable_flag_quic_fast_path_on_stream_data_acked,
+          false)
+
+// If true, fix a use-after-free bug caused by writing an out-of-order queued
+// packet.
+QUIC_FLAG(
+    bool,
+    FLAGS_quic_reloadable_flag_quic_fix_write_out_of_order_queued_packet_crash,
+    true)
+
+// If true, QUIC streams are registered in the QuicStream constructor instead
+// of in the QuicSpdyStream constructor.
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_register_streams_early2, true)
+
+// If this flag and
+// FLAGS_quic_reloadable_flag_quic_fix_write_out_of_order_queued_packet_crash
+// are both ture, QUIC will clear queued packets before sending connectivity
+// probing packets.
+QUIC_FLAG(
+    bool,
+    FLAGS_quic_reloadable_flag_quic_clear_queued_packets_before_sending_connectivity_probing,
+    false)
+
+// When true, this flag has QuicConnection call
+// QuicConnectionVisitorInterface::OnSuccessfulVersionNegotiation earlier when
+// processing the packet header.
+QUIC_FLAG(bool,
+          FLAGS_quic_reloadable_flag_quic_server_early_version_negotiation,
+          false)
+
+// If true, QUIC will always discard outgoing packets after connection close.
+// Currently out-of-order outgoing packets are not discarded
+QUIC_FLAG(bool,
+          FLAGS_quic_reloadable_flag_quic_always_discard_packets_after_close,
+          false)
+
+// If true, stop sending a redundant PING every 20 acks.
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_remove_redundant_ping, true)
+
+// If true, when a stream is reset by peer with error, it should not be added to
+// zombie streams.
+QUIC_FLAG(bool,
+          FLAGS_quic_reloadable_flag_quic_reset_stream_is_not_zombie,
+          true)
+
+// If true, when a packet write for connectivity probe does not complete
+// successfully synchronously, connection will not be affected, i.e., blocked or
+// closed, if the probing packet writer is not the default writer.
+QUIC_FLAG(
+    bool,
+    FLAGS_quic_reloadable_flag_quic_handle_write_results_for_connectivity_probe,
+    true)
+
+// If true, a separate QuicAlarm in QuicConnection is used to trigger
+// OnPathDegrading() instead of using retransmission_alarm_.
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_path_degrading_alarm, true)
+
+// Remove special logic for headers stream from QuicWriteBlockedList and
+// replace it with a static streams map.
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_register_static_streams, false)
+
+// Base the QUIC crypto retransmission timer on the last sent crypto packet.
+QUIC_FLAG(bool,
+          FLAGS_quic_reloadable_flag_quic_better_crypto_retransmission,
+          false)
+
+// If true, enable server proxy support in QUIC.
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_enable_server_proxy, false)
+
+// If true, compare offset with last byte acked to determine whether it is
+// disjoint before calling IntervalSet::IsDisjoint.
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_fast_is_disjoint, false)
+
+// If true, enable fast path in QuicStreamSequencerBuffer::OnStreamData.
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_fast_path_on_stream_data, false)
+
+// When true, set the initial congestion control window from connection options
+// in QuicSentPacketManager rather than TcpCubicSenderBytes.
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_unified_iw_options, false)
+
+// If true, check again that the writer isn\'t blocked before calling
+// QuicConnection::OnCanWrite from WriteAndBundleAcksIfNotBlocked
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_is_write_blocked, true)

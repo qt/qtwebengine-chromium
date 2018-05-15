@@ -11,7 +11,6 @@
 #include <utility>
 
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -382,7 +381,7 @@ TEST_F(EventsXTest, TouchEventNotRemovingFromNativeMapping) {
 
 // Copied events should not remove native touch id mappings, as this causes a
 // crash (crbug.com/467102). Copied events do not contain a proper
-// base::NativeEvent and should not attempt to access it.
+// PlatformEvent and should not attempt to access it.
 TEST_F(EventsXTest, CopiedTouchEventNotRemovingFromNativeMapping) {
   std::vector<int> devices;
   devices.push_back(0);

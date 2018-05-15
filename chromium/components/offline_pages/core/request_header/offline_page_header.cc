@@ -4,6 +4,7 @@
 
 #include "components/offline_pages/core/request_header/offline_page_header.h"
 
+#include "base/base64.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
 
@@ -41,33 +42,37 @@ bool ParseOfflineHeaderValue(const std::string& header_value,
     if (pos == std::string::npos)
       return false;
     std::string key = base::ToLowerASCII(pair.substr(0, pos));
-    std::string value = base::ToLowerASCII(pair.substr(pos + 1));
+    std::string value = pair.substr(pos + 1);
+    std::string lower_value = base::ToLowerASCII(value);
     if (key == kOfflinePageHeaderPersistKey) {
-      if (value == "1")
+      if (lower_value == "1")
         *need_to_persist = true;
-      else if (value == "0")
+      else if (lower_value == "0")
         *need_to_persist = false;
       else
         return false;
     } else if (key == kOfflinePageHeaderReasonKey) {
-      if (value == kOfflinePageHeaderReasonValueDueToNetError)
+      if (lower_value == kOfflinePageHeaderReasonValueDueToNetError)
         *reason = OfflinePageHeader::Reason::NET_ERROR;
-      else if (value == kOfflinePageHeaderReasonValueFromDownload)
+      else if (lower_value == kOfflinePageHeaderReasonValueFromDownload)
         *reason = OfflinePageHeader::Reason::DOWNLOAD;
-      else if (value == kOfflinePageHeaderReasonValueReload)
+      else if (lower_value == kOfflinePageHeaderReasonValueReload)
         *reason = OfflinePageHeader::Reason::RELOAD;
-      else if (value == kOfflinePageHeaderReasonValueFromNotification)
+      else if (lower_value == kOfflinePageHeaderReasonValueFromNotification)
         *reason = OfflinePageHeader::Reason::NOTIFICATION;
-      else if (value == kOfflinePageHeaderReasonFileUrlIntent)
+      else if (lower_value == kOfflinePageHeaderReasonFileUrlIntent)
         *reason = OfflinePageHeader::Reason::FILE_URL_INTENT;
-      else if (value == kOfflinePageHeaderReasonContentUrlIntent)
+      else if (lower_value == kOfflinePageHeaderReasonContentUrlIntent)
         *reason = OfflinePageHeader::Reason::CONTENT_URL_INTENT;
       else
         return false;
     } else if (key == kOfflinePageHeaderIDKey) {
       *id = value;
     } else if (key == kOfflinePageHeaderIntentUrlKey) {
-      GURL url = GURL(value);
+      std::string decoded_url;
+      if (!base::Base64Decode(value, &decoded_url))
+        return false;
+      GURL url = GURL(decoded_url);
       if (!url.is_valid())
         return false;
       *intent_url = url;
@@ -142,11 +147,17 @@ std::string OfflinePageHeader::GetCompleteHeaderString() const {
     value += id;
   }
 
+  // Base64-encode the intent URL value because unlike http/https URLs, the
+  // content:// URL can include any arbitrary unescaped characters in its path,
+  // i.e., derived from filename or title which may contain SPACE, QUOTE,
+  // BACKSLASH or other unsafe characters.
   if (!intent_url.is_empty()) {
     value += " ";
     value += kOfflinePageHeaderIntentUrlKey;
     value += "=";
-    value += intent_url.spec();
+    std::string encoded_intent_url;
+    base::Base64Encode(intent_url.spec(), &encoded_intent_url);
+    value += encoded_intent_url;
   }
 
   return value;

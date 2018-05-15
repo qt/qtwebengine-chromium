@@ -6,56 +6,26 @@
 
 #include <utility>
 
-#include "base/base64.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "base/values.h"
 #include "components/data_use_measurement/core/data_use_user_data.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/google_api_keys.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
-#include "net/log/net_log_source_type.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
+#include "services/network/public/cpp/simple_url_loader.h"
 #include "url/gurl.h"
 
 using content::BrowserThread;
 
 namespace {
-// Returns a dictionary with "url"=|url-spec| and "data"=|payload| for
-// netlogging the start phase of a ping.
-std::unique_ptr<base::Value> NetLogPingStartCallback(
-    const net::NetLogWithSource& net_log,
-    const GURL& url,
-    const std::string& payload,
-    net::NetLogCaptureMode) {
-  std::unique_ptr<base::DictionaryValue> event_params(
-      new base::DictionaryValue());
-  event_params->SetString("url", url.spec());
-  event_params->SetString("payload", payload);
-  net_log.source().AddToEventParameters(event_params.get());
-  return std::move(event_params);
-}
-
-// Returns a dictionary with "url"=|url-spec|, "status"=|status| and
-// "error"=|error| for netlogging the end phase of a ping.
-std::unique_ptr<base::Value> NetLogPingEndCallback(
-    const net::NetLogWithSource& net_log,
-    const net::URLRequestStatus& status,
-    net::NetLogCaptureMode) {
-  std::unique_ptr<base::DictionaryValue> event_params(
-      new base::DictionaryValue());
-  event_params->SetInteger("status", status.status());
-  event_params->SetInteger("error", status.error());
-  net_log.source().AddToEventParameters(event_params.get());
-  return std::move(event_params);
-}
 
 net::NetworkTrafficAnnotationTag kTrafficAnnotation =
     net::DefineNetworkTrafficAnnotation("safe_browsing_extended_reporting",
@@ -102,25 +72,19 @@ namespace safe_browsing {
 
 // static
 std::unique_ptr<BasePingManager> BasePingManager::Create(
-    net::URLRequestContextGetter* request_context_getter,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     const SafeBrowsingProtocolConfig& config) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  return base::WrapUnique(new BasePingManager(request_context_getter, config));
+  return base::WrapUnique(new BasePingManager(url_loader_factory, config));
 }
 
 BasePingManager::BasePingManager(
-    net::URLRequestContextGetter* request_context_getter,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     const SafeBrowsingProtocolConfig& config)
     : client_name_(config.client_name),
-      request_context_getter_(request_context_getter),
+      url_loader_factory_(url_loader_factory),
       url_prefix_(config.url_prefix) {
   DCHECK(!url_prefix_.empty());
-
-  if (request_context_getter) {
-    net_log_ = net::NetLogWithSource::Make(
-        request_context_getter->GetURLRequestContext()->net_log(),
-        net::NetLogSourceType::SAFE_BROWSING);
-  }
 
   version_ = ProtocolManagerHelper::Version();
 }
@@ -130,15 +94,14 @@ BasePingManager::~BasePingManager() {}
 // net::URLFetcherDelegate implementation ----------------------------------
 
 // All SafeBrowsing request responses are handled here.
-void BasePingManager::OnURLFetchComplete(const net::URLFetcher* source) {
-  net_log_.EndEvent(
-      net::NetLogEventType::SAFE_BROWSING_PING,
-      base::Bind(&NetLogPingEndCallback, net_log_, source->GetStatus()));
-  auto it =
-      std::find_if(safebrowsing_reports_.begin(), safebrowsing_reports_.end(),
-                   [source](const std::unique_ptr<net::URLFetcher>& ptr) {
-                     return ptr.get() == source;
-                   });
+void BasePingManager::OnURLLoaderComplete(
+    network::SimpleURLLoader* source,
+    std::unique_ptr<std::string> response_body) {
+  auto it = std::find_if(
+      safebrowsing_reports_.begin(), safebrowsing_reports_.end(),
+      [source](const std::unique_ptr<network::SimpleURLLoader>& ptr) {
+        return ptr.get() == source;
+      });
   DCHECK(it != safebrowsing_reports_.end());
   safebrowsing_reports_.erase(it);
 }
@@ -146,53 +109,45 @@ void BasePingManager::OnURLFetchComplete(const net::URLFetcher* source) {
 // Sends a SafeBrowsing "hit" report.
 void BasePingManager::ReportSafeBrowsingHit(
     const safe_browsing::HitReport& hit_report) {
+  auto resource_request = std::make_unique<network::ResourceRequest>();
   GURL report_url = SafeBrowsingHitUrl(hit_report);
-  std::unique_ptr<net::URLFetcher> report_ptr = net::URLFetcher::Create(
-      report_url,
-      hit_report.post_data.empty() ? net::URLFetcher::GET
-                                   : net::URLFetcher::POST,
-      this, kTrafficAnnotation);
-  net::URLFetcher* report = report_ptr.get();
-  data_use_measurement::DataUseUserData::AttachToFetcher(
-      report, data_use_measurement::DataUseUserData::SAFE_BROWSING);
-  report_ptr->SetLoadFlags(net::LOAD_DISABLE_CACHE);
-  report_ptr->SetRequestContext(request_context_getter_.get());
-  std::string post_data_base64;
-  if (!hit_report.post_data.empty()) {
-    report_ptr->SetUploadData("text/plain", hit_report.post_data);
-    base::Base64Encode(hit_report.post_data, &post_data_base64);
-  }
+  resource_request->url = report_url;
+  resource_request->load_flags = net::LOAD_DISABLE_CACHE;
+  if (!hit_report.post_data.empty())
+    resource_request->method = "POST";
 
-  net_log_.BeginEvent(
-      net::NetLogEventType::SAFE_BROWSING_PING,
-      base::Bind(&NetLogPingStartCallback, net_log_,
-                 report_ptr->GetOriginalURL(), post_data_base64));
+  auto report_ptr = network::SimpleURLLoader::Create(
+      std::move(resource_request), kTrafficAnnotation);
 
-  report->Start();
+  if (!hit_report.post_data.empty())
+    report_ptr->AttachStringForUpload(hit_report.post_data, "text/plain");
+
+  report_ptr->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
+      url_loader_factory_.get(),
+      base::BindOnce(&BasePingManager::OnURLLoaderComplete,
+                     base::Unretained(this), report_ptr.get()));
   safebrowsing_reports_.insert(std::move(report_ptr));
 }
 
 // Sends threat details for users who opt-in.
 void BasePingManager::ReportThreatDetails(const std::string& report) {
   GURL report_url = ThreatDetailsUrl();
-  std::unique_ptr<net::URLFetcher> fetcher = net::URLFetcher::Create(
-      report_url, net::URLFetcher::POST, this, kTrafficAnnotation);
-  data_use_measurement::DataUseUserData::AttachToFetcher(
-      fetcher.get(), data_use_measurement::DataUseUserData::SAFE_BROWSING);
-  fetcher->SetLoadFlags(net::LOAD_DISABLE_CACHE);
-  fetcher->SetRequestContext(request_context_getter_.get());
-  fetcher->SetUploadData("application/octet-stream", report);
-  // Don't try too hard to send reports on failures.
-  fetcher->SetAutomaticallyRetryOn5xx(false);
 
-  std::string report_base64;
-  base::Base64Encode(report, &report_base64);
-  net_log_.BeginEvent(net::NetLogEventType::SAFE_BROWSING_PING,
-                      base::Bind(&NetLogPingStartCallback, net_log_,
-                                 fetcher->GetOriginalURL(), report_base64));
+  auto resource_request = std::make_unique<network::ResourceRequest>();
+  resource_request->url = report_url;
+  resource_request->load_flags = net::LOAD_DISABLE_CACHE;
+  resource_request->method = "POST";
 
-  fetcher->Start();
-  safebrowsing_reports_.insert(std::move(fetcher));
+  auto loader = network::SimpleURLLoader::Create(std::move(resource_request),
+                                                 kTrafficAnnotation);
+
+  loader->AttachStringForUpload(report, "application/octet-stream");
+
+  loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
+      url_loader_factory_.get(),
+      base::BindOnce(&BasePingManager::OnURLLoaderComplete,
+                     base::Unretained(this), loader.get()));
+  safebrowsing_reports_.insert(std::move(loader));
 }
 
 GURL BasePingManager::SafeBrowsingHitUrl(

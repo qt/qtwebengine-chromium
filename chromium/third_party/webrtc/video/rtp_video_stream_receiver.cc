@@ -37,7 +37,6 @@
 #include "rtc_base/system/fallthrough.h"
 #include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
-#include "system_wrappers/include/timestamp_extrapolator.h"
 #include "video/receive_statistics_proxy.h"
 
 namespace webrtc {
@@ -91,8 +90,7 @@ RtpVideoStreamReceiver::RtpVideoStreamReceiver(
     ProcessThread* process_thread,
     NackSender* nack_sender,
     KeyFrameRequestSender* keyframe_request_sender,
-    video_coding::OnCompleteFrameCallback* complete_frame_callback,
-    VCMTiming* timing)
+    video_coding::OnCompleteFrameCallback* complete_frame_callback)
     : clock_(Clock::GetRealTimeClock()),
       config_(*config),
       packet_router_(packet_router),
@@ -114,7 +112,6 @@ RtpVideoStreamReceiver::RtpVideoStreamReceiver(
                                     packet_router)),
       complete_frame_callback_(complete_frame_callback),
       keyframe_request_sender_(keyframe_request_sender),
-      timing_(timing),
       has_received_frame_(false) {
   constexpr bool remb_candidate = true;
   packet_router_->AddReceiveRtpModule(rtp_rtcp_.get(), remb_candidate);
@@ -139,27 +136,6 @@ RtpVideoStreamReceiver::RtpVideoStreamReceiver(
                                            ? kMaxPacketAgeToNack
                                            : kDefaultMaxReorderingThreshold;
   rtp_receive_statistics_->SetMaxReorderingThreshold(max_reordering_threshold);
-
-  if (config_.rtp.rtx_ssrc) {
-    // Needed for rtp_payload_registry_.RtxEnabled().
-    rtp_payload_registry_.SetRtxSsrc(config_.rtp.rtx_ssrc);
-  }
-
-  if (IsUlpfecEnabled()) {
-    VideoCodec ulpfec_codec = {};
-    ulpfec_codec.codecType = kVideoCodecULPFEC;
-    strncpy(ulpfec_codec.plName, "ulpfec", sizeof(ulpfec_codec.plName));
-    ulpfec_codec.plType = config_.rtp.ulpfec_payload_type;
-    RTC_CHECK(AddReceiveCodec(ulpfec_codec));
-  }
-
-  if (IsRedEnabled()) {
-    VideoCodec red_codec = {};
-    red_codec.codecType = kVideoCodecRED;
-    strncpy(red_codec.plName, "red", sizeof(red_codec.plName));
-    red_codec.plType = config_.rtp.red_payload_type;
-    RTC_CHECK(AddReceiveCodec(red_codec));
-  }
 
   if (config_.rtp.rtcp_xr.receiver_reference_time_report)
     rtp_rtcp_->SetRtcpXrRrtrStatus(true);
@@ -233,12 +209,8 @@ int32_t RtpVideoStreamReceiver::OnReceivedPayloadData(
       nack_module_ ? nack_module_->OnReceivedPacket(packet) : -1;
   packet.receive_time_ms = clock_->TimeInMilliseconds();
 
-  // In the case of a video stream without picture ids and no rtx the
-  // RtpFrameReferenceFinder will need to know about padding to
-  // correctly calculate frame references.
   if (packet.sizeBytes == 0) {
-    reference_finder_->PaddingReceived(packet.seqNum);
-    packet_buffer_->PaddingReceived(packet.seqNum);
+    NotifyReceiverOfEmptyPacket(packet.seqNum);
     return 0;
   }
 
@@ -284,16 +256,6 @@ void RtpVideoStreamReceiver::OnRecoveredPacket(const uint8_t* rtp_packet,
   ReceivePacket(rtp_packet, rtp_packet_length, header);
 }
 
-// TODO(pbos): Remove as soon as audio can handle a changing payload type
-// without this callback.
-int32_t RtpVideoStreamReceiver::OnInitializeDecoder(
-    const int payload_type,
-    const SdpAudioFormat& audio_format,
-    const uint32_t rate) {
-  RTC_NOTREACHED();
-  return 0;
-}
-
 // This method handles both regular RTP packets and packets recovered
 // via FlexFEC.
 void RtpVideoStreamReceiver::OnRtpPacket(const RtpPacketReceived& packet) {
@@ -335,10 +297,7 @@ void RtpVideoStreamReceiver::OnRtpPacket(const RtpPacketReceived& packet) {
   header.payload_type_frequency = kVideoPayloadTypeFrequency;
 
   bool in_order = IsPacketInOrder(header);
-  if (!packet.recovered()) {
-    // TODO(nisse): Why isn't this done for recovered packets?
-    rtp_payload_registry_.SetIncomingPayloadType(header);
-  }
+
   ReceivePacket(packet.data(), packet.size(), header);
   // Update receive statistics after ReceivePacket.
   // Receive statistics will be reset if the payload type changes (make sure
@@ -363,10 +322,6 @@ bool RtpVideoStreamReceiver::IsUlpfecEnabled() const {
   return config_.rtp.ulpfec_payload_type != -1;
 }
 
-bool RtpVideoStreamReceiver::IsRedEnabled() const {
-  return config_.rtp.red_payload_type != -1;
-}
-
 bool RtpVideoStreamReceiver::IsRetransmissionsEnabled() const {
   return config_.rtp.nack.rtp_history_ms > 0;
 }
@@ -389,8 +344,6 @@ void RtpVideoStreamReceiver::OnReceivedFrame(
       keyframe_request_sender_->RequestKeyFrame();
   }
 
-  if (!frame->delayed_by_retransmission())
-    timing_->IncomingTimestamp(frame->timestamp, clock_->TimeInMilliseconds());
   reference_finder_->ManageFrame(std::move(frame));
 }
 
@@ -400,13 +353,13 @@ void RtpVideoStreamReceiver::OnCompleteFrame(
     rtc::CritScope lock(&last_seq_num_cs_);
     video_coding::RtpFrameObject* rtp_frame =
         static_cast<video_coding::RtpFrameObject*>(frame.get());
-    last_seq_num_for_pic_id_[rtp_frame->picture_id] = rtp_frame->last_seq_num();
+    last_seq_num_for_pic_id_[rtp_frame->id.picture_id] =
+        rtp_frame->last_seq_num();
   }
   complete_frame_callback_->OnCompleteFrame(std::move(frame));
 }
 
-void RtpVideoStreamReceiver::OnRttUpdate(int64_t avg_rtt_ms,
-                                         int64_t max_rtt_ms) {
+void RtpVideoStreamReceiver::UpdateRtt(int64_t max_rtt_ms) {
   if (nack_module_)
     nack_module_->UpdateRtt(max_rtt_ms);
 }
@@ -444,7 +397,7 @@ void RtpVideoStreamReceiver::RemoveSecondarySink(
 void RtpVideoStreamReceiver::ReceivePacket(const uint8_t* packet,
                                            size_t packet_length,
                                            const RTPHeader& header) {
-  if (rtp_payload_registry_.IsRed(header)) {
+  if (header.payloadType == config_.rtp.red_payload_type) {
     ParseAndHandleEncapsulatingHeader(packet, packet_length, header);
     return;
   }
@@ -462,57 +415,37 @@ void RtpVideoStreamReceiver::ReceivePacket(const uint8_t* packet,
 void RtpVideoStreamReceiver::ParseAndHandleEncapsulatingHeader(
     const uint8_t* packet, size_t packet_length, const RTPHeader& header) {
   RTC_DCHECK_CALLED_SEQUENTIALLY(&worker_task_checker_);
-  if (rtp_payload_registry_.IsRed(header)) {
-    int8_t ulpfec_pt = rtp_payload_registry_.ulpfec_payload_type();
-    if (packet[header.headerLength] == ulpfec_pt) {
+  if (header.payloadType == config_.rtp.red_payload_type) {
+    if (packet[header.headerLength] == config_.rtp.ulpfec_payload_type) {
       rtp_receive_statistics_->FecPacketReceived(header, packet_length);
       // Notify video_receiver about received FEC packets to avoid NACKing these
       // packets.
       NotifyReceiverOfFecPacket(header);
     }
-    if (ulpfec_receiver_->AddReceivedRedPacket(header, packet, packet_length,
-                                               ulpfec_pt) != 0) {
+    if (ulpfec_receiver_->AddReceivedRedPacket(
+            header, packet, packet_length,
+            config_.rtp.ulpfec_payload_type) != 0) {
       return;
     }
     ulpfec_receiver_->ProcessReceivedFec();
   }
 }
 
+// In the case of a video stream without picture ids and no rtx the
+// RtpFrameReferenceFinder will need to know about padding to
+// correctly calculate frame references.
+void RtpVideoStreamReceiver::NotifyReceiverOfEmptyPacket(uint16_t seq_num) {
+  reference_finder_->PaddingReceived(seq_num);
+  packet_buffer_->PaddingReceived(seq_num);
+}
+
 void RtpVideoStreamReceiver::NotifyReceiverOfFecPacket(
     const RTPHeader& header) {
-  int8_t last_media_payload_type =
-      rtp_payload_registry_.last_received_media_payload_type();
-  if (last_media_payload_type < 0) {
-    RTC_LOG(LS_WARNING) << "Failed to get last media payload type.";
-    return;
+  if (nack_module_) {
+    nack_module_->OnReceivedPacket(header.sequenceNumber,
+                                   /* is_keyframe = */ false);
   }
-  // Fake an empty media packet.
-  WebRtcRTPHeader rtp_header = {};
-  rtp_header.header = header;
-  rtp_header.header.payloadType = last_media_payload_type;
-  rtp_header.header.paddingLength = 0;
-  const auto pl =
-      rtp_payload_registry_.PayloadTypeToPayload(last_media_payload_type);
-  if (!pl) {
-    RTC_LOG(LS_WARNING) << "Failed to get payload specifics.";
-    return;
-  }
-  rtp_header.type.Video.codec = pl->typeSpecific.video_payload().videoCodecType;
-  rtp_header.type.Video.rotation = kVideoRotation_0;
-  if (header.extension.hasVideoRotation) {
-    rtp_header.type.Video.rotation = header.extension.videoRotation;
-  }
-  rtp_header.type.Video.content_type = VideoContentType::UNSPECIFIED;
-  if (header.extension.hasVideoContentType) {
-    rtp_header.type.Video.content_type = header.extension.videoContentType;
-  }
-  rtp_header.type.Video.video_timing = {0u, 0u, 0u, 0u, 0u, 0u, false};
-  if (header.extension.has_video_timing) {
-    rtp_header.type.Video.video_timing = header.extension.video_timing;
-  }
-  rtp_header.type.Video.playout_delay = header.extension.playout_delay;
-
-  OnReceivedPayloadData(nullptr, 0, &rtp_header);
+  NotifyReceiverOfEmptyPacket(header.sequenceNumber);
 }
 
 bool RtpVideoStreamReceiver::DeliverRtcp(const uint8_t* rtcp_packet,
@@ -614,7 +547,7 @@ bool RtpVideoStreamReceiver::IsPacketInOrder(const RTPHeader& header) const {
 bool RtpVideoStreamReceiver::IsPacketRetransmitted(const RTPHeader& header,
                                                    bool in_order) const {
   // Retransmissions are handled separately if RTX is enabled.
-  if (rtp_payload_registry_.RtxEnabled())
+  if (config_.rtp.rtx_ssrc != 0)
     return false;
   StreamStatistician* statistician =
       rtp_receive_statistics_->GetStatistician(header.ssrc);

@@ -1,0 +1,51 @@
+// Copyright 2018 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+module content.mojom;
+
+import "content/public/common/resource_type.mojom";
+import "mojo/public/mojom/base/time.mojom";
+import "net/interfaces/ip_address.mojom";
+import "url/mojom/url.mojom";
+
+// Information pertaining to resource loading.
+// This will be passed to ResourceResponse callback methods.
+struct ResourceLoadInfo {
+  // An ID that uniquely identifies this request.
+  int64 request_id;
+
+  // The URL of the response.
+  url.mojom.Url url;
+
+  // The response referrer.
+  url.mojom.Url referrer;
+
+  // The original URL is the URL used to initialize the subresource request, and
+  // it may differ from |url| if the request was redirected.
+  url.mojom.Url original_url;
+
+  // The request method used to fetch this response.
+  string method;
+
+  // The resource type.
+  ResourceType resource_type;
+
+  // The mime type.
+  string mime_type;
+
+  // The host IP.
+  net.interfaces.IPAddress? ip;
+
+  // True if the response was fetched from the network cache.
+  bool was_cached;
+
+  // True if the request accessed the network in the process of retrieving data.
+  bool network_accessed;
+
+  // The network error code, net::OK if no error happened.
+  int32 net_error;
+
+  // The time at which the request was started.
+  mojo_base.mojom.TimeTicks request_start;
+};

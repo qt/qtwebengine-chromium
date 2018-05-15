@@ -5,9 +5,9 @@
 #include "components/autofill/content/common/autofill_types_struct_traits.h"
 
 #include "base/i18n/rtl.h"
-#include "mojo/common/common_custom_types_struct_traits.h"
-#include "mojo/common/time_struct_traits.h"
 #include "mojo/public/cpp/base/string16_mojom_traits.h"
+#include "mojo/public/cpp/base/text_direction_mojom_traits.h"
+#include "mojo/public/cpp/base/time_mojom_traits.h"
 #include "url/mojom/origin_mojom_traits.h"
 #include "url/mojom/url_gurl_mojom_traits.h"
 
@@ -488,6 +488,8 @@ EnumTraits<autofill::mojom::LabelSource, autofill::FormFieldData::LabelSource>::
       return autofill::mojom::LabelSource::LI_TAG;
     case autofill::FormFieldData::LabelSource::PLACE_HOLDER:
       return autofill::mojom::LabelSource::PLACE_HOLDER;
+    case autofill::FormFieldData::LabelSource::ARIA_LABEL:
+      return autofill::mojom::LabelSource::ARIA_LABEL;
     case autofill::FormFieldData::LabelSource::COMBINED:
       return autofill::mojom::LabelSource::COMBINED;
     case autofill::FormFieldData::LabelSource::VALUE:
@@ -527,6 +529,9 @@ bool EnumTraits<autofill::mojom::LabelSource,
       return true;
     case autofill::mojom::LabelSource::PLACE_HOLDER:
       *output = autofill::FormFieldData::LabelSource::PLACE_HOLDER;
+      return true;
+    case autofill::mojom::LabelSource::ARIA_LABEL:
+      *output = autofill::FormFieldData::LabelSource::ARIA_LABEL;
       return true;
     case autofill::mojom::LabelSource::COMBINED:
       *output = autofill::FormFieldData::LabelSource::COMBINED;
@@ -860,10 +865,10 @@ bool StructTraits<autofill::mojom::FormsPredictionsMapDataView,
 }
 
 // static
-bool StructTraits<autofill::mojom::PossibleUsernamePairDataView,
-                  autofill::PossibleUsernamePair>::
-    Read(autofill::mojom::PossibleUsernamePairDataView data,
-         autofill::PossibleUsernamePair* out) {
+bool StructTraits<autofill::mojom::ValueElementPairDataView,
+                  autofill::ValueElementPair>::
+    Read(autofill::mojom::ValueElementPairDataView data,
+         autofill::ValueElementPair* out) {
   if (!data.ReadValue(&out->first) || !data.ReadFieldName(&out->second))
     return false;
 

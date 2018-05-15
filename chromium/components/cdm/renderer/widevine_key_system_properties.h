@@ -7,7 +7,7 @@
 
 #include "build/build_config.h"
 #include "media/base/key_system_properties.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 
 namespace cdm {
 
@@ -56,10 +56,6 @@ class WidevineKeySystemProperties : public media::KeySystemProperties {
       const override;
   media::EmeFeatureSupport GetPersistentStateSupport() const override;
   media::EmeFeatureSupport GetDistinctiveIdentifierSupport() const override;
-
-#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
-  std::string GetPepperType() const override;
-#endif
 
  private:
   const media::SupportedCodecs supported_codecs_;

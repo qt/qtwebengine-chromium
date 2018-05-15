@@ -13,7 +13,7 @@
 #include "content/browser/renderer_host/input/touch_emulator_client.h"
 #include "content/common/cursors/webcursor.h"
 #include "content/public/common/input_event_ack_state.h"
-#include "third_party/WebKit/public/platform/WebTouchEvent.h"
+#include "third_party/blink/public/platform/web_touch_event.h"
 #include "ui/events/gesture_detection/filtered_gesture_provider.h"
 #include "ui/events/gesture_detection/gesture_provider_config_helper.h"
 #include "ui/gfx/geometry/size_f.h"
@@ -150,7 +150,7 @@ class CONTENT_EXPORT TouchEmulator : public ui::GestureProviderClient {
   bool suppress_next_fling_cancel_;
 
   // Point which does not move while pinch-zooming.
-  gfx::Point pinch_anchor_;
+  gfx::PointF pinch_anchor_;
   // The cumulative scale change from the start of pinch gesture.
   float pinch_scale_;
   bool pinch_gesture_active_;

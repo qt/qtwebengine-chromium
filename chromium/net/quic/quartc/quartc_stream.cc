@@ -9,7 +9,7 @@
 namespace net {
 
 QuartcStream::QuartcStream(QuicStreamId id, QuicSession* session)
-    : QuicStream(id, session) {}
+    : QuicStream(id, session, /*is_static=*/false) {}
 QuartcStream::~QuartcStream() {}
 
 void QuartcStream::OnDataAvailable() {
@@ -35,22 +35,27 @@ void QuartcStream::OnClose() {
   delegate_->OnClose(this);
 }
 
-void QuartcStream::OnCanWrite() {
-  QuicStream::OnCanWrite();
+void QuartcStream::OnStreamDataConsumed(size_t bytes_consumed) {
+  QuicStream::OnStreamDataConsumed(bytes_consumed);
+
   DCHECK(delegate_);
-  // Don't call the delegate if the write-side is closed or a fin is buffered.
-  // It is already done with this stream.
-  if (!write_side_closed() && !fin_buffered()) {
-    delegate_->OnCanWrite(this);
-  }
+  delegate_->OnBufferChanged(this);
+}
+
+void QuartcStream::OnDataBuffered(
+    QuicStreamOffset offset,
+    QuicByteCount data_length,
+    const QuicReferenceCountedPointer<QuicAckListenerInterface>& ack_listener) {
+  DCHECK(delegate_);
+  delegate_->OnBufferChanged(this);
 }
 
 uint32_t QuartcStream::stream_id() {
   return id();
 }
 
-uint64_t QuartcStream::bytes_written() {
-  return stream_bytes_written();
+uint64_t QuartcStream::bytes_buffered() {
+  return BufferedDataBytes();
 }
 
 bool QuartcStream::fin_sent() {
@@ -61,15 +66,8 @@ int QuartcStream::stream_error() {
   return QuicStream::stream_error();
 }
 
-int QuartcStream::connection_error() {
-  return QuicStream::connection_error();
-}
-
-void QuartcStream::Write(const char* data,
-                         size_t size,
-                         const WriteParameters& param) {
-  struct iovec iov = {const_cast<char*>(data), size};
-  WritevData(&iov, 1, param.fin);
+void QuartcStream::Write(QuicMemSliceSpan data, const WriteParameters& param) {
+  WriteMemSlices(data, param.fin);
 }
 
 void QuartcStream::FinishWriting() {

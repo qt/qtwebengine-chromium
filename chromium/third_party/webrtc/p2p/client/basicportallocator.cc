@@ -17,7 +17,6 @@
 
 #include "api/umametrics.h"
 #include "p2p/base/basicpacketsocketfactory.h"
-#include "p2p/base/common.h"
 #include "p2p/base/port.h"
 #include "p2p/base/relayport.h"
 #include "p2p/base/stunport.h"
@@ -433,7 +432,11 @@ void BasicPortAllocatorSession::SetStunKeepaliveIntervalForReadyPorts(
     const rtc::Optional<int>& stun_keepalive_interval) {
   auto ports = ReadyPorts();
   for (PortInterface* port : ports) {
-    if (port->Type() == STUN_PORT_TYPE) {
+    // The port type and protocol can be used to identify different subclasses
+    // of Port in the current implementation. Note that a TCPPort has the type
+    // LOCAL_PORT_TYPE but uses the protocol PROTO_TCP.
+    if (port->Type() == STUN_PORT_TYPE ||
+        (port->Type() == LOCAL_PORT_TYPE && port->GetProtocol() == PROTO_UDP)) {
       static_cast<UDPPort*>(port)->set_stun_keepalive_delay(
           stun_keepalive_interval);
     }
@@ -839,7 +842,8 @@ void BasicPortAllocatorSession::AddAllocatedPort(Port* port,
       &BasicPortAllocatorSession::OnPortDestroyed);
   port->SignalPortError.connect(
       this, &BasicPortAllocatorSession::OnPortError);
-  LOG_J(LS_INFO, port) << "Added port to allocator";
+  RTC_LOG(LS_INFO) << port->ToString()
+                   << ": Added port to allocator";
 
   if (prepare_address)
     port->PrepareAddress();
@@ -856,7 +860,8 @@ void BasicPortAllocatorSession::OnCandidateReady(
   RTC_DCHECK(rtc::Thread::Current() == network_thread_);
   PortData* data = FindPort(port);
   RTC_DCHECK(data != NULL);
-  LOG_J(LS_INFO, port) << "Gathered candidate: " << c.ToSensitiveString();
+  RTC_LOG(LS_INFO) << port->ToString()
+                   << ": Gathered candidate: " << c.ToSensitiveString();
   // Discarding any candidate signal if port allocation status is
   // already done with gathering.
   if (!data->inprogress()) {
@@ -883,7 +888,7 @@ void BasicPortAllocatorSession::OnCandidateReady(
     }
     // If the current port is not pruned yet, SignalPortReady.
     if (!data->pruned()) {
-      LOG_J(LS_INFO, port) << "Port ready.";
+      RTC_LOG(LS_INFO) << port->ToString() << ": Port ready.";
       SignalPortReady(this, port);
       port->KeepAliveUntilPruned();
     }
@@ -957,7 +962,8 @@ void BasicPortAllocatorSession::PruneAllPorts() {
 
 void BasicPortAllocatorSession::OnPortComplete(Port* port) {
   RTC_DCHECK(rtc::Thread::Current() == network_thread_);
-  LOG_J(LS_INFO, port) << "Port completed gathering candidates.";
+  RTC_LOG(LS_INFO) << port->ToString()
+                   << ": Port completed gathering candidates.";
   PortData* data = FindPort(port);
   RTC_DCHECK(data != NULL);
 
@@ -974,7 +980,8 @@ void BasicPortAllocatorSession::OnPortComplete(Port* port) {
 
 void BasicPortAllocatorSession::OnPortError(Port* port) {
   RTC_DCHECK(rtc::Thread::Current() == network_thread_);
-  LOG_J(LS_INFO, port) << "Port encountered error while gathering candidates.";
+  RTC_LOG(LS_INFO) << port->ToString()
+                   << ": Port encountered error while gathering candidates.";
   PortData* data = FindPort(port);
   RTC_DCHECK(data != NULL);
   // We might have already given up on this port and stopped it.
@@ -1065,8 +1072,9 @@ void BasicPortAllocatorSession::OnPortDestroyed(
        iter != ports_.end(); ++iter) {
     if (port == iter->port()) {
       ports_.erase(iter);
-      LOG_J(LS_INFO, port) << "Removed port from allocator ("
-                           << static_cast<int>(ports_.size()) << " remaining)";
+      RTC_LOG(LS_INFO) << port->ToString()
+                       << ": Removed port from allocator ("
+                       << static_cast<int>(ports_.size()) << " remaining)";
       return;
     }
   }
@@ -1247,8 +1255,8 @@ void AllocationSequence::OnMessage(rtc::Message* msg) {
   const char* const PHASE_NAMES[kNumPhases] = {"Udp", "Relay", "Tcp"};
 
   // Perform all of the phases in the current step.
-  LOG_J(LS_INFO, network_) << "Allocation Phase="
-                           << PHASE_NAMES[phase_];
+  RTC_LOG(LS_INFO) << network_->ToString()
+                   << ": Allocation Phase=" << PHASE_NAMES[phase_];
 
   switch (phase_) {
     case PHASE_UDP:
@@ -1297,13 +1305,15 @@ void AllocationSequence::CreateUDPPorts() {
     port = UDPPort::Create(
         session_->network_thread(), session_->socket_factory(), network_,
         udp_socket_.get(), session_->username(), session_->password(),
-        session_->allocator()->origin(), emit_local_candidate_for_anyaddress);
+        session_->allocator()->origin(), emit_local_candidate_for_anyaddress,
+        session_->allocator()->stun_candidate_keepalive_interval());
   } else {
     port = UDPPort::Create(
         session_->network_thread(), session_->socket_factory(), network_,
         session_->allocator()->min_port(), session_->allocator()->max_port(),
         session_->username(), session_->password(),
-        session_->allocator()->origin(), emit_local_candidate_for_anyaddress);
+        session_->allocator()->origin(), emit_local_candidate_for_anyaddress,
+        session_->allocator()->stun_candidate_keepalive_interval());
   }
 
   if (port) {
@@ -1318,7 +1328,7 @@ void AllocationSequence::CreateUDPPorts() {
         if (config_ && !config_->StunServers().empty()) {
           RTC_LOG(LS_INFO)
               << "AllocationSequence: UDPPort will be handling the "
-              << "STUN candidate generation.";
+                 "STUN candidate generation.";
           port->set_server_addresses(config_->StunServers());
         }
       }
@@ -1366,10 +1376,9 @@ void AllocationSequence::CreateStunPorts() {
       session_->network_thread(), session_->socket_factory(), network_,
       session_->allocator()->min_port(), session_->allocator()->max_port(),
       session_->username(), session_->password(), config_->StunServers(),
-      session_->allocator()->origin());
+      session_->allocator()->origin(),
+      session_->allocator()->stun_candidate_keepalive_interval());
   if (port) {
-    port->set_stun_keepalive_delay(
-        session_->allocator()->stun_candidate_keepalive_interval());
     session_->AddAllocatedPort(port, this, true);
     // Since StunPort is not created using shared socket, |port| will not be
     // added to the dequeue.
@@ -1450,7 +1459,7 @@ void AllocationSequence::CreateTurnPort(const RelayServerConfig& config) {
     if (server_ip_family != AF_UNSPEC && server_ip_family != local_ip_family) {
       RTC_LOG(LS_INFO)
           << "Server and local address families are not compatible. "
-          << "Server address: " << relay_port->address.ipaddr().ToString()
+             "Server address: " << relay_port->address.ipaddr().ToString()
           << " Local address: " << network_->GetBestIP().ToString();
       continue;
     }

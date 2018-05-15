@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 
-#include <string>
+#include <memory>
 
 #include "base/callback_forward.h"
 #include "base/gtest_prod_util.h"
@@ -15,7 +15,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
 #include "chrome/browser/ui/webui/constrained_web_dialog_ui.h"
-#include "printing/features/features.h"
+#include "printing/buildflags/buildflags.h"
 
 class PrintPreviewHandler;
 struct PrintHostMsg_DidGetPreviewPageCount_Params;
@@ -25,7 +25,7 @@ struct PrintHostMsg_SetOptionsFromDocument_Params;
 namespace base {
 class DictionaryValue;
 class FilePath;
-class RefCountedBytes;
+class RefCountedMemory;
 }
 
 namespace gfx {
@@ -47,13 +47,13 @@ class PrintPreviewUI : public ConstrainedWebDialogUI {
   // document.
   virtual void GetPrintPreviewDataForIndex(
       int index,
-      scoped_refptr<base::RefCountedBytes>* data) const;
+      scoped_refptr<base::RefCountedMemory>* data) const;
 
   // Sets the print preview |data|. |index| is zero-based, and can be
   // |printing::COMPLETE_PREVIEW_DOCUMENT_INDEX| to set the entire preview
   // document.
   void SetPrintPreviewDataForIndex(int index,
-                                   scoped_refptr<base::RefCountedBytes> data);
+                                   scoped_refptr<base::RefCountedMemory> data);
 
   // Clear the existing print preview data.
   void ClearAllPreviewData();

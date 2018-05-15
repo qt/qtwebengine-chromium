@@ -8,7 +8,6 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
 #include "content/browser/frame_host/navigation_request_info.h"
@@ -43,7 +42,7 @@
 #include "net/url_request/url_request_test_job.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
+#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
 #include "url/origin.h"
 
 namespace content {
@@ -117,13 +116,14 @@ class NavigationURLLoaderTest : public testing::Test {
             false /* is_form_submission */, GURL() /* searchable_form_url */,
             std::string() /* searchable_form_encoding */,
             url::Origin::Create(url), GURL() /* client_side_redirect_url */,
-            nullptr /* devtools_initiator_info */);
+            base::nullopt /* devtools_initiator_info */);
     CommonNavigationParams common_params;
     common_params.url = url;
 
     std::unique_ptr<NavigationRequestInfo> request_info(
         new NavigationRequestInfo(common_params, std::move(begin_params), url,
-                                  true, false, false, -1, false, false, false));
+                                  true, false, false, -1, false, false, false,
+                                  nullptr));
     return NavigationURLLoader::Create(
         browser_context_->GetResourceContext(),
         BrowserContext::GetDefaultStoragePartition(browser_context_.get()),
@@ -161,7 +161,7 @@ TEST_F(NavigationURLLoaderTest, RequestFailedNoCertError) {
 
   // Wait for the request to fail as expected.
   delegate.WaitForRequestFailed();
-  EXPECT_EQ(net::ERR_UNKNOWN_URL_SCHEME, delegate.net_error());
+  EXPECT_EQ(net::ERR_ABORTED, delegate.net_error());
   EXPECT_FALSE(delegate.ssl_info().is_valid());
   EXPECT_EQ(1, delegate.on_request_handled_counter());
 }

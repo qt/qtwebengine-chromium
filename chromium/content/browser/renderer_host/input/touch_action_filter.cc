@@ -8,7 +8,7 @@
 
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
-#include "third_party/WebKit/public/platform/WebGestureEvent.h"
+#include "third_party/blink/public/platform/web_gesture_event.h"
 
 using blink::WebInputEvent;
 using blink::WebGestureEvent;
@@ -39,11 +39,10 @@ TouchActionFilter::TouchActionFilter()
       drop_current_tap_ending_event_(false),
       allow_current_double_tap_event_(true),
       force_enable_zoom_(false),
-      allowed_touch_action_(cc::kTouchActionAuto),
-      white_listed_touch_action_(cc::kTouchActionAuto) {}
+      allowed_touch_action_(cc::kTouchActionAuto) {}
 
 bool TouchActionFilter::FilterGestureEvent(WebGestureEvent* gesture_event) {
-  if (gesture_event->source_device != blink::kWebGestureDeviceTouchscreen)
+  if (gesture_event->SourceDevice() != blink::kWebGestureDeviceTouchscreen)
     return false;
 
   // Filter for allowable touch actions first (eg. before the TouchEventQueue
@@ -192,8 +191,11 @@ void TouchActionFilter::ReportAndResetTouchAction() {
   // Report how often the effective touch action computed by blink is or is
   // not equivalent to the whitelisted touch action computed by the
   // compositor.
-  UMA_HISTOGRAM_BOOLEAN("TouchAction.EquivalentEffectiveAndWhiteListed",
-                        allowed_touch_action_ == white_listed_touch_action_);
+  if (white_listed_touch_action_.has_value()) {
+    UMA_HISTOGRAM_BOOLEAN(
+        "TouchAction.EquivalentEffectiveAndWhiteListed",
+        allowed_touch_action_ == white_listed_touch_action_.value());
+  }
   ResetTouchAction();
 }
 
@@ -201,22 +203,19 @@ void TouchActionFilter::ResetTouchAction() {
   // Note that resetting the action mid-sequence is tolerated. Gestures that had
   // their begin event(s) suppressed will be suppressed until the next sequence.
   allowed_touch_action_ = cc::kTouchActionAuto;
-  white_listed_touch_action_ = cc::kTouchActionAuto;
+  white_listed_touch_action_.reset();
 }
 
 void TouchActionFilter::OnSetWhiteListedTouchAction(
     cc::TouchAction white_listed_touch_action) {
-  // For multiple fingers, we take the intersection of the touch actions for all
-  // fingers that have gone down during this action.  In the majority of
-  // real-world scenarios the touch action for all fingers will be the same.
-  // This is left as implementation because of the relationship of gestures
-  // (which are off limits for the spec).  We believe the following are
-  // desirable properties of this choice:
-  // 1. Not sensitive to finger touch order.  Behavior of putting two fingers
-  //    down "at once" will be deterministic.
-  // 2. Only subtractive - eg. can't trigger scrolling on an element that
-  //    otherwise has scrolling disabling by the addition of a finger.
-  white_listed_touch_action_ &= white_listed_touch_action;
+  // We use '&' here to account for the multiple-finger case, which is the same
+  // as OnSetTouchAction.
+  if (white_listed_touch_action_.has_value()) {
+    white_listed_touch_action_ =
+        white_listed_touch_action_.value() & white_listed_touch_action;
+  } else {
+    white_listed_touch_action_ = white_listed_touch_action;
+  }
 }
 
 bool TouchActionFilter::ShouldSuppressManipulation(

@@ -6,7 +6,6 @@
 
 #include <memory>
 
-#include "base/memory/ptr_util.h"
 #include "base/values.h"
 #include "components/download/internal/background_service/driver_entry.h"
 #include "components/download/internal/background_service/entry.h"
@@ -53,6 +52,8 @@ std::string ClientToString(DownloadClient client) {
       return "BackgroundFetch";
     case DownloadClient::DEBUGGING:
       return "Debugging";
+    case DownloadClient::MOUNTAIN_INTERNAL:
+      return "MountainInternal";
     case DownloadClient::BOUNDARY:  // Intentional fallthrough.
     default:
       NOTREACHED();

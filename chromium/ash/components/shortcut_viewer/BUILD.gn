@@ -30,6 +30,7 @@ source_set("ksv") {
     "//ash/components/shortcut_viewer/vector_icons",
     "//ash/components/strings",
     "//ash/public/cpp",
+    "//ash/resources",
     "//cc/paint",
     "//ui/accessibility",
     "//ui/aura",
@@ -50,6 +51,7 @@ source_set("ksv_unittests") {
     ":ksv",
     "//ash:test_support_without_content",
     "//testing/gtest",
+    "//ui/events:test_support",
     "//ui/views",
   ]
 }

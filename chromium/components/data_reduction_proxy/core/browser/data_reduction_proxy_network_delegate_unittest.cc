@@ -59,8 +59,8 @@
 #include "net/nqe/network_quality_estimator_test_util.h"
 #include "net/proxy_resolution/proxy_config.h"
 #include "net/proxy_resolution/proxy_info.h"
+#include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/proxy_resolution/proxy_retry_info.h"
-#include "net/proxy_resolution/proxy_service.h"
 #include "net/socket/socket_test_util.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/gtest_util.h"
@@ -83,8 +83,6 @@ const char kOtherProxy[] = "testproxy:17";
 const char kTestURL[] = "http://www.google.com/";
 const char kSecureTestURL[] = "https://www.google.com/";
 
-const char kReceivedValidOCLHistogramName[] =
-    "Net.HttpContentLengthWithValidOCL";
 const char kOriginalValidOCLHistogramName[] =
     "Net.HttpOriginalContentLengthWithValidOCL";
 const char kDifferenceValidOCLHistogramName[] =
@@ -127,14 +125,6 @@ const char kOriginalVideoSecureBypassedHistogramName[] =
 const char kOriginalVideoSecureOtherHistogramName[] =
     "Net.HttpOriginalContentLengthV2.Https.Other.Video";
 
-// Lo-Fi histograms.
-const char kReceivedValidOCLLoFiOnHistogramName[] =
-    "Net.HttpContentLengthWithValidOCL.LoFiOn";
-const char kOriginalValidOCLLoFiOnHistogramName[] =
-    "Net.HttpOriginalContentLengthWithValidOCL.LoFiOn";
-const char kDifferenceValidOCLLoFiOnHistogramName[] =
-    "Net.HttpContentLengthDifferenceWithValidOCL.LoFiOn";
-
 const char kReceivedHistogramName[] = "Net.HttpContentLength";
 const char kReceivedInsecureDirectHistogramName[] =
     "Net.HttpContentLengthV2.Http.Direct";
@@ -172,11 +162,6 @@ const char kOriginalHistogramName[] = "Net.HttpOriginalContentLength";
 const char kDifferenceHistogramName[] = "Net.HttpContentLengthDifference";
 const char kFreshnessLifetimeHistogramName[] =
     "Net.HttpContentFreshnessLifetime";
-const char kCacheableHistogramName[] = "Net.HttpContentLengthCacheable";
-const char kCacheable4HoursHistogramName[] =
-    "Net.HttpContentLengthCacheable4Hours";
-const char kCacheable24HoursHistogramName[] =
-    "Net.HttpContentLengthCacheable24Hours";
 const int64_t kResponseContentLength = 100;
 const int64_t kOriginalContentLength = 200;
 
@@ -212,10 +197,6 @@ class TestLoFiDecider : public LoFiDecider {
         should_request_lofi_resource_(false),
         ignore_is_using_data_reduction_proxy_check_(false) {}
   ~TestLoFiDecider() override {}
-
-  bool IsUsingLoFi(const net::URLRequest& request) const override {
-    return should_request_lofi_resource_;
-  }
 
   void SetIsUsingLoFi(bool should_request_lofi_resource) {
     should_request_lofi_resource_ = should_request_lofi_resource;
@@ -344,8 +325,9 @@ class DataReductionProxyNetworkDelegateTest : public testing::Test {
     }
     context_.reset(new net::TestURLRequestContext(true));
     context_storage_.reset(new net::URLRequestContextStorage(context_.get()));
-    proxy_resolution_service_ = net::ProxyResolutionService::CreateFixedFromPacResult(
-        proxy_server.ToPacString());
+    proxy_resolution_service_ =
+        net::ProxyResolutionService::CreateFixedFromPacResult(
+            proxy_server.ToPacString(), TRAFFIC_ANNOTATION_FOR_TESTS);
     context_->set_proxy_resolution_service(proxy_resolution_service_.get());
     context_->set_network_quality_estimator(&test_network_quality_estimator_);
 
@@ -1252,8 +1234,6 @@ TEST_F(DataReductionProxyNetworkDelegateTest, NetHistograms) {
       fake_request->response_info().headers->GetFreshnessLifetimes(
           fake_request->response_info().response_time).freshness;
 
-  histogram_tester.ExpectUniqueSample(kReceivedValidOCLHistogramName,
-                                      kResponseContentLength, 1);
   histogram_tester.ExpectUniqueSample(kOriginalValidOCLHistogramName,
                                       kOriginalContentLength, 1);
   histogram_tester.ExpectUniqueSample(kOriginalInsecureViaDRPHistogramName,
@@ -1278,73 +1258,6 @@ TEST_F(DataReductionProxyNetworkDelegateTest, NetHistograms) {
       kOriginalContentLength - kResponseContentLength, 1);
   histogram_tester.ExpectUniqueSample(kFreshnessLifetimeHistogramName,
                                       freshness_lifetime.InSeconds(), 1);
-  histogram_tester.ExpectUniqueSample(kCacheableHistogramName,
-                                      kResponseContentLength, 1);
-  histogram_tester.ExpectUniqueSample(kCacheable4HoursHistogramName,
-                                      kResponseContentLength, 1);
-  histogram_tester.ExpectUniqueSample(kCacheable24HoursHistogramName,
-                                      kResponseContentLength, 1);
-
-  // Check Lo-Fi histograms.
-  const struct {
-    bool lofi_enabled;
-    int expected_count;
-  } tests[] = {
-      {
-          // Lo-Fi disabled.
-          false, 0,
-      },
-      {
-          // Lo-Fi enabled so should populate Lo-Fi content length histogram.
-          true, 1,
-      },
-  };
-
-  for (size_t i = 0; i < arraysize(tests); ++i) {
-
-    base::test::ScopedFeatureList scoped_feature_list;
-    if (tests[i].lofi_enabled) {
-      scoped_feature_list.InitAndEnableFeature(
-          features::kDataReductionProxyDecidesTransform);
-    } else {
-      scoped_feature_list.InitAndDisableFeature(
-          features::kDataReductionProxyDecidesTransform);
-    }
-
-    // Needed as a parameter, but functionality is not tested.
-    previews::TestPreviewsDecider test_previews_decider(true);
-    lofi_decider()->SetIsUsingLoFi(config()->ShouldAcceptServerPreview(
-        *fake_request.get(), test_previews_decider));
-
-    fake_request = (FetchURLRequest(GURL(kTestURL), nullptr, response_headers,
-                                    kResponseContentLength, 0));
-    fake_request->SetLoadFlags(fake_request->load_flags() |
-                               net::LOAD_MAIN_FRAME_DEPRECATED);
-
-    // Histograms are accumulative, so get the sum of all the tests so far.
-    int expected_count = 0;
-    for (size_t j = 0; j <= i; ++j)
-      expected_count += tests[j].expected_count;
-
-    if (expected_count == 0) {
-      histogram_tester.ExpectTotalCount(kReceivedValidOCLLoFiOnHistogramName,
-                                        expected_count);
-      histogram_tester.ExpectTotalCount(kOriginalValidOCLLoFiOnHistogramName,
-                                        expected_count);
-      histogram_tester.ExpectTotalCount(kDifferenceValidOCLLoFiOnHistogramName,
-                                        expected_count);
-    } else {
-      histogram_tester.ExpectUniqueSample(kReceivedValidOCLLoFiOnHistogramName,
-                                          kResponseContentLength,
-                                          expected_count);
-      histogram_tester.ExpectUniqueSample(kOriginalValidOCLLoFiOnHistogramName,
-                                          kOriginalContentLength,
-                                          expected_count);
-      histogram_tester.ExpectUniqueSample(
-          kDifferenceValidOCLLoFiOnHistogramName,
-          kOriginalContentLength - kResponseContentLength, expected_count);
-    }
-  }
 }
 
 TEST_F(DataReductionProxyNetworkDelegateTest, NetVideoHistograms) {
@@ -2042,7 +1955,7 @@ class DataReductionProxyNetworkDelegateClientLoFiTest : public testing::Test {
 
     proxy_resolution_service_ =
         net::ProxyResolutionService::CreateFixedFromPacResult(
-            proxy_server.ToPacString());
+            proxy_server.ToPacString(), TRAFFIC_ANNOTATION_FOR_TESTS);
     context_->set_proxy_resolution_service(proxy_resolution_service_.get());
 
     drp_test_context_ =

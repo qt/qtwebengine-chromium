@@ -6,8 +6,9 @@
 
 #include <string.h>
 
-#include <algorithm>
+#include <iterator>
 
+#include "base/no_destructor.h"
 #include "base/strings/string_util.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_constants.h"
@@ -16,15 +17,6 @@
 
 namespace content {
 namespace {
-
-// These lists are lazily initialized below and are leaked on shutdown to
-// prevent any destructors from being called that will slow us down or cause
-// problems.
-std::vector<std::string>* savable_schemes = nullptr;
-// Note we store url::Origins here instead of strings to deal with
-// canonicalization.
-std::vector<url::Origin>* secure_origins = nullptr;
-std::vector<std::string>* service_worker_schemes = nullptr;
 
 const char* const kDefaultSavableSchemes[] = {
   url::kHttpScheme,
@@ -37,21 +29,41 @@ const char* const kDefaultSavableSchemes[] = {
   url::kDataScheme
 };
 
+// These lists are lazily initialized below and are leaked on shutdown to
+// prevent any destructors from being called that will slow us down or cause
+// problems.
+std::vector<std::string>& GetMutableSavableSchemes() {
+  static base::NoDestructor<std::vector<std::string>> schemes;
+  return *schemes;
+}
+
+// Note we store url::Origins here instead of strings to deal with
+// canonicalization.
+std::vector<url::Origin>& GetMutableSecureOrigins() {
+  static base::NoDestructor<std::vector<url::Origin>> origins;
+  return *origins;
+}
+
+std::vector<std::string>& GetMutableServiceWorkerSchemes() {
+  static base::NoDestructor<std::vector<std::string>> schemes;
+  return *schemes;
+}
+
 }  // namespace
 
 void RegisterContentSchemes(bool lock_schemes) {
   ContentClient::Schemes schemes;
   GetContentClient()->AddAdditionalSchemes(&schemes);
 
-  url::AddStandardScheme(kChromeDevToolsScheme, url::SCHEME_WITHOUT_PORT);
-  url::AddStandardScheme(kChromeUIScheme, url::SCHEME_WITHOUT_PORT);
-  url::AddStandardScheme(kGuestScheme, url::SCHEME_WITHOUT_PORT);
+  url::AddStandardScheme(kChromeDevToolsScheme, url::SCHEME_WITH_HOST);
+  url::AddStandardScheme(kChromeUIScheme, url::SCHEME_WITH_HOST);
+  url::AddStandardScheme(kGuestScheme, url::SCHEME_WITH_HOST);
 
   for (auto& scheme : schemes.standard_schemes)
-    url::AddStandardScheme(scheme.c_str(), url::SCHEME_WITHOUT_PORT);
+    url::AddStandardScheme(scheme.c_str(), url::SCHEME_WITH_HOST);
 
   for (auto& scheme : schemes.referrer_schemes)
-    url::AddReferrerScheme(scheme.c_str(), url::SCHEME_WITHOUT_PORT);
+    url::AddReferrerScheme(scheme.c_str(), url::SCHEME_WITH_HOST);
 
   schemes.secure_schemes.push_back(kChromeUIScheme);
   schemes.secure_schemes.push_back(kChromeErrorScheme);
@@ -86,34 +98,28 @@ void RegisterContentSchemes(bool lock_schemes) {
     url::LockSchemeRegistries();
 
   // Combine the default savable schemes with the additional ones given.
-  delete savable_schemes;
-  savable_schemes = new std::vector<std::string>;
-  for (auto* default_scheme : kDefaultSavableSchemes)
-    savable_schemes->push_back(default_scheme);
-  savable_schemes->insert(savable_schemes->end(),
-                          schemes.savable_schemes.begin(),
-                          schemes.savable_schemes.end());
+  GetMutableSavableSchemes().assign(std::begin(kDefaultSavableSchemes),
+                                    std::end(kDefaultSavableSchemes));
+  GetMutableSavableSchemes().insert(GetMutableSavableSchemes().end(),
+                                    schemes.savable_schemes.begin(),
+                                    schemes.savable_schemes.end());
 
-  delete service_worker_schemes;
-  service_worker_schemes = new std::vector<std::string>;
-  *service_worker_schemes = std::move(schemes.service_worker_schemes);
+  GetMutableServiceWorkerSchemes() = std::move(schemes.service_worker_schemes);
 
-  delete secure_origins;
-  secure_origins = new std::vector<url::Origin>;
-  *secure_origins = std::move(schemes.secure_origins);
-  network::cors::legacy::RegisterSecureOrigins(*secure_origins);
+  GetMutableSecureOrigins() = std::move(schemes.secure_origins);
+  network::cors::legacy::RegisterSecureOrigins(GetSecureOrigins());
 }
 
 const std::vector<std::string>& GetSavableSchemes() {
-  return *savable_schemes;
+  return GetMutableSavableSchemes();
 }
 
 const std::vector<url::Origin>& GetSecureOrigins() {
-  return *secure_origins;
+  return GetMutableSecureOrigins();
 }
 
 const std::vector<std::string>& GetServiceWorkerSchemes() {
-  return *service_worker_schemes;
+  return GetMutableServiceWorkerSchemes();
 }
 
 }  // namespace content

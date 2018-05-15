@@ -36,7 +36,6 @@
 #include "gpu/command_buffer/client/ref_counted.h"
 #include "gpu/command_buffer/client/share_group.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
-#include "gpu/command_buffer/common/capabilities.h"
 #include "gpu/command_buffer/common/context_creation_attribs.h"
 #include "gpu/command_buffer/common/context_result.h"
 #include "gpu/command_buffer/common/debug_marker_manager.h"
@@ -113,7 +112,8 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface,
                             gfx::OverlayTransform plane_transform,
                             unsigned overlay_texture_id,
                             const gfx::Rect& display_bounds,
-                            const gfx::RectF& uv_rect) override;
+                            const gfx::RectF& uv_rect,
+                            bool enable_blend) override;
   uint64_t ShareGroupTracingGUID() const override;
   void SetErrorMessageCallback(
       base::RepeatingCallback<void(const char*, int32_t)> callback) override;
@@ -163,10 +163,6 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface,
       const char* function_name, GLuint id, GLenum pname, GLuint64* params);
 
   const scoped_refptr<ShareGroup>& share_group() const { return share_group_; }
-
-  const Capabilities& capabilities() const {
-    return capabilities_;
-  }
 
   GpuControl* gpu_control() {
     return gpu_control_;
@@ -371,6 +367,10 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface,
   bool IsSamplerReservedId(GLuint id) { return false; }
   bool IsTransformFeedbackReservedId(GLuint id) { return false; }
 
+  bool UpdateIndexedBufferState(GLenum target,
+                                GLuint index,
+                                GLuint buffer_id,
+                                const char* function_name);
   void BindBufferHelper(GLenum target, GLuint buffer);
   void BindBufferBaseHelper(GLenum target, GLuint index, GLuint buffer);
   void BindBufferRangeHelper(GLenum target, GLuint index, GLuint buffer,
@@ -653,6 +653,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface,
   GLuint bound_copy_write_buffer_;
   GLuint bound_pixel_pack_buffer_;
   GLuint bound_pixel_unpack_buffer_;
+  GLuint bound_transform_feedback_buffer_;
   GLuint bound_uniform_buffer_;
   // We don't cache the currently bound transform feedback buffer, because
   // it is part of the current transform feedback object. Caching the transform
@@ -725,8 +726,6 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface,
   base::Callback<void(const char*, int32_t)> error_message_callback_;
 
   int current_trace_stack_;
-
-  Capabilities capabilities_;
 
   // Flag to indicate whether the implementation can retain resources, or
   // whether it should aggressively free them.

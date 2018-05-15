@@ -190,6 +190,14 @@ void SendSideCongestionController::SetBweBitrates(int min_bitrate_bps,
   MaybeTriggerOnNetworkChanged();
 }
 
+void SendSideCongestionController::SetAllocatedSendBitrateLimits(
+    int64_t min_send_bitrate_bps,
+    int64_t max_padding_bitrate_bps,
+    int64_t max_total_bitrate_bps) {
+  pacer_->SetSendBitrateLimits(min_send_bitrate_bps, max_padding_bitrate_bps);
+  probe_controller_->OnMaxTotalAllocatedBitrate(max_total_bitrate_bps);
+}
+
 // TODO(holmer): Split this up and use SetBweBitrates in combination with
 // OnNetworkRouteChanged.
 void SendSideCongestionController::OnNetworkRouteChanged(
@@ -207,6 +215,7 @@ void SendSideCongestionController::OnNetworkRouteChanged(
                                             network_route.remote_network_id);
   {
     rtc::CritScope cs(&bwe_lock_);
+    transport_overhead_bytes_per_packet_ = network_route.packet_overhead;
     min_bitrate_bps_ = min_bitrate_bps;
     delay_based_bwe_.reset(new DelayBasedBwe(event_log_, clock_));
     acknowledged_bitrate_estimator_.reset(new AcknowledgedBitrateEstimator());
@@ -229,6 +238,10 @@ bool SendSideCongestionController::AvailableBandwidth(
   return bitrate_controller_->AvailableBandwidth(bandwidth);
 }
 
+RtcpBandwidthObserver* SendSideCongestionController::GetBandwidthObserver() {
+  return bitrate_controller_.get();
+}
+
 RtcpBandwidthObserver* SendSideCongestionController::GetBandwidthObserver()
     const {
   return bitrate_controller_.get();
@@ -237,6 +250,9 @@ RtcpBandwidthObserver* SendSideCongestionController::GetBandwidthObserver()
 RateLimiter* SendSideCongestionController::GetRetransmissionRateLimiter() {
   return retransmission_rate_limiter_.get();
 }
+
+void SendSideCongestionController::SetPerPacketFeedbackAvailable(
+    bool available) {}
 
 void SendSideCongestionController::EnablePeriodicAlrProbing(bool enable) {
   probe_controller_->EnablePeriodicAlrProbing(enable);
@@ -392,6 +408,10 @@ std::vector<PacketFeedback>
 SendSideCongestionController::GetTransportFeedbackVector() const {
   RTC_DCHECK_RUNS_SERIALIZED(&worker_race_);
   return transport_feedback_adapter_.GetTransportFeedbackVector();
+}
+
+void SendSideCongestionController::SetPacingFactor(float pacing_factor) {
+  pacer_->SetPacingFactor(pacing_factor);
 }
 
 void SendSideCongestionController::MaybeTriggerOnNetworkChanged() {

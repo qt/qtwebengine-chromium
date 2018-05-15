@@ -48,7 +48,7 @@ class ReportingServiceTest : public ::testing::Test {
 
 TEST_F(ReportingServiceTest, QueueReport) {
   service()->QueueReport(kUrl_, kGroup_, kType_,
-                         std::make_unique<base::DictionaryValue>());
+                         std::make_unique<base::DictionaryValue>(), 0);
 
   std::vector<const ReportingReport*> reports;
   context()->cache()->GetReports(&reports);
@@ -76,6 +76,38 @@ TEST_F(ReportingServiceTest, ProcessHeader) {
   EXPECT_EQ(kGroup_, client->group);
   EXPECT_EQ(context()->tick_clock()->NowTicks() + base::TimeDelta::FromDays(1),
             client->expires);
+}
+
+TEST_F(ReportingServiceTest, ProcessHeader_TooLong) {
+  const std::string header_too_long =
+      "{\"endpoints\":[{\"url\":\"" + kEndpoint_.spec() +
+      "\"}],"
+      "\"group\":\"" +
+      kGroup_ +
+      "\","
+      "\"max-age\":86400," +
+      "\"junk\":\"" + std::string(32 * 1024, 'a') + "\"}";
+  service()->ProcessHeader(kUrl_, header_too_long);
+
+  const ReportingClient* client =
+      FindClientInCache(context()->cache(), kOrigin_, kEndpoint_);
+  EXPECT_FALSE(client);
+}
+
+TEST_F(ReportingServiceTest, ProcessHeader_TooDeep) {
+  const std::string header_too_deep = "{\"endpoints\":[{\"url\":\"" +
+                                      kEndpoint_.spec() +
+                                      "\"}],"
+                                      "\"group\":\"" +
+                                      kGroup_ +
+                                      "\","
+                                      "\"max-age\":86400," +
+                                      "\"junk\":[[[[[[[[[[]]]]]]]]]]}";
+  service()->ProcessHeader(kUrl_, header_too_deep);
+
+  const ReportingClient* client =
+      FindClientInCache(context()->cache(), kOrigin_, kEndpoint_);
+  EXPECT_FALSE(client);
 }
 
 }  // namespace

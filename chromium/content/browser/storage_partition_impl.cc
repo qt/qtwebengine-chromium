@@ -27,7 +27,9 @@
 #include "content/browser/gpu/shader_cache_factory.h"
 #include "content/browser/loader/prefetch_url_loader_service.h"
 #include "content/browser/notifications/platform_notification_context_impl.h"
+#include "content/browser/web_package/web_package_context_impl.h"
 #include "content/common/dom_storage/dom_storage_types.h"
+#include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -45,7 +47,7 @@
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "services/network/network_context.h"
 #include "services/network/network_service.h"
 #include "services/network/public/cpp/features.h"
@@ -54,7 +56,7 @@
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/database/database_tracker.h"
 #include "storage/browser/quota/quota_manager.h"
-#include "third_party/WebKit/public/mojom/quota/quota_types.mojom.h"
+#include "third_party/blink/public/mojom/quota/quota_types.mojom.h"
 
 #if !defined(OS_ANDROID)
 #include "content/browser/host_zoom_map_impl.h"
@@ -291,7 +293,7 @@ class StoragePartitionImpl::NetworkContextOwner {
 };
 
 class StoragePartitionImpl::URLLoaderFactoryForBrowserProcess
-    : public SharedURLLoaderFactory {
+    : public network::SharedURLLoaderFactory {
  public:
   explicit URLLoaderFactoryForBrowserProcess(
       StoragePartitionImpl* storage_partition)
@@ -316,7 +318,7 @@ class StoragePartitionImpl::URLLoaderFactoryForBrowserProcess
   }
 
   // SharedURLLoaderFactory implementation:
-  std::unique_ptr<SharedURLLoaderFactoryInfo> Clone() override {
+  std::unique_ptr<network::SharedURLLoaderFactoryInfo> Clone() override {
     NOTREACHED() << "This isn't supported. If you need a SharedURLLoaderFactory"
                     " on the IO thread, get it from URLLoaderFactoryGetter.";
     return nullptr;
@@ -581,7 +583,7 @@ std::unique_ptr<StoragePartitionImpl> StoragePartitionImpl::Create(
   // Ensure that these methods are called on the UI thread, except for
   // unittests where a UI thread might not have been created.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
-         !BrowserThread::IsMessageLoopValid(BrowserThread::UI));
+         !BrowserThread::IsThreadInitialized(BrowserThread::UI));
 
   base::FilePath partition_path =
       context->GetPath().Append(relative_partition_path);
@@ -632,8 +634,8 @@ std::unique_ptr<StoragePartitionImpl> StoragePartitionImpl::Create(
   partition->service_worker_context_ = new ServiceWorkerContextWrapper(context);
   partition->service_worker_context_->set_storage_partition(partition.get());
 
-  partition->shared_worker_service_ =
-      std::make_unique<SharedWorkerServiceImpl>();
+  partition->shared_worker_service_ = std::make_unique<SharedWorkerServiceImpl>(
+      partition->service_worker_context_);
 
   partition->appcache_service_ =
       new ChromeAppCacheService(quota_manager_proxy.get());
@@ -651,6 +653,8 @@ std::unique_ptr<StoragePartitionImpl> StoragePartitionImpl::Create(
                                           partition->service_worker_context_);
   partition->platform_notification_context_->Initialize();
 
+  partition->web_package_context_ = std::make_unique<WebPackageContextImpl>();
+
   partition->background_fetch_context_ =
       new BackgroundFetchContext(context, partition->service_worker_context_);
 
@@ -667,7 +671,8 @@ std::unique_ptr<StoragePartitionImpl> StoragePartitionImpl::Create(
   scoped_refptr<ChromeBlobStorageContext> blob_context =
       ChromeBlobStorageContext::GetFor(context);
 
-  if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService) ||
+      ServiceWorkerUtils::IsServicificationEnabled()) {
     BlobURLLoaderFactory::BlobContextGetter blob_getter =
         base::BindOnce(&BlobStorageContextGetterForStorage, blob_context);
     partition->blob_url_loader_factory_ =
@@ -708,34 +713,38 @@ StoragePartitionImpl::GetMediaURLRequestContext() {
 }
 
 network::mojom::NetworkContext* StoragePartitionImpl::GetNetworkContext() {
-  // Create the NetworkContext as needed, when the network service is disabled.
-  if (!base::FeatureList::IsEnabled(network::features::kNetworkService)) {
-    if (network_context_)
-      return network_context_.get();
-    DCHECK(!network_context_owner_);
-    network_context_owner_ = std::make_unique<NetworkContextOwner>();
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::BindOnce(&NetworkContextOwner::Initialize,
-                       base::Unretained(network_context_owner_.get()),
-                       MakeRequest(&network_context_), url_request_context_));
-    return network_context_.get();
-  }
-
   if (!network_context_.is_bound() || network_context_.encountered_error()) {
     network_context_ = GetContentClient()->browser()->CreateNetworkContext(
         browser_context_, is_in_memory_, relative_partition_path_);
+    if (!network_context_) {
+      // TODO(mmenke): Remove once https://crbug.com/827928 is fixed.
+      CHECK(url_request_context_);
+
+      DCHECK(!base::FeatureList::IsEnabled(network::features::kNetworkService));
+      DCHECK(!network_context_owner_);
+      network_context_owner_ = std::make_unique<NetworkContextOwner>();
+      BrowserThread::PostTask(
+          BrowserThread::IO, FROM_HERE,
+          base::BindOnce(&NetworkContextOwner::Initialize,
+                         base::Unretained(network_context_owner_.get()),
+                         MakeRequest(&network_context_), url_request_context_));
+    }
   }
   return network_context_.get();
 }
 
-scoped_refptr<SharedURLLoaderFactory>
+scoped_refptr<network::SharedURLLoaderFactory>
 StoragePartitionImpl::GetURLLoaderFactoryForBrowserProcess() {
   if (!shared_url_loader_factory_for_browser_process_) {
     shared_url_loader_factory_for_browser_process_ =
         new URLLoaderFactoryForBrowserProcess(this);
   }
   return shared_url_loader_factory_for_browser_process_;
+}
+
+std::unique_ptr<network::SharedURLLoaderFactoryInfo>
+StoragePartitionImpl::GetURLLoaderFactoryForBrowserProcessIOThread() {
+  return url_loader_factory_getter_->GetNetworkFactoryInfo();
 }
 
 network::mojom::CookieManager*
@@ -808,6 +817,10 @@ ZoomLevelDelegate* StoragePartitionImpl::GetZoomLevelDelegate() {
 PlatformNotificationContextImpl*
 StoragePartitionImpl::GetPlatformNotificationContext() {
   return platform_notification_context_.get();
+}
+
+WebPackageContext* StoragePartitionImpl::GetWebPackageContext() {
+  return web_package_context_.get();
 }
 
 BackgroundFetchContext* StoragePartitionImpl::GetBackgroundFetchContext() {
@@ -930,9 +943,10 @@ void StoragePartitionImpl::QuotaManagedDataDeletionHelper::ClearDataOnIOThread(
     // ClearQuotaManagedOriginsOnIOThread().
     quota_manager->GetOriginsModifiedSince(
         blink::mojom::StorageType::kPersistent, begin,
-        base::Bind(&QuotaManagedDataDeletionHelper::ClearOriginsOnIOThread,
-                   base::Unretained(this), base::RetainedRef(quota_manager),
-                   special_storage_policy, origin_matcher, decrement_callback));
+        base::BindOnce(&QuotaManagedDataDeletionHelper::ClearOriginsOnIOThread,
+                       base::Unretained(this), base::RetainedRef(quota_manager),
+                       special_storage_policy, origin_matcher,
+                       decrement_callback));
   }
 
   // Do the same for temporary quota.
@@ -940,9 +954,10 @@ void StoragePartitionImpl::QuotaManagedDataDeletionHelper::ClearDataOnIOThread(
     IncrementTaskCountOnIO();
     quota_manager->GetOriginsModifiedSince(
         blink::mojom::StorageType::kTemporary, begin,
-        base::Bind(&QuotaManagedDataDeletionHelper::ClearOriginsOnIOThread,
-                   base::Unretained(this), base::RetainedRef(quota_manager),
-                   special_storage_policy, origin_matcher, decrement_callback));
+        base::BindOnce(&QuotaManagedDataDeletionHelper::ClearOriginsOnIOThread,
+                       base::Unretained(this), base::RetainedRef(quota_manager),
+                       special_storage_policy, origin_matcher,
+                       decrement_callback));
   }
 
   // Do the same for syncable quota.
@@ -950,9 +965,10 @@ void StoragePartitionImpl::QuotaManagedDataDeletionHelper::ClearDataOnIOThread(
     IncrementTaskCountOnIO();
     quota_manager->GetOriginsModifiedSince(
         blink::mojom::StorageType::kSyncable, begin,
-        base::Bind(&QuotaManagedDataDeletionHelper::ClearOriginsOnIOThread,
-                   base::Unretained(this), base::RetainedRef(quota_manager),
-                   special_storage_policy, origin_matcher, decrement_callback));
+        base::BindOnce(&QuotaManagedDataDeletionHelper::ClearOriginsOnIOThread,
+                       base::Unretained(this), base::RetainedRef(quota_manager),
+                       special_storage_policy, origin_matcher,
+                       std::move(decrement_callback)));
   }
 
   DecrementTaskCountOnIO();
@@ -993,8 +1009,8 @@ void StoragePartitionImpl::QuotaManagedDataDeletionHelper::
     quota_manager->DeleteOriginData(
         *origin, quota_storage_type,
         StoragePartitionImpl::GenerateQuotaClientMask(remove_mask_),
-        base::Bind(&OnQuotaManagedOriginDeleted, origin->GetOrigin(),
-                   quota_storage_type, deletion_task_count, callback));
+        base::BindOnce(&OnQuotaManagedOriginDeleted, origin->GetOrigin(),
+                       quota_storage_type, deletion_task_count, callback));
   }
   (*deletion_task_count)--;
 
@@ -1104,7 +1120,7 @@ void StoragePartitionImpl::DataDeletionHelper::ClearDataOnUIThread(
         FROM_HERE,
         base::BindOnce(&ClearPluginPrivateDataOnFileTaskRunner,
                        base::WrapRefCounted(filesystem_context), storage_origin,
-                       begin, end, decrement_callback));
+                       begin, end, std::move(decrement_callback)));
   }
 #endif  // BUILDFLAG(ENABLE_PLUGINS)
 

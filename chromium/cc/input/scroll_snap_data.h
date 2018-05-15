@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "cc/cc_export.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/scroll_offset.h"
 
 namespace cc {
@@ -20,6 +21,9 @@ enum class SnapAxis : unsigned {
   kBlock,
   kInline,
 };
+
+// A helper enum to specify the the axis when doing calculations.
+enum class SearchAxis : unsigned { kX, kY };
 
 // See https://www.w3.org/TR/css-scroll-snap-1/#snap-strictness
 // TODO(sunyunjia): Add kNone for SnapStrictness to match the spec.
@@ -58,24 +62,26 @@ struct ScrollSnapType {
 
 struct ScrollSnapAlign {
   ScrollSnapAlign()
-      : alignmentX(SnapAlignment::kNone), alignmentY(SnapAlignment::kNone) {}
+      : alignment_inline(SnapAlignment::kNone),
+        alignment_block(SnapAlignment::kNone) {}
 
   explicit ScrollSnapAlign(SnapAlignment alignment)
-      : alignmentX(alignment), alignmentY(alignment) {}
+      : alignment_inline(alignment), alignment_block(alignment) {}
 
-  ScrollSnapAlign(SnapAlignment x, SnapAlignment y)
-      : alignmentX(x), alignmentY(y) {}
+  ScrollSnapAlign(SnapAlignment i, SnapAlignment b)
+      : alignment_inline(i), alignment_block(b) {}
 
   bool operator==(const ScrollSnapAlign& other) const {
-    return alignmentX == other.alignmentX && alignmentY == other.alignmentY;
+    return alignment_inline == other.alignment_inline &&
+           alignment_block == other.alignment_block;
   }
 
   bool operator!=(const ScrollSnapAlign& other) const {
     return !(*this == other);
   }
 
-  SnapAlignment alignmentX;
-  SnapAlignment alignmentY;
+  SnapAlignment alignment_inline;
+  SnapAlignment alignment_block;
 };
 
 // Snap area is a bounding box that could be snapped to when a scroll happens in
@@ -90,12 +96,19 @@ struct SnapAreaData {
 
   SnapAreaData() {}
 
-  SnapAreaData(SnapAxis axis, gfx::ScrollOffset position, bool msnap)
-      : snap_axis(axis), snap_position(position), must_snap(msnap) {}
+  SnapAreaData(SnapAxis axis,
+               gfx::ScrollOffset position,
+               gfx::RectF visible,
+               bool msnap)
+      : snap_axis(axis),
+        snap_position(position),
+        visible_region(visible),
+        must_snap(msnap) {}
 
   bool operator==(const SnapAreaData& other) const {
     return (other.snap_axis == snap_axis) &&
            (other.snap_position == snap_position) &&
+           (other.visible_region == visible_region) &&
            (other.must_snap == must_snap);
   }
 
@@ -111,6 +124,11 @@ struct SnapAreaData {
   // overflow rect.
   gfx::ScrollOffset snap_position;
 
+  // The area is only visible when the current scroll offset is within
+  // |visible_region|.
+  // See https://drafts.csswg.org/css-scroll-snap-1/#snap-scope
+  gfx::RectF visible_region;
+
   // Whether this area has scroll-snap-stop: always.
   // See https://www.w3.org/TR/css-scroll-snap-1/#scroll-snap-stop
   bool must_snap;
@@ -118,6 +136,8 @@ struct SnapAreaData {
   // TODO(sunyunjia): Add fields for visibility requirement and large area
   // snapping.
 };
+
+typedef std::vector<SnapAreaData> SnapAreaList;
 
 // Snap container is a scroll container that has non-'none' value for
 // scroll-snap-type. It can be snapped to one of its snap areas when a scroll
@@ -139,6 +159,7 @@ class CC_EXPORT SnapContainerData {
   bool operator==(const SnapContainerData& other) const {
     return (other.scroll_snap_type_ == scroll_snap_type_) &&
            (other.max_position_ == max_position_) &&
+           (other.proximity_range_ == proximity_range_) &&
            (other.snap_area_list_ == snap_area_list_);
   }
 
@@ -146,9 +167,10 @@ class CC_EXPORT SnapContainerData {
     return !(*this == other);
   }
 
-  gfx::ScrollOffset FindSnapPosition(const gfx::ScrollOffset& current_position,
-                                     bool should_snap_on_x,
-                                     bool should_snap_on_y) const;
+  bool FindSnapPosition(const gfx::ScrollOffset& current_position,
+                        bool should_snap_on_x,
+                        bool should_snap_on_y,
+                        gfx::ScrollOffset* snap_position) const;
 
   void AddSnapAreaData(SnapAreaData snap_area_data);
   size_t size() const { return snap_area_list_.size(); }
@@ -162,6 +184,11 @@ class CC_EXPORT SnapContainerData {
   }
   gfx::ScrollOffset max_position() const { return max_position_; }
 
+  void set_proximity_range(const gfx::ScrollOffset& range) {
+    proximity_range_ = range;
+  }
+  gfx::ScrollOffset proximity_range() const { return proximity_range_; }
+
  private:
   // Specifies whether a scroll container is a scroll snap container, how
   // strictly it snaps, and which axes are considered.
@@ -171,6 +198,10 @@ class CC_EXPORT SnapContainerData {
   // The maximal scroll position of the SnapContainer, in the same coordinate
   // with blink's scroll position.
   gfx::ScrollOffset max_position_;
+
+  // A valid snap position should be within the |proximity_range_| of the
+  // current offset on the snapping axis.
+  gfx::ScrollOffset proximity_range_;
 
   // The SnapAreaData for the snap areas in this snap container. When a scroll
   // happens, we iterate through the snap_area_list to find the best snap

@@ -19,13 +19,50 @@ namespace webrtc {
 
 constexpr float kMinFloatS16Value = -32768.f;
 constexpr float kMaxFloatS16Value = 32767.f;
-constexpr double kMaxAbsFloatS16Value = 32768.0;
+constexpr float kMaxAbsFloatS16Value = 32768.0f;
 
 constexpr size_t kFrameDurationMs = 10;
 constexpr size_t kSubFramesInFrame = 20;
 constexpr size_t kMaximalNumberOfSamplesPerChannel = 480;
 
 constexpr float kAttackFilterConstant = 0.f;
+
+// Adaptive digital gain applier settings below.
+constexpr float kMaxGainChangePerSecondDb = 3.f;
+constexpr float kMaxGainChangePerFrameDb =
+    kMaxGainChangePerSecondDb * kFrameDurationMs / 1000.f;
+constexpr float kHeadroomDbfs = 1.f;
+constexpr float kMaxGainDb = 30.f;
+
+// This parameter must be tuned together with the noise estimator.
+constexpr float kMaxNoiseLevelDbfs = -50.f;
+
+// Used in the Level Estimator for deciding when to update the speech
+// level estimate. Also used in the adaptive digital gain applier to
+// decide when to allow target gain reduction.
+constexpr float kVadConfidenceThreshold = 0.9f;
+
+// The amount of 'memory' of the Level Estimator. Decides leak factors.
+constexpr size_t kFullBufferSizeMs = 1000;
+constexpr float kFullBufferLeakFactor = 1.f - 1.f / kFullBufferSizeMs;
+
+constexpr float kInitialSpeechLevelEstimateDbfs = -30.f;
+
+// Saturation Protector settings.
+constexpr float kInitialSaturationMarginDb = 17.f;
+
+constexpr size_t kPeakEnveloperSuperFrameLengthMs = 500;
+
+constexpr size_t kPeakEnveloperBufferSize =
+    kFullBufferSizeMs / kPeakEnveloperSuperFrameLengthMs + 1;
+
+// This value is 10 ** (-1/20 * frame_size_ms / satproc_attack_ms),
+// where satproc_attack_ms is 5000.
+constexpr float kSaturationProtectorAttackConstant = 0.9988493699365052f;
+
+// This value is 10 ** (-1/20 * frame_size_ms / satproc_decay_ms),
+// where satproc_decay_ms is 1000.
+constexpr float kSaturationProtectorDecayConstant = 0.9997697679981565f;
 
 // This is computed from kDecayMs by
 // 10 ** (-1/20 * subframe_duration / kDecayMs).

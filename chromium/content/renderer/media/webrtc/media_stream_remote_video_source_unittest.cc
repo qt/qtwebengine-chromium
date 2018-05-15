@@ -19,8 +19,8 @@
 #include "content/renderer/media/webrtc/track_observer.h"
 #include "media/base/video_frame.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
-#include "third_party/WebKit/public/web/WebHeap.h"
+#include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/web/web_heap.h"
 #include "third_party/webrtc/api/video/i420_buffer.h"
 
 namespace content {
@@ -163,8 +163,8 @@ TEST_F(MediaStreamRemoteVideoSourceTest, StartTrack) {
   track->AddSink(&sink, sink.GetDeliverFrameCB(), false);
   base::RunLoop run_loop;
   base::Closure quit_closure = run_loop.QuitClosure();
-  EXPECT_CALL(sink, OnVideoFrame()).WillOnce(
-      RunClosure(quit_closure));
+  EXPECT_CALL(sink, OnVideoFrame())
+      .WillOnce(RunClosure(std::move(quit_closure)));
   rtc::scoped_refptr<webrtc::I420Buffer> buffer(
       new rtc::RefCountedObject<webrtc::I420Buffer>(320, 240));
 

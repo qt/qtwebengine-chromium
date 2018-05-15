@@ -29,7 +29,6 @@
 <translation id="1966382378801805537">Chromium no puede determinar ni establecer el navegador predeterminado</translation>
 <translation id="1967743265616885482">Un módulo con el mismo nombre provoca un conflicto con Chromium.</translation>
 <translation id="2008474315282236005">Esta acción borrará 1 elemento de este dispositivo. Si más adelante deseas recuperar los datos, accede a tu cuenta en Chromium como <ph name="USER_EMAIL" />.</translation>
-<translation id="2077129598763517140">Usar aceleración de hardware cuando esté disponible</translation>
 <translation id="2117378023188580026">Tu administrador te solicita que reinicies Chromium para aplicar esta actualización</translation>
 <translation id="2119636228670142020">Acerca de &amp;Chromium OS</translation>
 <translation id="2158734852934720349">Licencias de código abierto del Sistema operativo Chromium</translation>
@@ -75,7 +74,6 @@
 <translation id="3479552764303398839">Ahora no</translation>
 <translation id="3509308970982693815">Cierra todas las ventanas de Chromium e inténtalo de nuevo.</translation>
 <translation id="352783484088404971">Eliminar de Chromium…</translation>
-<translation id="3549345495227188780">Introducción al Sistema operativo de Chromium</translation>
 <translation id="3582788516608077514">Actualizando Chromium...</translation>
 <translation id="358997566136285270">Logotipo de Chromium</translation>
 <translation id="3713809861844741608">Abrir vínculo en una pes&amp;taña nueva de Chromium</translation>
@@ -85,15 +83,14 @@
 <translation id="3852700440713538496">Cómo fijar Chromium a la barra de tareas</translation>
 <translation id="3889543394854987837">Haz clic en tu nombre para abrir Chromium y empezar a navegar.</translation>
 <translation id="3898493977366060150">Navegación en Internet con las funciones inteligentes de Google</translation>
-<translation id="390894725198123737">En dispositivos Mac, las contraseñas pueden guardarse en la aplicación Keychain. Los usuarios de Chromium con los que compartes esta cuenta del sistema operativo X pueden acceder a las contraseñas o sincronizarlas.</translation>
 <translation id="4036079820698952681">Informa tu <ph name="BEGIN_LINK" />configuración actual<ph name="END_LINK" /> para ayudarnos a mejorar Chromium</translation>
 <translation id="4050175100176540509">La última versión proporciona importantes mejoras de seguridad y nuevas funciones.</translation>
 <translation id="407254336480250557">Selecciona <ph name="SMALL_PRODUCT_LOGO" /> <ph name="BEGIN_BOLD" />Chromium<ph name="END_BOLD" /></translation>
-<translation id="4077262827416206768">Cierra todas las ventanas de Chromium y el vuelve a iniciarlo para que este cambio se aplique.</translation>
 <translation id="421369550622382712">Descubre aplicaciones, juegos, extensiones y temas increíbles para Chromium.</translation>
 <translation id="4222580632002216401">Accediste a Chromium. El administrador inhabilitó la sincronización.</translation>
 <translation id="4224199872375172890">Chromium está actualizado.</translation>
 <translation id="4230135487732243613">¿Quieres vincular los datos de Chromium a esta cuenta?</translation>
+<translation id="4260985389288095068">Se encontró software dañino en tu computadora. Chromium puede quitarlo y restablecer la configuración para que el navegador vuelva a funcionar correctamente.</translation>
 <translation id="4271805377592243930">Obtener ayuda con Chromium</translation>
 <translation id="4285930937574705105">No se pudo completar la instalación debido a un error no identificado. Si Chromium se está ejecutando en este momento, ciérralo e intenta nuevamente.</translation>
 <translation id="4330585738697551178">Este módulo provoca un conflicto con Chromium.</translation>
@@ -102,7 +99,6 @@
 <translation id="4421155425831608516">El administrador de este dispositivo inhabilitó el acceso a Chromium.</translation>
 <translation id="4423735387467980091">Personaliza y controla Chromium</translation>
 <translation id="4449801103833300785">{0,plural, =1{Chromium se volverá a iniciar en una hora}other{Chromium se volverá a iniciar en # horas}}</translation>
-<translation id="4458285410772214805">Cierra la sesión y vuelve a iniciarla para que se aplique el cambio.</translation>
 <translation id="4469812139324097969">Chromium no está actualizado porque no se reinició por un tiempo. Cuando lo reinicies, se aplicará la actualización disponible.</translation>
 <translation id="4488554488975128561">Puedes ayudar a que Chromium sea más seguro y fácil de usar si envías de forma automática información del sistema y contenido de la página a Google para ayudar a detectar apps y sitios peligrosos.</translation>
 <translation id="4567424176335768812">Accediste como <ph name="USER_EMAIL_ADDRESS" />. Ahora puedes ir a los favoritos, al historial y a otras opciones en todos los dispositivos en los que hayas accedido.</translation>
@@ -137,7 +133,6 @@
 <translation id="5698481217667032250">Mostrar Chromium en este idioma</translation>
 <translation id="5726838626470692954">Tu administrador debe quitarte y volver a agregarte en Chromium.</translation>
 <translation id="5768914737813585044">Mostrar el SO Chromium en este idioma</translation>
-<translation id="5772805321386874569">(Es necesario <ph name="BEGIN_BUTTON" />reiniciar<ph name="END_BUTTON" /> Chromium).</translation>
 <translation id="5796460469508169315">Chromium está casi listo.</translation>
 <translation id="5820394555380036790">Chromium OS</translation>
 <translation id="5862307444128926510">Bienvenido a Chromium</translation>
@@ -233,7 +228,6 @@ Para obtener más instrucciones, revisa tu correo electrónico en <ph name="ACCO
 <translation id="8563206822260884157">Usar una contraseña segura generada por Chromium</translation>
 <translation id="85843667276690461">Obtener ayuda para usar Chromium</translation>
 <translation id="8586442755830160949">Copyright <ph name="YEAR" /> Los autores de Chromium. Todos los derechos reservados.</translation>
-<translation id="8590769996813453836">Se encontró software dañino en tu computadora. Chromium puede quitarlo y restablecer la configuración para que el navegador vuelva a funcionar correctamente.</translation>
 <translation id="8621669128220841554">La instalación falló debido a un error no especificado. Descarga Chromium otra vez.</translation>
 <translation id="8628626585870903697">Chromium no incluye el visor de PDF que se requiere para la vista previa de impresión.</translation>
 <translation id="8667808506758191620">Tu <ph name="DEVICE_TYPE" /> está actualizado.</translation>

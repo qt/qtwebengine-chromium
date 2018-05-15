@@ -2,7 +2,7 @@
 # found in the LICENSE file.
 
 import("//build/config/jumbo.gni")
-import("//extensions/features/features.gni")
+import("//extensions/buildflags/buildflags.gni")
 import("//testing/test.gni")
 import("//tools/grit/grit_rule.gni")
 import("//tools/grit/repack.gni")
@@ -118,8 +118,6 @@ jumbo_static_library("test_support") {
     "test/logging_timer.h",
     "test/result_catcher.cc",
     "test/result_catcher.h",
-    "test/test_content_browser_client.cc",
-    "test/test_content_browser_client.h",
     "test/test_content_utility_client.cc",
     "test/test_content_utility_client.h",
     "test/test_extension_dir.cc",
@@ -162,8 +160,6 @@ jumbo_static_library("test_support") {
 
 repack("shell_and_test_pak") {
   sources = [
-    "$root_gen_dir/blink/public/resources/blink_resources.pak",
-    "$root_gen_dir/blink/public/resources/blink_scaled_resources_100_percent.pak",
     "$root_gen_dir/content/app/strings/content_strings_en-US.pak",
     "$root_gen_dir/content/browser/devtools/devtools_resources.pak",
     "$root_gen_dir/content/content_resources.pak",
@@ -174,6 +170,8 @@ repack("shell_and_test_pak") {
     "$root_gen_dir/extensions/shell/app_shell_resources.pak",
     "$root_gen_dir/extensions/strings/extensions_strings_en-US.pak",
     "$root_gen_dir/mojo/public/js/mojo_bindings_resources.pak",
+    "$root_gen_dir/third_party/blink/public/resources/blink_resources.pak",
+    "$root_gen_dir/third_party/blink/public/resources/blink_scaled_resources_100_percent.pak",
     "$root_gen_dir/ui/resources/ui_resources_100_percent.pak",
     "$root_gen_dir/ui/strings/app_locale_settings_en-US.pak",
     "$root_gen_dir/ui/strings/ui_strings_en-US.pak",
@@ -190,8 +188,8 @@ repack("shell_and_test_pak") {
     "//extensions/shell:resources",
     "//extensions/strings",
     "//mojo/public/js:resources",
-    "//third_party/WebKit/public:resources",
-    "//third_party/WebKit/public:scaled_resources_100_percent",
+    "//third_party/blink/public:resources",
+    "//third_party/blink/public:scaled_resources_100_percent",
     "//ui/resources",
     "//ui/strings",
   ]
@@ -223,7 +221,6 @@ test("extensions_unittests") {
     "//extensions/common:unit_tests",
     "//extensions/renderer:unit_tests",
     "//extensions/shell:unit_tests",
-    "//extensions/utility:unit_tests",
     "//services/data_decoder:lib",
     "//services/service_manager/public/cpp/test:test_support",
     "//ui/gl:test_support",
@@ -309,7 +306,7 @@ source_set("chrome_extensions_browsertests") {
     "//testing/gmock",
     "//testing/gtest",
     "//testing/perf",
-    "//third_party/WebKit/public:blink",
+    "//third_party/blink/public:blink",
     "//third_party/cacheinvalidation",
     "//third_party/icu",
     "//third_party/leveldatabase",
@@ -336,6 +333,7 @@ source_set("chrome_extensions_interactive_uitests") {
   testonly = true
   sources = [
     "browser/app_window/app_window_interactive_uitest.cc",
+    "browser/guest_view/mime_handler_view/mime_handler_view_interactive_uitest.cc",
   ]
 
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]

@@ -10,14 +10,14 @@
 
 #include "sdk/objc/Framework/Native/src/objc_video_decoder_factory.h"
 
-#import "NSString+StdString.h"
-#import "RTCVideoCodec+Private.h"
-#import "RTCWrappedNativeVideoDecoder.h"
 #import "WebRTC/RTCVideoCodec.h"
 #import "WebRTC/RTCVideoCodecFactory.h"
 #import "WebRTC/RTCVideoCodecH264.h"
 #import "WebRTC/RTCVideoFrame.h"
 #import "WebRTC/RTCVideoFrameBuffer.h"
+#import "sdk/objc/Framework/Classes/Common/NSString+StdString.h"
+#import "sdk/objc/Framework/Classes/PeerConnection/RTCVideoCodec+Private.h"
+#import "sdk/objc/Framework/Classes/PeerConnection/RTCWrappedNativeVideoDecoder.h"
 
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_decoder.h"
@@ -37,9 +37,15 @@ class ObjCVideoDecoder : public VideoDecoder {
       : decoder_(decoder), implementation_name_([decoder implementationName].stdString) {}
 
   int32_t InitDecode(const VideoCodec *codec_settings, int32_t number_of_cores) {
-    RTCVideoEncoderSettings *settings =
-        [[RTCVideoEncoderSettings alloc] initWithNativeVideoCodec:codec_settings];
-    return [decoder_ startDecodeWithSettings:settings numberOfCores:number_of_cores];
+    if ([decoder_ respondsToSelector:@selector(startDecodeWithNumberOfCores:)]) {
+      return [decoder_ startDecodeWithNumberOfCores:number_of_cores];
+    } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+      RTCVideoEncoderSettings *settings = [[RTCVideoEncoderSettings alloc] init];
+      return [decoder_ startDecodeWithSettings:settings numberOfCores:number_of_cores];
+#pragma clang diagnostic pop
+    }
   }
 
   int32_t Decode(const EncodedImage &input_image,

@@ -48,6 +48,18 @@ be describing additional metrics about the same event.
     |DeveloperEngagementMetric|.
   </summary>
   <metric name="DeveloperEngagement"/>
+  <metric name="FormTypes">
+    <summary>
+      Type of form. Stored as bitvector. A set ith bit implies enum FormType's
+      ith type was detected. Multiple types are possible.
+    </summary>
+  </metric>
+  <metric name="IsForCreditCard">
+    <summary>
+      True for credit card forms, false for address/profile forms. See
+      |FormStructure::IsCompleteCreditCardForm()|.
+    </summary>
+  </metric>
 </event>
 
 <event name="Autofill.FieldFillStatus">
@@ -153,6 +165,18 @@ be describing additional metrics about the same event.
       none of the field were autofilled. See |AutofillFormSubmittedState|.
     </summary>
   </metric>
+  <metric name="FormTypes">
+    <summary>
+      Type of form. Stored as bitvector. A set ith bit implies enum FormType's
+      ith type was detected. Multiple types are possible.
+    </summary>
+  </metric>
+  <metric name="IsForCreditCard">
+    <summary>
+      True for credit card forms, false for address/profile forms. See
+      |FormStructure::IsCompleteCreditCardForm()|.
+    </summary>
+  </metric>
   <metric name="MillisecondsSinceFormParsed">
     <summary>
       Time since form parse.
@@ -166,6 +190,12 @@ be describing additional metrics about the same event.
     Recorded when we parse a form to log form metadata and autofill settings
     that apply to all subsequent events for this form.
   </summary>
+  <metric name="FormTypes">
+    <summary>
+      Type of form. Stored as bitvector. A set ith bit implies enum FormType's
+      ith type was detected. Multiple types are possible.
+    </summary>
+  </metric>
   <metric name="IsForCreditCard">
     <summary>
       True for credit card forms, false for address/profile forms.
@@ -310,6 +340,18 @@ be describing additional metrics about the same event.
       the event period.
     </summary>
   </metric>
+  <metric name="IntersectionObservation.Average">
+    <summary>
+      The average time taken to compute IntersectionObserver observations in
+      microseconds in the event period.
+    </summary>
+  </metric>
+  <metric name="IntersectionObservation.WorstCase">
+    <summary>
+      The longest single time taken by to compute IntersectionObserver
+      observations in microseconds in the event period.
+    </summary>
+  </metric>
   <metric name="Paint.Average">
     <summary>
       The average time taken by the paint phase in microseconds in the event
@@ -429,6 +471,13 @@ be describing additional metrics about the same event.
       not recorded if there was no subsequent scroll.
     </summary>
   </metric>
+  <metric name="FontSize">
+    <summary>
+      Emits a value from 0-10 representing the effective font size on the
+      screen.  A value of 0 means the font size cannot be obtained.  A value of
+      1 represents a very small font and a value of 10 represents a large font.
+    </summary>
+  </metric>
   <metric name="IsEntity">
     <summary>
       Emits a 1 or 0 to indicate whether the word tapped appears to be part of
@@ -514,6 +563,15 @@ be describing additional metrics about the same event.
       caption within the overlay panel.  This is a tertiary outcome metric.
     </summary>
   </metric>
+  <metric name="PortionOfElement">
+    <summary>
+      Emits an integer in the range 0-10 inclusive that expresses the portion of
+      the enclosing element that is the word tapped.  A zero will be emitted if
+      the ratio cannot be calculated. A value of 10 means the word spans the
+      entire element, and a value of 1 means the word is 10% or less than the
+      entire element.
+    </summary>
+  </metric>
   <metric name="Previous28DayCtrPercent">
     <summary>
       The CTR of the overlay panel for this user, aggregated over a previous 28
@@ -553,6 +611,69 @@ be describing additional metrics about the same event.
     <summary>
       The location of the tap relative to the bottom of the screen, expressed as
       an integer with 0 meaning not at the bottom and 1 meaning at the bottom.
+    </summary>
+  </metric>
+</event>
+
+<event name="ContextualSuggestions">
+  <owner>donnd@chromium.org</owner>
+  <owner>fgorski@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <owner>zea@chromium.org</owner>
+  <summary>
+    Metrics related to Contextual Suggestions shown in the Chrome Assistive
+    Surface, aka EoC shown in CAS.  These metrics are recorded each time the
+    Contextual Suggestions UI is dismissed. Each record always contains a value
+    for every metric known at the time of the implementation.
+  </summary>
+  <metric name="AnyDownloaded">
+    <summary>
+      Emits an integer in the range 0-1 to indicate whether the user downloaded
+      any suggestions.
+    </summary>
+  </metric>
+  <metric name="AnySuggestionTaken">
+    <summary>
+      Emits an integer in the range 0-1 to indicate whether any suggestion link
+      was taken.
+    </summary>
+  </metric>
+  <metric name="ClosedFromPeek">
+    <summary>
+      Emits an integer in the range 0-1 to indicate whether the peeking sheet
+      was closed by tapping on the close button.
+    </summary>
+  </metric>
+  <metric name="EverOpened">
+    <summary>
+      Emits an integer in the range 0-1 to indicate whether the sheet was ever
+      opened.
+    </summary>
+  </metric>
+  <metric name="FetchState">
+    <summary>
+      Emits an integer in the range 0-7 to indicate the ending state of the data
+      fetcher and results returned.  A value of 0 indicates not-started, a 7
+      indicates fetch-completed with suggestions.  See the code for details.
+    </summary>
+  </metric>
+  <metric name="ShowDurationBucketMin">
+    <summary>
+      Emits an integer in the range 0-N to indicate the duration that the sheet
+      was shown before a positive or negative action was taken.  A value of 0
+      indicates that the UI was never shown.  A value greater than 0 indicates
+      that some user interaction occurred taking at least the indicated number
+      of milliseconds, but less than twice that amount. This exponential
+      bucketing is done for privacy reasons, and uses the UKM
+      GetExponentialBucketMin method with a value of 2.0 for spacing.
+    </summary>
+  </metric>
+  <metric name="TriggerEvent">
+    <summary>
+      Emits an integer in the range 0-1 to indicate whether the peeking sheet
+      was ever triggered and how it was triggered. A value of 0 indicates
+      never-shown, a 1 indicates peeked in response to a reverse-scroll (the
+      only trigger currently supported).
     </summary>
   </metric>
 </event>
@@ -633,6 +754,12 @@ be describing additional metrics about the same event.
     Metrics taken when a download completes. Its parent event is
     Download.Started.
   </summary>
+  <metric name="BytesWasted">
+    <summary>
+      The number of bytes that have been used in an excess (ie. download
+      restarting the middle of a download).
+    </summary>
+  </metric>
   <metric name="DownloadId">
     <summary>
       The id of the download that is used to associate separate events.
@@ -658,6 +785,12 @@ be describing additional metrics about the same event.
     Metrics taken when a download is interrupted. Its parent event is
     Download.Started.
   </summary>
+  <metric name="BytesWasted">
+    <summary>
+      The number of bytes that have been used in an excess (ie. download
+      restarting the middle of a download).
+    </summary>
+  </metric>
   <metric name="ChangeInFileSize">
     <summary>
       The difference in the size of the file that is downloaded compared to the
@@ -1008,18 +1141,87 @@ be describing additional metrics about the same event.
     media playbacks, the total number of visits, the calculated engagement score
     and the new number of significant media playbacks that occured this visit.
   </summary>
-  <metric name="Engagement.IsHigh"/>
-  <metric name="Engagement.IsHigh.Changes"/>
-  <metric name="Engagement.IsPreloaded"/>
-  <metric name="Engagement.Score"/>
-  <metric name="Playbacks.Delta"/>
-  <metric name="Playbacks.SecondsSinceLast"/>
-  <metric name="Playbacks.Total"/>
-  <metric name="Player.Audible.Delta"/>
-  <metric name="Player.Audible.Total"/>
-  <metric name="Player.Significant.Delta"/>
-  <metric name="Player.Significant.Total"/>
-  <metric name="Visits.Total"/>
+  <metric name="Engagement.IsHigh">
+    <summary>
+      Whether the Media Engagement Service considers the score to be high (we
+      are using a two threshold approach so there is one threshold to be
+      considered high and another one to lose that status to reduce jitter).
+    </summary>
+  </metric>
+  <metric name="Engagement.IsHigh.Changed">
+    <summary>
+      Whether the IsHigh bit changed during the current session.
+    </summary>
+  </metric>
+  <metric name="Engagement.IsHigh.Changes">
+    <summary>
+      Counts of IsHigh changing (from 0 to 1 or 1 to 0).
+    </summary>
+  </metric>
+  <metric name="Engagement.IsPreloaded">
+    <summary>
+      Whether the origin was preloaded (from the chrome://component) as a high
+      engagement origin.
+    </summary>
+  </metric>
+  <metric name="Engagement.Score">
+    <summary>
+      The calculated Media Engagement score for the current origin. The score is
+      calculated by dividing the number of significant media playbacks by the
+      number of visits. If the number of visits is below 5 then the score will
+      be zero. This score is taken from MediaEngagementService.
+    </summary>
+  </metric>
+  <metric name="Playbacks.Delta">
+    <summary>
+      The number of significant media playbacks on this origin during this
+      session (a visit to an origin on the same tab). A playback is determined
+      significant if it meets certain criteria such as a video size of at least
+      200x140px, is not muted, is playing, etc.
+    </summary>
+  </metric>
+  <metric name="Playbacks.SecondsSinceLast">
+    <summary>
+      The number of seconds between significant media playback on the last visit
+      and significant media playback on the current visit. If there was no
+      previous visit or significant media playback this visit it will be 0.
+    </summary>
+  </metric>
+  <metric name="Playbacks.Total">
+    <summary>
+      The total number of significant media playbacks on this origin.
+    </summary>
+  </metric>
+  <metric name="Player.Audible.Delta">
+    <summary>
+      The number of unique audio/video players on a page that was audible (made
+      sound) during a visit.
+    </summary>
+  </metric>
+  <metric name="Player.Audible.Total">
+    <summary>
+      The delta from above but instead of a single visit, the total of all
+      deltas for all visits on this origin.
+    </summary>
+  </metric>
+  <metric name="Player.Significant.Delta">
+    <summary>
+      The number of unique audio/video players on a page that was audible (made
+      sound) and considered significant (played for at least 7 seconds) during a
+      visit.
+    </summary>
+  </metric>
+  <metric name="Player.Significant.Total">
+    <summary>
+      The delta from above but instead of a single visit, the total of all
+      deltas for all visits on this origin.
+    </summary>
+  </metric>
+  <metric name="Visits.Total">
+    <summary>
+      The total number of visits to this origin.
+    </summary>
+  </metric>
 </event>
 
 <event name="Media.SiteMuted" singular="True">
@@ -1420,6 +1622,7 @@ be describing additional metrics about the same event.
 
 <event name="Memory.Experimental">
   <owner>erikchen@chromium.org</owner>
+  <owner>ssid@chromium.org</owner>
   <summary>
     Metrics associated with memory consumption, in MB.
   </summary>
@@ -1433,9 +1636,40 @@ be describing additional metrics about the same event.
       Measure of memory consumed by Oilpan.
     </summary>
   </metric>
+  <metric name="BlinkGC.AllocatedObjects">
+    <summary>
+      Measure of memory consumed by live allocations made from Oilpan.
+    </summary>
+  </metric>
   <metric name="CommandBuffer">
     <summary>
       Measure of memory consumed by GL command buffer.
+    </summary>
+  </metric>
+  <metric name="Discardable">
+    <summary>
+      Measure of memory consumed by Discardable memory service.
+    </summary>
+  </metric>
+  <metric name="DownloadService">
+    <summary>
+      Measure of memory used by download service.
+    </summary>
+  </metric>
+  <metric name="Extensions.ValueStore">
+    <summary>
+      Measure of memory consumed by Key Value Store databases of extensions.
+    </summary>
+  </metric>
+  <metric name="FontCaches">
+    <summary>
+      Measure of memory used by font platform and shape caches in renderer
+      process.
+    </summary>
+  </metric>
+  <metric name="History">
+    <summary>
+      Approximate measure of memory consumed by History service.
     </summary>
   </metric>
   <metric name="IsVisible">
@@ -1444,9 +1678,30 @@ be describing additional metrics about the same event.
       collection.
     </summary>
   </metric>
+  <metric name="JavaHeap">
+    <summary>
+      Measure of memory consumed by java heap on Android.
+    </summary>
+  </metric>
+  <metric name="LevelDatabase">
+    <summary>
+      Measure of memory consumed by unaccounted level databases.
+    </summary>
+  </metric>
   <metric name="Malloc">
     <summary>
-      Measure of memory allocated by malloc.
+      Measure of memory allocated by malloc, that is not classified by other
+      metrics.
+    </summary>
+  </metric>
+  <metric name="Net">
+    <summary>
+      Measure of memory allocated by network sockets and caches.
+    </summary>
+  </metric>
+  <metric name="Net.UrlRequestContext">
+    <summary>
+      Measure of memory allocated by all network requests.
     </summary>
   </metric>
   <metric name="NumberOfDocuments">
@@ -1470,14 +1725,49 @@ be describing additional metrics about the same event.
       The number of layout objects that the associated renderer owns.
     </summary>
   </metric>
+  <metric name="NumberOfMojoHandles">
+    <summary>
+      The number of mojo handles stored in HandleTable.
+    </summary>
+  </metric>
   <metric name="NumberOfNodes">
     <summary>
       The number of nodes that the associated renderer owns.
     </summary>
   </metric>
+  <metric name="OmniboxSuggestions">
+    <summary>
+      Measure of memory used due to URL indexing and autocomplete suggestions.
+    </summary>
+  </metric>
   <metric name="PartitionAlloc">
     <summary>
-      Measure of memory allocated by PartitionAlloc.
+      Measure of memory allocated by PartitionAlloc allocator.
+    </summary>
+  </metric>
+  <metric name="PartitionAlloc.AllocatedObjects">
+    <summary>
+      Measure of total memory used by objects allocated using PartitionAlloc.
+    </summary>
+  </metric>
+  <metric name="PartitionAlloc.Partitions.ArrayBuffer">
+    <summary>
+      Measure of memory used by Array Buffer partition in PartitionAlloc.
+    </summary>
+  </metric>
+  <metric name="PartitionAlloc.Partitions.Buffer">
+    <summary>
+      Measure of memory used by Buffer partition in PartitionAlloc.
+    </summary>
+  </metric>
+  <metric name="PartitionAlloc.Partitions.FastMalloc">
+    <summary>
+      Measure of memory used by Fast Malloc partition in PartitionAlloc.
+    </summary>
+  </metric>
+  <metric name="PartitionAlloc.Partitions.Layout">
+    <summary>
+      Measure of memory used by Layout partition in PartitionAlloc.
     </summary>
   </metric>
   <metric name="PrivateMemoryFootprint">
@@ -1508,6 +1798,61 @@ be describing additional metrics about the same event.
       Measure of total shared memory consumed by process.
     </summary>
   </metric>
+  <metric name="SiteStorage">
+    <summary>
+      Measure of memory used due to web storage APIs in browser process.
+    </summary>
+  </metric>
+  <metric name="SiteStorage.BlobStorage">
+    <summary>
+      Measure of memory used by in-memory blob file API in browser process.
+    </summary>
+  </metric>
+  <metric name="SiteStorage.IndexDB">
+    <summary>
+      Measure of memory used due to IndexedDB API in browser process.
+    </summary>
+  </metric>
+  <metric name="SiteStorage.LocalStorage">
+    <summary>
+      Measure of memory used due to Local Storage API in browser process.
+    </summary>
+  </metric>
+  <metric name="SiteStorage.SessionStorage">
+    <summary>
+      Measure of memory used due to Session Storage API in browser process.
+    </summary>
+  </metric>
+  <metric name="Skia">
+    <summary>
+      Measure of memory used by Skia.
+    </summary>
+  </metric>
+  <metric name="Skia.SkGlyphCache">
+    <summary>
+      Measure of memory used by Skia Glyph Cache.
+    </summary>
+  </metric>
+  <metric name="Skia.SkResourceCache">
+    <summary>
+      Measure of memory used by Skia Resource Cache.
+    </summary>
+  </metric>
+  <metric name="Sqlite">
+    <summary>
+      Measure of memory used by all sqlite databases.
+    </summary>
+  </metric>
+  <metric name="Sync">
+    <summary>
+      Measure of memory used by Sync storage.
+    </summary>
+  </metric>
+  <metric name="TabRestore">
+    <summary>
+      Approximate measure of memory used by Tab restore service.
+    </summary>
+  </metric>
   <metric name="TimeSinceLastNavigation">
     <summary>
       The time in seconds since the Tab navigated. Only emitted for tabs that
@@ -1530,6 +1875,11 @@ be describing additional metrics about the same event.
       Measure of total shared memory consumed by all processes.
     </summary>
   </metric>
+  <metric name="UI">
+    <summary>
+      Measure of memory used by Android UI bitmaps.
+    </summary>
+  </metric>
   <metric name="Uptime">
     <summary>
       Process uptime.
@@ -1538,6 +1888,41 @@ be describing additional metrics about the same event.
   <metric name="V8">
     <summary>
       Measure of memory consumed by V8.
+    </summary>
+  </metric>
+  <metric name="WebCache">
+    <summary>
+      Measure of memory consumed by all resources in Blink Web Cache.
+    </summary>
+  </metric>
+  <metric name="WebCache.CSSStylesheetResources">
+    <summary>
+      Measure of memory consumed by CSS Stylesheet resources in Blink Web Cache.
+    </summary>
+  </metric>
+  <metric name="WebCache.FontResources">
+    <summary>
+      Measure of memory consumed by Font resources in Blink Web Cache.
+    </summary>
+  </metric>
+  <metric name="WebCache.ImageResources">
+    <summary>
+      Measure of memory consumed by Image resources in Blink Web Cache.
+    </summary>
+  </metric>
+  <metric name="WebCache.OtherResources">
+    <summary>
+      Measure of memory consumed by other resources in Blink Web Cache.
+    </summary>
+  </metric>
+  <metric name="WebCache.ScriptResources">
+    <summary>
+      Measure of memory consumed by Script resources in Blink Web Cache.
+    </summary>
+  </metric>
+  <metric name="WebCache.XSLStylesheetResources">
+    <summary>
+      Measure of memory consumed by XSL Stylesheet resources in Blink Web Cache.
     </summary>
   </metric>
 </event>
@@ -1744,6 +2129,12 @@ be describing additional metrics about the same event.
     them. A separate event is generated for each password form discovered on a
     site.
   </summary>
+  <metric name="Context.FormSignature">
+    <summary>
+      Records a low entropy hash of the form signature in order to be able to
+      distinguish two forms on the same site.
+    </summary>
+  </metric>
   <metric name="ManagerFill.Action">
     <summary>
       Records for each password form (and HTTP auth), whether the password
@@ -2078,6 +2469,12 @@ be describing additional metrics about the same event.
       by the origin site (rather than the user).
     </summary>
   </metric>
+  <metric name="save_data_enabled">
+    <summary>
+      Set to 1 if the data saver feature was enabled in Chrome at the time of
+      the page commit.
+    </summary>
+  </metric>
   <metric name="server_lofi">
     <summary>
       Set to 1 when a user is shown a server lo-fi image in a page load.
@@ -2101,12 +2498,247 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
+<event name="RendererSchedulerTask">
+  <owner>altimin@chromium.org</owner>
+  <summary>
+    Sampled task from the renderer main thread. Sample rate is controlled
+    dynamically. See
+    blink::scheduler::MainThreadSchedulerImpl::ShouldRecordTaskUkm.
+  </summary>
+  <metric name="FrameStatus">
+    <summary>
+      Frame status of the frame associated with the context of this task. See
+      blink::scheduler::FrameStatus for the values of this enum.
+    </summary>
+  </metric>
+  <metric name="PageSchedulers">
+    <summary>
+      Number of pages this task should be attributed to. One if there is a hard
+      attribution, number of pages in the process otherwise.
+    </summary>
+  </metric>
+  <metric name="QueueType">
+    <summary>
+      Type of the task queue which this task was posted to. See
+      blink::scheduler::MainThreadTaskQueue::TaskType for the values of this
+      enum.
+    </summary>
+  </metric>
+  <metric name="RendererAudible">
+    <summary>
+      Whether renderer was playing audio when this task was run. Boolean,
+      encoded as an integer (0/1).
+    </summary>
+  </metric>
+  <metric name="RendererBackgrounded">
+    <summary>
+      Whether renderer was backgrounded when this task was run. Boolean, encoded
+      as an integer (0/1).
+    </summary>
+  </metric>
+  <metric name="RendererHidden">
+    <summary>
+      Whether renderer was hidden when this task was run. Boolean, encoded as an
+      integer (0/1).
+    </summary>
+  </metric>
+  <metric name="TaskCPUDuration">
+    <summary>
+      CPU duration of this task in microseconds.
+    </summary>
+  </metric>
+  <metric name="TaskDuration">
+    <summary>
+      Duration of this task in microseconds.
+    </summary>
+  </metric>
+  <metric name="TaskType">
+    <summary>
+      blink::TaskType for the current task.
+    </summary>
+  </metric>
+  <metric name="UseCase">
+    <summary>
+      MainThreadSchedulerImpl's UseCase when this task was run. See
+      blink::scheduler::UseCase for the values of this enum.
+    </summary>
+  </metric>
+</event>
+
 <event name="Pepper.Broker" singular="True">
   <owner>raymes@chromium.org</owner>
   <summary>
     Event recorded when a flash instance connects to the broker, resulting in a
     channel being opened to the broker process.
   </summary>
+</event>
+
+<event name="ScreenBrightness">
+  <owner>pdyson@chromium.org</owner>
+  <summary>
+    Collects metrics periodically and on screen brightness change.
+  </summary>
+  <metric name="BatteryPercent">
+    <summary>
+      Percentage of battery, rounded down to a multiple of 5%, i.e. [0, 5%) is
+      mapped to 0, [5%, 10%) is mapped to 5 etc.
+    </summary>
+  </metric>
+  <metric name="Brightness">
+    <summary>
+      Screen percentage brightness. between 0 and 100.
+    </summary>
+  </metric>
+  <metric name="DayOfWeek">
+    <summary>
+      An enum representing the of the week that the data was logged, defined in
+      |chromeos::power::ml::ScreenBrightness::Features::ActivityData::
+      DayOfWeek|.
+    </summary>
+  </metric>
+  <metric name="DeviceMode">
+    <summary>
+      An enum representing the mode of the device, defined in
+      |chromeos::power::ml::ScreenBrightness::Feature::EnvData:DeviceMode|
+    </summary>
+  </metric>
+  <metric name="HourOfDay">
+    <summary>
+      The hour of the day when the data is logged. Hours since midnight in the
+      local time zone.
+    </summary>
+  </metric>
+  <metric name="IsAutoclickEnabled">
+    <summary>
+      Boolean value to represent whether the auto click is currently enabled.
+    </summary>
+  </metric>
+  <metric name="IsBrailleDisplayConnected">
+    <summary>
+      Boolean value to represent whether the braille display is currently
+      enabled.
+    </summary>
+  </metric>
+  <metric name="IsCaretHighlightEnabled">
+    <summary>
+      Boolean value to represent whether the caret highlight is currently
+      enabled.
+    </summary>
+  </metric>
+  <metric name="IsCursorHighlightEnabled">
+    <summary>
+      Boolean value to represent whether the cursor highlight is currently
+      enabled.
+    </summary>
+  </metric>
+  <metric name="IsFocusHighlightEnabled">
+    <summary>
+      Boolean value to represent whether the focus highlight is currently
+      enabled.
+    </summary>
+  </metric>
+  <metric name="IsHighContrastEnabled">
+    <summary>
+      Boolean value to represent whether the high contrast is currently enabled.
+    </summary>
+  </metric>
+  <metric name="IsLargeCursorEnabled">
+    <summary>
+      Boolean value to represent whether the large cursor is currently enabled.
+    </summary>
+  </metric>
+  <metric name="IsMagnifierEnabled">
+    <summary>
+      Boolean value to represent whether the full screen magnifier is currently
+      enabled.
+    </summary>
+  </metric>
+  <metric name="IsMonoAudioEnabled">
+    <summary>
+      Boolean value to represent whether the mono audio is currently enabled.
+    </summary>
+  </metric>
+  <metric name="IsSelectToSpeakEnabled">
+    <summary>
+      Boolean value to represent whether select to speak is currently enabled.
+    </summary>
+  </metric>
+  <metric name="IsSpokenFeedbackEnabled">
+    <summary>
+      Boolean value to represent whether the spoken feedback is currently
+      enabled.
+    </summary>
+  </metric>
+  <metric name="IsSwitchAccessEnabled">
+    <summary>
+      Boolean value to represent whether switch access is currently enabled.
+    </summary>
+  </metric>
+  <metric name="IsVideoPlaying">
+    <summary>
+      Boolean value to represent whether video is currently playing.
+    </summary>
+  </metric>
+  <metric name="IsVirtualKeyboardEnabled">
+    <summary>
+      Boolean value to represent whether the virtual keyboard is currently
+      enabled.
+    </summary>
+  </metric>
+  <metric name="LastActivityTimeSec">
+    <summary>
+      Time between the last activity and when the data was logged. A duration
+      timestamp in seconds.
+    </summary>
+  </metric>
+  <metric name="NightLightTemperaturePercent">
+    <summary>
+      The temperature percentage of night light screen color adjustment when
+      night light is on. Ranges from 0 to 100.
+    </summary>
+  </metric>
+  <metric name="NumRecentKeyEvents">
+    <summary>
+      The number of keyboard events in the last hour.
+    </summary>
+  </metric>
+  <metric name="NumRecentMouseEvents">
+    <summary>
+      The number of mouse events in the last hour.
+    </summary>
+  </metric>
+  <metric name="NumRecentStylusEvents">
+    <summary>
+      The number of stylus events in the last hour.
+    </summary>
+  </metric>
+  <metric name="NumRecentTouchEvents">
+    <summary>
+      The number of touch events in the last hour.
+    </summary>
+  </metric>
+  <metric name="OnBattery">
+    <summary>
+      Boolean value to represent whether the device is currently on battery
+      power.
+    </summary>
+  </metric>
+  <metric name="Reason">
+    <summary>
+      The reason that the event is logged. Values are enumerated in
+      |chromeos::power::ml::ScreenBrightness::Event::Reason|.
+    </summary>
+  </metric>
+  <metric name="RecentTimeActiveSec">
+    <summary>
+      How long the user has been active. A duration timestamp in seconds.
+    </summary>
+  </metric>
+  <metric name="SequenceId">
+    <summary>
+      The ID of this event in the current session.
+    </summary>
+  </metric>
 </event>
 
 <event name="Security.SiteEngagement">
@@ -2718,11 +3350,41 @@ be describing additional metrics about the same event.
       Delay after which the screen will be dimmed in seconds.
     </summary>
   </metric>
+  <metric name="ScreenDimmedInitially">
+    <summary>
+      Whether screen was dimmed at the start of the event.
+    </summary>
+  </metric>
+  <metric name="ScreenDimOccurred">
+    <summary>
+      Whether screen dim occurred due to inactivity timeout.
+    </summary>
+  </metric>
   <metric name="ScreenDimToOffDelay">
     <summary>
       Delay after which the screen will be turned off in seconds, as measured
       from screen is dimmed. If dim is diabled, it is the delay from the start
       of inactivity.
+    </summary>
+  </metric>
+  <metric name="ScreenLockedInitially">
+    <summary>
+      Whether screen was locked at the start of the event.
+    </summary>
+  </metric>
+  <metric name="ScreenLockOccurred">
+    <summary>
+      Whether screen lock occurred.
+    </summary>
+  </metric>
+  <metric name="ScreenOffInitially">
+    <summary>
+      Whether screen was off at the start of the event.
+    </summary>
+  </metric>
+  <metric name="ScreenOffOccurred">
+    <summary>
+      Whether screen off occurred due to inactivity timeout.
     </summary>
   </metric>
   <metric name="SequenceId">
@@ -2969,9 +3631,23 @@ be describing additional metrics about the same event.
       some element on the page.
     </summary>
   </metric>
+  <metric name="EnteredVROnPageReason">
+    <summary>
+      An enum that indicates that the user entered VR on this page and what
+      triggered the entry into VR, where 1 means VR was entered through headset
+      activation, and 2 means that request presentation triggered the entry into
+      VR.
+    </summary>
+  </metric>
   <metric name="TimeOnPage">
     <summary>
       Deprecated.
+    </summary>
+  </metric>
+  <metric name="WasOmniboxNavigation">
+    <summary>
+      A boolean that is set to 1 if this page was entered into the omnibox,
+      either manually or using autocomplete.
     </summary>
   </metric>
   <metric name="WasVoiceSearchNavigation">
@@ -2994,6 +3670,18 @@ be describing additional metrics about the same event.
       Times are reported accurately when low, for example, under a minute, and
       get rounded to minutes and then hours as they get larger.  This is done by
       SessionTracker::GetRoundedDurationInSeconds.
+    </summary>
+  </metric>
+  <metric name="StartAction">
+    <summary>
+      A metric to track specifically how the user got into XR presentation. 0:
+      Other, catch all. 1: RequestFrom2DBrowsing, the page requested
+      presentation while Chrome was in 2D mode. 2: RequestFromVRBrowsing, the
+      page requested presentation while Chrome was in VR browsing mode. 3:
+      HeadsetActivation, the user activated the VR headset while in 2D browsing
+      on the page, which listens for headset activations to request
+      presentation. 4: DeepLinkedApp, The page was launched in Chrome from the
+      VR system home (e.g., Daydream Home) and requested presentation.
     </summary>
   </metric>
 </event>

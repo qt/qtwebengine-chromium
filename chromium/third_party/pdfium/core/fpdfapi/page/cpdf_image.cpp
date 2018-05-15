@@ -49,13 +49,13 @@ CPDF_Image::CPDF_Image(CPDF_Document* pDoc, uint32_t dwStreamObjNum)
 
 CPDF_Image::~CPDF_Image() {}
 
-void CPDF_Image::FinishInitialization(CPDF_Dictionary* pDict) {
-  m_pOC = pDict->GetDictFor("OC");
-  m_bIsMask =
-      !pDict->KeyExist("ColorSpace") || pDict->GetIntegerFor("ImageMask");
-  m_bInterpolate = !!pDict->GetIntegerFor("Interpolate");
-  m_Height = pDict->GetIntegerFor("Height");
-  m_Width = pDict->GetIntegerFor("Width");
+void CPDF_Image::FinishInitialization(CPDF_Dictionary* pStreamDict) {
+  m_pOC = pStreamDict->GetDictFor("OC");
+  m_bIsMask = !pStreamDict->KeyExist("ColorSpace") ||
+              pStreamDict->GetIntegerFor("ImageMask");
+  m_bInterpolate = !!pStreamDict->GetIntegerFor("Interpolate");
+  m_Height = pStreamDict->GetIntegerFor("Height");
+  m_Width = pStreamDict->GetIntegerFor("Width");
 }
 
 void CPDF_Image::ConvertStreamToIndirectObject() {
@@ -331,7 +331,13 @@ RetainPtr<CFX_DIBSource> CPDF_Image::LoadDIBSource() const {
   if (!source->Load(m_pDocument.Get(), m_pStream.Get()))
     return nullptr;
 
-  return source;
+  if (!source->IsJBigImage())
+    return source;
+
+  CPDF_DIBSource::LoadState ret = CPDF_DIBSource::LoadState::kContinue;
+  while (ret == CPDF_DIBSource::LoadState::kContinue)
+    ret = source->ContinueLoadDIBSource(nullptr);
+  return ret == CPDF_DIBSource::LoadState::kSuccess ? source : nullptr;
 }
 
 RetainPtr<CFX_DIBSource> CPDF_Image::DetachBitmap() {
@@ -348,15 +354,15 @@ bool CPDF_Image::StartLoadDIBSource(CPDF_Dictionary* pFormResource,
                                     uint32_t GroupFamily,
                                     bool bLoadMask) {
   auto source = pdfium::MakeRetain<CPDF_DIBSource>();
-  int ret = source->StartLoadDIBSource(m_pDocument.Get(), m_pStream.Get(), true,
-                                       pFormResource, pPageResource, bStdCS,
-                                       GroupFamily, bLoadMask);
-  if (!ret) {
+  CPDF_DIBSource::LoadState ret = source->StartLoadDIBSource(
+      m_pDocument.Get(), m_pStream.Get(), true, pFormResource, pPageResource,
+      bStdCS, GroupFamily, bLoadMask);
+  if (ret == CPDF_DIBSource::LoadState::kFail) {
     m_pDIBSource.Reset();
     return false;
   }
   m_pDIBSource = source;
-  if (ret == 2)
+  if (ret == CPDF_DIBSource::LoadState::kContinue)
     return true;
 
   m_pMask = source->DetachMask();
@@ -364,17 +370,17 @@ bool CPDF_Image::StartLoadDIBSource(CPDF_Dictionary* pFormResource,
   return false;
 }
 
-bool CPDF_Image::Continue(IFX_PauseIndicator* pPause) {
+bool CPDF_Image::Continue(PauseIndicatorIface* pPause) {
   RetainPtr<CPDF_DIBSource> pSource = m_pDIBSource.As<CPDF_DIBSource>();
-  int ret = pSource->ContinueLoadDIBSource(pPause);
-  if (!ret) {
-    m_pDIBSource.Reset();
-    return false;
-  }
-  if (ret == 2)
+  CPDF_DIBSource::LoadState ret = pSource->ContinueLoadDIBSource(pPause);
+  if (ret == CPDF_DIBSource::LoadState::kContinue)
     return true;
 
-  m_pMask = pSource->DetachMask();
-  m_MatteColor = pSource->GetMatteColor();
+  if (ret == CPDF_DIBSource::LoadState::kSuccess) {
+    m_pMask = pSource->DetachMask();
+    m_MatteColor = pSource->GetMatteColor();
+  } else {
+    m_pDIBSource.Reset();
+  }
   return false;
 }

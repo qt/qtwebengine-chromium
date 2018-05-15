@@ -33,6 +33,7 @@ rtc_source_set("call_interfaces") {
     "../api/audio:audio_mixer_api",
     "../api/audio_codecs:audio_codecs_api",
     "../modules/audio_processing:audio_processing_statistics",
+    "../rtc_base:audio_format_to_string",
     "../rtc_base:rtc_base",
     "../rtc_base:rtc_base_approved",
   ]
@@ -96,10 +97,13 @@ rtc_source_set("rtp_sender") {
     ":rtp_interfaces",
     "..:webrtc_common",
     "../modules/congestion_controller",
+    "../modules/congestion_controller/network_control",
+    "../modules/congestion_controller/rtp:congestion_controller",
     "../modules/pacing",
     "../modules/utility",
     "../rtc_base:rtc_base",
     "../rtc_base:rtc_base_approved",
+    "../system_wrappers:field_trial_api",
   ]
 }
 
@@ -126,6 +130,7 @@ rtc_source_set("bitrate_allocator") {
     "../rtc_base:rtc_base_approved",
     "../rtc_base:sequenced_task_checker",
     "../system_wrappers",
+    "../system_wrappers:field_trial_api",
     "../system_wrappers:metrics_api",
   ]
   if (!build_with_chromium && is_clang) {
@@ -139,8 +144,12 @@ rtc_static_library("call") {
     "call.cc",
     "callfactory.cc",
     "callfactory.h",
+    "degraded_call.cc",
+    "degraded_call.h",
     "flexfec_receive_stream_impl.cc",
     "flexfec_receive_stream_impl.h",
+    "receive_time_calculator.cc",
+    "receive_time_calculator.h",
   ]
 
   if (!build_with_chromium && is_clang) {
@@ -151,6 +160,7 @@ rtc_static_library("call") {
   deps = [
     ":bitrate_allocator",
     ":call_interfaces",
+    ":fake_network",
     ":rtp_interfaces",
     ":rtp_receiver",
     ":rtp_sender",
@@ -167,16 +177,21 @@ rtc_static_library("call") {
     "../logging:rtc_stream_config",
     "../modules/bitrate_controller",
     "../modules/congestion_controller",
+    "../modules/congestion_controller/network_control",
     "../modules/pacing",
     "../modules/rtp_rtcp",
     "../modules/rtp_rtcp:rtp_rtcp_format",
     "../modules/utility",
     "../modules/video_coding:video_coding",
     "../rtc_base:checks",
+    "../rtc_base:rate_limiter",
     "../rtc_base:rtc_base_approved",
     "../rtc_base:rtc_task_queue",
+    "../rtc_base:safe_minmax",
     "../rtc_base:sequenced_task_checker",
+    "../rtc_base/synchronization:rw_lock_wrapper",
     "../system_wrappers",
+    "../system_wrappers:field_trial_api",
     "../system_wrappers:metrics_api",
     "../video",
   ]
@@ -199,11 +214,35 @@ rtc_source_set("video_stream_api") {
     "../api:optional",
     "../api:transport_api",
     "../api:video_frame_api",
+    "../api/video_codecs:video_codecs_api",
     "../common_video:common_video",
     "../modules/rtp_rtcp:rtp_rtcp_format",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
   ]
+}
+
+rtc_source_set("fake_network") {
+  sources = [
+    "fake_network_pipe.cc",
+    "fake_network_pipe.h",
+  ]
+  deps = [
+    ":call_interfaces",
+    "..:typedefs",
+    "..:webrtc_common",
+    "../api:transport_api",
+    "../modules:module_api",
+    "../modules/rtp_rtcp",
+    "../rtc_base:rtc_base_approved",
+    "../rtc_base:sequenced_task_checker",
+    "../system_wrappers",
+  ]
+
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+  }
 }
 
 if (rtc_include_tests) {
@@ -215,6 +254,7 @@ if (rtc_include_tests) {
       "bitrate_estimator_tests.cc",
       "call_unittest.cc",
       "flexfec_receive_stream_unittest.cc",
+      "receive_time_calculator_unittest.cc",
       "rtcp_demuxer_unittest.cc",
       "rtp_bitrate_configurator_unittest.cc",
       "rtp_demuxer_unittest.cc",
@@ -281,6 +321,8 @@ if (rtc_include_tests) {
       "../api/audio_codecs:builtin_audio_encoder_factory",
       "../logging:rtc_event_log_api",
       "../modules/audio_coding",
+      "../modules/audio_device",
+      "../modules/audio_device:audio_device_impl",
       "../modules/audio_mixer:audio_mixer_impl",
       "../modules/rtp_rtcp",
       "../rtc_base:checks",
@@ -289,8 +331,8 @@ if (rtc_include_tests) {
       "../system_wrappers:metrics_default",
       "../system_wrappers:runtime_enabled_features_default",
       "../test:direct_transport",
-      "../test:fake_audio_device",
       "../test:field_trial",
+      "../test:fileutils",
       "../test:perf_test",
       "../test:test_common",
       "../test:test_support",
@@ -332,5 +374,25 @@ if (rtc_include_tests) {
       ":call_interfaces",
       "//test:test_support",
     ]
+  }
+
+  rtc_test("fake_network_unittests") {
+    deps = [
+      ":call_interfaces",
+      ":fake_network",
+      "../modules/rtp_rtcp",
+      "../rtc_base:rtc_base_approved",
+      "../system_wrappers",
+      "../test:test_common",
+      "../test:test_main",
+      "//testing/gtest",
+    ]
+    sources = [
+      "test/fake_network_pipe_unittest.cc",
+    ]
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+    }
   }
 }

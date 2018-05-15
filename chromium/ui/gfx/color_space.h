@@ -13,6 +13,7 @@
 #include "base/macros.h"
 #include "build/build_config.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
+#include "third_party/skia/include/core/SkImageInfo.h"
 #include "ui/gfx/color_space_export.h"
 
 namespace IPC {
@@ -56,6 +57,9 @@ class COLOR_SPACE_EXPORT ColorSpace {
   enum class TransferID : uint8_t {
     INVALID,
     BT709,
+    // On macOS, BT709 hardware decoded video frames, when displayed as
+    // overlays, will have a transfer function of gamma=1.961.
+    BT709_APPLE,
     GAMMA18,
     GAMMA22,
     GAMMA24,
@@ -186,6 +190,10 @@ class COLOR_SPACE_EXPORT ColorSpace {
   // This will return nullptr for non-RGB spaces, spaces with non-FULL
   // range, and unspecified spaces.
   sk_sp<SkColorSpace> ToSkColorSpace() const;
+
+  // For YUV color spaces, return the closest SkYUVColorSpace.
+  // Returns true if a close match is found.
+  bool ToSkYUVColorSpace(SkYUVColorSpace* out);
 
   void GetPrimaryMatrix(SkMatrix44* to_XYZD50) const;
   bool GetTransferFunction(SkColorSpaceTransferFn* fn) const;

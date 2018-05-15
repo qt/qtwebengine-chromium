@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//printing/features/features.gni")
+import("//printing/buildflags/buildflags.gni")
 import("//services/service_manager/public/cpp/service.gni")
 import("//services/service_manager/public/service_manifest.gni")
 import("//services/service_manager/public/tools/test/service_test.gni")
@@ -17,6 +17,7 @@ static_library("service") {
 
   deps = [
     "//base",
+    "//components/crash/core/common:crash_key",
     "//components/discardable_memory/client",
     "//components/discardable_memory/public/interfaces",
     "//content/public/child",
@@ -24,6 +25,7 @@ static_library("service") {
     "//content/public/utility",
     "//printing/common",
     "//skia",
+    "//third_party/blink/public:blink_headers",
   ]
 
   public_deps = [
@@ -55,6 +57,7 @@ if (enable_basic_printing || enable_print_preview) {
       ":service",
       "//base/test:test_support",
       "//cc/paint:paint",
+      "//components/crash/core/common:crash_key",
       "//components/printing/service/public/interfaces",
       "//mojo/common",
       "//services/service_manager/public/cpp:service_test_support",

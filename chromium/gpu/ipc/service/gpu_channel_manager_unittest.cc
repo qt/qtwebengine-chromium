@@ -18,8 +18,8 @@ class GpuChannelManagerTest : public GpuChannelTestCommon {
   ~GpuChannelManagerTest() override = default;
 
 #if defined(OS_ANDROID)
-  void TestOnApplicationStateChange(ContextType type,
-                                    bool should_destroy_channel) {
+  void TestApplicationBackgrounded(ContextType type,
+                                   bool should_destroy_channel) {
     ASSERT_TRUE(channel_manager());
 
     int32_t kClientId = 1;
@@ -47,7 +47,7 @@ class GpuChannelManagerTest : public GpuChannelTestCommon {
     CommandBufferStub* stub = channel->LookupCommandBuffer(kRouteId);
     EXPECT_TRUE(stub);
 
-    channel_manager()->OnApplicationBackgroundedForTesting();
+    channel_manager()->OnApplicationBackgrounded();
 
     channel = channel_manager()->LookupChannel(kClientId);
     if (should_destroy_channel) {
@@ -71,20 +71,14 @@ TEST_F(GpuChannelManagerTest, EstablishChannel) {
 }
 
 #if defined(OS_ANDROID)
-TEST_F(GpuChannelManagerTest, OnLowEndBackgroundedWithoutWebGL) {
-  channel_manager()->set_low_end_mode_for_testing(true);
-  TestOnApplicationStateChange(CONTEXT_TYPE_OPENGLES2, true);
+TEST_F(GpuChannelManagerTest, OnBackgroundedWithoutWebGL) {
+  TestApplicationBackgrounded(CONTEXT_TYPE_OPENGLES2, true);
 }
 
-TEST_F(GpuChannelManagerTest, OnLowEndBackgroundedWithWebGL) {
-  channel_manager()->set_low_end_mode_for_testing(true);
-  TestOnApplicationStateChange(CONTEXT_TYPE_WEBGL2, false);
+TEST_F(GpuChannelManagerTest, OnBackgroundedWithWebGL) {
+  TestApplicationBackgrounded(CONTEXT_TYPE_WEBGL2, false);
 }
 
-TEST_F(GpuChannelManagerTest, OnHighEndBackgrounded) {
-  channel_manager()->set_low_end_mode_for_testing(false);
-  TestOnApplicationStateChange(CONTEXT_TYPE_OPENGLES2, false);
-}
 #endif
 
 }  // namespace gpu

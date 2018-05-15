@@ -5,16 +5,17 @@
 #ifndef CONTENT_RENDERER_SERVICE_WORKER_WORKER_FETCH_CONTEXT_IMPL_H_
 #define CONTENT_RENDERER_SERVICE_WORKER_WORKER_FETCH_CONTEXT_IMPL_H_
 
+#include "base/synchronization/waitable_event.h"
 #include "content/common/service_worker/service_worker_provider.mojom.h"
 #include "content/common/service_worker/service_worker_types.h"
-#include "content/public/common/shared_url_loader_factory.h"
 #include "ipc/ipc_message.h"
 #include "mojo/public/cpp/bindings/binding.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
-#include "third_party/WebKit/public/mojom/blob/blob_registry.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
-#include "third_party/WebKit/public/platform/WebApplicationCacheHost.h"
-#include "third_party/WebKit/public/platform/WebWorkerFetchContext.h"
+#include "third_party/blink/public/mojom/blob/blob_registry.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/blink/public/platform/web_application_cache_host.h"
+#include "third_party/blink/public/platform/web_worker_fetch_context.h"
 #include "url/gurl.h"
 
 namespace IPC {
@@ -45,12 +46,15 @@ class WorkerFetchContextImpl : public blink::WebWorkerFetchContext,
       mojom::ServiceWorkerWorkerClientRequest service_worker_client_request,
       mojom::ServiceWorkerContainerHostPtrInfo
           service_worker_container_host_info,
-      std::unique_ptr<SharedURLLoaderFactoryInfo> url_loader_factory_info,
-      std::unique_ptr<SharedURLLoaderFactoryInfo> direct_network_factory_info,
+      std::unique_ptr<network::SharedURLLoaderFactoryInfo>
+          url_loader_factory_info,
+      std::unique_ptr<network::SharedURLLoaderFactoryInfo>
+          direct_network_factory_info,
       std::unique_ptr<URLLoaderThrottleProvider> throttle_provider);
   ~WorkerFetchContextImpl() override;
 
   // blink::WebWorkerFetchContext implementation:
+  void SetTerminateSyncLoadEvent(base::WaitableEvent*) override;
   void InitializeOnWorkerThread() override;
   std::unique_ptr<blink::WebURLLoaderFactory> CreateURLLoaderFactory() override;
   std::unique_ptr<blink::WebURLLoaderFactory> WrapURLLoaderFactory(
@@ -104,9 +108,9 @@ class WorkerFetchContextImpl : public blink::WebWorkerFetchContext,
   // Consumed on the worker thread to create |service_worker_container_host_|.
   mojom::ServiceWorkerContainerHostPtrInfo service_worker_container_host_info_;
   // Consumed on the worker thread to create |shared_url_loader_factory_|.
-  std::unique_ptr<SharedURLLoaderFactoryInfo> url_loader_factory_info_;
+  std::unique_ptr<network::SharedURLLoaderFactoryInfo> url_loader_factory_info_;
   // Consumed on the worker thread to create |direct_network_loader_factory_|.
-  std::unique_ptr<SharedURLLoaderFactoryInfo>
+  std::unique_ptr<network::SharedURLLoaderFactoryInfo>
       direct_network_loader_factory_info_;
   // Consumed on the worker thread to create |blob_registry_|.
   blink::mojom::BlobRegistryPtrInfo blob_registry_ptr_info_;
@@ -127,8 +131,8 @@ class WorkerFetchContextImpl : public blink::WebWorkerFetchContext,
   // specifically to initialize ServiceWorkerSubresourceLoader for network
   // load that is controlled by a service worker (when this worker is a
   // client of the service worker).
-  scoped_refptr<SharedURLLoaderFactory> shared_url_loader_factory_;
-  scoped_refptr<SharedURLLoaderFactory> direct_network_loader_factory_;
+  scoped_refptr<network::SharedURLLoaderFactory> shared_url_loader_factory_;
+  scoped_refptr<network::SharedURLLoaderFactory> direct_network_loader_factory_;
 
   // S13nServiceWorker:
   // Initialized on the worker thread when InitializeOnWorkerThread() is called.
@@ -148,6 +152,9 @@ class WorkerFetchContextImpl : public blink::WebWorkerFetchContext,
   bool is_secure_context_ = false;
   GURL origin_url_;
   int appcache_host_id_ = blink::WebApplicationCacheHost::kAppCacheNoHostId;
+
+  // This is owned by ThreadedMessagingProxyBase on the main thread.
+  base::WaitableEvent* terminate_sync_load_event_ = nullptr;
 
   // A weak ptr to blink::WebURLLoaderFactory which was created and passed to
   // Blink by CreateURLLoaderFactory().

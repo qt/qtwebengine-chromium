@@ -4,7 +4,7 @@
 
 import("//build/config/android/rules.gni")
 import("//chrome/common/features.gni")
-import("//device/vr/features/features.gni")
+import("//device/vr/buildflags/buildflags.gni")
 import("//testing/test.gni")
 
 assert(enable_vr)
@@ -27,6 +27,8 @@ static_library("vr_android") {
     "gvr_util.h",
     "mailbox_to_surface_bridge.cc",
     "mailbox_to_surface_bridge.h",
+    "metrics_util_android.cc",
+    "metrics_util_android.h",
     "vr_controller.cc",
     "vr_controller.h",
     "vr_core_info.cc",
@@ -37,16 +39,12 @@ static_library("vr_android") {
     "vr_gl_thread.h",
     "vr_input_connection.cc",
     "vr_input_connection.h",
-    "vr_metrics_util.cc",
-    "vr_metrics_util.h",
     "vr_shell.cc",
     "vr_shell.h",
     "vr_shell_delegate.cc",
     "vr_shell_delegate.h",
     "vr_shell_gl.cc",
     "vr_shell_gl.h",
-    "vr_usage_monitor.cc",
-    "vr_usage_monitor.h",
     "vr_web_contents_observer.cc",
     "vr_web_contents_observer.h",
   ]

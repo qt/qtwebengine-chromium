@@ -7,35 +7,16 @@
 #include <shellapi.h>
 
 #include "base/command_line.h"
-#include "base/files/file_util.h"
-#include "base/path_service.h"
 #include "base/strings/string16.h"
 #include "base/win/windows_types.h"
-#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
+#include "notification_helper/notification_helper_util.h"
 #include "notification_helper/trace_util.h"
 
 namespace {
 
-// Returns the file path of chrome.exe if found, or an empty file path if not.
-base::FilePath GetChromeExePath() {
-  // Look for chrome.exe one folder above notification_helper.exe (as expected
-  // in Chrome installs). Failing that, look for it alonside
-  // notification_helper.exe.
-  base::FilePath dir_exe;
-  if (!PathService::Get(base::DIR_EXE, &dir_exe))
-    return base::FilePath();
-
-  base::FilePath chrome_exe =
-      dir_exe.DirName().Append(chrome::kBrowserProcessExecutableName);
-
-  if (!base::PathExists(chrome_exe)) {
-    chrome_exe = dir_exe.Append(chrome::kBrowserProcessExecutableName);
-    if (!base::PathExists(chrome_exe))
-      return base::FilePath();
-  }
-  return chrome_exe;
-}
+// The response entered by the user while interacting with the toast.
+const wchar_t kUserResponse[] = L"userResponse";
 
 }  // namespace
 
@@ -81,6 +62,16 @@ HRESULT NotificationActivator::Activate(
   base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
   command_line.AppendSwitchNative(switches::kNotificationLaunchId,
                                   invoked_args);
+
+  // Check to see if a user response (inline reply) is also supplied.
+  for (ULONG i = 0; i < count; ++i) {
+    if (lstrcmpW(kUserResponse, data[i].Key) == 0) {
+      command_line.AppendSwitchNative(switches::kNotificationInlineReply,
+                                      data[i].Value);
+      break;
+    }
+  }
+
   base::string16 params(command_line.GetCommandLineString());
 
   SHELLEXECUTEINFO info;

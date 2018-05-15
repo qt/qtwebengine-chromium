@@ -13,8 +13,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "components/leveldb/public/cpp/util.h"
-#include "content/browser/browser_thread_impl.h"
+#include "components/services/leveldb/public/cpp/util.h"
 #include "content/browser/dom_storage/local_storage_database.pb.h"
 #include "content/browser/gpu/shader_cache_factory.h"
 #include "content/browser/storage_partition_impl.h"
@@ -29,14 +28,13 @@
 #include "net/cookies/cookie_store.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "storage/browser/test/mock_quota_manager.h"
 #include "storage/browser/test/mock_special_storage_policy.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if BUILDFLAG(ENABLE_PLUGINS)
-#include "base/memory/ptr_util.h"
 #include "ppapi/shared_impl/ppapi_constants.h"  // nogncheck
 #include "storage/browser/fileapi/async_file_util.h"
 #include "storage/browser/fileapi/file_system_context.h"
@@ -344,8 +342,8 @@ class RemovePluginPrivateDataTester {
     async_file_util->CreateOrOpen(
         std::move(operation_context), clearkey_file_,
         base::File::FLAG_OPEN | base::File::FLAG_WRITE,
-        base::Bind(&RemovePluginPrivateDataTester::OnFileOpened,
-                   base::Unretained(this), &file, &await_completion));
+        base::BindOnce(&RemovePluginPrivateDataTester::OnFileOpened,
+                       base::Unretained(this), &file, &await_completion));
     await_completion.BlockUntilNotified();
     return file;
   }
@@ -391,8 +389,8 @@ class RemovePluginPrivateDataTester {
         storage::QuotaManager::kNoLimit);
     file_util->EnsureFileExists(
         std::move(operation_context), file_url,
-        base::Bind(&RemovePluginPrivateDataTester::OnFileCreated,
-                   base::Unretained(this), &await_completion));
+        base::BindOnce(&RemovePluginPrivateDataTester::OnFileCreated,
+                       base::Unretained(this), &await_completion));
     await_completion.BlockUntilNotified();
     return file_url;
   }
@@ -406,8 +404,8 @@ class RemovePluginPrivateDataTester {
             filesystem_context_);
     file_util->DeleteFile(
         std::move(operation_context), file_url,
-        base::Bind(&RemovePluginPrivateDataTester::OnFileDeleted,
-                   base::Unretained(this), &await_completion));
+        base::BindOnce(&RemovePluginPrivateDataTester::OnFileDeleted,
+                       base::Unretained(this), &await_completion));
     await_completion.BlockUntilNotified();
   }
 
@@ -421,10 +419,10 @@ class RemovePluginPrivateDataTester {
     std::unique_ptr<storage::FileSystemOperationContext> operation_context =
         std::make_unique<storage::FileSystemOperationContext>(
             filesystem_context_);
-    file_util->Touch(std::move(operation_context), file_url, time_stamp,
-                     time_stamp,
-                     base::Bind(&RemovePluginPrivateDataTester::OnFileTouched,
-                                base::Unretained(this), &await_completion));
+    file_util->Touch(
+        std::move(operation_context), file_url, time_stamp, time_stamp,
+        base::BindOnce(&RemovePluginPrivateDataTester::OnFileTouched,
+                       base::Unretained(this), &await_completion));
     await_completion.BlockUntilNotified();
   }
 
@@ -1152,7 +1150,7 @@ TEST_F(StoragePartitionImplTest, RemoveCookieWithMatcher) {
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::BindOnce(&ClearCookiesWithMatcher, partition, base::Time(),
-                     base::Time::Max(), false_predicate, &run_loop));
+                     base::Time::Max(), std::move(false_predicate), &run_loop));
   run_loop.RunUntilIdle();
   EXPECT_TRUE(tester.ContainsCookie());
 
@@ -1161,7 +1159,7 @@ TEST_F(StoragePartitionImplTest, RemoveCookieWithMatcher) {
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::BindOnce(&ClearCookiesWithMatcher, partition, base::Time(),
-                     base::Time::Max(), true_predicate, &run_loop2));
+                     base::Time::Max(), std::move(true_predicate), &run_loop2));
   run_loop2.RunUntilIdle();
   EXPECT_FALSE(tester.ContainsCookie());
 }

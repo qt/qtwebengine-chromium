@@ -15,6 +15,7 @@
 #include "base/macros.h"
 #include "base/memory/free_deleter.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_pump_for_io.h"
 #include "base/posix/safe_strerror.h"
 #include "base/task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -289,7 +290,7 @@ class DrmDevice::PageFlipManager {
   DISALLOW_COPY_AND_ASSIGN(PageFlipManager);
 };
 
-class DrmDevice::IOWatcher : public base::MessagePumpLibevent::Watcher {
+class DrmDevice::IOWatcher : public base::MessagePumpLibevent::FdWatcher {
  public:
   IOWatcher(int fd, DrmDevice::PageFlipManager* page_flip_manager)
       : page_flip_manager_(page_flip_manager), controller_(FROM_HERE), fd_(fd) {
@@ -302,7 +303,7 @@ class DrmDevice::IOWatcher : public base::MessagePumpLibevent::Watcher {
   void Register() {
     DCHECK(base::MessageLoopForIO::IsCurrent());
     base::MessageLoopForIO::current()->WatchFileDescriptor(
-        fd_, true, base::MessageLoopForIO::WATCH_READ, &controller_, this);
+        fd_, true, base::MessagePumpForIO::WATCH_READ, &controller_, this);
   }
 
   void Unregister() {
@@ -310,7 +311,7 @@ class DrmDevice::IOWatcher : public base::MessagePumpLibevent::Watcher {
     controller_.StopWatchingFileDescriptor();
   }
 
-  // base::MessagePumpLibevent::Watcher overrides:
+  // base::MessagePumpLibevent::FdWatcher overrides:
   void OnFileCanReadWithoutBlocking(int fd) override {
     DCHECK(base::MessageLoopForIO::IsCurrent());
     TRACE_EVENT1("drm", "OnDrmEvent", "socket", fd);
@@ -324,7 +325,7 @@ class DrmDevice::IOWatcher : public base::MessagePumpLibevent::Watcher {
 
   DrmDevice::PageFlipManager* page_flip_manager_;
 
-  base::MessagePumpLibevent::FileDescriptorWatcher controller_;
+  base::MessagePumpLibevent::FdWatchController controller_;
 
   int fd_;
 

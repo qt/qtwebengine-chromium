@@ -37,6 +37,7 @@
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/account_fetcher_service_factory.h"
 #include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/signin/fake_gaia_cookie_manager_service_builder.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
@@ -51,6 +52,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "components/crx_file/id_util.h"
 #include "components/guest_view/browser/guest_view_base.h"
+#include "components/signin/core/browser/account_fetcher_service.h"
 #include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/fake_gaia_cookie_manager_service.h"
 #include "components/signin/core/browser/fake_profile_oauth2_token_service.h"
@@ -414,14 +416,6 @@ class MockQueuedMintRequest : public IdentityMintRequestQueue::Request {
   MOCK_METHOD1(StartMintToken, void(IdentityMintRequestQueue::MintType));
 };
 
-gaia::AccountIds CreateIds(const std::string& email, const std::string& obfid) {
-  gaia::AccountIds ids;
-  ids.account_key = email;
-  ids.email = email;
-  ids.gaia = obfid;
-  return ids;
-}
-
 class IdentityTestWithSignin : public AsyncExtensionBrowserTest {
  public:
   void SetUpInProcessBrowserTestFixture() override {
@@ -445,6 +439,18 @@ class IdentityTestWithSignin : public AsyncExtensionBrowserTest {
         context, &BuildFakeProfileOAuth2TokenService);
     GaiaCookieManagerServiceFactory::GetInstance()->SetTestingFactory(
         context, &BuildFakeGaiaCookieManagerService);
+
+    // Ensure that AccountFetcherService is (1) created at all and (2) created
+    // early enough for it to observe the Profile initialization process and
+    // loading of tokens by PO2TS. Explicitly forcing this setup (which happens
+    // naturally in production) is necessary for the flow of
+    // AccountTrackerService having accounts removed when tokens are revoked
+    // with PO2TS to work as expected in this testing context.
+    // TODO(blundell): Change these tests to interact with
+    // IdentityTestEnvironment once the production code is changed to interact
+    // with IdentityManager.
+    AccountFetcherServiceFactory::GetInstance()->GetForProfile(
+        Profile::FromBrowserContext(context));
   }
 
   void SetUpOnMainThread() override {
@@ -461,6 +467,19 @@ class IdentityTestWithSignin : public AsyncExtensionBrowserTest {
     GaiaCookieManagerServiceFactory::GetInstance()
         ->GetForProfile(profile())
         ->Init();
+
+#if defined(OS_CHROMEOS)
+    // On ChromeOS, ProfileOAuth2TokenService does not fire
+    // OnRefreshTokensLoaded() in text contexts. However, AccountFetcherService
+    // must receive this call in order to forward later
+    // OnRefreshToken{Available, Revoked} callbacks on to AccountTrackerService
+    // as expected. Hence, we make that call explicitly here.
+    // TODO(blundell): Hide this detail when converting this code to interact
+    // with IdentityTestEnvironment.
+    AccountFetcherServiceFactory::GetInstance()
+        ->GetForProfile(profile())
+        ->OnRefreshTokensLoaded();
+#endif
   }
 
  protected:
@@ -715,10 +734,6 @@ class GetAuthTokenFunctionTest
   void SetUpCommandLine(base::CommandLine* command_line) override {
     IdentityTestWithSignin::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kExtensionsMultiAccount);
-  }
-
-  void IssueLoginRefreshTokenForAccount(const std::string& account_key) {
-    token_service_->UpdateCredentials(account_key, "refresh_token");
   }
 
   void IssueLoginAccessTokenForAccount(const std::string& account_key) {
@@ -1743,8 +1758,7 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
 IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
                        MultiPrimaryUserManuallyIssueToken) {
   SignIn("primary@example.com");
-  IssueLoginRefreshTokenForAccount("secondary@example.com");
-  SeedAccountInfo("secondary@example.com");
+  AddAccount("secondary@example.com", "secondary@example.com");
 
   scoped_refptr<FakeGetAuthTokenFunction> func(new FakeGetAuthTokenFunction());
   scoped_refptr<const Extension> extension(CreateExtension(CLIENT_ID | SCOPES));
@@ -1772,8 +1786,7 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
 IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
                        MultiSecondaryUserManuallyIssueToken) {
   SignIn("primary@example.com");
-  IssueLoginRefreshTokenForAccount("secondary@example.com");
-  SeedAccountInfo("secondary@example.com");
+  AddAccount("secondary@example.com", "secondary@example.com");
 
   scoped_refptr<FakeGetAuthTokenFunction> func(new FakeGetAuthTokenFunction());
   scoped_refptr<const Extension> extension(CreateExtension(CLIENT_ID | SCOPES));
@@ -1801,8 +1814,7 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
 IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
                        MultiUnknownUserGetTokenFromTokenServiceFailure) {
   SignIn("primary@example.com");
-  IssueLoginRefreshTokenForAccount("secondary@example.com");
-  SeedAccountInfo("secondary@example.com");
+  AddAccount("secondary@example.com", "secondary@example.com");
 
   scoped_refptr<FakeGetAuthTokenFunction> func(new FakeGetAuthTokenFunction());
   scoped_refptr<const Extension> extension(CreateExtension(CLIENT_ID | SCOPES));
@@ -1818,8 +1830,7 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
 IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
                        MultiSecondaryNonInteractiveMintFailure) {
   SignIn("primary@example.com");
-  IssueLoginRefreshTokenForAccount("secondary@example.com");
-  SeedAccountInfo("secondary@example.com");
+  AddAccount("secondary@example.com", "secondary@example.com");
 
   scoped_refptr<FakeGetAuthTokenFunction> func(new FakeGetAuthTokenFunction());
   func->set_extension(CreateExtension(CLIENT_ID | SCOPES));
@@ -1836,8 +1847,7 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
 IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
                        MultiSecondaryNonInteractiveLoginAccessTokenFailure) {
   SignIn("primary@example.com");
-  IssueLoginRefreshTokenForAccount("secondary@example.com");
-  SeedAccountInfo("secondary@example.com");
+  AddAccount("secondary@example.com", "secondary@example.com");
 
   scoped_refptr<FakeGetAuthTokenFunction> func(new FakeGetAuthTokenFunction());
   func->set_extension(CreateExtension(CLIENT_ID | SCOPES));
@@ -1852,8 +1862,7 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
 IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
                        MultiSecondaryInteractiveApprovalAborted) {
   SignIn("primary@example.com");
-  IssueLoginRefreshTokenForAccount("secondary@example.com");
-  SeedAccountInfo("secondary@example.com");
+  AddAccount("secondary@example.com", "secondary@example.com");
 
   scoped_refptr<FakeGetAuthTokenFunction> func(new FakeGetAuthTokenFunction());
   func->set_extension(CreateExtension(CLIENT_ID | SCOPES));
@@ -1995,7 +2004,9 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionPublicSessionTest, NonWhitelisted) {
   EXPECT_FALSE(func->scope_ui_shown());
 }
 
-IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionPublicSessionTest, Whitelisted) {
+// TODO(crbug.com/830052): This test is flaky.
+IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionPublicSessionTest,
+                       DISABLED_Whitelisted) {
   // GetAuthToken() should return a token for whitelisted extensions.
   user_manager::ScopedUserManager user_manager_enabler(
       base::WrapUnique(user_manager_));
@@ -2085,7 +2096,14 @@ class LaunchWebAuthFlowFunctionTest : public AsyncExtensionBrowserTest {
   }
 };
 
-IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest, UserCloseWindow) {
+#if defined(OS_LINUX)
+// This test times out on Linux MSan Tests.
+// See https://crbug.com/831848 .
+#define MAYBE_UserCloseWindow DISABLED_UserCloseWindow
+#else
+#define MAYBE_UserCloseWindow UserCloseWindow
+#endif
+IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest, MAYBE_UserCloseWindow) {
   net::EmbeddedTestServer https_server(net::EmbeddedTestServer::TYPE_HTTPS);
   https_server.ServeFilesFromSourceDirectory(
       "chrome/test/data/extensions/api_test/identity");
@@ -2222,6 +2240,7 @@ class OnSignInChangedEventTest : public IdentityTestWithSignin {
     id_api()->set_on_signin_changed_callback_for_testing(
         base::Bind(&OnSignInChangedEventTest::OnSignInEventChanged,
                    base::Unretained(this)));
+
     IdentityTestWithSignin::SetUpOnMainThread();
   }
 
@@ -2245,8 +2264,7 @@ class OnSignInChangedEventTest : public IdentityTestWithSignin {
 
  private:
   void OnSignInEventChanged(Event* event) {
-    if (!HasExpectedEvent())
-      return;
+    ASSERT_TRUE(HasExpectedEvent());
 
     // Search for |event| in the set of expected events.
     bool found_event = false;
@@ -2283,8 +2301,6 @@ class OnSignInChangedEventTest : public IdentityTestWithSignin {
 
 // Test that an event is fired when the primary account signs in.
 IN_PROC_BROWSER_TEST_F(OnSignInChangedEventTest, FireOnPrimaryAccountSignIn) {
-  id_api()->SetAccountStateForTesting("primary", false);
-
   api::identity::AccountInfo account_info;
   account_info.id = "primary";
   AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, true));
@@ -2298,10 +2314,12 @@ IN_PROC_BROWSER_TEST_F(OnSignInChangedEventTest, FireOnPrimaryAccountSignIn) {
 #if !defined(OS_CHROMEOS)
 // Test that an event is fired when the primary account signs out.
 IN_PROC_BROWSER_TEST_F(OnSignInChangedEventTest, FireOnPrimaryAccountSignOut) {
-  id_api()->SetAccountStateForTesting("primary", true);
-
   api::identity::AccountInfo account_info;
   account_info.id = "primary";
+  AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, true));
+
+  SignIn("primary", "primary");
+
   AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, false));
 
   // Sign out and verify that the callback fires.
@@ -2315,10 +2333,12 @@ IN_PROC_BROWSER_TEST_F(OnSignInChangedEventTest, FireOnPrimaryAccountSignOut) {
 // revoked.
 IN_PROC_BROWSER_TEST_F(OnSignInChangedEventTest,
                        FireOnPrimaryAccountRefreshTokenRevoked) {
-  id_api()->SetAccountStateForTesting("primary", true);
-
   api::identity::AccountInfo account_info;
   account_info.id = "primary";
+  AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, true));
+
+  SignIn("primary", "primary");
+
   AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, false));
 
   // Revoke the refresh token and verify that the callback fires.
@@ -2331,37 +2351,39 @@ IN_PROC_BROWSER_TEST_F(OnSignInChangedEventTest,
 // newly available.
 IN_PROC_BROWSER_TEST_F(OnSignInChangedEventTest,
                        FireOnPrimaryAccountRefreshTokenAvailable) {
-  id_api()->SetAccountStateForTesting("primary", false);
-
-  SignIn("primary", "primary");
-  token_service_->RevokeCredentials("primary");
-
   api::identity::AccountInfo account_info;
   account_info.id = "primary";
   AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, true));
 
+  SignIn("primary", "primary");
+
+  AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, false));
+  token_service_->RevokeCredentials("primary");
+
+  account_info.id = "primary";
+  AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, true));
+
   // Make the primary account's refresh token available and check that the
-  // callback fires.
-  token_service_->UpdateCredentials("primary", "refresh_token");
+  // callback fires. Note that we must call AddAccount() here as the account's
+  // information must be present in the AccountTrackerService as well.
+  AddAccount("primary", "primary");
   EXPECT_FALSE(HasExpectedEvent());
 }
 
-// Test that an event is fired for changes to a secondary account when there is
-// a primary account available.
-IN_PROC_BROWSER_TEST_F(OnSignInChangedEventTest,
-                       FireForSecondaryAccountWhenPrimaryAccountExists) {
-  id_api()->SetAccountStateForTesting("primary", false);
-  id_api()->SetAccountStateForTesting("secondary", false);
-
+// Test that an event is fired for changes to a secondary account.
+IN_PROC_BROWSER_TEST_F(OnSignInChangedEventTest, FireForSecondaryAccount) {
+  api::identity::AccountInfo account_info;
+  account_info.id = "primary";
+  AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, true));
   SignIn("primary", "primary");
 
-  api::identity::AccountInfo account_info;
   account_info.id = "secondary";
   AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, true));
 
   // Make a secondary account's refresh token available and check that the
-  // callback fires.
-  token_service_->UpdateCredentials("secondary", "refresh_token");
+  // callback fires. Note that we must call AddAccount() here as the account's
+  // information must be present in the AccountTrackerService as well.
+  AddAccount("secondary", "secondary");
   EXPECT_FALSE(HasExpectedEvent());
 
   // Revoke the secondary account's refresh token and check that the callback
@@ -2371,75 +2393,6 @@ IN_PROC_BROWSER_TEST_F(OnSignInChangedEventTest,
   token_service_->RevokeCredentials("secondary");
   EXPECT_FALSE(HasExpectedEvent());
 }
-
-// Test that an event is not fired for changes to a secondary account when
-// there is no primary account available.
-IN_PROC_BROWSER_TEST_F(OnSignInChangedEventTest,
-                       DontFireForSecondaryAccountWhenNoPrimaryAccountExists) {
-  // Add an expected event to be able to verify that no event is fired.
-  api::identity::AccountInfo account_info;
-  account_info.id = "secondary";
-  AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, true));
-
-  // Check not firing on addition of secondary account.
-  AddAccount("secondary", "secondary");
-  EXPECT_TRUE(HasExpectedEvent());
-
-  // Check not firing on token revocation of secondary account.
-  token_service_->RevokeCredentials("primary");
-  EXPECT_TRUE(HasExpectedEvent());
-}
-
-// The below tests involve elements that aren't relevant on ChromeOS:
-// - Signin of secondary accounts before the primary account signs in. On
-//   ChromeOS, this isn't possible.
-// - Signout of the primary account. On ChromeOS, this isn't possible.
-#if !defined(OS_CHROMEOS)
-// Test that signin events are fired for all known accounts when the primary
-// account signs in and there is a secondary account already present. Note that
-// the order in which the events fire is undefined.
-IN_PROC_BROWSER_TEST_F(OnSignInChangedEventTest,
-                       FireForAllAccountsOnPrimaryAccountSignIn) {
-  id_api()->SetAccountStateForTesting("primary", false);
-  id_api()->SetAccountStateForTesting("secondary", false);
-
-  api::identity::AccountInfo account_info;
-  account_info.id = "secondary";
-  AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, true));
-
-  // Add the secondary account, and verify that no event is yet fired for it.
-  AddAccount("secondary", "secondary");
-  EXPECT_TRUE(HasExpectedEvent());
-
-  // Add an event for the primary account in preparation for signing in.
-  account_info.id = "primary";
-  AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, true));
-
-  // Sign in with the primary account, and verify that both events are fired.
-  SignIn("primary", "primary");
-  EXPECT_FALSE(HasExpectedEvent());
-}
-
-// Test that signout events are fired for all known accounts when the primary
-// account signs out. Note that the order in which the events fire is undefined.
-IN_PROC_BROWSER_TEST_F(OnSignInChangedEventTest,
-                       FireForAllAccountsOnPrimaryAccountSignOut) {
-  id_api()->SetAccountStateForTesting("primary", true);
-  id_api()->SetAccountStateForTesting("secondary", true);
-
-  api::identity::AccountInfo account_info;
-  account_info.id = "primary";
-  AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, false));
-
-  account_info.id = "secondary";
-  AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, false));
-
-  // Sign out and verify that both events fire.
-  signin_manager_->ForceSignOut();
-
-  EXPECT_FALSE(HasExpectedEvent());
-}
-#endif  // !defined(OS_CHROMEOS)
 
 }  // namespace extensions
 

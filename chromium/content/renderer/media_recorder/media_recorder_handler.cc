@@ -26,10 +26,10 @@
 #include "media/base/video_codecs.h"
 #include "media/base/video_frame.h"
 #include "media/muxers/webm_muxer.h"
-#include "third_party/WebKit/public/platform/WebMediaRecorderHandlerClient.h"
-#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/modules/media_capabilities/WebMediaConfiguration.h"
+#include "third_party/blink/public/platform/modules/media_capabilities/web_media_configuration.h"
+#include "third_party/blink/public/platform/web_media_recorder_handler_client.h"
+#include "third_party/blink/public/platform/web_media_stream_source.h"
+#include "third_party/blink/public/platform/web_string.h"
 
 using base::TimeDelta;
 using base::TimeTicks;
@@ -190,7 +190,7 @@ bool MediaRecorderHandler::Initialize(
   DCHECK(main_render_thread_checker_.CalledOnValidThread());
   // Save histogram data so we can see how much MediaStream Recorder is used.
   // The histogram counts the number of calls to the JS API.
-  UpdateWebRTCMethodCount(WEBKIT_MEDIA_STREAM_RECORDER);
+  UpdateWebRTCMethodCount(blink::WebRTCAPIName::kMediaStreamRecorder);
 
   if (!CanSupportMimeType(type, codecs)) {
     DLOG(ERROR) << "Unsupported " << type.Utf8() << ";codecs=" << codecs.Utf8();

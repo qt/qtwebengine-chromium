@@ -52,17 +52,16 @@ bool AllowWhitelistedPaths(const std::vector<base::FilePath>& allowed_paths,
 IndexedDBInternalsUI::IndexedDBInternalsUI(WebUI* web_ui)
     : WebUIController(web_ui) {
   web_ui->RegisterMessageCallback(
-      "getAllOrigins",
-      base::Bind(&IndexedDBInternalsUI::GetAllOrigins, base::Unretained(this)));
+      "getAllOrigins", base::BindRepeating(&IndexedDBInternalsUI::GetAllOrigins,
+                                           base::Unretained(this)));
 
   web_ui->RegisterMessageCallback(
       "downloadOriginData",
-      base::Bind(&IndexedDBInternalsUI::DownloadOriginData,
-                 base::Unretained(this)));
+      base::BindRepeating(&IndexedDBInternalsUI::DownloadOriginData,
+                          base::Unretained(this)));
   web_ui->RegisterMessageCallback(
-      "forceClose",
-      base::Bind(&IndexedDBInternalsUI::ForceCloseOrigin,
-                 base::Unretained(this)));
+      "forceClose", base::BindRepeating(&IndexedDBInternalsUI::ForceCloseOrigin,
+                                        base::Unretained(this)));
 
   WebUIDataSource* source =
       WebUIDataSource::Create(kChromeUIIndexedDBInternalsHost);
@@ -99,7 +98,7 @@ void IndexedDBInternalsUI::GetAllOrigins(const base::ListValue* args) {
   BrowserContext::StoragePartitionCallback cb =
       base::Bind(&IndexedDBInternalsUI::AddContextFromStoragePartition,
                  base::Unretained(this));
-  BrowserContext::ForEachStoragePartition(browser_context, cb);
+  BrowserContext::ForEachStoragePartition(browser_context, std::move(cb));
 }
 
 void IndexedDBInternalsUI::GetAllOriginsOnIndexedDBThread(
@@ -170,7 +169,7 @@ bool IndexedDBInternalsUI::GetOriginContext(
   StoragePartition* result_partition;
   BrowserContext::StoragePartitionCallback cb =
       base::Bind(&FindContext, path, &result_partition, context);
-  BrowserContext::ForEachStoragePartition(browser_context, cb);
+  BrowserContext::ForEachStoragePartition(browser_context, std::move(cb));
 
   if (!result_partition || !(context->get()))
     return false;

@@ -383,8 +383,14 @@ namespace es2
 		switch(internalformat)
 		{
 		case GL_ALPHA8_EXT:
-		case GL_LUMINANCE8_ALPHA8_EXT:
 		case GL_LUMINANCE8_EXT:
+		case GL_LUMINANCE8_ALPHA8_EXT:
+		case GL_ALPHA32F_EXT:
+		case GL_LUMINANCE32F_EXT:
+		case GL_LUMINANCE_ALPHA32F_EXT:
+		case GL_ALPHA16F_EXT:
+		case GL_LUMINANCE16F_EXT:
+		case GL_LUMINANCE_ALPHA16F_EXT:
 		case GL_R8:
 		case GL_R8UI:
 		case GL_R8I:
@@ -565,7 +571,8 @@ namespace es2
 		{
 		case GL_ALPHA:
 			if(baseColorbufferFormat != GL_ALPHA &&
-			   baseColorbufferFormat != GL_RGBA)
+			   baseColorbufferFormat != GL_RGBA &&
+			   baseColorbufferFormat != GL_BGRA_EXT)   // GL_EXT_texture_format_BGRA8888 / GL_APPLE_texture_format_BGRA8888
 			{
 				return error(GL_INVALID_OPERATION, false);
 			}
@@ -583,7 +590,8 @@ namespace es2
 			if(baseColorbufferFormat != GL_RED &&
 			   baseColorbufferFormat != GL_RG &&
 			   baseColorbufferFormat != GL_RGB &&
-			   baseColorbufferFormat != GL_RGBA)
+			   baseColorbufferFormat != GL_RGBA &&
+			   baseColorbufferFormat != GL_BGRA_EXT)   // GL_EXT_texture_format_BGRA8888 / GL_APPLE_texture_format_BGRA8888
 			{
 				return error(GL_INVALID_OPERATION, false);
 			}
@@ -591,14 +599,16 @@ namespace es2
 		case GL_RG:
 			if(baseColorbufferFormat != GL_RG &&
 			   baseColorbufferFormat != GL_RGB &&
-			   baseColorbufferFormat != GL_RGBA)
+			   baseColorbufferFormat != GL_RGBA &&
+			   baseColorbufferFormat != GL_BGRA_EXT)   // GL_EXT_texture_format_BGRA8888 / GL_APPLE_texture_format_BGRA8888
 			{
 				return error(GL_INVALID_OPERATION, false);
 			}
 			break;
 		case GL_RGB:
 			if(baseColorbufferFormat != GL_RGB &&
-			   baseColorbufferFormat != GL_RGBA)
+			   baseColorbufferFormat != GL_RGBA &&
+			   baseColorbufferFormat != GL_BGRA_EXT)   // GL_EXT_texture_format_BGRA8888 / GL_APPLE_texture_format_BGRA8888
 			{
 				return error(GL_INVALID_OPERATION, false);
 			}
@@ -1121,7 +1131,7 @@ namespace es2
 		return GL_NO_ERROR;
 	}
 
-	GLsizei GetTypeSize(GLenum type)
+	size_t GetTypeSize(GLenum type)
 	{
 		switch(type)
 		{
@@ -1209,6 +1219,12 @@ namespace es2
 		case GL_ALPHA8_EXT:
 		case GL_LUMINANCE8_EXT:
 		case GL_LUMINANCE8_ALPHA8_EXT:
+		case GL_ALPHA32F_EXT:
+		case GL_LUMINANCE32F_EXT:
+		case GL_LUMINANCE_ALPHA32F_EXT:
+		case GL_ALPHA16F_EXT:
+		case GL_LUMINANCE16F_EXT:
+		case GL_LUMINANCE_ALPHA16F_EXT:
 		case GL_DEPTH_COMPONENT24:
 		case GL_DEPTH_COMPONENT32_OES:
 		case GL_DEPTH_COMPONENT32F:
@@ -1378,6 +1394,12 @@ namespace es2
 		case GL_ALPHA8_EXT:
 		case GL_LUMINANCE8_EXT:
 		case GL_LUMINANCE8_ALPHA8_EXT:
+		case GL_ALPHA32F_EXT:
+		case GL_LUMINANCE32F_EXT:
+		case GL_LUMINANCE_ALPHA32F_EXT:
+		case GL_ALPHA16F_EXT:
+		case GL_LUMINANCE16F_EXT:
+		case GL_LUMINANCE_ALPHA16F_EXT:
 			return true;
 		default:
 			return IsColorRenderable(internalformat, clientVersion);
@@ -1665,6 +1687,12 @@ namespace es2
 		case GL_RGBA16I:
 		case GL_RGBA32I:
 			return GL_INT;
+		case GL_ALPHA32F_EXT:
+		case GL_LUMINANCE32F_EXT:
+		case GL_LUMINANCE_ALPHA32F_EXT:
+		case GL_ALPHA16F_EXT:
+		case GL_LUMINANCE16F_EXT:
+		case GL_LUMINANCE_ALPHA16F_EXT:
 		case GL_R16F:
 		case GL_RG16F:
 		case GL_R11F_G11F_B10F:

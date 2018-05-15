@@ -21,6 +21,7 @@
 #include "api/rtp_headers.h"
 #include "api/videosinkinterface.h"
 #include "api/videosourceinterface.h"
+#include "api/video_codecs/video_encoder_factory.h"
 #include "call/rtp_config.h"
 #include "call/video_config.h"
 #include "common_types.h"  // NOLINT(build/include)
@@ -112,16 +113,8 @@ class VideoSendStream {
 
     struct EncoderSettings {
       EncoderSettings() = default;
-      EncoderSettings(std::string payload_name,
-                      int payload_type,
-                      VideoEncoder* encoder)
-          : payload_name(std::move(payload_name)),
-            payload_type(payload_type),
-            encoder(encoder) {}
+      explicit EncoderSettings(VideoEncoder* encoder) : encoder(encoder) {}
       std::string ToString() const;
-
-      std::string payload_name;
-      int payload_type = -1;
 
       // TODO(sophiechang): Delete this field when no one is using internal
       // sources anymore.
@@ -136,6 +129,10 @@ class VideoSendStream {
       // cpu adaptation.
       bool experiment_cpu_load_estimator = false;
 
+      // Ownership stays with WebrtcVideoEngine (delegated from PeerConnection).
+      VideoEncoderFactory* encoder_factory = nullptr;
+
+      // TODO(nisse): Delete, let VideoStreamEncoder create the encoder.
       // Uninitialized VideoEncoder instance to be used for encoding. Will be
       // initialized from inside the VideoSendStream.
       VideoEncoder* encoder = nullptr;
@@ -150,6 +147,10 @@ class VideoSendStream {
 
       std::vector<uint32_t> ssrcs;
 
+      // The value to send in the MID RTP header extension if the extension is
+      // included in the list of extensions.
+      std::string mid;
+
       // See RtcpMode for description.
       RtcpMode rtcp_mode = RtcpMode::kCompound;
 
@@ -158,6 +159,16 @@ class VideoSendStream {
 
       // RTP header extensions to use for this send stream.
       std::vector<RtpExtension> extensions;
+
+      // TODO(nisse): For now, these are fixed, but we'd like to support
+      // changing codec without recreating the VideoSendStream. Then these
+      // fields must be removed, and association between payload type and codec
+      // must move above the per-stream level. Ownership could be with
+      // RtpTransportControllerSend, with a reference from PayloadRouter, where
+      // the latter would be responsible for mapping the codec type of encoded
+      // images to the right payload type.
+      std::string payload_name;
+      int payload_type = -1;
 
       // See NackConfig for description.
       NackConfig nack;

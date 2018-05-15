@@ -1,15 +1,17 @@
 // Copyright 2017 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+#include "device/fido/u2f_request.h"
 
 #include <list>
 #include <string>
 #include <utility>
 
 #include "base/test/scoped_task_environment.h"
-#include "device/fido/mock_u2f_device.h"
-#include "device/fido/mock_u2f_discovery.h"
-#include "device/fido/u2f_request.h"
+#include "device/fido/fake_fido_discovery.h"
+#include "device/fido/fido_transport_protocol.h"
+#include "device/fido/mock_fido_device.h"
+#include "device/fido/test_callback_receiver.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using ::testing::_;
@@ -20,9 +22,10 @@ namespace {
 
 class FakeU2fRequest : public U2fRequest {
  public:
-  explicit FakeU2fRequest()
+  explicit FakeU2fRequest(
+      const base::flat_set<FidoTransportProtocol>& transports)
       : U2fRequest(nullptr /* connector */,
-                   base::flat_set<U2fTransportProtocol>(),
+                   transports,
                    std::vector<uint8_t>(),
                    std::vector<uint8_t>(),
                    std::vector<std::vector<uint8_t>>()) {}
@@ -33,62 +36,59 @@ class FakeU2fRequest : public U2fRequest {
   }
 };
 
-// Convenience functions for setting one and two mock discoveries, respectively.
-MockU2fDiscovery* SetMockDiscovery(
-    U2fRequest* request,
-    std::unique_ptr<MockU2fDiscovery> discovery) {
-  auto* raw_discovery = discovery.get();
-  std::vector<std::unique_ptr<U2fDiscovery>> discoveries;
-  discoveries.push_back(std::move(discovery));
-  request->SetDiscoveriesForTesting(std::move(discoveries));
-  return raw_discovery;
-}
-
-std::pair<MockU2fDiscovery*, MockU2fDiscovery*> SetMockDiscoveries(
-    U2fRequest* request,
-    std::unique_ptr<MockU2fDiscovery> discovery_1,
-    std::unique_ptr<MockU2fDiscovery> discovery_2) {
-  auto* raw_discovery_1 = discovery_1.get();
-  auto* raw_discovery_2 = discovery_2.get();
-  std::vector<std::unique_ptr<U2fDiscovery>> discoveries;
-  discoveries.push_back(std::move(discovery_1));
-  discoveries.push_back(std::move(discovery_2));
-  request->SetDiscoveriesForTesting(std::move(discoveries));
-  return {raw_discovery_1, raw_discovery_2};
-}
+using TestVersionCallback =
+    ::device::test::TestCallbackReceiver<ProtocolVersion>;
 
 }  // namespace
 
-class U2fRequestTest : public testing::Test {
+class U2fRequestTest : public ::testing::Test {
  protected:
+  base::test::ScopedTaskEnvironment& scoped_task_environment() {
+    return scoped_task_environment_;
+  }
+
+  test::ScopedFakeFidoDiscoveryFactory& discovery_factory() {
+    return discovery_factory_;
+  }
+
+  TestVersionCallback& version_callback_receiver() {
+    return version_callback_receiver_;
+  }
+
+ private:
   base::test::ScopedTaskEnvironment scoped_task_environment_{
       base::test::ScopedTaskEnvironment::MainThreadType::MOCK_TIME};
+  TestVersionCallback version_callback_receiver_;
+  test::ScopedFakeFidoDiscoveryFactory discovery_factory_;
 };
 
 TEST_F(U2fRequestTest, TestIterateDevice) {
-  FakeU2fRequest request;
-  auto* discovery =
-      SetMockDiscovery(&request, std::make_unique<MockU2fDiscovery>());
-  auto device0 = std::make_unique<MockU2fDevice>();
-  auto device1 = std::make_unique<MockU2fDevice>();
-  EXPECT_CALL(*device0, GetId()).WillRepeatedly(testing::Return("device0"));
-  EXPECT_CALL(*device1, GetId()).WillRepeatedly(testing::Return("device1"));
+  auto* discovery = discovery_factory().ForgeNextHidDiscovery();
+
+  FakeU2fRequest request({FidoTransportProtocol::kUsbHumanInterfaceDevice});
+  request.Start();
+
+  auto device0 = std::make_unique<MockFidoDevice>();
+  auto device1 = std::make_unique<MockFidoDevice>();
+  EXPECT_CALL(*device0, GetId()).WillRepeatedly(::testing::Return("device0"));
+  EXPECT_CALL(*device1, GetId()).WillRepeatedly(::testing::Return("device1"));
+
   // Add two U2F devices
   discovery->AddDevice(std::move(device0));
   discovery->AddDevice(std::move(device1));
 
-  // Move first device to current
+  // Move first device to current.
   request.IterateDevice();
   ASSERT_NE(nullptr, request.current_device_);
   EXPECT_EQ(static_cast<size_t>(1), request.devices_.size());
 
-  // Move second device to current, first to attempted
+  // Move second device to current, first to attempted.
   request.IterateDevice();
   ASSERT_NE(nullptr, request.current_device_);
   EXPECT_EQ(static_cast<size_t>(1), request.attempted_devices_.size());
 
   // Move second device from current to attempted, move attempted to devices as
-  // all devices have been attempted
+  // all devices have been attempted.
   request.IterateDevice();
 
   ASSERT_EQ(nullptr, request.current_device_);
@@ -97,75 +97,99 @@ TEST_F(U2fRequestTest, TestIterateDevice) {
 
   // Moving attempted devices results in a delayed retry, after which the first
   // device will be tried again. Check for the expected behavior here.
-  auto* mock_device = static_cast<MockU2fDevice*>(request.devices_.front());
+  auto* mock_device = static_cast<MockFidoDevice*>(request.devices_.front());
   EXPECT_CALL(*mock_device, TryWinkRef(_));
-  scoped_task_environment_.FastForwardUntilNoTasksRemain();
+  scoped_task_environment().FastForwardUntilNoTasksRemain();
 
   EXPECT_EQ(mock_device, request.current_device_);
   EXPECT_EQ(static_cast<size_t>(1), request.devices_.size());
   EXPECT_EQ(static_cast<size_t>(0), request.attempted_devices_.size());
 }
 
-TEST_F(U2fRequestTest, TestBasicMachine) {
-  FakeU2fRequest request;
-  auto* discovery =
-      SetMockDiscovery(&request, std::make_unique<MockU2fDiscovery>());
-  EXPECT_CALL(*discovery, Start())
-      .WillOnce(testing::Invoke(discovery, &MockU2fDiscovery::StartSuccess));
+TEST_F(U2fRequestTest, TestAbandonCurrentDeviceAndTransition) {
+  auto* discovery = discovery_factory().ForgeNextHidDiscovery();
+
+  FakeU2fRequest request({FidoTransportProtocol::kUsbHumanInterfaceDevice});
   request.Start();
 
+  auto device = std::make_unique<MockFidoDevice>();
+  EXPECT_CALL(*device, GetId()).WillRepeatedly(::testing::Return("device"));
+
+  discovery->AddDevice(std::move(device));
+
+  // Move device to current.
+  request.IterateDevice();
+  EXPECT_NE(nullptr, request.current_device_);
+
+  // Abandon device.
+  request.AbandonCurrentDeviceAndTransition();
+  EXPECT_EQ(nullptr, request.current_device_);
+  EXPECT_EQ(1u, request.abandoned_devices_.size());
+
+  // Iterating through the device list should not change the state.
+  request.IterateDevice();
+  EXPECT_EQ(nullptr, request.current_device_);
+  EXPECT_EQ(1u, request.abandoned_devices_.size());
+
+  // Removing the device from the discovery should clear it from the list.
+  discovery->RemoveDevice("device");
+  EXPECT_TRUE(request.abandoned_devices_.empty());
+}
+
+TEST_F(U2fRequestTest, TestBasicMachine) {
+  auto* discovery = discovery_factory().ForgeNextHidDiscovery();
+  FakeU2fRequest request({FidoTransportProtocol::kUsbHumanInterfaceDevice});
+  request.Start();
+
+  ASSERT_NO_FATAL_FAILURE(discovery->WaitForCallToStartAndSimulateSuccess());
+
   // Add one U2F device
-  auto device = std::make_unique<MockU2fDevice>();
+  auto device = std::make_unique<MockFidoDevice>();
   EXPECT_CALL(*device, GetId());
   EXPECT_CALL(*device, TryWinkRef(_))
-      .WillOnce(testing::Invoke(MockU2fDevice::WinkDoNothing));
+      .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing));
   discovery->AddDevice(std::move(device));
 
   EXPECT_EQ(U2fRequest::State::BUSY, request.state_);
 }
 
 TEST_F(U2fRequestTest, TestAlreadyPresentDevice) {
-  auto discovery = std::make_unique<MockU2fDiscovery>();
-  auto device = std::make_unique<MockU2fDevice>();
+  auto* discovery = discovery_factory().ForgeNextHidDiscovery();
+
+  FakeU2fRequest request({FidoTransportProtocol::kUsbHumanInterfaceDevice});
+  request.Start();
+
+  auto device = std::make_unique<MockFidoDevice>();
   EXPECT_CALL(*device, GetId()).WillRepeatedly(::testing::Return("device"));
   discovery->AddDevice(std::move(device));
 
-  FakeU2fRequest request;
-  EXPECT_CALL(*discovery, Start())
-      .WillOnce(
-          testing::Invoke(discovery.get(), &MockU2fDiscovery::StartSuccess));
-  SetMockDiscovery(&request, std::move(discovery));
-  request.Start();
-
+  ASSERT_NO_FATAL_FAILURE(discovery->WaitForCallToStartAndSimulateSuccess());
   EXPECT_NE(nullptr, request.current_device_);
 }
 
 TEST_F(U2fRequestTest, TestMultipleDiscoveries) {
+  auto* discovery_1 = discovery_factory().ForgeNextHidDiscovery();
+  auto* discovery_2 = discovery_factory().ForgeNextBleDiscovery();
+
   // Create a fake request with two different discoveries that both start up
   // successfully.
-  FakeU2fRequest request;
-  MockU2fDiscovery* discoveries[2];
-  std::tie(discoveries[0], discoveries[1]) =
-      SetMockDiscoveries(&request, std::make_unique<MockU2fDiscovery>(),
-                         std::make_unique<MockU2fDiscovery>());
-
-  EXPECT_CALL(*discoveries[0], Start())
-      .WillOnce(
-          testing::Invoke(discoveries[0], &MockU2fDiscovery::StartSuccess));
-  EXPECT_CALL(*discoveries[1], Start())
-      .WillOnce(
-          testing::Invoke(discoveries[1], &MockU2fDiscovery::StartSuccess));
+  FakeU2fRequest request({FidoTransportProtocol::kUsbHumanInterfaceDevice,
+                          FidoTransportProtocol::kBluetoothLowEnergy});
   request.Start();
 
+  ASSERT_NO_FATAL_FAILURE(discovery_1->WaitForCallToStartAndSimulateSuccess());
+  ASSERT_NO_FATAL_FAILURE(discovery_2->WaitForCallToStartAndSimulateSuccess());
+
   // Let each discovery find a device.
-  auto device_1 = std::make_unique<MockU2fDevice>();
-  auto device_2 = std::make_unique<MockU2fDevice>();
-  EXPECT_CALL(*device_1, GetId()).WillRepeatedly(testing::Return("device_1"));
-  EXPECT_CALL(*device_2, GetId()).WillRepeatedly(testing::Return("device_2"));
+  auto device_1 = std::make_unique<MockFidoDevice>();
+  auto device_2 = std::make_unique<MockFidoDevice>();
+  EXPECT_CALL(*device_1, GetId()).WillRepeatedly(::testing::Return("device_1"));
+  EXPECT_CALL(*device_2, GetId()).WillRepeatedly(::testing::Return("device_2"));
+
   auto* device_1_ptr = device_1.get();
   auto* device_2_ptr = device_2.get();
-  discoveries[0]->AddDevice(std::move(device_1));
-  discoveries[1]->AddDevice(std::move(device_2));
+  discovery_1->AddDevice(std::move(device_1));
+  discovery_2->AddDevice(std::move(device_2));
 
   // Iterate through the devices and make sure they are considered in the same
   // order as they were added.
@@ -179,67 +203,65 @@ TEST_F(U2fRequestTest, TestMultipleDiscoveries) {
   EXPECT_EQ(2u, request.devices_.size());
 
   // Add a third device.
-  auto device_3 = std::make_unique<MockU2fDevice>();
-  EXPECT_CALL(*device_3, GetId()).WillRepeatedly(testing::Return("device_3"));
+  auto device_3 = std::make_unique<MockFidoDevice>();
+  EXPECT_CALL(*device_3, GetId()).WillRepeatedly(::testing::Return("device_3"));
   auto* device_3_ptr = device_3.get();
-  discoveries[0]->AddDevice(std::move(device_3));
+  discovery_1->AddDevice(std::move(device_3));
 
   // Exhaust the timeout and remove the first two devices, making sure the just
   // added one is the only device considered.
-  scoped_task_environment_.FastForwardUntilNoTasksRemain();
-  discoveries[1]->RemoveDevice("device_2");
-  discoveries[0]->RemoveDevice("device_1");
+  scoped_task_environment().FastForwardUntilNoTasksRemain();
+  discovery_2->RemoveDevice("device_2");
+  discovery_1->RemoveDevice("device_1");
   EXPECT_EQ(device_3_ptr, request.current_device_);
 
   // Finally remove the last remaining device.
-  discoveries[0]->RemoveDevice("device_3");
+  discovery_1->RemoveDevice("device_3");
   EXPECT_EQ(nullptr, request.current_device_);
 }
 
 TEST_F(U2fRequestTest, TestSlowDiscovery) {
+  auto* fast_discovery = discovery_factory().ForgeNextHidDiscovery();
+  auto* slow_discovery = discovery_factory().ForgeNextBleDiscovery();
+
   // Create a fake request with two different discoveries that start at
   // different times.
-  FakeU2fRequest request;
-  MockU2fDiscovery* fast_discovery;
-  MockU2fDiscovery* slow_discovery;
-  std::tie(fast_discovery, slow_discovery) =
-      SetMockDiscoveries(&request, std::make_unique<MockU2fDiscovery>(),
-                         std::make_unique<MockU2fDiscovery>());
+  FakeU2fRequest request({FidoTransportProtocol::kUsbHumanInterfaceDevice,
+                          FidoTransportProtocol::kBluetoothLowEnergy});
 
-  EXPECT_CALL(*fast_discovery, Start())
-      .WillOnce(
-          testing::Invoke(fast_discovery, &MockU2fDiscovery::StartSuccess));
-  // slow_discovery does not succeed immediately.
-  EXPECT_CALL(*slow_discovery, Start());
-
-  // Let each discovery find a device.
-  auto fast_device = std::make_unique<MockU2fDevice>();
-  auto slow_device = std::make_unique<MockU2fDevice>();
+  auto fast_device = std::make_unique<MockFidoDevice>();
+  auto slow_device = std::make_unique<MockFidoDevice>();
   EXPECT_CALL(*fast_device, GetId())
-      .WillRepeatedly(testing::Return("fast_device"));
+      .WillRepeatedly(::testing::Return("fast_device"));
   EXPECT_CALL(*slow_device, GetId())
-      .WillRepeatedly(testing::Return("slow_device"));
+      .WillRepeatedly(::testing::Return("slow_device"));
 
   bool fast_winked = false;
   EXPECT_CALL(*fast_device, TryWinkRef(_))
-      .WillOnce(testing::DoAll(testing::Assign(&fast_winked, true),
-                               testing::Invoke(MockU2fDevice::WinkDoNothing)))
-      .WillRepeatedly(testing::Invoke(MockU2fDevice::WinkDoNothing));
+      .WillOnce(
+          ::testing::DoAll(::testing::Assign(&fast_winked, true),
+                           ::testing::Invoke(MockFidoDevice::WinkDoNothing)))
+      .WillRepeatedly(::testing::Invoke(MockFidoDevice::WinkDoNothing));
   bool slow_winked = false;
   EXPECT_CALL(*slow_device, TryWinkRef(_))
       .WillOnce(testing::DoAll(testing::Assign(&slow_winked, true),
-                               testing::Invoke(MockU2fDevice::WinkDoNothing)));
+                               testing::Invoke(MockFidoDevice::WinkDoNothing)));
+
   auto* fast_device_ptr = fast_device.get();
   auto* slow_device_ptr = slow_device.get();
-  fast_discovery->AddDeviceWithoutNotification(std::move(fast_device));
 
   EXPECT_EQ(nullptr, request.current_device_);
   request.state_ = U2fRequest::State::INIT;
 
   // The discoveries will be started and |fast_discovery| will succeed
   // immediately with a device already found.
-  EXPECT_FALSE(fast_winked);
   request.Start();
+
+  EXPECT_FALSE(fast_winked);
+
+  ASSERT_NO_FATAL_FAILURE(fast_discovery->WaitForCallToStart());
+  fast_discovery->AddDevice(std::move(fast_device));
+  ASSERT_NO_FATAL_FAILURE(fast_discovery->SimulateStarted(true /* success */));
 
   EXPECT_TRUE(fast_winked);
   EXPECT_EQ(fast_device_ptr, request.current_device_);
@@ -253,9 +275,11 @@ TEST_F(U2fRequestTest, TestSlowDiscovery) {
 
   // All devices have been tried and have been re-enqueued to try again in the
   // future. Now |slow_discovery| starts:
-
-  slow_discovery->AddDeviceWithoutNotification(std::move(slow_device));
-  slow_discovery->StartSuccess();
+  ASSERT_TRUE(slow_discovery->is_start_requested());
+  ASSERT_FALSE(slow_discovery->is_running());
+  ASSERT_NO_FATAL_FAILURE(slow_discovery->WaitForCallToStart());
+  slow_discovery->AddDevice(std::move(slow_device));
+  ASSERT_NO_FATAL_FAILURE(slow_discovery->SimulateStarted(true /* success */));
 
   // |fast_device| is already enqueued and will be retried immediately.
   EXPECT_EQ(fast_device_ptr, request.current_device_);
@@ -277,48 +301,46 @@ TEST_F(U2fRequestTest, TestSlowDiscovery) {
 }
 
 TEST_F(U2fRequestTest, TestMultipleDiscoveriesWithFailures) {
+  // Create a fake request with two different discoveries that both start up
+  // unsuccessfully.
   {
-    // Create a fake request with two different discoveries that both start up
-    // unsuccessfully.
-    FakeU2fRequest request;
-    MockU2fDiscovery* discoveries[2];
-    std::tie(discoveries[0], discoveries[1]) =
-        SetMockDiscoveries(&request, std::make_unique<MockU2fDiscovery>(),
-                           std::make_unique<MockU2fDiscovery>());
+    auto* discovery_1 = discovery_factory().ForgeNextHidDiscovery();
+    auto* discovery_2 = discovery_factory().ForgeNextBleDiscovery();
 
-    EXPECT_CALL(*discoveries[0], Start())
-        .WillOnce(
-            testing::Invoke(discoveries[0], &MockU2fDiscovery::StartFailure));
-    EXPECT_CALL(*discoveries[1], Start())
-        .WillOnce(
-            testing::Invoke(discoveries[1], &MockU2fDiscovery::StartFailure));
+    FakeU2fRequest request({FidoTransportProtocol::kUsbHumanInterfaceDevice,
+                            FidoTransportProtocol::kBluetoothLowEnergy});
     request.Start();
+
+    ASSERT_NO_FATAL_FAILURE(discovery_1->WaitForCallToStart());
+    ASSERT_NO_FATAL_FAILURE(discovery_1->SimulateStarted(false /* success */));
+    ASSERT_NO_FATAL_FAILURE(discovery_2->WaitForCallToStart());
+    ASSERT_NO_FATAL_FAILURE(discovery_2->SimulateStarted(false /* success */));
+
     EXPECT_EQ(U2fRequest::State::OFF, request.state_);
   }
 
+  // Create a fake request with two different discoveries, where only one starts
+  // up successfully.
   {
-    // Create a fake request with two different discoveries, where only one
-    // starts up successfully.
-    FakeU2fRequest request;
-    MockU2fDiscovery* discoveries[2];
-    std::tie(discoveries[0], discoveries[1]) =
-        SetMockDiscoveries(&request, std::make_unique<MockU2fDiscovery>(),
-                           std::make_unique<MockU2fDiscovery>());
+    auto* discovery_1 = discovery_factory().ForgeNextHidDiscovery();
+    auto* discovery_2 = discovery_factory().ForgeNextBleDiscovery();
 
-    EXPECT_CALL(*discoveries[0], Start())
-        .WillOnce(
-            testing::Invoke(discoveries[0], &MockU2fDiscovery::StartSuccess));
-    EXPECT_CALL(*discoveries[1], Start())
-        .WillOnce(
-            testing::Invoke(discoveries[1], &MockU2fDiscovery::StartFailure));
-
-    auto device0 = std::make_unique<MockU2fDevice>();
-    EXPECT_CALL(*device0, GetId()).WillRepeatedly(testing::Return("device_0"));
-    EXPECT_CALL(*device0, TryWinkRef(_))
-        .WillOnce(testing::Invoke(MockU2fDevice::WinkDoNothing));
-    discoveries[0]->AddDevice(std::move(device0));
-
+    FakeU2fRequest request({FidoTransportProtocol::kUsbHumanInterfaceDevice,
+                            FidoTransportProtocol::kBluetoothLowEnergy});
     request.Start();
+
+    ASSERT_NO_FATAL_FAILURE(discovery_1->WaitForCallToStart());
+    ASSERT_NO_FATAL_FAILURE(discovery_1->SimulateStarted(false /* success */));
+    ASSERT_NO_FATAL_FAILURE(discovery_2->WaitForCallToStart());
+    ASSERT_NO_FATAL_FAILURE(discovery_2->SimulateStarted(true /* success */));
+
+    auto device0 = std::make_unique<MockFidoDevice>();
+    EXPECT_CALL(*device0, GetId())
+        .WillRepeatedly(::testing::Return("device_0"));
+    EXPECT_CALL(*device0, TryWinkRef(_))
+        .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing));
+    discovery_2->AddDevice(std::move(device0));
+
     EXPECT_EQ(U2fRequest::State::BUSY, request.state_);
 
     // Simulate an action that sets the request state to idle.
@@ -327,11 +349,12 @@ TEST_F(U2fRequestTest, TestMultipleDiscoveriesWithFailures) {
     request.state_ = U2fRequest::State::IDLE;
 
     // Adding another device should trigger examination and a busy state.
-    auto device1 = std::make_unique<MockU2fDevice>();
-    EXPECT_CALL(*device1, GetId()).WillRepeatedly(testing::Return("device_1"));
+    auto device1 = std::make_unique<MockFidoDevice>();
+    EXPECT_CALL(*device1, GetId())
+        .WillRepeatedly(::testing::Return("device_1"));
     EXPECT_CALL(*device1, TryWinkRef(_))
-        .WillOnce(testing::Invoke(MockU2fDevice::WinkDoNothing));
-    discoveries[0]->AddDevice(std::move(device1));
+        .WillOnce(::testing::Invoke(MockFidoDevice::WinkDoNothing));
+    discovery_2->AddDevice(std::move(device1));
 
     request.Transition();
     EXPECT_EQ(U2fRequest::State::BUSY, request.state_);
@@ -341,15 +364,45 @@ TEST_F(U2fRequestTest, TestMultipleDiscoveriesWithFailures) {
 TEST_F(U2fRequestTest, TestEncodeVersionRequest) {
   constexpr uint8_t kEncodedU2fVersionRequest[] = {0x00, 0x03, 0x00, 0x00,
                                                    0x00, 0x00, 0x00};
-  EXPECT_THAT(U2fRequest::GetU2fVersionApduCommand(false)->GetEncodedCommand(),
-              testing::ElementsAreArray(kEncodedU2fVersionRequest));
+  EXPECT_THAT(U2fRequest::GetU2fVersionApduCommand(),
+              ::testing::ElementsAreArray(kEncodedU2fVersionRequest));
 
   // Legacy version command contains 2 extra null bytes compared to ISO 7816-4
   // format.
   constexpr uint8_t kEncodedU2fLegacyVersionRequest[] = {
       0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-  EXPECT_THAT(U2fRequest::GetU2fVersionApduCommand(true)->GetEncodedCommand(),
-              testing::ElementsAreArray(kEncodedU2fLegacyVersionRequest));
+  EXPECT_THAT(U2fRequest::GetU2fVersionApduCommand(true),
+              ::testing::ElementsAreArray(kEncodedU2fLegacyVersionRequest));
+}
+
+// Test a scenario when version request is sent to legacy U2F token.
+// After non-legacy version requests fails, legacy version request should be
+// sent to device as a retry.
+TEST_F(U2fRequestTest, TestLegacyVersionRequest) {
+  auto* discovery = discovery_factory().ForgeNextHidDiscovery();
+  FakeU2fRequest request({FidoTransportProtocol::kUsbHumanInterfaceDevice});
+  request.Start();
+
+  auto device0 = std::make_unique<MockFidoDevice>();
+  EXPECT_CALL(*device0, GetId()).WillRepeatedly(::testing::Return("device0"));
+  EXPECT_CALL(*device0,
+              DeviceTransactPtr(U2fRequest::GetU2fVersionApduCommand(true), _))
+      // Success response for legacy version request after retry.
+      .WillOnce(testing::Invoke(MockFidoDevice::NoErrorVersion));
+
+  auto* device_ptr = device0.get();
+  discovery->AddDevice(std::move(device0));
+
+  // Represents version callback received from legacy U2F token on initial
+  // version request. Device responses with invalid protocol version (in this
+  // case, empty byte array). Retry version request with legacy bit is expected
+  // to be issued afterwards.
+  request.OnDeviceVersionRequest(version_callback_receiver().callback(),
+                                 device_ptr->GetWeakPtr(), false /* legacy */,
+                                 std::vector<uint8_t>());
+
+  EXPECT_EQ(ProtocolVersion::kU2f,
+            std::get<0>(*version_callback_receiver().result()));
 }
 
 }  // namespace device

@@ -49,7 +49,8 @@ const uint32_t STUN_FINGERPRINT_XOR_VALUE = 0x5354554E;
 StunMessage::StunMessage()
     : type_(0),
       length_(0),
-      transaction_id_(EMPTY_TRANSACTION_ID) {
+      transaction_id_(EMPTY_TRANSACTION_ID),
+      stun_magic_cookie_(kStunMagicCookie) {
   RTC_DCHECK(IsValidTransactionId(transaction_id_));
 }
 
@@ -70,15 +71,17 @@ bool StunMessage::SetTransactionID(const std::string& str) {
   return true;
 }
 
-static bool ImplementationDefinedRange(int attr_type) {
-  return attr_type >= 0xC000 && attr_type <= 0xFFFF;
+static bool DesignatedExpertRange(int attr_type) {
+  return
+      (attr_type >= 0x4000 && attr_type <= 0x7FFF) ||
+      (attr_type >= 0xC000 && attr_type <= 0xFFFF);
 }
 
 void StunMessage::AddAttribute(std::unique_ptr<StunAttribute> attr) {
   // Fail any attributes that aren't valid for this type of message,
-  // but allow any type for the range that is "implementation defined"
-  // in the RFC.
-  if (!ImplementationDefinedRange(attr->type())) {
+  // but allow any type for the range that in the RFC is reserved for
+  // the "designated experts".
+  if (!DesignatedExpertRange(attr->type())) {
     RTC_DCHECK_EQ(attr->value_type(), GetAttributeValueType(attr->type()));
   }
 
@@ -265,7 +268,7 @@ bool StunMessage::AddMessageIntegrity(const char* key,
   RTC_DCHECK(ret == sizeof(hmac));
   if (ret != sizeof(hmac)) {
     RTC_LOG(LS_ERROR) << "HMAC computation failed. Message-Integrity "
-                      << "has dummy value.";
+                         "has dummy value.";
     return false;
   }
 
@@ -394,7 +397,7 @@ bool StunMessage::Write(ByteBufferWriter* buf) const {
   buf->WriteUInt16(type_);
   buf->WriteUInt16(length_);
   if (!IsLegacy())
-    buf->WriteUInt32(kStunMagicCookie);
+    buf->WriteUInt32(stun_magic_cookie_);
   buf->WriteString(transaction_id_);
 
   for (const auto& attr : attrs_) {
@@ -410,6 +413,10 @@ bool StunMessage::Write(ByteBufferWriter* buf) const {
 
 StunMessage* StunMessage::CreateNew() const {
   return new StunMessage();
+}
+
+void StunMessage::SetStunMagicCookie(uint32_t val) {
+  stun_magic_cookie_ = val;
 }
 
 StunAttributeValueType StunMessage::GetAttributeValueType(int type) const {
@@ -436,7 +443,7 @@ StunAttribute* StunMessage::CreateAttribute(int type, size_t length) /*const*/ {
   if (value_type != STUN_VALUE_UNKNOWN) {
     return StunAttribute::Create(value_type, type,
                                  static_cast<uint16_t>(length), this);
-  } else if (ImplementationDefinedRange(type)) {
+  } else if (DesignatedExpertRange(type)) {
     // Read unknown attributes as STUN_VALUE_BYTE_STRING
     return StunAttribute::Create(STUN_VALUE_BYTE_STRING, type,
                                  static_cast<uint16_t>(length), this);

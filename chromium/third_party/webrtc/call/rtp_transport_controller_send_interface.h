@@ -25,7 +25,7 @@ struct NetworkRoute;
 namespace webrtc {
 
 class CallStatsObserver;
-class NetworkChangedObserver;
+class TargetTransferRateObserver;
 class Module;
 class PacedSender;
 class PacketFeedbackObserver;
@@ -78,7 +78,8 @@ class RtpTransportControllerSendInterface {
   // current network estimate and tells the PacedSender how much it should max
   // pad unless there is real packets to send.
   virtual void SetAllocatedSendBitrateLimits(int min_send_bitrate_bps,
-                                             int max_padding_bitrate_bps) = 0;
+                                             int max_padding_bitrate_bps,
+                                             int total_bitrate_bps) = 0;
 
   virtual void SetPacingFactor(float pacing_factor) = 0;
   virtual void SetQueueTimeLimit(int limit_ms) = 0;
@@ -89,21 +90,18 @@ class RtpTransportControllerSendInterface {
       PacketFeedbackObserver* observer) = 0;
   virtual void DeRegisterPacketFeedbackObserver(
       PacketFeedbackObserver* observer) = 0;
-  virtual void RegisterNetworkObserver(NetworkChangedObserver* observer) = 0;
-  virtual void DeRegisterNetworkObserver(NetworkChangedObserver* observer) = 0;
+  virtual void RegisterTargetTransferRateObserver(
+      TargetTransferRateObserver* observer) = 0;
   virtual void OnNetworkRouteChanged(
       const std::string& transport_name,
       const rtc::NetworkRoute& network_route) = 0;
   virtual void OnNetworkAvailability(bool network_available) = 0;
-  virtual void SetTransportOverhead(
-      size_t transport_overhead_bytes_per_packet) = 0;
   virtual RtcpBandwidthObserver* GetBandwidthObserver() = 0;
-  virtual bool AvailableBandwidth(uint32_t* bandwidth) const = 0;
   virtual int64_t GetPacerQueuingDelayMs() const = 0;
   virtual int64_t GetFirstPacketTimeMs() const = 0;
-  virtual RateLimiter* GetRetransmissionRateLimiter() = 0;
   virtual void EnablePeriodicAlrProbing(bool enable) = 0;
   virtual void OnSentPacket(const rtc::SentPacket& sent_packet) = 0;
+  virtual void SetPerPacketFeedbackAvailable(bool available) = 0;
 
   virtual void SetSdpBitrateParameters(
       const BitrateConstraints& constraints) = 0;

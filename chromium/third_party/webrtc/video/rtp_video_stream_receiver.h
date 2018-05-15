@@ -48,7 +48,6 @@ class RtpPacketReceived;
 class RtpReceiver;
 class Transport;
 class UlpfecReceiver;
-class VCMTiming;
 
 namespace vcm {
 class VideoReceiver;
@@ -61,8 +60,7 @@ class RtpVideoStreamReceiver : public RtpData,
                                public VCMFrameTypeCallback,
                                public VCMPacketRequestCallback,
                                public video_coding::OnReceivedFrameCallback,
-                               public video_coding::OnCompleteFrameCallback,
-                               public CallStatsObserver {
+                               public video_coding::OnCompleteFrameCallback {
  public:
   RtpVideoStreamReceiver(
       Transport* transport,
@@ -74,8 +72,7 @@ class RtpVideoStreamReceiver : public RtpData,
       ProcessThread* process_thread,
       NackSender* nack_sender,
       KeyFrameRequestSender* keyframe_request_sender,
-      video_coding::OnCompleteFrameCallback* complete_frame_callback,
-      VCMTiming* timing);
+      video_coding::OnCompleteFrameCallback* complete_frame_callback);
   ~RtpVideoStreamReceiver();
 
   bool AddReceiveCodec(const VideoCodec& video_codec,
@@ -111,11 +108,7 @@ class RtpVideoStreamReceiver : public RtpData,
   void OnRecoveredPacket(const uint8_t* packet, size_t packet_length) override;
 
   // Implements RtpFeedback.
-  int32_t OnInitializeDecoder(int payload_type,
-                              const SdpAudioFormat& audio_format,
-                              uint32_t rate) override;
   void OnIncomingSSRCChanged(uint32_t ssrc) override {}
-  void OnIncomingCSRCChanged(uint32_t CSRC, bool added) override {}
 
   // Implements VCMFrameTypeCallback.
   int32_t RequestKeyFrame() override;
@@ -137,7 +130,8 @@ class RtpVideoStreamReceiver : public RtpData,
   void OnCompleteFrame(
       std::unique_ptr<video_coding::EncodedFrame> frame) override;
 
-  void OnRttUpdate(int64_t avg_rtt_ms, int64_t max_rtt_ms) override;
+  // Called by VideoReceiveStream when stats are updated.
+  void UpdateRtt(int64_t max_rtt_ms);
 
   rtc::Optional<int64_t> LastReceivedPacketMs() const;
   rtc::Optional<int64_t> LastReceivedKeyframePacketMs() const;
@@ -159,6 +153,7 @@ class RtpVideoStreamReceiver : public RtpData,
   void ParseAndHandleEncapsulatingHeader(const uint8_t* packet,
                                          size_t packet_length,
                                          const RTPHeader& header);
+  void NotifyReceiverOfEmptyPacket(uint16_t seq_num);
   void NotifyReceiverOfFecPacket(const RTPHeader& header);
   bool IsPacketInOrder(const RTPHeader& header) const;
   bool IsPacketRetransmitted(const RTPHeader& header, bool in_order) const;
@@ -189,7 +184,6 @@ class RtpVideoStreamReceiver : public RtpData,
   // Members for the new jitter buffer experiment.
   video_coding::OnCompleteFrameCallback* complete_frame_callback_;
   KeyFrameRequestSender* keyframe_request_sender_;
-  VCMTiming* timing_;
   std::unique_ptr<NackModule> nack_module_;
   rtc::scoped_refptr<video_coding::PacketBuffer> packet_buffer_;
   std::unique_ptr<video_coding::RtpFrameReferenceFinder> reference_finder_;

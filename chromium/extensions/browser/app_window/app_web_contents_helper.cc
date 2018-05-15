@@ -14,7 +14,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/suggest_permission_util.h"
 #include "extensions/common/permissions/api_permission.h"
-#include "third_party/WebKit/public/platform/WebGestureEvent.h"
+#include "third_party/blink/public/platform/web_gesture_event.h"
 
 namespace extensions {
 
@@ -94,6 +94,7 @@ void AppWebContentsHelper::RequestMediaAccessPermission(
 }
 
 bool AppWebContentsHelper::CheckMediaAccessPermission(
+    content::RenderFrameHost* render_frame_host,
     const GURL& security_origin,
     content::MediaStreamType type) const {
   const Extension* extension = GetExtension();
@@ -101,7 +102,7 @@ bool AppWebContentsHelper::CheckMediaAccessPermission(
     return false;
 
   return app_delegate_->CheckMediaAccessPermission(
-      web_contents_, security_origin, type, extension);
+      render_frame_host, security_origin, type, extension);
 }
 
 const Extension* AppWebContentsHelper::GetExtension() const {

@@ -46,6 +46,7 @@ cast_source_set("browser") {
     "cast_resource_dispatcher_host_delegate.h",
     "cast_web_contents_manager.cc",
     "cast_web_contents_manager.h",
+    "cast_web_view.cc",
     "cast_web_view.h",
     "cast_web_view_default.cc",
     "cast_web_view_default.h",
@@ -65,6 +66,8 @@ cast_source_set("browser") {
     "metrics/cast_metrics_service_client.h",
     "metrics/cast_stability_metrics_provider.cc",
     "metrics/cast_stability_metrics_provider.h",
+    "network_context_manager.cc",
+    "network_context_manager.h",
     "pref_service_helper.cc",
     "pref_service_helper.h",
     "renderer_prelauncher.cc",
@@ -119,20 +122,24 @@ cast_source_set("browser") {
     "//components/network_session_configurator/common",
     "//components/prefs",
     "//components/proxy_config",
+    "//components/viz/service",
     "//content",
     "//content/public/browser",
     "//content/public/common",
     "//content/public/common:service_names",
     "//content/public/utility",
+    "//device/bluetooth",
     "//device/geolocation",
     "//gpu",
     "//ipc",
     "//media",
     "//net",
+    "//services/network:network_service",
     "//ui/base",
     "//ui/compositor",
     "//ui/display",
     "//ui/events",
+    "//ui/events/devices",
     "//ui/gl",
   ]
 
@@ -212,6 +219,10 @@ cast_source_set("browser") {
       "cast_web_view_extension.h",
       "extension_request_protocol_handler.cc",
       "extension_request_protocol_handler.h",
+      "extensions/api/bookmarks/bookmarks_api.cc",
+      "extensions/api/bookmarks/bookmarks_api.h",
+      "extensions/api/history/history_api.cc",
+      "extensions/api/history/history_api.h",
       "extensions/api/identity/identity_api.cc",
       "extensions/api/identity/identity_api.h",
       "extensions/cast_display_info_provider.cc",
@@ -234,6 +245,8 @@ cast_source_set("browser") {
     ]
 
     deps += [
+      "//chromecast/common/extensions_api:api_registration_bundle_generator_registration",
+      "//chromecast/common/extensions_api:api_schema_generator",
       "//components/guest_view/browser",
       "//components/keyed_service/content",
       "//components/pref_registry",
@@ -243,7 +256,6 @@ cast_source_set("browser") {
       "//extensions/browser",
       "//extensions/common",
       "//extensions/common/api",
-      "//extensions/shell/common/api:api_registration_bundle_generator_registration",
       "//google_apis:google_apis",
     ]
   }
@@ -313,8 +325,6 @@ cast_source_set("test_support") {
   sources = [
     "test/cast_browser_test.cc",
     "test/cast_browser_test.h",
-    "test/fake_web_contents_observer.cc",
-    "test/fake_web_contents_observer.h",
   ]
 
   public_deps = [
@@ -325,7 +335,6 @@ cast_source_set("test_support") {
   deps = [
     "//base",
     "//chromecast/base",
-    "//chromecast/common:interfaces",
     "//content/public/browser",
     "//content/public/common",
     "//testing/gtest",
@@ -361,6 +370,7 @@ cast_source_set("unittests") {
     "cast_media_blocker_unittest.cc",
     "cast_touch_device_manager_unittest.cc",
     "devtools/cast_devtools_manager_delegate_unittest.cc",
+    "network_context_manager_unittest.cc",
   ]
 
   deps = [
@@ -369,6 +379,8 @@ cast_source_set("unittests") {
     "//chromecast/base",
     "//content/public/browser",
     "//content/test:test_support",
+    "//net:test_support",
+    "//services/network:test_support",
     "//ui/events/devices:devices",
     "//ui/gl:test_support",
   ]
@@ -383,6 +395,10 @@ if (is_android) {
       "android/apk/src/org/chromium/chromecast/shell/CastSysInfoAndroid.java",
       "android/apk/src/org/chromium/chromecast/shell/CastWebContentsSurfaceHelper.java",
     ]
+
+    if (is_android_things_non_public) {
+      sources += [ "android/apk/src/org/chromium/chromecast/shell/CastSysInfoAndroidThings.java" ]
+    }
 
     jni_package = "chromecast"
   }

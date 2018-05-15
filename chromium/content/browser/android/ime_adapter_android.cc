@@ -25,8 +25,8 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/web_contents.h"
 #include "jni/ImeAdapterImpl_jni.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
-#include "third_party/WebKit/public/platform/WebTextInputType.h"
+#include "third_party/blink/public/platform/web_input_event.h"
+#include "third_party/blink/public/platform/web_text_input_type.h"
 #include "ui/base/ime/ime_text_span.h"
 
 using base::android::AttachCurrentThread;
@@ -87,7 +87,7 @@ void JNI_ImeAdapterImpl_AppendBackgroundColorSpan(JNIEnv*,
       reinterpret_cast<std::vector<ui::ImeTextSpan>*>(ime_text_spans_ptr);
   ime_text_spans->push_back(ui::ImeTextSpan(
       ui::ImeTextSpan::Type::kComposition, static_cast<unsigned>(start),
-      static_cast<unsigned>(end), SK_ColorTRANSPARENT, false,
+      static_cast<unsigned>(end), ui::ImeTextSpan::Thickness::kNone,
       static_cast<unsigned>(background_color), SK_ColorTRANSPARENT,
       std::vector<std::string>()));
 }
@@ -115,10 +115,12 @@ void JNI_ImeAdapterImpl_AppendSuggestionSpan(
       reinterpret_cast<std::vector<ui::ImeTextSpan>*>(ime_text_spans_ptr);
   std::vector<std::string> suggestions_vec;
   AppendJavaStringArrayToStringVector(env, suggestions, &suggestions_vec);
-  ime_text_spans->push_back(ui::ImeTextSpan(
+  ui::ImeTextSpan ime_text_span = ui::ImeTextSpan(
       type, static_cast<unsigned>(start), static_cast<unsigned>(end),
-      static_cast<unsigned>(underline_color), true, SK_ColorTRANSPARENT,
-      static_cast<unsigned>(suggestion_highlight_color), suggestions_vec));
+      ui::ImeTextSpan::Thickness::kThick, SK_ColorTRANSPARENT,
+      static_cast<unsigned>(suggestion_highlight_color), suggestions_vec);
+  ime_text_span.underline_color = static_cast<unsigned>(underline_color);
+  ime_text_spans->push_back(ime_text_span);
 }
 
 // Callback from Java to convert UnderlineSpan data to a
@@ -134,8 +136,8 @@ void JNI_ImeAdapterImpl_AppendUnderlineSpan(JNIEnv*,
       reinterpret_cast<std::vector<ui::ImeTextSpan>*>(ime_text_spans_ptr);
   ime_text_spans->push_back(ui::ImeTextSpan(
       ui::ImeTextSpan::Type::kComposition, static_cast<unsigned>(start),
-      static_cast<unsigned>(end), SK_ColorBLACK, false, SK_ColorTRANSPARENT,
-      SK_ColorTRANSPARENT, std::vector<std::string>()));
+      static_cast<unsigned>(end), ui::ImeTextSpan::Thickness::kThin,
+      SK_ColorTRANSPARENT, SK_ColorTRANSPARENT, std::vector<std::string>()));
 }
 
 ImeAdapterAndroid::ImeAdapterAndroid(JNIEnv* env,
@@ -190,6 +192,14 @@ void ImeAdapterAndroid::UpdateAfterViewSizeChanged() {
   if (obj.is_null())
     return;
   Java_ImeAdapterImpl_updateAfterViewSizeChanged(env, obj);
+}
+
+void ImeAdapterAndroid::UpdateOnTouchDown() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ime_adapter_.get(env);
+  if (obj.is_null())
+    return;
+  Java_ImeAdapterImpl_updateOnTouchDown(env, obj);
 }
 
 void ImeAdapterAndroid::UpdateFrameInfo(
@@ -257,7 +267,7 @@ void ImeAdapterAndroid::SetComposingText(JNIEnv* env,
   if (ime_text_spans.empty()) {
     ime_text_spans.push_back(
         ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 0, text16.length(),
-                        SK_ColorBLACK, false, SK_ColorTRANSPARENT,
+                        ui::ImeTextSpan::Thickness::kThin, SK_ColorTRANSPARENT,
                         SK_ColorTRANSPARENT, std::vector<std::string>()));
   }
 
@@ -379,9 +389,10 @@ void ImeAdapterAndroid::SetComposingRegion(JNIEnv*,
     return;
 
   std::vector<ui::ImeTextSpan> ime_text_spans;
-  ime_text_spans.push_back(ui::ImeTextSpan(
-      ui::ImeTextSpan::Type::kComposition, 0, end - start, SK_ColorBLACK, false,
-      SK_ColorTRANSPARENT, SK_ColorTRANSPARENT, std::vector<std::string>()));
+  ime_text_spans.push_back(
+      ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 0, end - start,
+                      ui::ImeTextSpan::Thickness::kThin, SK_ColorTRANSPARENT,
+                      SK_ColorTRANSPARENT, std::vector<std::string>()));
 
   rfh->GetFrameInputHandler()->SetCompositionFromExistingText(start, end,
                                                               ime_text_spans);

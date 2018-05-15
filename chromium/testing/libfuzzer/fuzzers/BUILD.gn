@@ -49,24 +49,6 @@ fuzzer_test("snappy_fuzzer") {
   ]
 }
 
-fuzzer_test("string_tokenizer_fuzzer") {
-  sources = [
-    "string_tokenizer_fuzzer.cc",
-  ]
-  deps = [
-    "//base",
-  ]
-}
-
-fuzzer_test("string_to_int_fuzzer") {
-  sources = [
-    "string_to_int_fuzzer.cc",
-  ]
-  deps = [
-    "//base",
-  ]
-}
-
 fuzzer_test("template_url_parser_fuzzer") {
   sources = [
     "template_url_parser_fuzzer.cc",
@@ -78,18 +60,6 @@ fuzzer_test("template_url_parser_fuzzer") {
   ]
   dict = "dicts/xml.dict"
   libfuzzer_options = [ "max_len=4096" ]
-}
-
-fuzzer_test("url_parse_fuzzer") {
-  sources = [
-    "url_parse_fuzzer.cc",
-  ]
-  deps = [
-    "//base",
-    "//base:i18n",
-    "//url:url",
-  ]
-  dict = "dicts/generated/url_parse_fuzzer.dict"
 }
 
 fuzzer_test("url_parse_proto_fuzzer") {
@@ -128,15 +98,6 @@ fuzzer_test("libsrtp_fuzzer") {
     "//third_party/libsrtp",
   ]
   libfuzzer_options = [ "max_len=1500" ]
-}
-
-fuzzer_test("base_json_reader_fuzzer") {
-  sources = [
-    "base_json_reader_fuzzer.cc",
-  ]
-  deps = [
-    "//base",
-  ]
 }
 
 libpng_seed_corpuses = [

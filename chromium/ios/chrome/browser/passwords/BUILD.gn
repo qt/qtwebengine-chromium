@@ -15,8 +15,6 @@ source_set("passwords") {
     "credential_manager_features.h",
     "credential_manager_util.h",
     "credential_manager_util.mm",
-    "form_parser.cc",
-    "form_parser.h",
     "ios_chrome_password_manager_client.h",
     "ios_chrome_password_manager_client.mm",
     "ios_chrome_password_manager_driver.h",
@@ -42,6 +40,8 @@ source_set("passwords") {
     "password_manager_internals_service_factory.h",
     "password_tab_helper.h",
     "password_tab_helper.mm",
+    "passwords_directory_util.h",
+    "passwords_directory_util.mm",
     "update_password_infobar_controller.h",
     "update_password_infobar_controller.mm",
   ]
@@ -59,6 +59,7 @@ source_set("passwords") {
     "//components/keyed_service/core",
     "//components/keyed_service/ios",
     "//components/password_manager/core/browser",
+    "//components/password_manager/core/browser/form_parsing",
     "//components/password_manager/core/common",
     "//components/password_manager/sync/browser",
     "//components/prefs",
@@ -118,10 +119,10 @@ source_set("unit_tests") {
     "account_select_fill_data_unittest.cc",
     "credential_manager_unittest.mm",
     "credential_manager_util_unittest.cc",
-    "form_parser_unittest.cc",
     "js_credential_manager_unittest.mm",
     "password_controller_js_unittest.mm",
     "password_controller_unittest.mm",
+    "passwords_directory_util_unittest.mm",
     "test_helpers.cc",
     "test_helpers.h",
   ]
@@ -192,7 +193,7 @@ js_compile_checked("injected_js") {
     "resources/password_controller.js",
   ]
   js_modules = [
-    "//ios/web/web_state/js/resources/form.js",
+    "//components/autofill/ios/fill/resources/form.js",
     "//components/autofill/ios/fill/resources/fill.js",
   ]
 }

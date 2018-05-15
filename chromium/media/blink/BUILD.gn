@@ -4,6 +4,7 @@
 
 import("//media/media_options.gni")
 import("//testing/test.gni")
+import("//tools/v8_context_snapshot/v8_context_snapshot.gni")
 
 component("blink") {
   output_name = "media_blink"
@@ -82,7 +83,7 @@ component("blink") {
     "//net",
     "//services/service_manager/public/cpp:cpp",
     "//skia",
-    "//third_party/WebKit/public:blink",
+    "//third_party/blink/public:blink",
     "//ui/gfx",
     "//ui/gfx/geometry",
     "//url",
@@ -114,16 +115,20 @@ test("media_blink_unittests") {
     "//media:test_support",
     "//media/mojo/interfaces",
     "//media/mojo/services",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//net",
     "//testing/gmock",
     "//testing/gtest",
-    "//third_party/WebKit/public:blink",
-    "//third_party/WebKit/public:test_support",
+    "//third_party/blink/public:blink",
+    "//third_party/blink/public:test_support",
     "//tools/v8_context_snapshot",
     "//ui/gfx:test_support",
     "//ui/gfx/geometry",
     "//url",
+  ]
+
+  data = [
+    "//media/test/data/",
   ]
 
   configs += [
@@ -157,9 +162,11 @@ test("media_blink_unittests") {
   ]
 
   if (is_android) {
-    deps += [
-      "//media/base/android:media_java",
-      "//v8:v8_external_startup_data_assets",
-    ]
+    deps += [ "//media/base/android:media_java" ]
+    if (use_v8_context_snapshot) {
+      deps += [ "//tools/v8_context_snapshot:v8_context_snapshot_assets" ]
+    } else {
+      deps += [ "//v8:v8_external_startup_data_assets" ]
+    }
   }
 }

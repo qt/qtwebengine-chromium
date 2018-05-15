@@ -13,11 +13,10 @@
 #include "content/common/navigation_params.h"
 #include "content/public/common/url_loader_throttle.h"
 #include "content/renderer/loader/web_url_loader_impl.h"
-#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/platform/web_url_request.h"
 #include "ui/base/page_transition_types.h"
-#include "url/origin.h"
 
 namespace network {
 struct ResourceRequest;
@@ -42,10 +41,6 @@ class CONTENT_EXPORT RequestExtraData : public blink::WebURLRequest::ExtraData {
   }
   void set_is_main_frame(bool is_main_frame) {
     is_main_frame_ = is_main_frame;
-  }
-  url::Origin frame_origin() const { return frame_origin_; }
-  void set_frame_origin(const url::Origin& frame_origin) {
-    frame_origin_ = frame_origin;
   }
   void set_allow_download(bool allow_download) {
     allow_download_ = allow_download;
@@ -145,6 +140,13 @@ class CONTENT_EXPORT RequestExtraData : public blink::WebURLRequest::ExtraData {
     navigation_initiated_by_renderer_ = navigation_by_renderer;
   }
 
+  // Determines whether SameSite cookies will be attached to the request
+  // even when the request looks cross-site.
+  bool attach_same_site_cookies() const { return attach_same_site_cookies_; }
+  void set_attach_same_site_cookies(bool attach) {
+    attach_same_site_cookies_ = attach;
+  }
+
   std::vector<std::unique_ptr<URLLoaderThrottle>> TakeURLLoaderThrottles() {
     return std::move(url_loader_throttles_);
   }
@@ -159,7 +161,6 @@ class CONTENT_EXPORT RequestExtraData : public blink::WebURLRequest::ExtraData {
   blink::mojom::PageVisibilityState visibility_state_;
   int render_frame_id_;
   bool is_main_frame_;
-  url::Origin frame_origin_;
   bool allow_download_;
   ui::PageTransition transition_type_;
   bool should_replace_current_entry_;
@@ -176,6 +177,7 @@ class CONTENT_EXPORT RequestExtraData : public blink::WebURLRequest::ExtraData {
   bool download_to_network_cache_only_;
   bool block_mixed_plugin_content_;
   bool navigation_initiated_by_renderer_;
+  bool attach_same_site_cookies_;
   std::vector<std::unique_ptr<URLLoaderThrottle>> url_loader_throttles_;
 
   DISALLOW_COPY_AND_ASSIGN(RequestExtraData);

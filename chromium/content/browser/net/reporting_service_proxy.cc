@@ -18,7 +18,7 @@
 #include "net/reporting/reporting_service.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "third_party/WebKit/public/platform/reporting.mojom.h"
+#include "third_party/blink/public/platform/reporting.mojom.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -116,7 +116,10 @@ class ReportingServiceProxyImpl : public blink::mojom::ReportingServiceProxy {
       return;
     }
 
-    reporting_service->QueueReport(url, group, type, std::move(body));
+    // Depth is only non-zero for NEL reports, and those can't come from the
+    // renderer.
+    reporting_service->QueueReport(url, group, type, std::move(body),
+                                   /* depth= */ 0);
   }
 
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;

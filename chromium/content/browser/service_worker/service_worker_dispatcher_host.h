@@ -10,7 +10,6 @@
 #include <memory>
 #include <vector>
 
-#include "base/containers/id_map.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
@@ -22,14 +21,13 @@
 #include "content/public/browser/browser_associated_interface.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "mojo/public/cpp/bindings/strong_associated_binding_set.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
 class ResourceContext;
 class ServiceWorkerContextCore;
 class ServiceWorkerContextWrapper;
-class ServiceWorkerHandle;
 
 namespace service_worker_dispatcher_host_unittest {
 class ServiceWorkerDispatcherHostTest;
@@ -44,20 +42,17 @@ FORWARD_DECLARE_TEST(BackgroundSyncManagerTest,
 // ServiceWorkerDispatcherHost is the browser-side endpoint for several IPC
 // messages for service workers. There is a 1:1 correspondence between
 // renderer processes and ServiceWorkerDispatcherHosts. Currently
-// ServiceWorkerDispatcherHost handles both legacy IPC messages (to and from
-// its corresponding ServiceWorkerDispatcher on the renderer) and Mojo IPC
-// messages (from any ServiceWorkerNetworkProvider on the renderer).
-//
-// Most messages are "from" a "service worker provider" on the renderer (a
-// ServiceWorkerNetworkProvider or a blink::WebServiceWorkerProvider), hence
-// they include a provider_id which must match to a ServiceWorkerProviderHost.
+// ServiceWorkerDispatcherHost sends the legacy IPC message
+// ServiceWorkerMsg_ServiceWorkerStateChanged to its corresponding
+// ServiceWorkerDispatcher on the renderer and receives Mojo IPC messages from
+// any ServiceWorkerNetworkProvider on the renderer.
 //
 // ServiceWorkerDispatcherHost is created on the UI thread in
-// RenderProcessHostImpl::Init() via CreateMessageFilters(). But initialization
-// and destruction occur on the IO thread, as does most (or all?) message
-// handling.  It lives as long as the renderer process lives. Therefore much
-// tracking of renderer processes in browser-side service worker code is built
-// on ServiceWorkerDispatcherHost lifetime.
+// RenderProcessHostImpl::Init() via CreateMessageFilters(), but initialization,
+// destruction, and IPC message handling occur on the IO thread. It lives as
+// long as the renderer process lives. Therefore much tracking of renderer
+// processes in browser-side service worker code is built on
+// ServiceWorkerDispatcherHost lifetime.
 //
 // This class is bound with mojom::ServiceWorkerDispatcherHost. All
 // InterfacePtrs on the same render process are bound to the same
@@ -87,14 +82,6 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost
   // process has terminated, at which point the whole instance will eventually
   // be destroyed.
   bool Send(IPC::Message* message) override;
-
-  // These methods are virtual only for testing.
-  virtual void RegisterServiceWorkerHandle(
-      std::unique_ptr<ServiceWorkerHandle> handle);
-  virtual void UnregisterServiceWorkerHandle(int handle_id);
-
-  ServiceWorkerHandle* FindServiceWorkerHandle(int provider_id,
-                                               int64_t version_id);
 
   ResourceContext* resource_context() { return resource_context_; }
 
@@ -127,9 +114,6 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost
   // mojom::ServiceWorkerDispatcherHost implementation
   void OnProviderCreated(ServiceWorkerProviderHostInfo info) override;
 
-  // IPC Message handlers
-  void OnCountFeature(int64_t version_id, uint32_t feature);
-
   ServiceWorkerContextCore* GetContext();
 
   const int render_process_id_;
@@ -138,8 +122,6 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost
   Phase phase_ = Phase::kInitial;
   // Only accessed on the IO thread.
   scoped_refptr<ServiceWorkerContextWrapper> context_wrapper_;
-
-  base::IDMap<std::unique_ptr<ServiceWorkerHandle>> handles_;
 
   bool channel_ready_;  // True after BrowserMessageFilter::sender_ != NULL.
   std::vector<std::unique_ptr<IPC::Message>> pending_messages_;

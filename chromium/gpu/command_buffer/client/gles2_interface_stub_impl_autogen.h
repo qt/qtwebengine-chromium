@@ -1003,7 +1003,8 @@ void GLES2InterfaceStub::ScheduleOverlayPlaneCHROMIUM(
     GLfloat /* uv_x */,
     GLfloat /* uv_y */,
     GLfloat /* uv_width */,
-    GLfloat /* uv_height */) {}
+    GLfloat /* uv_height */,
+    GLboolean /* enable_blend */) {}
 void GLES2InterfaceStub::ScheduleCALayerSharedStateCHROMIUM(
     GLfloat /* opacity */,
     GLboolean /* is_clipped */,
@@ -1021,7 +1022,6 @@ void GLES2InterfaceStub::ScheduleCALayerInUseQueryCHROMIUM(
     GLsizei /* count */,
     const GLuint* /* textures */) {}
 void GLES2InterfaceStub::CommitOverlayPlanesCHROMIUM() {}
-void GLES2InterfaceStub::SwapInterval(GLint /* interval */) {}
 void GLES2InterfaceStub::FlushDriverCachesCHROMIUM() {}
 GLuint GLES2InterfaceStub::GetLastFlushIdCHROMIUM() {
   return 0;
@@ -1205,7 +1205,6 @@ void GLES2InterfaceStub::BeginRasterCHROMIUM(
     GLuint /* sk_color */,
     GLuint /* msaa_sample_count */,
     GLboolean /* can_use_lcd_text */,
-    GLboolean /* use_distance_field_text */,
     GLint /* color_type */,
     GLuint /* color_space_transfer_cache_id */) {}
 void* GLES2InterfaceStub::MapRasterCHROMIUM(GLsizeiptr /* size */) {

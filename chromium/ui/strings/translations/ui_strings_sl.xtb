@@ -59,6 +59,7 @@
 <translation id="385051799172605136">Nazaj</translation>
 <translation id="3889424535448813030">Puščica desno</translation>
 <translation id="3892641579809465218">Notranji zaslon</translation>
+<translation id="3897092660631435901">Meni</translation>
 <translation id="3909791450649380159">Izrež&amp;i</translation>
 <translation id="3990502903496589789">Desni rob</translation>
 <translation id="4202807286478387388">skoči</translation>
@@ -80,6 +81,7 @@
 <translation id="520299402983819650"><ph name="QUANTITY" /> PB</translation>
 <translation id="528468243742722775">End</translation>
 <translation id="5329858601952122676">&amp;Izbriši</translation>
+<translation id="5463830097259460683">Emodži in drugi znaki</translation>
 <translation id="5476505524087279545">počisti izbor</translation>
 <translation id="5583640892426849032">Vračalka</translation>
 <translation id="5613020302032141669">Puščica levo</translation>
@@ -129,6 +131,7 @@
 <translation id="7365057348334984696">{MINUTES,plural, =1{Pred 1 min}one{Pred # min}two{Pred # min}few{Pred # min}other{Pred # min}}</translation>
 <translation id="7410957453383678442">{MINUTES,plural, =1{Še 1 min}one{Še # min}two{Še # min}few{Še # min}other{Še # min}}</translation>
 <translation id="7460907917090416791"><ph name="QUANTITY" /> TB</translation>
+<translation id="7507604095951736240">Emoji</translation>
 <translation id="7658239707568436148">Prekliči</translation>
 <translation id="7781829728241885113">Včeraj</translation>
 <translation id="7814458197256864873">&amp;Kopiraj</translation>

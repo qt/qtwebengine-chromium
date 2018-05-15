@@ -12,8 +12,8 @@
 #include "content/renderer/service_worker/web_service_worker_impl.h"
 #include "mojo/public/cpp/bindings/associated_binding_set.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_error_type.mojom.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_error_type.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
 
 namespace content {
 
@@ -38,8 +38,8 @@ class MockServiceWorkerObjectHost
 
  private:
   // Implements blink::mojom::ServiceWorkerObjectHost.
-  void PostMessageToServiceWorker(::blink::TransferableMessage message,
-                                  const url::Origin& source_origin) override {
+  void PostMessageToServiceWorker(
+      ::blink::TransferableMessage message) override {
     NOTREACHED();
   }
   void TerminateForTesting(TerminateForTestingCallback callback) override {
@@ -58,8 +58,7 @@ class ServiceWorkerDispatcherTest : public testing::Test {
   ServiceWorkerDispatcherTest() {}
 
   void SetUp() override {
-    dispatcher_ = std::make_unique<ServiceWorkerDispatcher>(
-        nullptr /* thread_safe_sender */);
+    dispatcher_ = std::make_unique<ServiceWorkerDispatcher>();
   }
 
   bool ContainsServiceWorker(int handle_id) {

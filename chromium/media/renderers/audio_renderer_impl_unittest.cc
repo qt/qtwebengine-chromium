@@ -92,11 +92,11 @@ class AudioRendererImplTest : public ::testing::Test, public RendererClient {
   std::vector<std::unique_ptr<AudioDecoder>> CreateAudioDecoderForTest() {
     auto decoder = std::make_unique<MockAudioDecoder>();
     if (!enter_pending_decoder_init_) {
-      EXPECT_CALL(*decoder, Initialize(_, _, _, _))
+      EXPECT_CALL(*decoder, Initialize(_, _, _, _, _))
           .WillOnce(DoAll(SaveArg<3>(&output_cb_),
                           RunCallback<2>(expected_init_result_)));
     } else {
-      EXPECT_CALL(*decoder, Initialize(_, _, _, _))
+      EXPECT_CALL(*decoder, Initialize(_, _, _, _, _))
           .WillOnce(EnterPendingDecoderInitStateAction(this));
     }
     EXPECT_CALL(*decoder, Decode(_, _))
@@ -468,7 +468,7 @@ class AudioRendererImplTest : public ::testing::Test, public RendererClient {
 
   bool ended() const { return ended_; }
 
-  void DecodeDecoder(const scoped_refptr<DecoderBuffer>& buffer,
+  void DecodeDecoder(scoped_refptr<DecoderBuffer> buffer,
                      const AudioDecoder::DecodeCB& decode_cb) {
     // TODO(scherkus): Make this a DCHECK after threading semantics are fixed.
     if (base::MessageLoop::current() != &message_loop_) {

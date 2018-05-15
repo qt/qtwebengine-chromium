@@ -33,6 +33,7 @@ class Display;
 class Context;
 class Image;
 class Config;
+class ClientBuffer;
 }
 
 class LibGLESv2exports
@@ -245,6 +246,7 @@ public:
 	egl::Context *(*es2CreateContext)(egl::Display *display, const egl::Context *shareContext, int clientVersion, const egl::Config *config);
 	__eglMustCastToProperFunctionPointerType (*es2GetProcAddress)(const char *procname);
 	egl::Image *(*createBackBuffer)(int width, int height, sw::Format format, int multiSampleDepth);
+	egl::Image *(*createBackBufferFromClientBuffer)(const egl::ClientBuffer& clientBuffer);
 	egl::Image *(*createDepthStencil)(int width, int height, sw::Format format, int multiSampleDepth);
 	sw::FrameBuffer *(*createFrameBuffer)(void *nativeDisplay, EGLNativeWindowType window, int width, int height);
 };
@@ -286,9 +288,9 @@ private:
 				#endif
 			#elif defined(__ANDROID__)
 				#if defined(__LP64__)
-					const char *libGLESv2_lib[] = {"/vendor/lib64/egl/libGLESv2_swiftshader.so"};
+					const char *libGLESv2_lib[] = {"/vendor/lib64/egl/libGLESv2_swiftshader.so", "/system/lib64/egl/libGLESv2_swiftshader.so"};
 				#else
-					const char *libGLESv2_lib[] = {"/vendor/lib/egl/libGLESv2_swiftshader.so"};
+					const char *libGLESv2_lib[] = {"/vendor/lib/egl/libGLESv2_swiftshader.so", "/system/lib/egl/libGLESv2_swiftshader.so"};
 				#endif
 			#elif defined(__linux__)
 				#if defined(__LP64__)

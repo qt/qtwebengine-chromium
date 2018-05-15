@@ -290,10 +290,10 @@ void CPDF_CMap::LoadPredefined(CPDF_CMapManager* pMgr,
   m_bLoaded = true;
 }
 
-void CPDF_CMap::LoadEmbedded(const uint8_t* pData, uint32_t size) {
+void CPDF_CMap::LoadEmbedded(pdfium::span<const uint8_t> data) {
   m_DirectCharcodeToCIDTable = std::vector<uint16_t>(65536);
   CPDF_CMapParser parser(this);
-  CPDF_SimpleParser syntax(pData, size);
+  CPDF_SimpleParser syntax(data);
   while (1) {
     ByteStringView word = syntax.GetWord();
     if (word.IsEmpty()) {
@@ -337,28 +337,29 @@ uint16_t CPDF_CMap::CIDFromCharCode(uint32_t charcode) const {
   return it->m_StartCID + charcode - it->m_StartCode;
 }
 
-uint32_t CPDF_CMap::GetNextChar(const char* pString,
-                                int nStrLen,
-                                int& offset) const {
-  auto* pBytes = reinterpret_cast<const uint8_t*>(pString);
+uint32_t CPDF_CMap::GetNextChar(const ByteStringView& pString,
+                                size_t& offset) const {
+  auto pBytes = pString.span();
   switch (m_CodingScheme) {
     case OneByte: {
-      return pBytes[offset++];
+      return offset < pBytes.size() ? pBytes[offset++] : 0;
     }
     case TwoBytes: {
-      uint8_t byte1 = pBytes[offset++];
-      return 256 * byte1 + pBytes[offset++];
+      uint8_t byte1 = offset < pBytes.size() ? pBytes[offset++] : 0;
+      uint8_t byte2 = offset < pBytes.size() ? pBytes[offset++] : 0;
+      return 256 * byte1 + byte2;
     }
     case MixedTwoBytes: {
-      uint8_t byte1 = pBytes[offset++];
+      uint8_t byte1 = offset < pBytes.size() ? pBytes[offset++] : 0;
       if (!m_MixedTwoByteLeadingBytes[byte1])
         return byte1;
-      return 256 * byte1 + pBytes[offset++];
+      uint8_t byte2 = offset < pBytes.size() ? pBytes[offset++] : 0;
+      return 256 * byte1 + byte2;
     }
     case MixedFourBytes: {
       uint8_t codes[4];
       int char_size = 1;
-      codes[0] = pBytes[offset++];
+      codes[0] = offset < pBytes.size() ? pBytes[offset++] : 0;
       while (1) {
         int ret = CheckFourByteCodeRange(codes, char_size,
                                          m_MixedFourByteLeadingRanges);
@@ -370,7 +371,7 @@ uint32_t CPDF_CMap::GetNextChar(const char* pString,
             charcode = (charcode << 8) + codes[i];
           return charcode;
         }
-        if (char_size == 4 || offset == nStrLen)
+        if (char_size == 4 || offset == pBytes.size())
           return 0;
         codes[char_size++] = pBytes[offset++];
       }
@@ -402,33 +403,32 @@ int CPDF_CMap::GetCharSize(uint32_t charcode) const {
   return 1;
 }
 
-int CPDF_CMap::CountChar(const char* pString, int size) const {
+size_t CPDF_CMap::CountChar(const ByteStringView& pString) const {
   switch (m_CodingScheme) {
     case OneByte:
-      return size;
+      return pString.GetLength();
     case TwoBytes:
-      return (size + 1) / 2;
+      return (pString.GetLength() + 1) / 2;
     case MixedTwoBytes: {
-      int count = 0;
-      for (int i = 0; i < size; i++) {
+      size_t count = 0;
+      for (size_t i = 0; i < pString.GetLength(); i++) {
         count++;
-        if (m_MixedTwoByteLeadingBytes[reinterpret_cast<const uint8_t*>(
-                pString)[i]]) {
+        if (m_MixedTwoByteLeadingBytes[pString[i]])
           i++;
-        }
       }
       return count;
     }
     case MixedFourBytes: {
-      int count = 0, offset = 0;
-      while (offset < size) {
-        GetNextChar(pString, size, offset);
+      size_t count = 0;
+      size_t offset = 0;
+      while (offset < pString.GetLength()) {
+        GetNextChar(pString, offset);
         count++;
       }
       return count;
     }
   }
-  return size;
+  return pString.GetLength();
 }
 
 int CPDF_CMap::AppendChar(char* str, uint32_t charcode) const {

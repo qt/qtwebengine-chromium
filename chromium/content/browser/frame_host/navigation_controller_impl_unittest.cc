@@ -54,7 +54,7 @@
 #include "services/network/public/cpp/resource_request_body.h"
 #include "skia/ext/platform_canvas.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/common/frame/frame_policy.h"
+#include "third_party/blink/public/common/frame/frame_policy.h"
 
 using base::Time;
 
@@ -1468,7 +1468,7 @@ TEST_F(NavigationControllerTest, ReloadOriginalRequestURL) {
   EXPECT_EQ(0U, navigation_list_pruned_counter_);
   main_test_rfh()->PrepareForCommitWithServerRedirect(final_url);
   main_test_rfh()->SendNavigateWithModificationCallback(
-      entry_id, true, final_url, set_original_url_callback);
+      entry_id, true, final_url, std::move(set_original_url_callback));
   EXPECT_EQ(1U, navigation_entry_committed_counter_);
   navigation_entry_committed_counter_ = 0;
   entry_id = controller.GetLastCommittedEntry()->GetUniqueID();
@@ -1526,7 +1526,7 @@ TEST_F(NavigationControllerTest,
   EXPECT_EQ(0U, navigation_list_pruned_counter_);
   main_test_rfh()->PrepareForCommitWithServerRedirect(final_url);
   main_test_rfh()->SendNavigateWithModificationCallback(
-      entry_id, true, final_url, set_original_url_callback);
+      entry_id, true, final_url, std::move(set_original_url_callback));
   EXPECT_EQ(1U, navigation_entry_committed_counter_);
   navigation_entry_committed_counter_ = 0;
   entry_id = controller.GetLastCommittedEntry()->GetUniqueID();
@@ -1636,8 +1636,8 @@ TEST_F(NavigationControllerTest, RedirectsAreNotResetByCommit) {
 
   // Normal navigation will preserve redirects in the committed entry.
   main_test_rfh()->PrepareForCommitWithServerRedirect(url2);
-  main_test_rfh()->SendNavigateWithModificationCallback(entry_id, true, url1,
-                                                        set_redirects_callback);
+  main_test_rfh()->SendNavigateWithModificationCallback(
+      entry_id, true, url1, std::move(set_redirects_callback));
   NavigationEntryImpl* committed_entry = controller.GetLastCommittedEntry();
   ASSERT_EQ(1U, committed_entry->GetRedirectChain().size());
   EXPECT_EQ(url2, committed_entry->GetRedirectChain()[0]);

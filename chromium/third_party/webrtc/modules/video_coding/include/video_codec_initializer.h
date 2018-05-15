@@ -13,13 +13,14 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "call/video_config.h"
 #include "call/video_send_stream.h"
 
 namespace webrtc {
 
-class TemporalLayersFactory;
 class VideoBitrateAllocator;
 class VideoCodec;
 class VideoEncoderConfig;
@@ -34,25 +35,35 @@ class VideoCodecInitializer {
   // GetBitrateAllocator is called implicitly from here, no need to call again.
   static bool SetupCodec(
       const VideoEncoderConfig& config,
-      const VideoSendStream::Config::EncoderSettings settings,
       const std::vector<VideoStream>& streams,
       bool nack_enabled,
       VideoCodec* codec,
       std::unique_ptr<VideoBitrateAllocator>* bitrate_allocator);
 
+  // TODO(nisse): Deprecated version, with an additional ignored argument.
+  // Delete as soon as downstream users are updated, together with above
+  // includes of "call/video_send_stream.h" and <utility>.
+  static bool SetupCodec(
+      const VideoEncoderConfig& config,
+      const VideoSendStream::Config::EncoderSettings /* settings */,
+      const std::vector<VideoStream>& streams,
+      bool nack_enabled,
+      VideoCodec* codec,
+      std::unique_ptr<VideoBitrateAllocator>* bitrate_allocator) {
+    return SetupCodec(config, streams, nack_enabled, codec,
+                      std::move(bitrate_allocator));
+}
+
   // Create a bitrate allocator for the specified codec. |tl_factory| is
   // optional, if it is populated, ownership of that instance will be
   // transferred to the VideoBitrateAllocator instance.
   static std::unique_ptr<VideoBitrateAllocator> CreateBitrateAllocator(
-      const VideoCodec& codec,
-      std::unique_ptr<TemporalLayersFactory> tl_factory);
+      const VideoCodec& codec);
 
  private:
   static VideoCodec VideoEncoderConfigToVideoCodec(
       const VideoEncoderConfig& config,
       const std::vector<VideoStream>& streams,
-      const std::string& payload_name,
-      int payload_type,
       bool nack_enabled);
 };
 

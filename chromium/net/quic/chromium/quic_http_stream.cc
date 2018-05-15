@@ -15,6 +15,7 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+#include "net/log/net_log.h"
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_source.h"
 #include "net/quic/chromium/quic_http_utils.h"
@@ -467,6 +468,9 @@ void QuicHttpStream::DoCallback(int rv) {
 int QuicHttpStream::DoLoop(int rv) {
   CHECK(!in_loop_);
   base::AutoReset<bool> auto_reset_in_loop(&in_loop_, true);
+  std::unique_ptr<QuicConnection::ScopedPacketFlusher> packet_flusher =
+      quic_session()->CreatePacketBundler(
+          QuicConnection::AckBundling::SEND_ACK_IF_QUEUED);
   do {
     State state = next_state_;
     next_state_ = STATE_NONE;

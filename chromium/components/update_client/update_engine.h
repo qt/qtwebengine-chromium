@@ -5,11 +5,9 @@
 #ifndef COMPONENTS_UPDATE_CLIENT_UPDATE_ENGINE_H_
 #define COMPONENTS_UPDATE_CLIENT_UPDATE_ENGINE_H_
 
-#include <iterator>
 #include <list>
 #include <map>
 #include <memory>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -38,7 +36,7 @@ struct UpdateContext;
 // Handles updates for a group of components. Updates for different groups
 // are run concurrently but within the same group of components, updates are
 // applied one at a time.
-class UpdateEngine {
+class UpdateEngine : public base::RefCounted<UpdateEngine> {
  public:
   using Callback = base::OnceCallback<void(Error error)>;
   using NotifyObserversCallback =
@@ -51,8 +49,10 @@ class UpdateEngine {
                CrxDownloader::Factory crx_downloader_factory,
                scoped_refptr<PingManager> ping_manager,
                const NotifyObserversCallback& notify_observers_callback);
-  ~UpdateEngine();
 
+  // Returns true and the state of the component identified by |id|, if the
+  // component is found in any update context. Returns false if the component
+  // is not found.
   bool GetUpdateState(const std::string& id, CrxUpdateItem* update_state);
 
   void Update(bool is_foreground,
@@ -66,23 +66,27 @@ class UpdateEngine {
                          Callback update_callback);
 
  private:
-  using UpdateContexts = std::set<std::unique_ptr<UpdateContext>>;
-  using UpdateContextIterator = UpdateContexts::iterator;
+  friend class base::RefCounted<UpdateEngine>;
+  ~UpdateEngine();
 
-  void UpdateComplete(UpdateContextIterator it, Error error);
+  using UpdateContexts = std::map<std::string, scoped_refptr<UpdateContext>>;
 
-  void ComponentCheckingForUpdatesStart(UpdateContextIterator it,
-                                        const std::string& id);
-  void ComponentCheckingForUpdatesComplete(UpdateContextIterator it);
-  void UpdateCheckComplete(UpdateContextIterator it);
+  void UpdateComplete(scoped_refptr<UpdateContext> update_context, Error error);
 
-  void DoUpdateCheck(UpdateContextIterator it);
-  void UpdateCheckDone(UpdateContextIterator it,
+  void ComponentCheckingForUpdatesStart(
+      scoped_refptr<UpdateContext> update_context,
+      const std::string& id);
+  void ComponentCheckingForUpdatesComplete(
+      scoped_refptr<UpdateContext> update_context);
+  void UpdateCheckComplete(scoped_refptr<UpdateContext> update_context);
+
+  void DoUpdateCheck(scoped_refptr<UpdateContext> update_context);
+  void UpdateCheckDone(scoped_refptr<UpdateContext> update_context,
                        int error,
                        int retry_after_sec);
 
-  void HandleComponent(UpdateContextIterator it);
-  void HandleComponentComplete(UpdateContextIterator it);
+  void HandleComponent(scoped_refptr<UpdateContext> update_context);
+  void HandleComponentComplete(scoped_refptr<UpdateContext> update_context);
 
   // Returns true if the update engine rejects this update call because it
   // occurs too soon.
@@ -110,9 +114,8 @@ class UpdateEngine {
   DISALLOW_COPY_AND_ASSIGN(UpdateEngine);
 };
 
-// TODO(sorin): consider making this a ref counted type.
 // Describes a group of components which are installed or updated together.
-struct UpdateContext {
+struct UpdateContext : public base::RefCounted<UpdateContext> {
   UpdateContext(
       scoped_refptr<Configurator> config,
       bool is_foreground,
@@ -122,18 +125,20 @@ struct UpdateContext {
       UpdateEngine::Callback callback,
       CrxDownloader::Factory crx_downloader_factory);
 
-  ~UpdateContext();
-
   scoped_refptr<Configurator> config;
 
-  // True if this update has been initiated by the user.
+  // True if the component is updated as a result of user interaction.
   bool is_foreground = false;
 
   // True if the component updates are enabled in this context.
   const bool enabled_component_updates;
 
-  // Contains the ids of all CRXs in this context.
+  // Contains the ids of all CRXs in this context in the order specified
+  // by the caller of |UpdateClient::Update| or |UpdateClient:Install|.
   const std::vector<std::string> ids;
+
+  // Contains the map of ids to components for all the CRX in this context.
+  IdToComponentPtrMap components;
 
   // Called before an update check, when update metadata is needed.
   UpdateEngine::CrxDataCallback crx_data_callback;
@@ -156,8 +161,6 @@ struct UpdateContext {
   size_t num_components_ready_to_check = 0;
   size_t num_components_checked = 0;
 
-  IdToComponentPtrMap components;
-
   base::queue<std::string> component_queue;
 
   // The time to wait before handling the update for a component.
@@ -167,10 +170,15 @@ struct UpdateContext {
   // is handling the next component in the queue.
   base::TimeDelta next_update_delay;
 
-  // The session id this context is associated with.
+  // The unique session id of this context. The session id is serialized in
+  // every protocol request. It is also used as a key in various data stuctures
+  // to uniquely identify an update context.
   const std::string session_id;
 
  private:
+  friend class base::RefCounted<UpdateContext>;
+  ~UpdateContext();
+
   DISALLOW_COPY_AND_ASSIGN(UpdateContext);
 };
 

@@ -50,6 +50,7 @@
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/gpu_stream_constants.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
@@ -60,7 +61,7 @@
 #include "gpu/config/gpu_feature_info.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "gpu/ipc/host/gpu_memory_buffer_support.h"
-#include "gpu/vulkan/features.h"
+#include "gpu/vulkan/buildflags.h"
 #include "services/service_manager/runner/common/client_util.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -393,10 +394,11 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
       bool support_locking = true;
       bool support_gles2_interface = false;
       bool support_raster_interface = true;
+      bool support_grcontext = false;
       shared_worker_context_provider_ = CreateContextCommon(
           gpu_channel_host, gpu::kNullSurfaceHandle, need_alpha_channel,
           false /* support_stencil */, support_locking, support_gles2_interface,
-          support_raster_interface,
+          support_raster_interface, support_grcontext,
           ui::command_buffer_metrics::BROWSER_WORKER_CONTEXT);
       auto result = shared_worker_context_provider_->BindToCurrentThread();
       if (result != gpu::ContextResult::kSuccess) {
@@ -419,10 +421,11 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
       bool support_locking = false;
       bool support_gles2_interface = true;
       bool support_raster_interface = false;
+      bool support_grcontext = true;
       context_provider = CreateContextCommon(
           std::move(gpu_channel_host), surface_handle, need_alpha_channel,
           support_stencil, support_locking, support_gles2_interface,
-          support_raster_interface,
+          support_raster_interface, support_grcontext,
           ui::command_buffer_metrics::DISPLAY_COMPOSITOR_ONSCREEN_CONTEXT);
       // On Mac, GpuCommandBufferMsg_SwapBuffersCompleted must be handled in
       // a nested run loop during resize.
@@ -494,15 +497,15 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
       }
       display_output_surface =
           std::make_unique<SoftwareBrowserCompositorOutputSurface>(
-              CreateSoftwareOutputDevice(compositor->widget()), vsync_callback,
-              compositor->task_runner());
+              CreateSoftwareOutputDevice(compositor->widget()),
+              std::move(vsync_callback), compositor->task_runner());
     } else {
       DCHECK(context_provider);
       const auto& capabilities = context_provider->ContextCapabilities();
       if (data->surface_handle == gpu::kNullSurfaceHandle) {
         display_output_surface =
             std::make_unique<OffscreenBrowserCompositorOutputSurface>(
-                context_provider, vsync_callback,
+                context_provider, std::move(vsync_callback),
                 std::unique_ptr<viz::CompositorOverlayCandidateValidator>());
       } else if (capabilities.surfaceless) {
 #if defined(OS_MACOSX)
@@ -516,11 +519,13 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
                                             disable_overlay_ca_layers),
             GetGpuMemoryBufferManager());
 #else
+        DCHECK(capabilities.texture_format_bgra8888);
         auto gpu_output_surface =
             std::make_unique<GpuSurfacelessBrowserCompositorOutputSurface>(
-                context_provider, data->surface_handle, vsync_callback,
+                context_provider, data->surface_handle,
+                std::move(vsync_callback),
                 CreateOverlayCandidateValidator(compositor->widget()),
-                GL_TEXTURE_2D, GL_RGB,
+                GL_TEXTURE_2D, GL_BGRA_EXT,
                 display::DisplaySnapshot::PrimaryFormat(),
                 GetGpuMemoryBufferManager());
         gpu_vsync_control = gpu_output_surface.get();
@@ -537,7 +542,8 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
 #endif
         auto gpu_output_surface =
             std::make_unique<GpuBrowserCompositorOutputSurface>(
-                context_provider, vsync_callback, std::move(validator));
+                context_provider, std::move(vsync_callback),
+                std::move(validator));
         gpu_vsync_control = gpu_output_surface.get();
         display_output_surface = std::move(gpu_output_surface);
       }
@@ -690,6 +696,8 @@ void GpuProcessTransportFactory::DisableGpuCompositing(
     if (visible)
       compositor->SetVisible(true);
   }
+
+  GpuDataManagerImpl::GetInstance()->NotifyGpuInfoUpdate();
 }
 
 std::unique_ptr<ui::Reflector> GpuProcessTransportFactory::CreateReflector(
@@ -965,9 +973,11 @@ GpuProcessTransportFactory::SharedMainThreadContextProvider() {
   bool support_locking = false;
   bool support_gles2_interface = true;
   bool support_raster_interface = false;
+  bool support_grcontext = true;
   shared_main_thread_contexts_ = CreateContextCommon(
       std::move(gpu_channel_host), gpu::kNullSurfaceHandle, need_alpha_channel,
       false, support_locking, support_gles2_interface, support_raster_interface,
+      support_grcontext,
       ui::command_buffer_metrics::BROWSER_OFFSCREEN_MAINTHREAD_CONTEXT);
   shared_main_thread_contexts_->AddObserver(this);
   auto result = shared_main_thread_contexts_->BindToCurrentThread();
@@ -1056,6 +1066,7 @@ GpuProcessTransportFactory::CreateContextCommon(
     bool support_locking,
     bool support_gles2_interface,
     bool support_raster_interface,
+    bool support_grcontext,
     ui::command_buffer_metrics::ContextType type) {
   DCHECK(gpu_channel_host);
   DCHECK(!is_gpu_compositing_disabled_);
@@ -1096,7 +1107,8 @@ GpuProcessTransportFactory::CreateContextCommon(
   return base::MakeRefCounted<ui::ContextProviderCommandBuffer>(
       std::move(gpu_channel_host), GetGpuMemoryBufferManager(), stream_id,
       stream_priority, surface_handle, url, automatic_flushes, support_locking,
-      gpu::SharedMemoryLimits(), attributes, nullptr /* share_context */, type);
+      support_grcontext, gpu::SharedMemoryLimits(), attributes,
+      nullptr /* share_context */, type);
 }
 
 }  // namespace content

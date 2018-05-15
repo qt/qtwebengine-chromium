@@ -4,7 +4,7 @@
 
 module memory_instrumentation.mojom;
 
-import "mojo/common/process_id.mojom";
+import "mojo/public/mojom/base/process_id.mojom";
 
 // Common structs:
 
@@ -36,6 +36,19 @@ enum HeapProfilingMode {
   BACKGROUND,
   PSEUDO_STACK,
   NATIVE_STACK
+};
+
+enum MemoryMapOption {
+  // Do not fetch any information about mapped regions in the virtual address
+  // space.
+  NONE,
+
+  // Only fetch information on code modules, e.g. Chrome Binary, system
+  // libraries.
+  MODULES,
+
+  // Fetch information for every single mapped region.
+  FULL
 };
 
 // These structs are internal only (only for the communication between
@@ -152,18 +165,6 @@ struct OSMemDump {
   uint32 private_footprint_swap_kb = 0;
 };
 
-struct ChromeMemDump {
-  uint32 malloc_total_kb = 0;
-  uint32 command_buffer_total_kb = 0;
-  uint32 partition_alloc_total_kb = 0;
-  uint32 blink_gc_total_kb = 0;
-  uint32 v8_total_kb = 0;
-
-  // The allocator dumps specified by the input args.
-  // (See GlobalRequestArgs.allocator_dump_names).
-  map<string, AllocatorMemDump> entries_for_allocator_dumps;
-};
-
 // This struct contains information about a particular allocator dump
 // (e.g. cc/resource_memory).
 struct AllocatorMemDump {
@@ -177,14 +178,17 @@ struct AllocatorMemDump {
 struct ProcessMemoryDump {
   ProcessType process_type;
   OSMemDump os_dump;
-  ChromeMemDump chrome_dump;
+
+  // The chrome allocator dumps specified by the input args.
+  // (See GlobalRequestArgs.allocator_dump_names).
+  map<string, AllocatorMemDump> chrome_allocator_dumps;
 
   // |pid| is necessary to correlate a ProcessMemoryDump with the URLs for the
   // process, which is obtained from the ResourceCoordinator service. In a
   // future world where both ResourceCoordinator and MemoryInstrumentation are
   // less in flux, they will probably be merged into a single service, and this
   // parameter can be removed.
-  mojo.common.mojom.ProcessId pid;
+  mojo_base.mojom.ProcessId pid;
 };
 
 
@@ -210,7 +214,8 @@ interface ClientProcess {
 
   // Requests an OSMemDump for each pid in |pids|.
   // The Memory-infra service deals with two kinds of information:
-  // 1) Chrome's view of its own memory use (recorded as ChromeMemDumps)
+  // 1) Chrome's view of its own memory use (recorded as
+  //    |chrome_allocator_dumps|)
   // 2) The OS's view of Chrome's memory use (recorded as OSMemDumps)
   // Both of these are collected per process. On most platforms each process
   // can make the system calls to collect its own OSMemDump however on some
@@ -221,14 +226,14 @@ interface ClientProcess {
   // On Linux we call this once on the browser process ClientProcess passing
   // the pids for all processes.
   // See crbug.com/461788
-  RequestOSMemoryDump(bool want_mmaps, array<mojo.common.mojom.ProcessId> pids) =>
-      (bool success, map<mojo.common.mojom.ProcessId, RawOSMemDump> dumps);
+  RequestOSMemoryDump(MemoryMapOption option, array<mojo_base.mojom.ProcessId> pids) =>
+      (bool success, map<mojo_base.mojom.ProcessId, RawOSMemDump> dumps);
 };
 
 struct SharedBufferWithSize {
   handle<shared_buffer> buffer;
   uint32 size;
-  mojo.common.mojom.ProcessId pid;
+  mojo_base.mojom.ProcessId pid;
 };
 
 // HeapProfilers expose a single interface to memory_instrumentation, allowing
@@ -257,8 +262,8 @@ interface HeapProfiler {
 interface HeapProfilerHelper {
   // Broadcasts a RequestOSMemoryDump-only request for all registered client
   // processes and retrieves only their memory maps.
-  GetVmRegionsForHeapProfiler(array<mojo.common.mojom.ProcessId> pids) =>
-      (map<mojo.common.mojom.ProcessId, array<VmRegion>> vm_regions);
+  GetVmRegionsForHeapProfiler(array<mojo_base.mojom.ProcessId> pids) =>
+      (map<mojo_base.mojom.ProcessId, array<VmRegion>> vm_regions);
 };
 
 // The memory-infra service implements this interface. There is one instance for
@@ -280,7 +285,7 @@ interface Coordinator {
 
   // Sends a dump request to the client process given by the specified pid and
   // returns a summarized dump back or null if there was a failure.
-  RequestGlobalMemoryDumpForPid(mojo.common.mojom.ProcessId pid) =>
+  RequestGlobalMemoryDumpForPid(mojo_base.mojom.ProcessId pid) =>
       (bool success, GlobalMemoryDump? global_memory_dump);
 
   // Broadcasts a dump request to all registered client processes and injects the

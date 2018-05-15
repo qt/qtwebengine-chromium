@@ -1,7 +1,0 @@
-include_rules = [
-    "+device/bluetooth/public/mojom",
-    "-modules",
-    "+modules/bluetooth",
-    "+modules/EventTargetModules.h",
-    "+mojo/public/cpp/bindings",
-]

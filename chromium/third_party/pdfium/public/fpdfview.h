@@ -46,6 +46,7 @@ typedef void* FPDF_LINK;
 typedef void* FPDF_PAGE;
 typedef void* FPDF_PAGELINK;
 typedef void* FPDF_PAGEOBJECT;  // Page object(text, path, etc)
+typedef void const* FPDF_PAGEOBJECTMARK;
 typedef void* FPDF_PAGERANGE;
 typedef void* FPDF_RECORDER;
 typedef void* FPDF_SCHHANDLE;
@@ -55,7 +56,6 @@ typedef void* FPDF_TEXTPAGE;
 typedef void const* FPDF_PATHSEGMENT;
 
 #ifdef PDF_ENABLE_XFA
-typedef void* FPDF_STRINGHANDLE;
 typedef void* FPDF_WIDGET;
 #endif  // PDF_ENABLE_XFA
 
@@ -266,19 +266,6 @@ FPDF_SetTypefaceAccessibleFunc(PDFiumEnsureTypefaceCharactersAccessible func);
 //          None.
 FPDF_EXPORT void FPDF_CALLCONV FPDF_SetPrintTextWithGDI(FPDF_BOOL use_gdi);
 #endif  // PDFIUM_PRINT_TEXT_WITH_GDI
-
-// Function: FPDF_SetPrintPostscriptLevel
-//          Set postscript printing level when printing on Windows.
-//          Experimental API.
-// Parameters:
-//          postscript_level- 0 to disable postscript printing,
-//                            2 to print with postscript level 2,
-//                            3 to print with postscript level 3.
-//                            All other values are invalid.
-// Return value:
-//          True if successful, false if unsuccessful (typically invalid input).
-FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
-FPDF_SetPrintPostscriptLevel(int postscript_level);
 
 // Function: FPDF_SetPrintMode
 //          Set printing mode when printing on Windows.
@@ -749,7 +736,8 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_CloseDocument(FPDF_DOCUMENT document);
 //          page_y      -   A pointer to a double receiving the converted Y
 //                          value in page coordinates.
 // Return value:
-//          None.
+//          Returns true if the conversion succeeds, and |page_x| and |page_y|
+//          successfully receives the converted coordinates.
 // Comments:
 //          The page coordinate system has its origin at the left-bottom corner
 //          of the page, with the X-axis on the bottom going to the right, and
@@ -767,16 +755,16 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_CloseDocument(FPDF_DOCUMENT document);
 //          You must make sure the start_x, start_y, size_x, size_y
 //          and rotate parameters have exactly same values as you used in
 //          the FPDF_RenderPage() function call.
-FPDF_EXPORT void FPDF_CALLCONV FPDF_DeviceToPage(FPDF_PAGE page,
-                                                 int start_x,
-                                                 int start_y,
-                                                 int size_x,
-                                                 int size_y,
-                                                 int rotate,
-                                                 int device_x,
-                                                 int device_y,
-                                                 double* page_x,
-                                                 double* page_y);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_DeviceToPage(FPDF_PAGE page,
+                                                      int start_x,
+                                                      int start_y,
+                                                      int size_x,
+                                                      int size_y,
+                                                      int rotate,
+                                                      int device_x,
+                                                      int device_y,
+                                                      double* page_x,
+                                                      double* page_y);
 
 // Function: FPDF_PageToDevice
 //          Convert the page coordinates of a point to screen coordinates.
@@ -800,19 +788,20 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_DeviceToPage(FPDF_PAGE page,
 //          device_y    -   A pointer to an integer receiving the result Y
 //                          value in device coordinates.
 // Return value:
-//          None.
+//          Returns true if the conversion succeeds, and |device_x| and
+//          |device_y| successfully receives the converted coordinates.
 // Comments:
 //          See comments for FPDF_DeviceToPage().
-FPDF_EXPORT void FPDF_CALLCONV FPDF_PageToDevice(FPDF_PAGE page,
-                                                 int start_x,
-                                                 int start_y,
-                                                 int size_x,
-                                                 int size_y,
-                                                 int rotate,
-                                                 double page_x,
-                                                 double page_y,
-                                                 int* device_x,
-                                                 int* device_y);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_PageToDevice(FPDF_PAGE page,
+                                                      int start_x,
+                                                      int start_y,
+                                                      int size_x,
+                                                      int size_y,
+                                                      int rotate,
+                                                      double page_x,
+                                                      double page_y,
+                                                      int* device_x,
+                                                      int* device_y);
 
 // Function: FPDFBitmap_Create
 //          Create a device independent bitmap (FXDIB).

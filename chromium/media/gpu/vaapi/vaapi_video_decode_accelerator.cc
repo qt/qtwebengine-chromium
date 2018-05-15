@@ -25,7 +25,7 @@
 #include "media/gpu/accelerated_video_decoder.h"
 #include "media/gpu/format_utils.h"
 #include "media/gpu/h264_decoder.h"
-#include "media/gpu/vaapi/vaapi_decode_surface.h"
+#include "media/gpu/vaapi/vaapi_common.h"
 #include "media/gpu/vaapi/vaapi_h264_accelerator.h"
 #include "media/gpu/vaapi/vaapi_picture.h"
 #include "media/gpu/vaapi/vaapi_vp8_accelerator.h"
@@ -55,12 +55,22 @@ unsigned int GetVaFormatForVideoCodecProfile(VideoCodecProfile profile) {
   return VA_RT_FORMAT_YUV420;
 }
 
-}  // namespace
-
-static void ReportToUMA(VAVDADecoderFailure failure) {
+void ReportToUMA(VAVDADecoderFailure failure) {
   UMA_HISTOGRAM_ENUMERATION("Media.VAVDA.DecoderFailure", failure,
                             VAVDA_DECODER_FAILURES_MAX + 1);
 }
+
+#if defined(USE_OZONE)
+void CloseGpuMemoryBufferHandle(const gfx::GpuMemoryBufferHandle& handle) {
+  for (const auto& fd : handle.native_pixmap_handle.fds) {
+    // Close the fd by wrapping it in a ScopedFD and letting
+    // it fall out of scope.
+    base::ScopedFD scoped_fd(fd.fd);
+  }
+}
+#endif
+
+}  // namespace
 
 #define RETURN_AND_NOTIFY_ON_FAILURE(result, log, error_code, ret) \
   do {                                                             \
@@ -175,6 +185,8 @@ bool VaapiVideoDecodeAccelerator::Initialize(const Config& config,
   vaapi_wrapper_ = VaapiWrapper::CreateForVideoCodec(
       VaapiWrapper::kDecode, profile, base::Bind(&ReportToUMA, VAAPI_ERROR));
 
+  UMA_HISTOGRAM_BOOLEAN("Media.VAVDA.VaapiWrapperCreationSuccess",
+                        vaapi_wrapper_.get());
   if (!vaapi_wrapper_.get()) {
     VLOGF(1) << "Failed initializing VAAPI for profile "
              << GetProfileName(profile);
@@ -183,13 +195,13 @@ bool VaapiVideoDecodeAccelerator::Initialize(const Config& config,
 
   if (profile >= H264PROFILE_MIN && profile <= H264PROFILE_MAX) {
     decoder_.reset(new H264Decoder(
-        std::make_unique<VaapiH264Accelerator>(this, vaapi_wrapper_.get())));
+        std::make_unique<VaapiH264Accelerator>(this, vaapi_wrapper_)));
   } else if (profile >= VP8PROFILE_MIN && profile <= VP8PROFILE_MAX) {
     decoder_.reset(new VP8Decoder(
         std::make_unique<VaapiVP8Accelerator>(this, vaapi_wrapper_)));
   } else if (profile >= VP9PROFILE_MIN && profile <= VP9PROFILE_MAX) {
     decoder_.reset(new VP9Decoder(
-        std::make_unique<VaapiVP9Accelerator>(this, vaapi_wrapper_.get())));
+        std::make_unique<VaapiVP9Accelerator>(this, vaapi_wrapper_)));
   } else {
     VLOGF(1) << "Unsupported profile " << GetProfileName(profile);
     return false;
@@ -224,7 +236,7 @@ void VaapiVideoDecodeAccelerator::OutputPicture(
   }
   // Notify the client a picture is ready to be displayed.
   ++num_frames_at_client_;
-  TRACE_COUNTER1("media,gpu", "Textures at client", num_frames_at_client_);
+  TRACE_COUNTER1("media,gpu", "Vaapi frames at client", num_frames_at_client_);
   VLOGF(4) << "Notifying output picture id " << output_id << " for input "
            << input_id
            << " is ready. visible rect: " << visible_rect.ToString();
@@ -286,7 +298,7 @@ void VaapiVideoDecodeAccelerator::QueueInputBuffer(
     input_buffers_.push(std::move(input_buffer));
   }
 
-  TRACE_COUNTER1("media,gpu", "Input buffers", input_buffers_.size());
+  TRACE_COUNTER1("media,gpu", "Vaapi input buffers", input_buffers_.size());
   input_ready_.Signal();
 
   switch (state_) {
@@ -345,6 +357,7 @@ bool VaapiVideoDecodeAccelerator::GetCurrInputBuffer_Locked() {
   VLOGF(4) << "New |curr_input_buffer_|, id: " << curr_input_buffer_->id()
            << " size: " << curr_input_buffer_->shm()->size() << "B";
   decoder_->SetStream(
+      curr_input_buffer_->id(),
       static_cast<uint8_t*>(curr_input_buffer_->shm()->memory()),
       curr_input_buffer_->shm()->size());
 
@@ -607,15 +620,6 @@ void VaapiVideoDecodeAccelerator::AssignPictureBuffers(
 }
 
 #if defined(USE_OZONE)
-static void CloseGpuMemoryBufferHandle(
-    const gfx::GpuMemoryBufferHandle& handle) {
-  for (const auto& fd : handle.native_pixmap_handle.fds) {
-    // Close the fd by wrapping it in a ScopedFD and letting
-    // it fall out of scope.
-    base::ScopedFD scoped_fd(fd.fd);
-  }
-}
-
 void VaapiVideoDecodeAccelerator::ImportBufferForPicture(
     int32_t picture_buffer_id,
     VideoPixelFormat pixel_format,
@@ -675,7 +679,7 @@ void VaapiVideoDecodeAccelerator::ReusePictureBuffer(
   }
 
   --num_frames_at_client_;
-  TRACE_COUNTER1("media,gpu", "Textures at client", num_frames_at_client_);
+  TRACE_COUNTER1("media,gpu", "Vaapi frames at client", num_frames_at_client_);
 
   output_buffers_.push(picture_buffer_id);
   TryOutputSurface();
@@ -775,7 +779,7 @@ void VaapiVideoDecodeAccelerator::Reset() {
   // Drop all remaining input buffers, if present.
   while (!input_buffers_.empty())
     input_buffers_.pop();
-  TRACE_COUNTER1("media,gpu", "Input buffers", input_buffers_.size());
+  TRACE_COUNTER1("media,gpu", "Vaapi input buffers", input_buffers_.size());
 
   decoder_thread_task_runner_->PostTask(
       FROM_HERE, base::Bind(&VaapiVideoDecodeAccelerator::ResetTask,
@@ -869,21 +873,24 @@ bool VaapiVideoDecodeAccelerator::TryToSetupDecodeOnSeparateThread(
   return false;
 }
 
-bool VaapiVideoDecodeAccelerator::DecodeSurface(
-    const scoped_refptr<VaapiDecodeSurface>& dec_surface) {
-  const bool result = vaapi_wrapper_->ExecuteAndDestroyPendingBuffers(
-      dec_surface->va_surface()->id());
+bool VaapiVideoDecodeAccelerator::DecodeVASurface(
+    const scoped_refptr<VASurface>& va_surface) {
+  const bool result =
+      vaapi_wrapper_->ExecuteAndDestroyPendingBuffers(va_surface->id());
   if (!result)
     VLOGF(1) << "Failed decoding picture";
   return result;
 }
 
-void VaapiVideoDecodeAccelerator::SurfaceReady(
-    const scoped_refptr<VaapiDecodeSurface>& dec_surface) {
+void VaapiVideoDecodeAccelerator::VASurfaceReady(
+    const scoped_refptr<VASurface>& va_surface,
+    int32_t bitstream_id,
+    const gfx::Rect& visible_rect) {
   if (!task_runner_->BelongsToCurrentThread()) {
     task_runner_->PostTask(
-        FROM_HERE, base::Bind(&VaapiVideoDecodeAccelerator::SurfaceReady,
-                              weak_this_, dec_surface));
+        FROM_HERE,
+        base::Bind(&VaapiVideoDecodeAccelerator::VASurfaceReady, weak_this_,
+                   va_surface, bitstream_id, visible_rect));
     return;
   }
 
@@ -898,13 +905,12 @@ void VaapiVideoDecodeAccelerator::SurfaceReady(
 
   pending_output_cbs_.push(
       base::Bind(&VaapiVideoDecodeAccelerator::OutputPicture, weak_this_,
-                 dec_surface->va_surface(), dec_surface->bitstream_id(),
-                 dec_surface->visible_rect()));
+                 va_surface, bitstream_id, visible_rect));
 
   TryOutputSurface();
 }
 
-scoped_refptr<VaapiDecodeSurface> VaapiVideoDecodeAccelerator::CreateSurface() {
+scoped_refptr<VASurface> VaapiVideoDecodeAccelerator::CreateVASurface() {
   DCHECK(decoder_thread_task_runner_->BelongsToCurrentThread());
   base::AutoLock auto_lock(lock_);
 
@@ -917,7 +923,7 @@ scoped_refptr<VaapiDecodeSurface> VaapiVideoDecodeAccelerator::CreateSurface() {
       vaapi_wrapper_->va_surface_format(), va_surface_release_cb_));
   available_va_surfaces_.pop_front();
 
-  return new VaapiDecodeSurface(curr_input_buffer_->id(), va_surface);
+  return va_surface;
 }
 
 // static

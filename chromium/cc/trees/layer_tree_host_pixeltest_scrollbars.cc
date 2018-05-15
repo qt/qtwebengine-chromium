@@ -4,7 +4,6 @@
 
 #include <stddef.h>
 
-#include "base/memory/ptr_util.h"
 #include "build/build_config.h"
 #include "cc/input/scrollbar.h"
 #include "cc/layers/painted_overlay_scrollbar_layer.h"
@@ -52,6 +51,7 @@ class PaintedScrollbar : public Scrollbar {
   gfx::Rect TrackRect() const override { return rect_; }
   float ThumbOpacity() const override { return 1.f; }
   bool NeedsPaintPart(ScrollbarPart part) const override { return true; }
+  bool HasTickmarks() const override { return false; }
   void PaintPart(PaintCanvas* canvas,
                  ScrollbarPart part,
                  const gfx::Rect& content_rect) override {
@@ -150,7 +150,7 @@ TEST_F(LayerTreeHostScrollbarsPixelTest, HugeTransformScale) {
   background->AddChild(layer);
 
   scoped_refptr<TestInProcessContextProvider> context(
-      new TestInProcessContextProvider(nullptr));
+      new TestInProcessContextProvider(nullptr, false));
   context->BindToCurrentThread();
   int max_texture_size = 0;
   context->ContextGL()->GetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size);

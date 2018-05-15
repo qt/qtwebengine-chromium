@@ -69,6 +69,7 @@ namespace StartAudioDebugRecordings =
     api::webrtc_logging_private::StartAudioDebugRecordings;
 namespace StopAudioDebugRecordings =
     api::webrtc_logging_private::StopAudioDebugRecordings;
+namespace StartEventLogging = api::webrtc_logging_private::StartEventLogging;
 namespace GetLogsDirectory = api::webrtc_logging_private::GetLogsDirectory;
 
 namespace {
@@ -109,14 +110,15 @@ content::RenderProcessHost* WebrtcLoggingPrivateFunction::RphFromRequest(
       return false;
     };
     guest_view::GuestViewManager::FromBrowserContext(browser_context())
-        ->ForEachGuest(GetSenderWebContents(),
-                       base::Bind(get_guest, &guests_found, &target_host));
+        ->ForEachGuest(
+            GetSenderWebContents(),
+            base::BindRepeating(get_guest, &guests_found, &target_host));
     if (!target_host) {
-      error_ = "No webview render process found";
+      SetError("No webview render process found");
       return nullptr;
     }
     if (guests_found > 1) {
-      error_ = "Multiple webviews found";
+      SetError("Multiple webviews found");
       return nullptr;
     }
     return target_host;
@@ -124,13 +126,21 @@ content::RenderProcessHost* WebrtcLoggingPrivateFunction::RphFromRequest(
 
   // If |guest_process_id| is defined, directly use this id to find the
   // corresponding RenderProcessHost.
-  if (request.guest_process_id.get())
-    return content::RenderProcessHost::FromID(*request.guest_process_id);
+  if (request.guest_process_id.get()) {
+    content::RenderProcessHost* rph =
+        content::RenderProcessHost::FromID(*request.guest_process_id);
+    if (!rph) {
+      SetError(
+          base::StringPrintf("Failed to get RPH fro guest proccess ID (%d).",
+                             *request.guest_process_id));
+    }
+    return rph;
+  }
 
   // Otherwise, use the |tab_id|. If there's no |target_viewview|, no |tab_id|,
   // and no |guest_process_id|, we can't look up the RenderProcessHost.
   if (!request.tab_id.get()) {
-    error_ = "No webview, tab ID, or guest process ID specified.";
+    SetError("No webview, tab ID, or guest process ID specified.");
     return nullptr;
   }
 
@@ -138,23 +148,28 @@ content::RenderProcessHost* WebrtcLoggingPrivateFunction::RphFromRequest(
   content::WebContents* contents = nullptr;
   if (!ExtensionTabUtil::GetTabById(tab_id, GetProfile(), true, nullptr,
                                     nullptr, &contents, nullptr)) {
-    error_ = extensions::ErrorUtils::FormatErrorMessage(
+    SetError(extensions::ErrorUtils::FormatErrorMessage(
         extensions::tabs_constants::kTabNotFoundError,
-        base::IntToString(tab_id));
+        base::IntToString(tab_id)));
     return nullptr;
   }
   if (!contents) {
-    error_ = "Web contents for tab not found.";
+    SetError("Web contents for tab not found.");
     return nullptr;
   }
   GURL expected_origin = contents->GetLastCommittedURL().GetOrigin();
   if (expected_origin.spec() != security_origin) {
-    error_ = base::StringPrintf(
+    SetError(base::StringPrintf(
         "Invalid security origin. Expected=%s, actual=%s",
-        expected_origin.spec().c_str(), security_origin.c_str());
+        expected_origin.spec().c_str(), security_origin.c_str()));
     return nullptr;
   }
-  return contents->GetMainFrame()->GetProcess();
+
+  content::RenderProcessHost* rph = contents->GetMainFrame()->GetProcess();
+  if (!rph) {
+    SetError("Failed to get RPH.");
+  }
+  return rph;
 }
 
 scoped_refptr<WebRtcLoggingHandlerHost>
@@ -162,8 +177,10 @@ WebrtcLoggingPrivateFunction::LoggingHandlerFromRequest(
     const api::webrtc_logging_private::RequestInfo& request,
     const std::string& security_origin) {
   content::RenderProcessHost* host = RphFromRequest(request, security_origin);
-  if (!host)
+  if (!host) {
+    // SetError() will have been called by RphFromRequest().
     return nullptr;
+  }
 
   return base::UserDataAdapter<WebRtcLoggingHandlerHost>::Get(
       host, WebRtcLoggingHandlerHost::kWebRtcLoggingHandlerHostKey);
@@ -402,8 +419,10 @@ bool WebrtcLoggingPrivateStartRtpDumpFunction::RunAsync() {
 
   content::RenderProcessHost* host =
       RphFromRequest(params->request, params->security_origin);
-  if (!host)
+  if (!host) {
+    // SetError() will have been called by RphFromRequest().
     return false;
+  }
 
   scoped_refptr<WebRtcLoggingHandlerHost> webrtc_logging_handler_host(
       base::UserDataAdapter<WebRtcLoggingHandlerHost>::Get(
@@ -444,8 +463,10 @@ bool WebrtcLoggingPrivateStopRtpDumpFunction::RunAsync() {
 
   content::RenderProcessHost* host =
       RphFromRequest(params->request, params->security_origin);
-  if (!host)
+  if (!host) {
+    // SetError() will have been called by RphFromRequest().
     return false;
+  }
 
   scoped_refptr<WebRtcLoggingHandlerHost> webrtc_logging_handler_host(
       base::UserDataAdapter<WebRtcLoggingHandlerHost>::Get(
@@ -477,8 +498,10 @@ bool WebrtcLoggingPrivateStartAudioDebugRecordingsFunction::RunAsync() {
 
   content::RenderProcessHost* host =
       RphFromRequest(params->request, params->security_origin);
-  if (!host)
+  if (!host) {
+    // SetError() will have been called by RphFromRequest().
     return false;
+  }
 
   scoped_refptr<AudioDebugRecordingsHandler> audio_debug_recordings_handler(
       base::UserDataAdapter<AudioDebugRecordingsHandler>::Get(
@@ -506,8 +529,10 @@ bool WebrtcLoggingPrivateStopAudioDebugRecordingsFunction::RunAsync() {
 
   content::RenderProcessHost* host =
       RphFromRequest(params->request, params->security_origin);
-  if (!host)
+  if (!host) {
+    // SetError() will have been called by RphFromRequest().
     return false;
+  }
 
   scoped_refptr<AudioDebugRecordingsHandler> audio_debug_recordings_handler(
       base::UserDataAdapter<AudioDebugRecordingsHandler>::Get(
@@ -524,6 +549,52 @@ bool WebrtcLoggingPrivateStopAudioDebugRecordingsFunction::RunAsync() {
   return true;
 }
 
+bool WebrtcLoggingPrivateStartEventLoggingFunction::RunAsync() {
+  std::unique_ptr<StartEventLogging::Params> params(
+      StartEventLogging::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+
+  content::RenderProcessHost* host =
+      RphFromRequest(params->request, params->security_origin);
+  if (!host) {
+    // SetError() will have been called by RphFromRequest().
+    return false;
+  }
+
+  scoped_refptr<WebRtcLoggingHandlerHost> webrtc_logging_handler_host(
+      base::UserDataAdapter<WebRtcLoggingHandlerHost>::Get(
+          host, WebRtcLoggingHandlerHost::kWebRtcLoggingHandlerHostKey));
+  if (!webrtc_logging_handler_host.get()) {
+    SetError("WebRTC logging handler not found.");
+    return false;
+  }
+
+  WebRtcLoggingHandlerHost::GenericDoneCallback callback = base::Bind(
+      &WebrtcLoggingPrivateStartEventLoggingFunction::FireCallback, this);
+
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::BindOnce(&WebRtcLoggingHandlerHost::StartEventLogging,
+                     webrtc_logging_handler_host, params->peer_connection_id,
+                     params->max_log_size_bytes, params->metadata, callback));
+
+  return true;
+}
+
+// TODO(crbug.com/829748): Merge with super-class's FireCallback().
+void WebrtcLoggingPrivateStartEventLoggingFunction::FireCallback(
+    bool success,
+    const std::string& error_message) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (success) {
+    DCHECK(error_message.empty());
+  } else {
+    DCHECK(!error_message.empty());
+    SetError(error_message);
+  }
+  SendResponse(success);
+}
+
 bool WebrtcLoggingPrivateGetLogsDirectoryFunction::RunAsync() {
 #if defined(OS_LINUX) || defined(OS_CHROMEOS)
   // Unlike other WebrtcLoggingPrivate functions that take a RequestInfo object,
@@ -538,7 +609,7 @@ bool WebrtcLoggingPrivateGetLogsDirectoryFunction::RunAsync() {
       base::UserDataAdapter<WebRtcLoggingHandlerHost>::Get(
           host, WebRtcLoggingHandlerHost::kWebRtcLoggingHandlerHostKey));
   if (!webrtc_logging_handler_host.get()) {
-    FireErrorCallback("WebRTC logging handler not found");
+    FireErrorCallback("WebRTC logging handler not found.");
     return true;
   }
 

@@ -346,10 +346,10 @@ void CXFA_FFWidget::DrawBorderWithFlag(CXFA_Graphics* pGS,
     box->Draw(pGS, rtBorder, matrix, forceRound);
 }
 
-void CXFA_FFWidget::AddInvalidateRect() {
+void CXFA_FFWidget::InvalidateRect() {
   CFX_RectF rtWidget = GetBBox(XFA_WidgetStatus_Focused);
   rtWidget.Inflate(2, 2);
-  m_pDocView->AddInvalidateRect(m_pPageView, rtWidget);
+  m_pDocView->InvalidateRect(m_pPageView, rtWidget);
 }
 
 bool CXFA_FFWidget::OnMouseEnter() {
@@ -360,9 +360,13 @@ bool CXFA_FFWidget::OnMouseExit() {
   return false;
 }
 
-bool CXFA_FFWidget::OnLButtonDown(uint32_t dwFlags, const CFX_PointF& point) {
+bool CXFA_FFWidget::AcceptsFocusOnButtonDown(uint32_t dwFlags,
+                                             const CFX_PointF& point,
+                                             FWL_MouseCommand command) {
   return false;
 }
+
+void CXFA_FFWidget::OnLButtonDown(uint32_t dwFlags, const CFX_PointF& point) {}
 
 bool CXFA_FFWidget::OnLButtonUp(uint32_t dwFlags, const CFX_PointF& point) {
   return false;
@@ -382,9 +386,7 @@ bool CXFA_FFWidget::OnMouseWheel(uint32_t dwFlags,
   return false;
 }
 
-bool CXFA_FFWidget::OnRButtonDown(uint32_t dwFlags, const CFX_PointF& point) {
-  return false;
-}
+void CXFA_FFWidget::OnRButtonDown(uint32_t dwFlags, const CFX_PointF& point) {}
 
 bool CXFA_FFWidget::OnRButtonUp(uint32_t dwFlags, const CFX_PointF& point) {
   return false;
@@ -499,16 +501,6 @@ void CXFA_FFWidget::DeSelect() {}
 
 FormFieldType CXFA_FFWidget::GetFormFieldType() {
   return FormFieldType::kXFA;
-}
-
-void CXFA_FFWidget::GetSuggestWords(CFX_PointF pointf,
-                                    std::vector<ByteString>* pWords) {
-  pWords->clear();
-}
-
-bool CXFA_FFWidget::ReplaceSpellCheckWord(CFX_PointF pointf,
-                                          const ByteStringView& bsReplace) {
-  return false;
 }
 
 CFX_PointF CXFA_FFWidget::Rotate2Normal(const CFX_PointF& point) {

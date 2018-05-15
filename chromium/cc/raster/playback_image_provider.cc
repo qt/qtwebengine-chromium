@@ -4,7 +4,6 @@
 
 #include "cc/raster/playback_image_provider.h"
 
-#include "base/memory/ptr_util.h"
 #include "cc/tiles/image_decode_cache.h"
 
 namespace cc {
@@ -20,7 +19,7 @@ void UnrefImageFromCache(DrawImage draw_image,
 PlaybackImageProvider::PlaybackImageProvider(
     ImageDecodeCache* cache,
     const gfx::ColorSpace& target_color_space,
-    base::Optional<Settings> settings)
+    base::Optional<Settings>&& settings)
     : cache_(cache),
       target_color_space_(target_color_space),
       settings_(std::move(settings)) {
@@ -70,7 +69,10 @@ PlaybackImageProvider::GetDecodedDrawImage(const DrawImage& draw_image) {
 }
 
 PlaybackImageProvider::Settings::Settings() = default;
-PlaybackImageProvider::Settings::Settings(const Settings& other) = default;
+PlaybackImageProvider::Settings::Settings(PlaybackImageProvider::Settings&&) =
+    default;
 PlaybackImageProvider::Settings::~Settings() = default;
+PlaybackImageProvider::Settings& PlaybackImageProvider::Settings::operator=(
+    PlaybackImageProvider::Settings&&) = default;
 
 }  // namespace cc

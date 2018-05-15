@@ -35,7 +35,7 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/log/net_log_with_source.h"
-#include "net/net_features.h"
+#include "net/net_buildflags.h"
 #include "net/socket/connection_attempts.h"
 #include "net/socket/socket_tag.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -284,6 +284,13 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
   const GURL& site_for_cookies() const { return site_for_cookies_; }
   // This method may only be called before Start().
   void set_site_for_cookies(const GURL& site_for_cookies);
+
+  // Indicate whether SameSite cookies should be attached even though the
+  // request is cross-site.
+  bool attach_same_site_cookies() const { return attach_same_site_cookies_; }
+  void set_attach_same_site_cookies(bool attach) {
+    attach_same_site_cookies_ = attach;
+  }
 
   // The first-party URL policy to apply when updating the first party URL
   // during redirects. The first-party URL policy may only be changed before
@@ -815,6 +822,7 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
 
   std::vector<GURL> url_chain_;
   GURL site_for_cookies_;
+  bool attach_same_site_cookies_;
   base::Optional<url::Origin> initiator_;
   GURL delegate_redirect_url_;
   std::string method_;  // "GET", "POST", etc. Should be all uppercase.

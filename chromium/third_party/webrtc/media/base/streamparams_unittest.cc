@@ -96,6 +96,17 @@ TEST(StreamParams, GetSsrcGroup) {
   EXPECT_EQ(&sp.ssrc_groups[0], sp.get_ssrc_group("XYZ"));
 }
 
+TEST(StreamParams, HasStreamWithNoSsrcs) {
+  cricket::StreamParams sp_1 = cricket::StreamParams::CreateLegacy(kSsrcs1[0]);
+  cricket::StreamParams sp_2 = cricket::StreamParams::CreateLegacy(kSsrcs2[0]);
+  std::vector<cricket::StreamParams> streams({sp_1, sp_2});
+  EXPECT_FALSE(HasStreamWithNoSsrcs(streams));
+
+  cricket::StreamParams unsignaled_stream;
+  streams.push_back(unsignaled_stream);
+  EXPECT_TRUE(HasStreamWithNoSsrcs(streams));
+}
+
 TEST(StreamParams, EqualNotEqual) {
   cricket::StreamParams l1 = cricket::StreamParams::CreateLegacy(1);
   cricket::StreamParams l2 = cricket::StreamParams::CreateLegacy(2);
@@ -208,8 +219,11 @@ TEST(StreamParams, FecFrFunctions) {
 TEST(StreamParams, ToString) {
   cricket::StreamParams sp =
       CreateStreamParamsWithSsrcGroup("XYZ", kSsrcs2, arraysize(kSsrcs2));
-  EXPECT_STREQ("{ssrcs:[1,2];ssrc_groups:{semantics:XYZ;ssrcs:[1,2]};}",
-               sp.ToString().c_str());
+  sp.set_stream_ids({"stream_id"});
+  EXPECT_STREQ(
+      "{ssrcs:[1,2];ssrc_groups:{semantics:XYZ;ssrcs:[1,2]};stream_ids:stream_"
+      "id;}",
+      sp.ToString().c_str());
 }
 
 TEST(StreamParams, TestIsOneSsrcStream_LegacyStream) {

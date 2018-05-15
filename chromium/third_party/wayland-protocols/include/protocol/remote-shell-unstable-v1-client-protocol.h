@@ -592,6 +592,74 @@ enum zcr_remote_surface_v1_resize_direction {
 };
 #endif /* ZCR_REMOTE_SURFACE_V1_RESIZE_DIRECTION_ENUM */
 
+#ifndef ZCR_REMOTE_SURFACE_V1_FRAME_TYPE_ENUM
+#define ZCR_REMOTE_SURFACE_V1_FRAME_TYPE_ENUM
+/**
+ * @ingroup iface_zcr_remote_surface_v1
+ * frame types
+ *
+ * Frame type that can be used to decorate a surface.
+ */
+enum zcr_remote_surface_v1_frame_type {
+	/**
+	 * no frame
+	 */
+	ZCR_REMOTE_SURFACE_V1_FRAME_TYPE_NONE = 0,
+	/**
+	 * caption with shadow
+	 */
+	ZCR_REMOTE_SURFACE_V1_FRAME_TYPE_NORMAL = 1,
+	/**
+	 * shadow only
+	 */
+	ZCR_REMOTE_SURFACE_V1_FRAME_TYPE_SHADOW = 2,
+	/**
+	 * autohide frame with shadow
+	 */
+	ZCR_REMOTE_SURFACE_V1_FRAME_TYPE_AUTOHIDE = 3,
+	/**
+	 * overlay frame with shadow
+	 */
+	ZCR_REMOTE_SURFACE_V1_FRAME_TYPE_OVERLAY = 4,
+};
+#endif /* ZCR_REMOTE_SURFACE_V1_FRAME_TYPE_ENUM */
+
+#ifndef ZCR_REMOTE_SURFACE_V1_FRAME_BUTTON_TYPE_ENUM
+#define ZCR_REMOTE_SURFACE_V1_FRAME_BUTTON_TYPE_ENUM
+/**
+ * @ingroup iface_zcr_remote_surface_v1
+ * frame button types
+ *
+ * The mask that represents buttons on frame.
+ */
+enum zcr_remote_surface_v1_frame_button_type {
+	/**
+	 * a button to naviate backwards
+	 */
+	ZCR_REMOTE_SURFACE_V1_FRAME_BUTTON_TYPE_BACK = 1,
+	/**
+	 * a button to minimize the window
+	 */
+	ZCR_REMOTE_SURFACE_V1_FRAME_BUTTON_TYPE_MINIMIZE = 2,
+	/**
+	 * a button to maximize or restore
+	 */
+	ZCR_REMOTE_SURFACE_V1_FRAME_BUTTON_TYPE_MAXIMIZE_RESTORE = 4,
+	/**
+	 * a button to activate application's menu
+	 */
+	ZCR_REMOTE_SURFACE_V1_FRAME_BUTTON_TYPE_MENU = 8,
+	/**
+	 * a button to close the window
+	 */
+	ZCR_REMOTE_SURFACE_V1_FRAME_BUTTON_TYPE_CLOSE = 16,
+	/**
+	 * a mask to turn the maximize_restore button to zoom button
+	 */
+	ZCR_REMOTE_SURFACE_V1_FRAME_BUTTON_TYPE_ZOOM = 32,
+};
+#endif /* ZCR_REMOTE_SURFACE_V1_FRAME_BUTTON_TYPE_ENUM */
+
 /**
  * @ingroup iface_zcr_remote_surface_v1
  * @struct zcr_remote_surface_v1_listener
@@ -775,6 +843,9 @@ zcr_remote_surface_v1_add_listener(struct zcr_remote_surface_v1 *zcr_remote_surf
 #define ZCR_REMOTE_SURFACE_V1_SET_SNAPPED_TO_LEFT 33
 #define ZCR_REMOTE_SURFACE_V1_SET_SNAPPED_TO_RIGHT 34
 #define ZCR_REMOTE_SURFACE_V1_START_RESIZE 35
+#define ZCR_REMOTE_SURFACE_V1_SET_FRAME 36
+#define ZCR_REMOTE_SURFACE_V1_SET_FRAME_BUTTONS 37
+#define ZCR_REMOTE_SURFACE_V1_SET_EXTRA_TITLE 38
 
 /**
  * @ingroup iface_zcr_remote_surface_v1
@@ -949,6 +1020,18 @@ zcr_remote_surface_v1_add_listener(struct zcr_remote_surface_v1 *zcr_remote_surf
  * @ingroup iface_zcr_remote_surface_v1
  */
 #define ZCR_REMOTE_SURFACE_V1_START_RESIZE_SINCE_VERSION 12
+/**
+ * @ingroup iface_zcr_remote_surface_v1
+ */
+#define ZCR_REMOTE_SURFACE_V1_SET_FRAME_SINCE_VERSION 13
+/**
+ * @ingroup iface_zcr_remote_surface_v1
+ */
+#define ZCR_REMOTE_SURFACE_V1_SET_FRAME_BUTTONS_SINCE_VERSION 13
+/**
+ * @ingroup iface_zcr_remote_surface_v1
+ */
+#define ZCR_REMOTE_SURFACE_V1_SET_EXTRA_TITLE_SINCE_VERSION 13
 
 /** @ingroup iface_zcr_remote_surface_v1 */
 static inline void
@@ -1416,10 +1499,10 @@ zcr_remote_surface_v1_set_window_type(struct zcr_remote_surface_v1 *zcr_remote_s
  * surface, e.g. fullscreen or maximized.
  */
 static inline void
-zcr_remote_surface_v1_resize(struct zcr_remote_surface_v1 *zcr_remote_surface_v1, uint32_t direction)
+zcr_remote_surface_v1_resize(struct zcr_remote_surface_v1 *zcr_remote_surface_v1)
 {
 	wl_proxy_marshal((struct wl_proxy *) zcr_remote_surface_v1,
-			 ZCR_REMOTE_SURFACE_V1_RESIZE, direction);
+			 ZCR_REMOTE_SURFACE_V1_RESIZE);
 }
 
 /**
@@ -1545,6 +1628,8 @@ zcr_remote_surface_v1_set_snapped_to_right(struct zcr_remote_surface_v1 *zcr_rem
  * @ingroup iface_zcr_remote_surface_v1
  *
  * Request to start an interactive, user-driven resize of the surface.
+ * "x" and "y" specifies the starting point of the pointer device
+ * that initiated the reize.
  *
  * The compositor responds to this request with a "drag_started"
  * event, followed by "bounds_changed" events, and ends the
@@ -1556,10 +1641,58 @@ zcr_remote_surface_v1_set_snapped_to_right(struct zcr_remote_surface_v1 *zcr_rem
  * surface, e.g. fullscreen or maximized, or no drag event is in pregress.
  */
 static inline void
-zcr_remote_surface_v1_start_resize(struct zcr_remote_surface_v1 *zcr_remote_surface_v1, uint32_t resize_direction)
+zcr_remote_surface_v1_start_resize(struct zcr_remote_surface_v1 *zcr_remote_surface_v1, uint32_t resize_direction, int32_t x, int32_t y)
 {
 	wl_proxy_marshal((struct wl_proxy *) zcr_remote_surface_v1,
-			 ZCR_REMOTE_SURFACE_V1_START_RESIZE, resize_direction);
+			 ZCR_REMOTE_SURFACE_V1_START_RESIZE, resize_direction, x, y);
+}
+
+/**
+ * @ingroup iface_zcr_remote_surface_v1
+ *
+ * Enables compositor side frame decoration. |type|
+ * specifies the type of frame to use for the surface.
+ */
+static inline void
+zcr_remote_surface_v1_set_frame(struct zcr_remote_surface_v1 *zcr_remote_surface_v1, uint32_t type)
+{
+	wl_proxy_marshal((struct wl_proxy *) zcr_remote_surface_v1,
+			 ZCR_REMOTE_SURFACE_V1_SET_FRAME, type);
+}
+
+/**
+ * @ingroup iface_zcr_remote_surface_v1
+ *
+ * Updates the frame's button state. |visible_buttons| and |enabled_buttons|
+ * are the union of button mask defined in |frame_button_type| enum.
+ *
+ * The mask present in |enabled_buttons| but not in |visible_buttons| will
+ * be ignored.
+ */
+static inline void
+zcr_remote_surface_v1_set_frame_buttons(struct zcr_remote_surface_v1 *zcr_remote_surface_v1, uint32_t visible_buttons, uint32_t enabled_buttons)
+{
+	wl_proxy_marshal((struct wl_proxy *) zcr_remote_surface_v1,
+			 ZCR_REMOTE_SURFACE_V1_SET_FRAME_BUTTONS, visible_buttons, enabled_buttons);
+}
+
+/**
+ * @ingroup iface_zcr_remote_surface_v1
+ *
+ * The extra informational string about the surface. This can be
+ * used to show the debug information in the title bar, or log
+ * messages.
+ *
+ * This is different from "set_title" which is used to identify
+ * the surface.
+ *
+ * The string must be encoded in UTF-8.
+ */
+static inline void
+zcr_remote_surface_v1_set_extra_title(struct zcr_remote_surface_v1 *zcr_remote_surface_v1, const char *extra_title)
+{
+	wl_proxy_marshal((struct wl_proxy *) zcr_remote_surface_v1,
+			 ZCR_REMOTE_SURFACE_V1_SET_EXTRA_TITLE, extra_title);
 }
 
 #define ZCR_NOTIFICATION_SURFACE_V1_DESTROY 0

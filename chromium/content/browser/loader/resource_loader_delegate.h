@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_LOADER_RESOURCE_LOADER_DELEGATE_H_
 #define CONTENT_BROWSER_LOADER_RESOURCE_LOADER_DELEGATE_H_
 
+#include "base/memory/scoped_refptr.h"
 #include "content/common/content_export.h"
 
 class GURL;
@@ -18,12 +19,12 @@ struct ResourceResponse;
 }
 
 namespace content {
-class ResourceDispatcherHostLoginDelegate;
+class LoginDelegate;
 class ResourceLoader;
 
 class CONTENT_EXPORT ResourceLoaderDelegate {
  public:
-  virtual ResourceDispatcherHostLoginDelegate* CreateLoginDelegate(
+  virtual scoped_refptr<LoginDelegate> CreateLoginDelegate(
       ResourceLoader* loader,
       net::AuthChallengeInfo* auth_info) = 0;
 

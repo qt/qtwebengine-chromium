@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#!/usr/bin/env vpython
 # Copyright (c) 2015 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -392,6 +392,9 @@ class AndroidProfileTool(object):
     if (len(files) == 1) and (files[0] == 'cyglog'):
       cyglog_dir = os.path.join(self._host_cyglog_dir, 'cyglog')
       files = os.listdir(cyglog_dir)
+
+    if len(files) == 0:
+      raise NoCyglogDataError('No cyglog data was collected')
 
     return [os.path.join(cyglog_dir, x) for x in files]
 

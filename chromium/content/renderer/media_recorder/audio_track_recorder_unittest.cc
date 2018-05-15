@@ -20,8 +20,8 @@
 #include "media/base/audio_sample_types.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/web/WebHeap.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/web/web_heap.h"
 #include "third_party/opus/src/include/opus.h"
 
 using ::testing::_;
@@ -308,7 +308,7 @@ TEST_P(AudioTrackRecorderTest, OnDataOpus) {
   // Send audio with different params.
   EXPECT_CALL(*this, DoOnEncodedAudio(_, _, _))
       .Times(1)
-      .WillOnce(RunClosure(quit_closure));
+      .WillOnce(RunClosure(std::move(quit_closure)));
   audio_track_recorder_->OnData(*GetSecondSourceAudioBus(), TimeTicks::Now());
   for (int i = 0; i < kRatioInputToOutputFrames - 1; ++i)
     audio_track_recorder_->OnData(*GetSecondSourceAudioBus(), TimeTicks::Now());
@@ -329,7 +329,7 @@ TEST_P(AudioTrackRecorderTest, OnDataPcm) {
 
   EXPECT_CALL(*this, DoOnEncodedAudio(_, _, _)).Times(5);
   EXPECT_CALL(*this, DoOnEncodedAudio(_, _, _))
-      .WillOnce(RunClosure(quit_closure));
+      .WillOnce(RunClosure(std::move(quit_closure)));
 
   audio_track_recorder_->OnData(*GetFirstSourceAudioBus(), TimeTicks::Now());
   for (int i = 0; i < kRatioInputToOutputFrames - 1; ++i)
@@ -359,7 +359,7 @@ TEST_P(AudioTrackRecorderTest, PauseResume) {
   audio_track_recorder_->Resume();
   EXPECT_CALL(*this, DoOnEncodedAudio(_, _, _))
       .Times(1)
-      .WillOnce(RunClosure(quit_closure));
+      .WillOnce(RunClosure(std::move(quit_closure)));
   audio_track_recorder_->OnData(*GetFirstSourceAudioBus(), TimeTicks::Now());
   for (int i = 0; i < kRatioInputToOutputFrames - 1; ++i)
     audio_track_recorder_->OnData(*GetFirstSourceAudioBus(), TimeTicks::Now());

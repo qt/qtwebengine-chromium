@@ -7,18 +7,23 @@
 #include <algorithm>
 #include <vector>
 
+#include "base/atomicops.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros_local.h"
+#include "base/no_destructor.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/numerics/safe_math.h"
-#include "mojo/edk/embedder/embedder_internal.h"
+#include "base/trace_event/memory_allocator_dump.h"
+#include "base/trace_event/memory_dump_manager.h"
+#include "base/trace_event/memory_dump_provider.h"
+#include "base/trace_event/trace_event.h"
 #include "mojo/edk/system/core.h"
 #include "mojo/edk/system/node_channel.h"
 #include "mojo/edk/system/node_controller.h"
 #include "mojo/edk/system/ports/event.h"
 #include "mojo/edk/system/ports/message_filter.h"
 #include "mojo/edk/system/ports/node.h"
-#include "mojo/public/cpp/system/handle.h"
+#include "mojo/public/c/system/types.h"
 
 namespace mojo {
 namespace edk {
@@ -28,7 +33,7 @@ namespace {
 // The minimum amount of memory to allocate for a new serialized message buffer.
 // This should be sufficiently large such that most seiralized messages do not
 // incur any reallocations as they're expanded to full size.
-const uint32_t kMinimumPayloadBufferSize = 4096;
+const uint32_t kMinimumPayloadBufferSize = 128;
 
 // Indicates whether handle serialization failure should be emulated in testing.
 bool g_always_fail_handle_serialization = false;
@@ -254,6 +259,47 @@ MojoResult CreateOrExtendSerializedEventMessage(
   return MOJO_RESULT_OK;
 }
 
+base::subtle::Atomic32 g_message_count = 0;
+
+void IncrementMessageCount() {
+  base::subtle::NoBarrier_AtomicIncrement(&g_message_count, 1);
+}
+
+void DecrementMessageCount() {
+  base::subtle::NoBarrier_AtomicIncrement(&g_message_count, -1);
+}
+
+class MessageMemoryDumpProvider : public base::trace_event::MemoryDumpProvider {
+ public:
+  MessageMemoryDumpProvider() {
+    base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
+        this, "MojoMessages", nullptr);
+  }
+
+  ~MessageMemoryDumpProvider() override {
+    base::trace_event::MemoryDumpManager::GetInstance()->UnregisterDumpProvider(
+        this);
+  }
+
+ private:
+  // base::trace_event::MemoryDumpProvider:
+  bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
+                    base::trace_event::ProcessMemoryDump* pmd) override {
+    auto* dump = pmd->CreateAllocatorDump("mojo/messages");
+    dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameObjectCount,
+                    base::trace_event::MemoryAllocatorDump::kUnitsObjects,
+                    base::subtle::NoBarrier_Load(&g_message_count));
+    return true;
+  }
+
+  DISALLOW_COPY_AND_ASSIGN(MessageMemoryDumpProvider);
+};
+
+void EnsureMemoryDumpProviderExists() {
+  static base::NoDestructor<MessageMemoryDumpProvider> provider;
+  ALLOW_UNUSED_LOCAL(provider);
+}
+
 }  // namespace
 
 // static
@@ -273,17 +319,19 @@ UserMessageImpl::~UserMessageImpl() {
     if (result == MOJO_RESULT_OK) {
       for (auto handle : handles) {
         if (handle != MOJO_HANDLE_INVALID)
-          MojoClose(handle);
+          Core::Get()->Close(handle);
       }
     }
 
     if (!pending_handle_attachments_.empty()) {
-      internal::g_core->ReleaseDispatchersForTransit(
-          pending_handle_attachments_, false);
+      Core::Get()->ReleaseDispatchersForTransit(pending_handle_attachments_,
+                                                false);
       for (const auto& dispatcher : pending_handle_attachments_)
-        MojoClose(dispatcher.local_handle);
+        Core::Get()->Close(dispatcher.local_handle);
     }
   }
+
+  DecrementMessageCount();
 }
 
 // static
@@ -365,12 +413,6 @@ Channel::MessagePtr UserMessageImpl::FinalizeEventMessage(
   return channel_message;
 }
 
-uintptr_t UserMessageImpl::ReleaseContext() {
-  uintptr_t context = context_;
-  context_ = 0;
-  return context;
-}
-
 size_t UserMessageImpl::user_payload_capacity() const {
   DCHECK(IsSerialized());
   const size_t user_payload_offset =
@@ -387,11 +429,13 @@ size_t UserMessageImpl::num_handles() const {
   return static_cast<const MessageHeader*>(header_)->num_dispatchers;
 }
 
-MojoResult UserMessageImpl::AttachContext(
+MojoResult UserMessageImpl::SetContext(
     uintptr_t context,
     MojoMessageContextSerializer serializer,
     MojoMessageContextDestructor destructor) {
-  if (HasContext())
+  if (!context && (serializer || destructor))
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  if (context && HasContext())
     return MOJO_RESULT_ALREADY_EXISTS;
   if (IsSerialized())
     return MOJO_RESULT_FAILED_PRECONDITION;
@@ -401,97 +445,82 @@ MojoResult UserMessageImpl::AttachContext(
   return MOJO_RESULT_OK;
 }
 
-MojoResult UserMessageImpl::AttachSerializedMessageBuffer(
-    uint32_t payload_size,
-    const MojoHandle* handles,
-    uint32_t num_handles) {
+MojoResult UserMessageImpl::AppendData(uint32_t additional_payload_size,
+                                       const MojoHandle* handles,
+                                       uint32_t num_handles) {
+  if (HasContext())
+    return MOJO_RESULT_FAILED_PRECONDITION;
+
   std::vector<Dispatcher::DispatcherInTransit> dispatchers;
   if (num_handles > 0) {
-    MojoResult acquire_result = internal::g_core->AcquireDispatchersForTransit(
+    MojoResult acquire_result = Core::Get()->AcquireDispatchersForTransit(
         handles, num_handles, &dispatchers);
     if (acquire_result != MOJO_RESULT_OK)
       return acquire_result;
   }
-  Channel::MessagePtr channel_message;
-  MojoResult rv = CreateOrExtendSerializedEventMessage(
-      message_event_, payload_size,
-      std::max(payload_size, kMinimumPayloadBufferSize), dispatchers.data(),
-      num_handles, &channel_message, &header_, &header_size_, &user_payload_);
-  if (num_handles > 0) {
-    internal::g_core->ReleaseDispatchersForTransit(dispatchers,
-                                                   rv == MOJO_RESULT_OK);
-  }
-  if (rv != MOJO_RESULT_OK)
-    return MOJO_RESULT_ABORTED;
-  user_payload_size_ = payload_size;
-  channel_message_ = std::move(channel_message);
-  has_serialized_handles_ = true;
-  return MOJO_RESULT_OK;
-}
 
-MojoResult UserMessageImpl::ExtendSerializedMessagePayload(
-    uint32_t new_payload_size,
-    const MojoHandle* handles,
-    uint32_t num_handles) {
-  if (!IsSerialized())
-    return MOJO_RESULT_FAILED_PRECONDITION;
-  if (new_payload_size < user_payload_size_)
-    return MOJO_RESULT_OUT_OF_RANGE;
+  if (!IsSerialized()) {
+    // First data for this message.
+    Channel::MessagePtr channel_message;
+    MojoResult rv = CreateOrExtendSerializedEventMessage(
+        message_event_, additional_payload_size,
+        std::max(additional_payload_size, kMinimumPayloadBufferSize),
+        dispatchers.data(), num_handles, &channel_message, &header_,
+        &header_size_, &user_payload_);
+    if (num_handles > 0) {
+      Core::Get()->ReleaseDispatchersForTransit(dispatchers,
+                                                rv == MOJO_RESULT_OK);
+    }
+    if (rv != MOJO_RESULT_OK)
+      return MOJO_RESULT_ABORTED;
 
-  if (num_handles > 0) {
-    // In order to avoid rather expensive message resizing on every individual
-    // handle attachment operation, we merely lock and prepare the handle for
-    // transit here, deferring serialization until FinalizeEventMessage().
-    MojoResult acquire_result = internal::g_core->AcquireDispatchersForTransit(
-        handles, num_handles, &pending_handle_attachments_);
-    if (acquire_result != MOJO_RESULT_OK)
-      return acquire_result;
-  }
+    user_payload_size_ = additional_payload_size;
+    channel_message_ = std::move(channel_message);
+    has_serialized_handles_ = true;
+  } else {
+    // Extend the existing message payload.
 
-  if (new_payload_size > user_payload_size_) {
-    size_t header_offset =
-        static_cast<uint8_t*>(header_) -
-        static_cast<const uint8_t*>(channel_message_->payload());
-    size_t user_payload_offset =
-        static_cast<uint8_t*>(user_payload_) -
-        static_cast<const uint8_t*>(channel_message_->payload());
-    channel_message_->ExtendPayload(user_payload_offset + new_payload_size);
-    header_ = static_cast<uint8_t*>(channel_message_->mutable_payload()) +
-              header_offset;
-    user_payload_ = static_cast<uint8_t*>(channel_message_->mutable_payload()) +
-                    user_payload_offset;
-    user_payload_size_ = new_payload_size;
+    // In order to avoid rather expensive message resizing on every handle
+    // attachment operation, we merely lock and prepare the handle for transit
+    // here, deferring serialization until |CommitSize()|.
+    std::copy(dispatchers.begin(), dispatchers.end(),
+              std::back_inserter(pending_handle_attachments_));
+
+    if (additional_payload_size) {
+      size_t header_offset =
+          static_cast<uint8_t*>(header_) -
+          static_cast<const uint8_t*>(channel_message_->payload());
+      size_t user_payload_offset =
+          static_cast<uint8_t*>(user_payload_) -
+          static_cast<const uint8_t*>(channel_message_->payload());
+      channel_message_->ExtendPayload(user_payload_offset + user_payload_size_ +
+                                      additional_payload_size);
+      header_ = static_cast<uint8_t*>(channel_message_->mutable_payload()) +
+                header_offset;
+      user_payload_ =
+          static_cast<uint8_t*>(channel_message_->mutable_payload()) +
+          user_payload_offset;
+      user_payload_size_ += additional_payload_size;
+    }
   }
 
   return MOJO_RESULT_OK;
 }
 
-MojoResult UserMessageImpl::CommitSerializedContents(
-    uint32_t final_payload_size) {
+MojoResult UserMessageImpl::CommitSize() {
   if (!IsSerialized())
     return MOJO_RESULT_FAILED_PRECONDITION;
-
-  if (final_payload_size > user_payload_capacity() ||
-      final_payload_size < user_payload_size_) {
-    return MOJO_RESULT_OUT_OF_RANGE;
-  }
 
   if (is_committed_)
     return MOJO_RESULT_OK;
-
-  size_t user_payload_offset =
-      static_cast<uint8_t*>(user_payload_) -
-      static_cast<const uint8_t*>(channel_message_->payload());
-  user_payload_size_ = final_payload_size;
-  channel_message_->ExtendPayload(user_payload_offset + user_payload_size_);
 
   if (!pending_handle_attachments_.empty()) {
     CreateOrExtendSerializedEventMessage(
         message_event_, user_payload_size_, user_payload_size_,
         pending_handle_attachments_.data(), pending_handle_attachments_.size(),
         &channel_message_, &header_, &header_size_, &user_payload_);
-    internal::g_core->ReleaseDispatchersForTransit(pending_handle_attachments_,
-                                                   true);
+    Core::Get()->ReleaseDispatchersForTransit(pending_handle_attachments_,
+                                              true);
     pending_handle_attachments_.clear();
   }
 
@@ -508,7 +537,8 @@ MojoResult UserMessageImpl::SerializeIfNecessary() {
   if (!context_serializer_)
     return MOJO_RESULT_NOT_FOUND;
 
-  uintptr_t context = ReleaseContext();
+  uintptr_t context = context_;
+  context_ = 0;
   context_serializer_(reinterpret_cast<MojoMessageHandle>(message_event_),
                       context);
 
@@ -598,7 +628,7 @@ MojoResult UserMessageImpl::ExtractSerializedHandles(
     platform_handle_index = next_platform_handle_index.ValueOrDie();
   }
 
-  if (!internal::g_core->AddDispatchersFromTransit(dispatchers, handles))
+  if (!Core::Get()->AddDispatchersFromTransit(dispatchers, handles))
     return MOJO_RESULT_ABORTED;
 
   return MOJO_RESULT_OK;
@@ -610,8 +640,10 @@ void UserMessageImpl::FailHandleSerializationForTesting(bool fail) {
 }
 
 UserMessageImpl::UserMessageImpl(ports::UserMessageEvent* message_event)
-    : ports::UserMessage(&kUserMessageTypeInfo),
-      message_event_(message_event) {}
+    : ports::UserMessage(&kUserMessageTypeInfo), message_event_(message_event) {
+  EnsureMemoryDumpProviderExists();
+  IncrementMessageCount();
+}
 
 UserMessageImpl::UserMessageImpl(ports::UserMessageEvent* message_event,
                                  Channel::MessagePtr channel_message,
@@ -627,7 +659,10 @@ UserMessageImpl::UserMessageImpl(ports::UserMessageEvent* message_event,
       header_(header),
       header_size_(header_size),
       user_payload_(user_payload),
-      user_payload_size_(user_payload_size) {}
+      user_payload_size_(user_payload_size) {
+  EnsureMemoryDumpProviderExists();
+  IncrementMessageCount();
+}
 
 bool UserMessageImpl::WillBeRoutedExternally() {
   MojoResult result = SerializeIfNecessary();

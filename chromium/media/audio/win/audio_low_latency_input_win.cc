@@ -17,6 +17,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/trace_event.h"
 #include "media/audio/audio_device_description.h"
+#include "media/audio/audio_features.h"
 #include "media/audio/win/audio_manager_win.h"
 #include "media/audio/win/avrt_wrapper_win.h"
 #include "media/audio/win/core_audio_util_win.h"
@@ -289,6 +290,8 @@ void WASAPIAudioInputStream::Close() {
   if (converter_)
     converter_->RemoveInput(this);
 
+  ReportAndResetGlitchStats();
+
   // Inform the audio manager that we have been closed. This will cause our
   // destruction.
   manager_->ReleaseInputStream(this);
@@ -466,13 +469,17 @@ void WASAPIAudioInputStream::PullCaptureDataAndPushToSink() {
     // Retrieve the amount of data in the capture endpoint buffer, replace it
     // with silence if required, create callbacks for each packet and store
     // non-delivered data for the next event.
-    // TODO(grunell): Should we handle
-    // |flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY|?
     HRESULT hr =
         audio_capture_client_->GetBuffer(&data_ptr, &num_frames_to_read, &flags,
                                          &device_position, &capture_time_100ns);
     if (hr == AUDCLNT_S_BUFFER_EMPTY)
       break;
+
+    ReportDelayStatsAndUpdateGlitchCount(
+        num_frames_to_read, flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY,
+        device_position,
+        base::TimeTicks() +
+            base::TimeDelta::FromMicroseconds(capture_time_100ns / 10.0));
 
     // TODO(grunell): Should we handle different errors explicitly? Perhaps exit
     // by setting |error = true|. What are the assumptions here that makes us
@@ -789,14 +796,20 @@ HRESULT WASAPIAudioInputStream::InitializeAudioEngine() {
 
   // Initialize the audio stream between the client and the device.
   // We connect indirectly through the audio engine by using shared mode.
-  // Note that, |hnsBufferDuration| is set of 0, which ensures that the
-  // buffer is never smaller than the minimum buffer size needed to ensure
-  // that glitches do not occur between the periodic processing passes.
-  // This setting should lead to lowest possible latency.
+  // The buffer duration is normally set to 0, which ensures that the buffer
+  // size is the minimum buffer size needed to ensure that glitches do not occur
+  // between the periodic processing passes. It can be set to 100 ms via a
+  // feature.
+  // Note: if the value is changed, update the description in
+  // chrome/browser/flag_descriptions.cc.
+  REFERENCE_TIME buffer_duration =
+      base::FeatureList::IsEnabled(features::kIncreaseInputAudioBufferSize)
+          ? 100 * 1000 * 10  // 100 ms expressed in 100-ns units.
+          : 0;
   HRESULT hr = audio_client_->Initialize(
-      AUDCLNT_SHAREMODE_SHARED, flags,
-      0,  // hnsBufferDuration
-      0, &input_format_,
+      AUDCLNT_SHAREMODE_SHARED, flags, buffer_duration,
+      0,  // device period, n/a for shared mode.
+      &input_format_,
       device_id_ == AudioDeviceDescription::kCommunicationsDeviceId
           ? &kCommunicationsSessionId
           : nullptr);
@@ -812,40 +825,54 @@ HRESULT WASAPIAudioInputStream::InitializeAudioEngine() {
   // and the audio engine. The buffer length determines the maximum amount
   // of capture data that the audio engine can read from the endpoint buffer
   // during a single processing pass.
-  // A typical value is 960 audio frames <=> 20ms @ 48kHz sample rate.
   hr = audio_client_->GetBufferSize(&endpoint_buffer_size_frames_);
   if (FAILED(hr)) {
     open_result_ = OPEN_RESULT_GET_BUFFER_SIZE_FAILED;
     return hr;
   }
+  const int endpoint_buffer_size_ms =
+      static_cast<double>(endpoint_buffer_size_frames_ * 1000) /
+          input_format_.nSamplesPerSec +
+      0.5;  // Round to closest integer
+  UMA_HISTOGRAM_CUSTOM_TIMES(
+      "Media.Audio.Capture.Win.EndpointBufferSize",
+      base::TimeDelta::FromMilliseconds(endpoint_buffer_size_ms),
+      base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromSeconds(1),
+      50);
+  DVLOG(1) << "Endpoint buffer size: " << endpoint_buffer_size_frames_
+           << " frames (" << endpoint_buffer_size_ms << " ms)";
 
-  DVLOG(1) << "endpoint buffer size: " << endpoint_buffer_size_frames_
-           << " [frames]";
-
-#ifndef NDEBUG
   // The period between processing passes by the audio engine is fixed for a
   // particular audio endpoint device and represents the smallest processing
   // quantum for the audio engine. This period plus the stream latency between
   // the buffer and endpoint device represents the minimum possible latency
   // that an audio application can achieve.
-  // TODO(henrika): possibly remove this section when all parts are ready.
   REFERENCE_TIME device_period_shared_mode = 0;
   REFERENCE_TIME device_period_exclusive_mode = 0;
   HRESULT hr_dbg = audio_client_->GetDevicePeriod(
       &device_period_shared_mode, &device_period_exclusive_mode);
   if (SUCCEEDED(hr_dbg)) {
-    DVLOG(1) << "device period: "
-             << static_cast<double>(device_period_shared_mode / 10000.0)
-             << " [ms]";
+    // The 5000 addition is to round end result to closest integer.
+    const int device_period_ms = (device_period_shared_mode + 5000) / 10000;
+    UMA_HISTOGRAM_CUSTOM_TIMES(
+        "Media.Audio.Capture.Win.DevicePeriod",
+        base::TimeDelta::FromMilliseconds(device_period_ms),
+        base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromSeconds(1),
+        50);
+    DVLOG(1) << "Device period: " << device_period_ms << " ms";
   }
 
   REFERENCE_TIME latency = 0;
   hr_dbg = audio_client_->GetStreamLatency(&latency);
   if (SUCCEEDED(hr_dbg)) {
-    DVLOG(1) << "stream latency: " << static_cast<double>(latency / 10000.0)
-             << " [ms]";
+    // The 5000 addition is to round end result to closest integer.
+    const int latency_ms = (device_period_shared_mode + 5000) / 10000;
+    UMA_HISTOGRAM_CUSTOM_TIMES("Media.Audio.Capture.Win.StreamLatency",
+                               base::TimeDelta::FromMilliseconds(latency_ms),
+                               base::TimeDelta::FromMilliseconds(1),
+                               base::TimeDelta::FromSeconds(1), 50);
+    DVLOG(1) << "Stream latency: " << latency_ms << " ms";
   }
-#endif
 
   // Set the event handle that the audio engine will signal each time a buffer
   // becomes ready to be processed by the client.
@@ -955,6 +982,89 @@ double WASAPIAudioInputStream::ProvideInput(AudioBus* audio_bus,
                                             uint32_t frames_delayed) {
   fifo_->Consume()->CopyTo(audio_bus);
   return 1.0;
+}
+
+void WASAPIAudioInputStream::ReportDelayStatsAndUpdateGlitchCount(
+    UINT32 frames_in_buffer,
+    bool discontinuity_flagged,
+    UINT64 device_position,
+    base::TimeTicks capture_time) {
+  // Report delay. Don't report if no valid capture time.
+  // Unreasonably large delays are clamped at 1 second. Some devices sometimes
+  // have capture timestamps way off.
+  if (capture_time > base::TimeTicks()) {
+    base::TimeDelta delay = base::TimeTicks::Now() - capture_time;
+    UMA_HISTOGRAM_CUSTOM_TIMES("Media.Audio.Capture.DeviceLatency", delay,
+                               base::TimeDelta::FromMilliseconds(1),
+                               base::TimeDelta::FromSeconds(1), 50);
+  }
+
+  // Detect glitch. Detect and count separately based on expected device
+  // position and the discontinuity flag since they have showed to not always
+  // be consistent with each other.
+  if (expected_next_device_position_ != 0) {
+    if (device_position > expected_next_device_position_) {
+      ++total_glitches_;
+      auto lost_frames = device_position - expected_next_device_position_;
+      total_lost_frames_ += lost_frames;
+      if (lost_frames > largest_glitch_frames_)
+        largest_glitch_frames_ = lost_frames;
+    } else if (device_position < expected_next_device_position_) {
+      ++total_device_position_less_than_expected_;
+    }
+    if (discontinuity_flagged)
+      ++total_discontinuities_;
+    if (device_position > expected_next_device_position_ &&
+        discontinuity_flagged) {
+      ++total_concurrent_glitch_and_discontinuities_;
+    }
+  }
+
+  expected_next_device_position_ = device_position + frames_in_buffer;
+}
+
+void WASAPIAudioInputStream::ReportAndResetGlitchStats() {
+  UMA_HISTOGRAM_COUNTS("Media.Audio.Capture.Glitches", total_glitches_);
+  UMA_HISTOGRAM_COUNTS("Media.Audio.Capture.Win.DevicePositionLessThanExpected",
+                       total_device_position_less_than_expected_);
+  UMA_HISTOGRAM_COUNTS("Media.Audio.Capture.Win.Discontinuities",
+                       total_discontinuities_);
+  UMA_HISTOGRAM_COUNTS(
+      "Media.Audio.Capture.Win.ConcurrentGlitchAndDiscontinuities",
+      total_concurrent_glitch_and_discontinuities_);
+
+  double lost_frames_ms =
+      (total_lost_frames_ * 1000) / input_format_.nSamplesPerSec;
+  std::string log_message = base::StringPrintf(
+      "WASAPIAIS: Total glitches=%d. Total frames lost=%llu (%.0lf ms). Total "
+      "discontinuities=%d. Total concurrent glitch and discont=%d. Total low "
+      "device "
+      "positions=%d.",
+      total_glitches_, total_lost_frames_, lost_frames_ms,
+      total_discontinuities_, total_concurrent_glitch_and_discontinuities_,
+      total_device_position_less_than_expected_);
+  log_callback_.Run(log_message);
+
+  if (total_glitches_ != 0) {
+    UMA_HISTOGRAM_LONG_TIMES("Media.Audio.Capture.LostFramesInMs",
+                             base::TimeDelta::FromMilliseconds(lost_frames_ms));
+    int64_t largest_glitch_ms =
+        (largest_glitch_frames_ * 1000) / input_format_.nSamplesPerSec;
+    UMA_HISTOGRAM_CUSTOM_TIMES(
+        "Media.Audio.Capture.LargestGlitchMs",
+        base::TimeDelta::FromMilliseconds(largest_glitch_ms),
+        base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(1),
+        50);
+    DLOG(WARNING) << log_message;
+  }
+
+  expected_next_device_position_ = 0;
+  total_glitches_ = 0;
+  total_device_position_less_than_expected_ = 0;
+  total_discontinuities_ = 0;
+  total_concurrent_glitch_and_discontinuities_ = 0;
+  total_lost_frames_ = 0;
+  largest_glitch_frames_ = 0;
 }
 
 }  // namespace media

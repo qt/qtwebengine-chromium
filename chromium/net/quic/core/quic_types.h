@@ -33,6 +33,12 @@ typedef uint64_t QuicIetfStreamDataLength;
 typedef uint64_t QuicIetfStreamId;
 typedef uint64_t QuicIetfStreamOffset;
 
+const size_t kQuicPathFrameBufferSize = 8;
+typedef std::array<uint8_t, kQuicPathFrameBufferSize> QuicPathFrameBuffer;
+
+// Application error code used in the QUIC Stop Sending frame.
+typedef uint16_t QuicApplicationErrorCode;
+
 // A struct for functions which consume data payloads and fins.
 struct QUIC_EXPORT_PRIVATE QuicConsumedData {
   QuicConsumedData(size_t bytes_consumed, bool fin_consumed);
@@ -66,8 +72,16 @@ enum QuicAsyncStatus {
 enum WriteStatus {
   WRITE_STATUS_OK,
   WRITE_STATUS_BLOCKED,
+  // To make the IsWriteError(WriteStatus) function work properly:
+  // - Non-errors MUST be added before WRITE_STATUS_ERROR.
+  // - Errors MUST be added after WRITE_STATUS_ERROR.
   WRITE_STATUS_ERROR,
+  WRITE_STATUS_MSG_TOO_BIG,
 };
+
+inline bool IsWriteError(WriteStatus status) {
+  return status >= WRITE_STATUS_ERROR;
+}
 
 // A struct used to return the result of write calls including either the number
 // of bytes written or the error code, depending upon the status.
@@ -156,8 +170,9 @@ enum QuicIetfFrameType : int8_t {
   IETF_STREAM_ID_BLOCKED = 0x0a,
   IETF_NEW_CONNECTION_ID = 0x0b,
   IETF_STOP_SENDING = 0x0c,
-  IETF_PONG = 0x0d,
-  IETF_ACK = 0x0e,
+  IETF_ACK = 0x0d,
+  IETF_PATH_CHALLENGE = 0x0e,
+  IETF_PATH_RESPONSE = 0x0f,
   // the low-3 bits of the stream frame type value are actually flags
   // declaring what parts of the frame are/are-not present, as well as
   // some other control information. The code would then do something

@@ -31,6 +31,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/net_log/chrome_net_log.h"
 #include "components/prefs/pref_service.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui_message_handler.h"
@@ -187,41 +188,53 @@ NetInternalsTest::MessageHandler::MessageHandler(
 }
 
 void NetInternalsTest::MessageHandler::RegisterMessages() {
-  web_ui()->RegisterMessageCallback("getTestServerURL",
-      base::Bind(&NetInternalsTest::MessageHandler::GetTestServerURL,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("addCacheEntry",
-      base::Bind(&NetInternalsTest::MessageHandler::AddCacheEntry,
-                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "getTestServerURL",
+      base::BindRepeating(&NetInternalsTest::MessageHandler::GetTestServerURL,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "addCacheEntry",
+      base::BindRepeating(&NetInternalsTest::MessageHandler::AddCacheEntry,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "changeNetwork",
-      base::Bind(&NetInternalsTest::MessageHandler::ChangeNetwork,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("loadPage",
-      base::Bind(&NetInternalsTest::MessageHandler::LoadPage,
-                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("prerenderPage",
-      base::Bind(&NetInternalsTest::MessageHandler::PrerenderPage,
-                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("navigateToPrerender",
-      base::Bind(&NetInternalsTest::MessageHandler::NavigateToPrerender,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("createIncognitoBrowser",
-      base::Bind(&NetInternalsTest::MessageHandler::CreateIncognitoBrowser,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("closeIncognitoBrowser",
-      base::Bind(&NetInternalsTest::MessageHandler::CloseIncognitoBrowser,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("getNetLogFileContents",
-      base::Bind(
+      base::BindRepeating(&NetInternalsTest::MessageHandler::ChangeNetwork,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "loadPage",
+      base::BindRepeating(&NetInternalsTest::MessageHandler::LoadPage,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "prerenderPage",
+      base::BindRepeating(&NetInternalsTest::MessageHandler::PrerenderPage,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "navigateToPrerender",
+      base::BindRepeating(
+          &NetInternalsTest::MessageHandler::NavigateToPrerender,
+          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "createIncognitoBrowser",
+      base::BindRepeating(
+          &NetInternalsTest::MessageHandler::CreateIncognitoBrowser,
+          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "closeIncognitoBrowser",
+      base::BindRepeating(
+          &NetInternalsTest::MessageHandler::CloseIncognitoBrowser,
+          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "getNetLogFileContents",
+      base::BindRepeating(
           &NetInternalsTest::MessageHandler::GetNetLogFileContents,
           base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "setUpTestReportURI",
-      base::Bind(&NetInternalsTest::MessageHandler::SetUpTestReportURI,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("enableDataReductionProxy",
-      base::Bind(
+      base::BindRepeating(&NetInternalsTest::MessageHandler::SetUpTestReportURI,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "enableDataReductionProxy",
+      base::BindRepeating(
           &NetInternalsTest::MessageHandler::EnableDataReductionProxy,
           base::Unretained(this)));
 }
@@ -330,7 +343,7 @@ void NetInternalsTest::MessageHandler::GetNetLogFileContents(
 
   std::unique_ptr<base::Value> constants(net_log::ChromeNetLog::GetConstants(
       base::CommandLine::ForCurrentProcess()->GetCommandLineString(),
-      chrome::GetChannelString()));
+      chrome::GetChannelName()));
 
   std::unique_ptr<net::FileNetLogObserver> net_log_logger =
       net::FileNetLogObserver::CreateUnbounded(state->log_path,

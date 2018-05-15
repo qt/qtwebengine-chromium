@@ -15,6 +15,7 @@
 #include "content/browser/posix_file_descriptor_info_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/child_process_launcher_utils.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_descriptors.h"
 #include "content/public/common/content_switches.h"
@@ -32,7 +33,7 @@ namespace {
 
 // Stops a child process based on the handle returned from StartChildProcess.
 void StopChildProcess(base::ProcessHandle handle) {
-  DCHECK_CURRENTLY_ON(BrowserThread::PROCESS_LAUNCHER);
+  DCHECK(CurrentlyOnProcessLauncherTaskRunner());
   JNIEnv* env = AttachCurrentThread();
   DCHECK(env);
   Java_ChildProcessLauncherHelper_stop(env, static_cast<jint>(handle));
@@ -64,7 +65,7 @@ ChildProcessLauncherHelper::PrepareMojoPipeHandlesOnClientThread() {
 
 std::unique_ptr<PosixFileDescriptorInfo>
 ChildProcessLauncherHelper::GetFilesToMap() {
-  DCHECK_CURRENTLY_ON(BrowserThread::PROCESS_LAUNCHER);
+  DCHECK(CurrentlyOnProcessLauncherTaskRunner());
 
   // Android WebView runs in single process, ensure that we never get here when
   // running in single process mode.
@@ -156,21 +157,23 @@ base::TerminationStatus ChildProcessLauncherHelper::GetTerminationStatus(
                                                      java_peer_)) {
     return base::TERMINATION_STATUS_OOM_PROTECTED;
   }
-  return base::GetTerminationStatus(process.process.Handle(), exit_code);
+  // Note waitpid does not work on Android since these are not actually child
+  // processes. So there is no need for base::GetTerminationStatus.
+  return base::TERMINATION_STATUS_NORMAL_TERMINATION;
 }
 
 // static
-bool ChildProcessLauncherHelper::TerminateProcess(
-    const base::Process& process, int exit_code, bool wait) {
-  BrowserThread::PostTask(BrowserThread::PROCESS_LAUNCHER, FROM_HERE,
-                          base::Bind(&StopChildProcess, process.Handle()));
+bool ChildProcessLauncherHelper::TerminateProcess(const base::Process& process,
+                                                  int exit_code) {
+  GetProcessLauncherTaskRunner()->PostTask(
+      FROM_HERE, base::BindOnce(&StopChildProcess, process.Handle()));
   return true;
 }
 
 // static
 void ChildProcessLauncherHelper::ForceNormalProcessTerminationSync(
     ChildProcessLauncherHelper::Process process) {
-  DCHECK_CURRENTLY_ON(BrowserThread::PROCESS_LAUNCHER);
+  DCHECK(CurrentlyOnProcessLauncherTaskRunner());
   VLOG(1) << "ChromeProcess: Stopping process with handle "
           << process.process.Handle();
   StopChildProcess(process.process.Handle());
@@ -183,7 +186,8 @@ void ChildProcessLauncherHelper::SetProcessPriorityOnLauncherThread(
   DCHECK(env);
   return Java_ChildProcessLauncherHelper_setPriority(
       env, java_peer_, process.Handle(), !priority.background,
-      priority.boost_for_pending_views, static_cast<jint>(priority.importance));
+      priority.frame_depth, priority.boost_for_pending_views,
+      static_cast<jint>(priority.importance));
 }
 
 // static
@@ -211,7 +215,7 @@ void ChildProcessLauncherHelper::OnChildProcessStarted(
     JNIEnv*,
     const base::android::JavaParamRef<jobject>& obj,
     jint handle) {
-  DCHECK_CURRENTLY_ON(BrowserThread::PROCESS_LAUNCHER);
+  DCHECK(CurrentlyOnProcessLauncherTaskRunner());
   scoped_refptr<ChildProcessLauncherHelper> ref(this);
   Release();  // Balances with LaunchProcessOnLauncherThread.
 

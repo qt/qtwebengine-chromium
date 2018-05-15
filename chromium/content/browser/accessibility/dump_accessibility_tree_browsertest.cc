@@ -43,6 +43,8 @@ namespace content {
 
 typedef AccessibilityTreeFormatter::Filter Filter;
 
+// See content/test/data/accessibility/readme.md for an overview.
+//
 // This test takes a snapshot of the platform BrowserAccessibility tree and
 // tests it against an expected baseline.
 //
@@ -356,10 +358,17 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAriaAlert) {
   RunAriaTest(FILE_PATH_LITERAL("aria-alert.html"));
 }
 
+#if defined(OS_WIN)
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       DISABLED_AccessibilityAriaAlertDialog) {
+  RunAriaTest(FILE_PATH_LITERAL("aria-alertdialog.html"));
+}
+#else
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
                        AccessibilityAriaAlertDialog) {
   RunAriaTest(FILE_PATH_LITERAL("aria-alertdialog.html"));
 }
+#endif
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
                        AccessibilityAriaApplication) {
@@ -414,6 +423,11 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAriaCombobox) {
   RunAriaTest(FILE_PATH_LITERAL("aria-combobox.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityAriaOnePointOneCombobox) {
+  RunAriaTest(FILE_PATH_LITERAL("aria1.1-combobox.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,

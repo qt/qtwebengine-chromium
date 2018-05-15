@@ -237,11 +237,13 @@ void NavigatorImpl::DidFailProvisionalLoadWithError(
   }
 
   // Discard the pending navigation entry if needed.
-  int expected_pending_entry_id =
-      render_frame_host->GetNavigationHandle()
-          ? render_frame_host->GetNavigationHandle()->pending_nav_entry_id()
-          : 0;
-  DiscardPendingEntryIfNeeded(expected_pending_entry_id);
+  int expected_pending_entry_id = 0;
+  if (render_frame_host->GetNavigationHandle()) {
+    expected_pending_entry_id =
+        render_frame_host->GetNavigationHandle()->pending_nav_entry_id();
+    DCHECK(!render_frame_host->GetNavigationHandle()->IsDownload());
+  }
+  DiscardPendingEntryIfNeeded(expected_pending_entry_id, false);
 }
 
 void NavigatorImpl::DidFailLoadWithError(
@@ -312,9 +314,10 @@ bool NavigatorImpl::NavigateToEntry(
   // "Open link in new tab"). We need to keep it above RFHM::Navigate() call to
   // capture the time needed for the RenderFrameHost initialization.
   base::TimeTicks navigation_start = base::TimeTicks::Now();
+  base::TimeTicks tracing_navigation_start = TRACE_TIME_TICKS_NOW();
   TRACE_EVENT_INSTANT_WITH_TIMESTAMP0(
       "navigation,rail", "NavigationTiming navigationStart",
-      TRACE_EVENT_SCOPE_GLOBAL, navigation_start);
+      TRACE_EVENT_SCOPE_GLOBAL, tracing_navigation_start);
 
   // Determine if Previews should be used for the navigation.
   PreviewsState previews_state = PREVIEWS_UNSPECIFIED;
@@ -349,7 +352,7 @@ bool NavigatorImpl::NavigateToEntry(
     TRACE_EVENT_ASYNC_BEGIN_WITH_TIMESTAMP1(
         "navigation", "Navigation timeToNetworkStack",
         frame_tree_node->navigation_request()->navigation_handle(),
-        navigation_start, "FrameTreeNode id",
+        tracing_navigation_start, "FrameTreeNode id",
         frame_tree_node->frame_tree_node_id());
   }
 
@@ -471,16 +474,19 @@ void NavigatorImpl::DidNavigate(
     }
   }
 
-  // Save the origin of the new page.  Do this before calling
-  // DidNavigateFrame(), because the origin needs to be included in the SwapOut
-  // message, which is sent inside DidNavigateFrame().  SwapOut needs the
-  // origin because it creates a RenderFrameProxy that needs this to initialize
-  // its security context. This origin will also be sent to RenderFrameProxies
-  // created via mojom::Renderer::CreateView and
-  // mojom::Renderer::CreateFrameProxy.
+  // DidNavigateFrame() must be called before replicating the new origin and
+  // other properties to proxies.  This is because it destroys the subframes of
+  // the frame we're navigating from, which might trigger those subframes to
+  // run unload handlers.  Those unload handlers should still see the old
+  // frame's origin.  See https://crbug.com/825283.
+  frame_tree_node->render_manager()->DidNavigateFrame(
+      render_frame_host, params.gesture == NavigationGestureUser);
+
+  // Save the new page's origin and other properties, and replicate them to
+  // proxies, including the proxy created in DidNavigateFrame() to replace the
+  // old frame in cross-process navigation cases.
   frame_tree_node->SetCurrentOrigin(
       params.origin, params.has_potentially_trustworthy_unique_origin);
-
   frame_tree_node->SetInsecureRequestPolicy(params.insecure_request_policy);
   frame_tree_node->SetInsecureNavigationsSet(params.insecure_navigations_set);
 
@@ -490,9 +496,6 @@ void NavigatorImpl::DidNavigate(
     render_frame_host->ResetContentSecurityPolicies();
     frame_tree_node->ResetForNavigation();
   }
-
-  frame_tree_node->render_manager()->DidNavigateFrame(
-      render_frame_host, params.gesture == NavigationGestureUser);
 
   // Update the site of the SiteInstance if it doesn't have one yet, unless
   // assigning a site is not necessary for this URL or the commit was for an
@@ -846,7 +849,8 @@ void NavigatorImpl::OnBeforeUnloadACK(FrameTreeNode* frame_tree_node,
 void NavigatorImpl::OnBeginNavigation(
     FrameTreeNode* frame_tree_node,
     const CommonNavigationParams& common_params,
-    mojom::BeginNavigationParamsPtr begin_params) {
+    mojom::BeginNavigationParamsPtr begin_params,
+    scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory) {
   // TODO(clamy): the url sent by the renderer should be validated with
   // FilterURL.
   // This is a renderer-initiated navigation.
@@ -895,13 +899,19 @@ void NavigatorImpl::OnBeginNavigation(
   }
   NavigationEntryImpl* pending_entry = controller_->GetPendingEntry();
   NavigationEntryImpl* current_entry = controller_->GetLastCommittedEntry();
+  // Only consult the delegate for override state if there is no current entry,
+  // since that state should only apply to newly created tabs (and not cases
+  // where the NavigationEntry recorded the state).
   bool override_user_agent =
-      current_entry ? current_entry->GetIsOverridingUserAgent() : false;
+      current_entry
+          ? current_entry->GetIsOverridingUserAgent()
+          : delegate_ && delegate_->ShouldOverrideUserAgentInNewTabs();
   frame_tree_node->CreatedNavigationRequest(
       NavigationRequest::CreateRendererInitiated(
           frame_tree_node, pending_entry, common_params,
           std::move(begin_params), controller_->GetLastCommittedEntryIndex(),
-          controller_->GetEntryCount(), override_user_agent));
+          controller_->GetEntryCount(), override_user_agent,
+          std::move(blob_url_loader_factory)));
   NavigationRequest* navigation_request = frame_tree_node->navigation_request();
 
   // For main frames, NavigationHandle will be created after the call to
@@ -976,14 +986,15 @@ void NavigatorImpl::LogBeforeUnloadTime(
   }
 }
 
-void NavigatorImpl::DiscardPendingEntryIfNeeded(int expected_pending_entry_id) {
+void NavigatorImpl::DiscardPendingEntryIfNeeded(int expected_pending_entry_id,
+                                                bool is_download) {
   // Racy conditions can cause a fail message to arrive after its corresponding
   // pending entry has been replaced by another navigation. If
   // |DiscardPendingEntry| is called in this case, then the completely valid
   // entry for the new navigation would be discarded. See crbug.com/513742. To
   // catch this case, the current pending entry is compared against the current
   // navigation handle's entry id, which should correspond to the failed load.
-  NavigationEntry* pending_entry = controller_->GetPendingEntry();
+  NavigationEntryImpl* pending_entry = controller_->GetPendingEntry();
   bool pending_matches_fail_msg =
       pending_entry &&
       expected_pending_entry_id == pending_entry->GetUniqueID();
@@ -1004,9 +1015,13 @@ void NavigatorImpl::DiscardPendingEntryIfNeeded(int expected_pending_entry_id) {
   // allow the view to clear the pending entry and typed URL if the user
   // requests (e.g., hitting Escape with focus in the address bar).
   //
+  // Note that the pending entry does not need to be preserved for downloads,
+  // since the user is unlikely to try again.
+  //
   // Note: don't touch the transient entry, since an interstitial may exist.
-  bool should_preserve_entry = controller_->IsUnmodifiedBlankTab() ||
-                               delegate_->ShouldPreserveAbortedURLs();
+  bool should_preserve_entry = (controller_->IsUnmodifiedBlankTab() ||
+                                delegate_->ShouldPreserveAbortedURLs()) &&
+                               !is_download;
   if (pending_entry != controller_->GetVisibleEntry() ||
       !should_preserve_entry) {
     controller_->DiscardPendingEntry(true);

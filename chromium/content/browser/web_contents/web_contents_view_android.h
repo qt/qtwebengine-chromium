@@ -19,8 +19,9 @@
 #include "ui/gfx/geometry/rect_f.h"
 
 namespace content {
-class ContentViewCore;
 class RenderWidgetHostViewAndroid;
+class SelectPopup;
+class SelectionPopupController;
 class SynchronousCompositorClient;
 class WebContentsImpl;
 
@@ -33,13 +34,15 @@ class WebContentsViewAndroid : public WebContentsView,
                          WebContentsViewDelegate* delegate);
   ~WebContentsViewAndroid() override;
 
-  // Sets the interface to the view system. ContentViewCore is owned
-  // by its Java ContentViewCore counterpart, whose lifetime is managed
-  // by the UI frontend.
-  void SetContentViewCore(ContentViewCore* content_view_core);
+  // Sets the object that show/hide popup view for <select> tag.
+  void SetSelectPopup(std::unique_ptr<SelectPopup> select_popup);
 
   void set_synchronous_compositor_client(SynchronousCompositorClient* client) {
     synchronous_compositor_client_ = client;
+  }
+
+  void set_selection_popup_controller(SelectionPopupController* controller) {
+    selection_popup_controller_ = controller;
   }
 
   SynchronousCompositorClient* synchronous_compositor_client() const {
@@ -126,9 +129,6 @@ class WebContentsViewAndroid : public WebContentsView,
   // The WebContents whose contents we display.
   WebContentsImpl* web_contents_;
 
-  // ContentViewCore is our interface to the view system.
-  ContentViewCore* content_view_core_;
-
   // Handles "overscroll to refresh" events
   std::unique_ptr<ui::OverscrollRefreshHandler> overscroll_refresh_handler_;
 
@@ -140,6 +140,11 @@ class WebContentsViewAndroid : public WebContentsView,
 
   // Interface used to get notified of events from the synchronous compositor.
   SynchronousCompositorClient* synchronous_compositor_client_;
+
+  SelectionPopupController* selection_popup_controller_ = nullptr;
+
+  // Show/hide popup UI for <select> tag.
+  std::unique_ptr<SelectPopup> select_popup_;
 
   gfx::PointF drag_location_;
   gfx::PointF drag_screen_location_;

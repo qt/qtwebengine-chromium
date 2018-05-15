@@ -19,7 +19,7 @@
 
 namespace {
 
-const int8_t g_ChannelOffset[] = {0, 2, 1, 0, 0, 1, 2, 3, 3};
+const int8_t kChannelOffset[] = {0, 2, 1, 0, 0, 1, 2, 3, 3};
 
 }  // namespace
 
@@ -274,7 +274,7 @@ bool CFX_DIBitmap::LoadChannel(FXDIB_Channel destChannel,
       if (!pSrcClone)
         return false;
     }
-    srcOffset = g_ChannelOffset[srcChannel];
+    srcOffset = kChannelOffset[srcChannel];
   }
   int destOffset = 0;
   if (destChannel == FXDIB_Alpha) {
@@ -304,7 +304,7 @@ bool CFX_DIBitmap::LoadChannel(FXDIB_Channel destChannel,
         return false;
       }
     }
-    destOffset = g_ChannelOffset[destChannel];
+    destOffset = kChannelOffset[destChannel];
   }
   if (srcChannel == FXDIB_Alpha && pSrcClone->m_pAlphaMask) {
     RetainPtr<CFX_DIBSource> pAlphaMask = pSrcClone->m_pAlphaMask;
@@ -383,7 +383,7 @@ bool CFX_DIBitmap::LoadChannel(FXDIB_Channel destChannel, int value) {
         return false;
       }
     }
-    destOffset = g_ChannelOffset[destChannel];
+    destOffset = kChannelOffset[destChannel];
   }
   int Bpp = GetBPP() / 8;
   if (Bpp == 1) {
@@ -682,7 +682,7 @@ void CFX_DIBitmap::DownSampleScanline(int line,
   }
 }
 
-void CFX_DIBitmap::ConvertRGBColorScale(uint32_t forecolor,
+void CFX_DIBitmap::ConvertBGRColorScale(uint32_t forecolor,
                                         uint32_t backcolor) {
   int fr = FXSYS_GetRValue(forecolor);
   int fg = FXSYS_GetGValue(forecolor);
@@ -807,7 +807,7 @@ bool CFX_DIBitmap::ConvertColorScale(uint32_t forecolor, uint32_t backcolor) {
   if (IsCmykImage())
     ConvertCMYKColorScale(forecolor, backcolor);
   else
-    ConvertRGBColorScale(forecolor, backcolor);
+    ConvertBGRColorScale(forecolor, backcolor);
   return true;
 }
 
@@ -819,11 +819,15 @@ bool CFX_DIBitmap::CalculatePitchAndSize(int height,
   if (width <= 0 || height <= 0)
     return false;
 
-  if ((INT_MAX - 31) / width < (format & 0xFF))
+  int bpp = GetBppFromFormat(format);
+  if (!bpp)
+    return false;
+
+  if ((INT_MAX - 31) / width < bpp)
     return false;
 
   if (!*pitch)
-    *pitch = static_cast<uint32_t>((width * (format & 0xff) + 31) / 32 * 4);
+    *pitch = static_cast<uint32_t>((width * bpp + 31) / 32 * 4);
 
   if ((1 << 30) / *pitch < static_cast<uint32_t>(height))
     return false;
@@ -1187,7 +1191,7 @@ bool CFX_DIBitmap::ConvertFormat(FXDIB_Format dest_format) {
     }
     return true;
   }
-  int dest_bpp = dest_format & 0xff;
+  int dest_bpp = GetBppFromFormat(dest_format);
   int dest_pitch = (dest_bpp * m_Width + 31) / 32 * 4;
   std::unique_ptr<uint8_t, FxFreeDeleter> dest_buf(
       FX_TryAlloc(uint8_t, dest_pitch * m_Height + 4));

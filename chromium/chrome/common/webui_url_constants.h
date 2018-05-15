@@ -13,8 +13,8 @@
 #include "build/build_config.h"
 #include "chrome/common/buildflags.h"
 #include "content/public/common/url_constants.h"
-#include "media/media_features.h"
-#include "printing/features/features.h"
+#include "media/media_buildflags.h"
+#include "printing/buildflags/buildflags.h"
 
 namespace chrome {
 
@@ -42,8 +42,6 @@ extern const char kChromeUIChromeURLsURL[];
 extern const char kChromeUIComponentsHost[];
 extern const char kChromeUIConflictsHost[];
 extern const char kChromeUIConflictsURL[];
-extern const char kChromeUIConnectionHelpHost[];
-extern const char kChromeUIConnectionHelpURL[];
 extern const char kChromeUIConstrainedHTMLTestURL[];
 extern const char kChromeUIContentSettingsURL[];
 extern const char kChromeUICrashHost[];
@@ -98,6 +96,8 @@ extern const char kChromeUIMdUserManagerUrl[];
 extern const char kChromeUIMediaEngagementHost[];
 extern const char kChromeUIMediaRouterHost[];
 extern const char kChromeUIMediaRouterURL[];
+extern const char kChromeUIMediaRouterInternalsHost[];
+extern const char kChromeUIMediaRouterInternalsURL[];
 extern const char kChromeUIMemoryInternalsHost[];
 extern const char kChromeUINTPTilesInternalsHost[];
 extern const char kChromeUINaClHost[];
@@ -194,6 +194,8 @@ extern const char kChromeUIKeyboardOverlayHost[];
 extern const char kChromeUIKeyboardOverlayURL[];
 extern const char kChromeUIMobileSetupHost[];
 extern const char kChromeUIMobileSetupURL[];
+extern const char kChromeUIMultiDeviceSetupHost[];
+extern const char kChromeUIMultiDeviceSetupUrl[];
 extern const char kChromeUINetworkHost[];
 extern const char kChromeUIOSCreditsHost[];
 extern const char kChromeUIOSCreditsURL[];
@@ -211,6 +213,8 @@ extern const char kChromeUISysInternalsHost[];
 extern const char kChromeUITermsOemURL[];
 extern const char kChromeUIUserImageHost[];
 extern const char kChromeUIUserImageURL[];
+extern const char kChromeUIAssistantOptInHost[];
+extern const char kChromeUIAssistantOptInURL[];
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_WIN)

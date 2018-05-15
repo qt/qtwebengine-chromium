@@ -14,6 +14,7 @@
 #include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/observer_list.h"
 #include "cc/base/region.h"
@@ -292,8 +293,8 @@ class COMPOSITOR_EXPORT Layer : public LayerAnimationDelegate,
   const std::string& name() const { return name_; }
   void set_name(const std::string& name) { name_ = name; }
 
-  // Set new TransferableResource for this layer. Note that |resource| may hold
-  // a handle for a shared memory resource or a gpu texture.
+  // Set new TransferableResource for this layer. This method only supports
+  // a gpu-backed |resource|.
   void SetTransferableResource(
       const viz::TransferableResource& resource,
       std::unique_ptr<viz::SingleReleaseCallback> release_callback,
@@ -307,7 +308,8 @@ class COMPOSITOR_EXPORT Layer : public LayerAnimationDelegate,
   void SetShowPrimarySurface(const viz::SurfaceId& surface_id,
                              const gfx::Size& frame_size_in_dip,
                              SkColor default_background_color,
-                             const cc::DeadlinePolicy& deadline_policy);
+                             const cc::DeadlinePolicy& deadline_policy,
+                             bool stretch_content_to_fill_bounds);
 
   // In the event that the primary surface is not yet available in the
   // display compositor, the fallback surface will be used.
@@ -394,6 +396,7 @@ class COMPOSITOR_EXPORT Layer : public LayerAnimationDelegate,
 
   // TextureLayerClient implementation.
   bool PrepareTransferableResource(
+      cc::SharedBitmapIdRegistrar* bitmap_registar,
       viz::TransferableResource* resource,
       std::unique_ptr<viz::SingleReleaseCallback>* release_callback) override;
 
@@ -403,7 +406,7 @@ class COMPOSITOR_EXPORT Layer : public LayerAnimationDelegate,
   std::unique_ptr<base::trace_event::ConvertableToTraceFormat> TakeDebugInfo(
       cc::Layer* layer) override;
   void didUpdateMainThreadScrollingReasons() override;
-  void didChangeScrollbarsHidden(bool) override;
+  void didChangeScrollbarsHiddenIfOverlay(bool) override;
 
   // Triggers a call to SwitchToLayer.
   void SwitchCCLayerForTest();
@@ -437,6 +440,10 @@ class COMPOSITOR_EXPORT Layer : public LayerAnimationDelegate,
   // We keep this reference for the case that if the mask layer gets deleted
   // while attached to the main layer before the main layer is deleted.
   const Layer* layer_mask_back_link() const { return layer_mask_back_link_; }
+
+  // If |surface_layer_| exists, return whether the contents should stretch to
+  // fill the bounds of |this|. Defaults to false.
+  bool StretchContentToFillBounds() const;
 
  private:
   friend class LayerOwner;
@@ -617,6 +624,8 @@ class COMPOSITOR_EXPORT Layer : public LayerAnimationDelegate,
   // If the value == 0, means we should not perform trilinear filtering on the
   // layer.
   unsigned trilinear_filtering_request_;
+
+  base::WeakPtrFactory<Layer> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Layer);
 };

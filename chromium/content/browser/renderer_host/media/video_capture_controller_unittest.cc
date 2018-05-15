@@ -15,7 +15,6 @@
 #include "base/bind_helpers.h"
 #include "base/location.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
@@ -89,7 +88,7 @@ class MockVideoCaptureControllerEventHandler
       const media::mojom::VideoFrameInfoPtr& frame_info) override {
     EXPECT_EQ(expected_pixel_format_, frame_info->pixel_format);
     media::VideoFrameMetadata metadata;
-    metadata.MergeInternalValuesFrom(*frame_info->metadata);
+    metadata.MergeInternalValuesFrom(frame_info->metadata);
     base::TimeTicks reference_time;
     EXPECT_TRUE(metadata.GetTimeTicks(media::VideoFrameMetadata::REFERENCE_TIME,
                                       &reference_time));

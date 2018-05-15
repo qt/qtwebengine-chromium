@@ -15,6 +15,7 @@
 #include "api/video/i420_buffer.h"
 #include "media/base/videoadapter.h"
 #include "modules/video_coding/codecs/vp8/temporal_layers.h"
+#include "modules/video_coding/codecs/vp9/include/vp9_globals.h"
 #include "modules/video_coding/utility/default_video_bitrate_allocator.h"
 #include "rtc_base/fakeclock.h"
 #include "rtc_base/logging.h"
@@ -66,10 +67,8 @@ class TestBuffer : public webrtc::I420Buffer {
 
 class CpuOveruseDetectorProxy : public OveruseFrameDetector {
  public:
-  CpuOveruseDetectorProxy(const CpuOveruseOptions& options,
-                          CpuOveruseMetricsObserver* metrics_observer)
-      : OveruseFrameDetector(options,
-                             metrics_observer),
+  explicit CpuOveruseDetectorProxy(CpuOveruseMetricsObserver* metrics_observer)
+      : OveruseFrameDetector(metrics_observer),
         last_target_framerate_fps_(-1) {}
   virtual ~CpuOveruseDetectorProxy() {}
 
@@ -100,7 +99,6 @@ class VideoStreamEncoderUnderTest : public VideoStreamEncoder {
             nullptr /* pre_encode_callback */,
             std::unique_ptr<OveruseFrameDetector>(
                 overuse_detector_proxy_ = new CpuOveruseDetectorProxy(
-                    CpuOveruseOptions(),
                     stats_proxy))) {}
 
   void PostTaskAndWait(bool down, AdaptReason reason) {
@@ -150,7 +148,7 @@ class VideoStreamFactory
     std::vector<VideoStream> streams =
         test::CreateVideoStreams(width, height, encoder_config);
     for (VideoStream& stream : streams) {
-      stream.temporal_layer_thresholds_bps.resize(num_temporal_layers_ - 1);
+      stream.num_temporal_layers = num_temporal_layers_;
       stream.max_framerate = framerate_;
     }
     return streams;
@@ -284,11 +282,11 @@ class VideoStreamEncoderTest : public ::testing::Test {
     metrics::Reset();
     video_send_config_ = VideoSendStream::Config(nullptr);
     video_send_config_.encoder_settings.encoder = &fake_encoder_;
-    video_send_config_.encoder_settings.payload_name = "FAKE";
-    video_send_config_.encoder_settings.payload_type = 125;
+    video_send_config_.rtp.payload_name = "FAKE";
+    video_send_config_.rtp.payload_type = 125;
 
     VideoEncoderConfig video_encoder_config;
-    test::FillEncoderConfiguration(1, &video_encoder_config);
+    test::FillEncoderConfiguration(kVideoCodecVP8, 1, &video_encoder_config);
     video_encoder_config.video_stream_factory =
         new rtc::RefCountedObject<VideoStreamFactory>(1, max_framerate_);
     video_encoder_config_ = video_encoder_config.Copy();
@@ -325,9 +323,10 @@ class VideoStreamEncoderTest : public ::testing::Test {
                     unsigned char num_spatial_layers,
                     bool nack_enabled,
                     bool screenshare) {
-    video_send_config_.encoder_settings.payload_name = payload_name;
+    video_send_config_.rtp.payload_name = payload_name;
 
     VideoEncoderConfig video_encoder_config;
+    video_encoder_config.codec_type = PayloadStringToCodecType(payload_name);
     video_encoder_config.number_of_streams = num_streams;
     video_encoder_config.max_bitrate_bps = kTargetBitrateBps;
     video_encoder_config.video_stream_factory =
@@ -556,15 +555,13 @@ class VideoStreamEncoderTest : public ::testing::Test {
       int res =
           FakeEncoder::InitEncode(config, number_of_cores, max_payload_size);
       rtc::CritScope lock(&local_crit_sect_);
-      if (config->codecType == kVideoCodecVP8 && config->VP8().tl_factory) {
+      if (config->codecType == kVideoCodecVP8) {
         // Simulate setting up temporal layers, in order to validate the life
         // cycle of these objects.
         int num_streams = std::max<int>(1, config->numberOfSimulcastStreams);
-        int num_temporal_layers =
-            std::max<int>(1, config->VP8().numberOfTemporalLayers);
         for (int i = 0; i < num_streams; ++i) {
           allocated_temporal_layers_.emplace_back(
-              config->VP8().tl_factory->Create(i, num_temporal_layers, 42));
+              TemporalLayers::CreateTemporalLayers(*config, i));
         }
       }
       if (force_init_encode_failed_)
@@ -785,7 +782,7 @@ TEST_F(VideoStreamEncoderTest,
   EXPECT_EQ(1, sink_.number_of_reconfigurations());
 
   VideoEncoderConfig video_encoder_config;
-  test::FillEncoderConfiguration(1, &video_encoder_config);
+  test::FillEncoderConfiguration(kVideoCodecVP8, 1, &video_encoder_config);
   video_encoder_config.min_transmit_bitrate_bps = 9999;
   video_stream_encoder_->ConfigureEncoder(std::move(video_encoder_config),
                                           kMaxPayloadLength,
@@ -953,11 +950,14 @@ TEST_F(VideoStreamEncoderTest, Vp9ResilienceIsOnFor2SL1TLWithNackEnabled) {
   const size_t kNumStreams = 1;
   const size_t kNumTl = 1;
   const unsigned char kNumSl = 2;
+  const int kFrameWidth = kMinVp9SpatialLayerWidth << (kNumSl - 1);
+  const int kFrameHeight = kMinVp9SpatialLayerHeight << (kNumSl - 1);
   ResetEncoder("VP9", kNumStreams, kNumTl, kNumSl, kNackEnabled, false);
   video_stream_encoder_->OnBitrateUpdated(kTargetBitrateBps, 0, 0);
 
   // Capture a frame and wait for it to synchronize with the encoder thread.
-  video_source_.IncomingCapturedFrame(CreateFrame(1, nullptr));
+  video_source_.IncomingCapturedFrame(
+      CreateFrame(1, kFrameWidth, kFrameHeight));
   sink_.WaitForEncodedFrame(1);
   // The encoder have been configured once when the first frame is received.
   EXPECT_EQ(1, sink_.number_of_reconfigurations());
@@ -2281,6 +2281,7 @@ TEST_F(VideoStreamEncoderTest, OveruseDetectorUpdatedOnReconfigureAndAdaption) {
 
   // Trigger reconfigure encoder (without resetting the entire instance).
   VideoEncoderConfig video_encoder_config;
+  video_encoder_config.codec_type = kVideoCodecVP8;
   video_encoder_config.max_bitrate_bps = kTargetBitrateBps;
   video_encoder_config.number_of_streams = 1;
   video_encoder_config.video_stream_factory =
@@ -2332,6 +2333,7 @@ TEST_F(VideoStreamEncoderTest,
 
   // Trigger initial configuration.
   VideoEncoderConfig video_encoder_config;
+  video_encoder_config.codec_type = kVideoCodecVP8;
   video_encoder_config.max_bitrate_bps = kTargetBitrateBps;
   video_encoder_config.number_of_streams = 1;
   video_encoder_config.video_stream_factory =
@@ -2394,6 +2396,7 @@ TEST_F(VideoStreamEncoderTest,
 
   // Trigger initial configuration.
   VideoEncoderConfig video_encoder_config;
+  video_encoder_config.codec_type = kVideoCodecVP8;
   video_encoder_config.max_bitrate_bps = kTargetBitrateBps;
   video_encoder_config.number_of_streams = 1;
   video_encoder_config.video_stream_factory =
@@ -3166,7 +3169,7 @@ TEST_F(VideoStreamEncoderTest, AcceptsFullHdAdaptedDownSimulcastFrames) {
           test::CreateVideoStreams(width - width % 4, height - height % 4,
                                    encoder_config);
       for (VideoStream& stream : streams) {
-        stream.temporal_layer_thresholds_bps.resize(num_temporal_layers_ - 1);
+        stream.num_temporal_layers = num_temporal_layers_;
         stream.max_framerate = framerate_;
       }
       return streams;
@@ -3187,6 +3190,7 @@ TEST_F(VideoStreamEncoderTest, AcceptsFullHdAdaptedDownSimulcastFrames) {
   video_stream_encoder_->OnBitrateUpdated(kTargetBitrateBps, 0, 0);
   // Trigger reconfigure encoder (without resetting the entire instance).
   VideoEncoderConfig video_encoder_config;
+  video_encoder_config.codec_type = kVideoCodecVP8;
   video_encoder_config.max_bitrate_bps = kTargetBitrateBps;
   video_encoder_config.number_of_streams = 1;
   video_encoder_config.video_stream_factory =

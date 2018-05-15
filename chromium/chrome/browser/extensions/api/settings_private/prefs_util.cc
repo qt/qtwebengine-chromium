@@ -13,6 +13,7 @@
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/components/proximity_auth/proximity_auth_pref_names.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/bookmarks/common/bookmark_pref_names.h"
 #include "components/browsing_data/core/pref_names.h"
@@ -20,7 +21,6 @@
 #include "components/drive/drive_pref_names.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/prefs/pref_service.h"
-#include "components/proximity_auth/proximity_auth_pref_names.h"
 #include "components/proxy_config/proxy_config_pref_names.h"
 #include "components/safe_browsing/common/safe_browsing_prefs.h"
 #include "components/search_engines/default_search_manager.h"
@@ -65,15 +65,19 @@ bool IsPrivilegedCrosSetting(const std::string& pref_name) {
   // controlled or owner controlled.
   return true;
 }
+#endif
 
-bool IsCrosSettingReadOnly(const std::string& pref_name) {
-  if (chromeos::system::PerUserTimezoneEnabled()) {
-    // System timezone is never directly changable by user.
-    return pref_name == chromeos::kSystemTimezone;
-  }
+bool IsSettingReadOnly(const std::string& pref_name) {
+#if defined(OS_CHROMEOS)
+  // System timezone is never directly changable by the user.
+  if (pref_name == chromeos::kSystemTimezone)
+    return chromeos::system::PerUserTimezoneEnabled();
+  // enable_screen_lock must be changed through the quickUnlockPrivate API.
+  if (pref_name == ash::prefs::kEnableAutoScreenLock)
+    return true;
+#endif
   return false;
 }
-#endif
 
 }  // namespace
 
@@ -99,6 +103,8 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
   (*s_whitelist)[::prefs::kAlternateErrorPagesEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[autofill::prefs::kAutofillEnabled] =
+      settings_api::PrefType::PREF_TYPE_BOOLEAN;
+  (*s_whitelist)[autofill::prefs::kAutofillCreditCardEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[bookmarks::prefs::kShowBookmarkBar] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
@@ -252,7 +258,8 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[chromeos::kAccountsPrefUsers] =
       settings_api::PrefType::PREF_TYPE_LIST;
-  (*s_whitelist)[::prefs::kEnableAutoScreenLock] =
+  // kEnableAutoScreenLock is read-only.
+  (*s_whitelist)[ash::prefs::kEnableAutoScreenLock] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[::prefs::kEnableQuickUnlockFingerprint] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
@@ -314,7 +321,7 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[::prefs::kLanguagePreferredLanguages] =
       settings_api::PrefType::PREF_TYPE_STRING;
-  (*s_whitelist)[::prefs::kTapDraggingEnabled] =
+  (*s_whitelist)[ash::prefs::kTapDraggingEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[chromeos::kStatsReportingPref] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
@@ -802,10 +809,8 @@ bool PrefsUtil::IsPrefSupervisorControlled(const std::string& pref_name) {
 }
 
 bool PrefsUtil::IsPrefUserModifiable(const std::string& pref_name) {
-#if defined(OS_CHROMEOS)
-  if (IsCrosSettingReadOnly(pref_name))
+  if (IsSettingReadOnly(pref_name))
     return false;
-#endif
 
   const PrefService::Preference* profile_pref =
       profile_->GetPrefs()->FindPreference(pref_name);

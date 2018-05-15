@@ -4,6 +4,8 @@
 
 #include "gpu/command_buffer/service/gles2_cmd_decoder_passthrough.h"
 
+#include "ui/gfx/ipc/color/gfx_param_traits.h"
+
 namespace gpu {
 namespace gles2 {
 
@@ -1749,9 +1751,9 @@ error::Error GLES2DecoderPassthroughImpl::HandleScheduleOverlayPlaneCHROMIUM(
   GLint bounds_width = static_cast<GLint>(c.bounds_width);
   GLint bounds_height = static_cast<GLint>(c.bounds_height);
   GLfloat uv_x = static_cast<GLfloat>(c.uv_x);
-  GLfloat uv_y = static_cast<GLfloat>(c.uv_x);
-  GLfloat uv_width = static_cast<GLfloat>(c.uv_x);
-  GLfloat uv_height = static_cast<GLfloat>(c.uv_x);
+  GLfloat uv_y = static_cast<GLfloat>(c.uv_y);
+  GLfloat uv_width = static_cast<GLfloat>(c.uv_width);
+  GLfloat uv_height = static_cast<GLfloat>(c.uv_height);
 
   return DoScheduleOverlayPlaneCHROMIUM(
       plane_z_order, plane_transform, overlay_texture_id, bounds_x, bounds_y,
@@ -1866,8 +1868,28 @@ error::Error GLES2DecoderPassthroughImpl::HandleScheduleDCLayerCHROMIUM(
 error::Error GLES2DecoderPassthroughImpl::HandleSetColorSpaceMetadataCHROMIUM(
     uint32_t immediate_data_size,
     const volatile void* cmd_data) {
-  NOTIMPLEMENTED();
-  return error::kNoError;
+  const volatile gles2::cmds::SetColorSpaceMetadataCHROMIUM& c =
+      *static_cast<const volatile gles2::cmds::SetColorSpaceMetadataCHROMIUM*>(
+          cmd_data);
+  GLuint texture_id = c.texture_id;
+  GLsizei color_space_size = c.color_space_size;
+  const char* data = static_cast<const char*>(
+      GetAddressAndCheckSize(c.shm_id, c.shm_offset, color_space_size));
+  if (!data) {
+    return error::kOutOfBounds;
+  }
+
+  // Make a copy to reduce the risk of a time of check to time of use attack.
+  std::vector<char> color_space_data(data, data + color_space_size);
+  base::Pickle color_space_pickle(color_space_data.data(), color_space_size);
+  base::PickleIterator iterator(color_space_pickle);
+  gfx::ColorSpace color_space;
+  if (!IPC::ParamTraits<gfx::ColorSpace>::Read(&color_space_pickle, &iterator,
+                                               &color_space)) {
+    return error::kOutOfBounds;
+  }
+
+  return DoSetColorSpaceMetadataCHROMIUM(texture_id, color_space);
 }
 
 error::Error GLES2DecoderPassthroughImpl::HandleGenPathsCHROMIUM(

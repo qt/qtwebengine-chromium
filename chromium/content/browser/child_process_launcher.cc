@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/process/launch.h"
 #include "build/build_config.h"
+#include "content/public/browser/child_process_launcher_utils.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 
@@ -62,8 +63,8 @@ void ChildProcessLauncher::SetProcessPriority(
     const ChildProcessLauncherPriority& priority) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   base::Process to_pass = process_.process.Duplicate();
-  BrowserThread::PostTask(
-      BrowserThread::PROCESS_LAUNCHER, FROM_HERE,
+  GetProcessLauncherTaskRunner()->PostTask(
+      FROM_HERE,
       base::BindOnce(
           &ChildProcessLauncherHelper::SetProcessPriorityOnLauncherThread,
           helper_, std::move(to_pass), priority));
@@ -102,8 +103,14 @@ base::TerminationStatus ChildProcessLauncher::GetChildTerminationStatus(
     bool known_dead,
     int* exit_code) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
   if (!process_.process.IsValid()) {
-    // Process is already gone, so return the cached termination status.
+    // Make sure to avoid using the default termination status if the process
+    // hasn't even started yet.
+    if (IsStarting())
+      termination_status_ = base::TERMINATION_STATUS_STILL_RUNNING;
+
+    // Process doesn't exist, so return the cached termination status.
     if (exit_code)
       *exit_code = exit_code_;
     return termination_status_;
@@ -128,17 +135,16 @@ base::TerminationStatus ChildProcessLauncher::GetChildTerminationStatus(
   return termination_status_;
 }
 
-bool ChildProcessLauncher::Terminate(int exit_code, bool wait) {
+bool ChildProcessLauncher::Terminate(int exit_code) {
   return IsStarting() ? false
                       : ChildProcessLauncherHelper::TerminateProcess(
-                            GetProcess(), exit_code, wait);
+                            GetProcess(), exit_code);
 }
 
 // static
 bool ChildProcessLauncher::TerminateProcess(const base::Process& process,
-                                            int exit_code,
-                                            bool wait) {
-  return ChildProcessLauncherHelper::TerminateProcess(process, exit_code, wait);
+                                            int exit_code) {
+  return ChildProcessLauncherHelper::TerminateProcess(process, exit_code);
 }
 
 // static
@@ -170,7 +176,7 @@ ChildProcessLauncher::Client* ChildProcessLauncher::ReplaceClientForTest(
 
 bool ChildProcessLauncherPriority::operator==(
     const ChildProcessLauncherPriority& other) const {
-  return background == other.background &&
+  return background == other.background && frame_depth == other.frame_depth &&
          boost_for_pending_views == other.boost_for_pending_views
 #if defined(OS_ANDROID)
          && importance == other.importance

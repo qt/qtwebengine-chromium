@@ -67,13 +67,6 @@ void ChromeClassTester::CheckTag(TagDecl* tag) {
         return;
 
     CheckChromeClass(location_type, location, record);
-  } else if (EnumDecl* enum_decl = dyn_cast<EnumDecl>(tag)) {
-    std::string base_name = enum_decl->getNameAsString();
-    // TODO(dcheng): This should probably consult a separate list.
-    if (IsIgnoredType(base_name))
-      return;
-
-    CheckChromeEnum(location_type, location, enum_decl);
   }
 }
 
@@ -95,42 +88,12 @@ ChromeClassTester::LocationType ChromeClassTester::ClassifyLocation(
   if (filename == "<scratch space>")
     return LocationType::kThirdParty;
 
-#if defined(LLVM_ON_UNIX)
-  // Resolve the symlinktastic relative path and make it absolute.
-  char resolvedPath[MAXPATHLEN];
-  if (options_.no_realpath) {
-    // Same reason as windows below.
-    filename.insert(filename.begin(), '/');
-  } else if (realpath(filename.c_str(), resolvedPath)) {
-    filename = resolvedPath;
+  // Ensure that we can search for patterns of the form "/foo/" even
+  // if we have a relative path like "foo/bar.cc".  We don't expect
+  // this transformed path to exist necessarily.
+  if (filename.front() != '/') {
+    filename.insert(0, 1, '/');
   }
-#endif
-
-#if defined(LLVM_ON_WIN32)
-  // Make path absolute.
-  if (options_.no_realpath) {
-    // This turns e.g. "gen/dir/file.cc" to "/gen/dir/file.cc" which lets the
-    // "/gen/" banned_dir work.
-    filename.insert(filename.begin(), '/');
-  } else {
-    // The Windows dance: Convert to UTF-16, call GetFullPathNameW, convert back
-    DWORD size_needed =
-        MultiByteToWideChar(CP_UTF8, 0, filename.data(), -1, nullptr, 0);
-    std::wstring utf16(size_needed, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, filename.data(), -1,
-                        &utf16[0], size_needed);
-
-    size_needed = GetFullPathNameW(utf16.data(), 0, nullptr, nullptr);
-    std::wstring full_utf16(size_needed, L'\0');
-    GetFullPathNameW(utf16.data(), full_utf16.size(), &full_utf16[0], nullptr);
-
-    size_needed = WideCharToMultiByte(CP_UTF8, 0, full_utf16.data(), -1,
-                                      nullptr, 0, nullptr, nullptr);
-    filename.resize(size_needed);
-    WideCharToMultiByte(CP_UTF8, 0, full_utf16.data(), -1, &filename[0],
-                        size_needed, nullptr, nullptr);
-  }
-#endif
 
   // When using distributed cross compilation build tools, file paths can have
   // separators which differ from ones at this platform. Make them consistent.
@@ -232,9 +195,6 @@ void ChromeClassTester::BuildBannedLists() {
   // non-pod class member. Probably harmless.
   ignored_record_names_.emplace("MockTransaction");
 
-  // Enum type with _LAST members where _LAST doesn't mean last enum value.
-  ignored_record_names_.emplace("ServerFieldType");
-
   // Used heavily in ui_base_unittests and once in views_unittests. Fixing this
   // isn't worth the overhead of an additional library.
   ignored_record_names_.emplace("TestAnimationDelegate");
@@ -246,9 +206,6 @@ void ChromeClassTester::BuildBannedLists() {
   // Measured performance improvement on cc_perftests. See
   // https://codereview.chromium.org/11299290/
   ignored_record_names_.emplace("QuadF");
-
-  // Enum type with _LAST members where _LAST doesn't mean last enum value.
-  ignored_record_names_.emplace("ViewID");
 
   // Ignore IPC::NoParams bases, since these structs are generated via
   // macros and it makes it difficult to add explicit ctors.

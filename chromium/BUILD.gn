@@ -13,14 +13,15 @@ import("//build/config/features.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 import("//build/config/ui.gni")
 import("//components/nacl/features.gni")
-import("//device/vr/features/features.gni")
-import("//extensions/features/features.gni")
+import("//device/vr/buildflags/buildflags.gni")
+import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
 import("//media/gpu/args.gni")
 import("//remoting/remoting_enable.gni")
 import("//third_party/openh264/openh264_args.gni")
 import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
 import("//ui/base/ui_features.gni")
+import("//ui/webui/webui_features.gni")
 import("//ui/ozone/ozone.gni")
 import("//v8/gni/v8.gni")
 import("//v8/snapshot_toolchain.gni")
@@ -89,18 +90,21 @@ group("gn_all") {
     ]
   }
 
+  if (closure_compile) {
+    deps += [ ":webui_closure_compile" ]
+  }
+
   if (!is_ios && !is_android && !is_chromecast && !is_fuchsia) {
     deps += [
       "//chrome",
-      "//chrome/browser/resources/media_router/extension:all",
-      "//chrome/installer/zucchini:zucchini",
-      "//chrome/installer/zucchini:zucchini_unittests",
       "//chrome/test:browser_tests",
       "//chrome/test:interactive_ui_tests",
       "//chrome/test:sync_integration_tests",
       "//chrome/test/chromedriver:chromedriver_unittests",
       "//components/sync/tools:sync_client",
       "//components/sync/tools:sync_listen_notifications",
+      "//components/zucchini:zucchini",
+      "//components/zucchini:zucchini_unittests",
       "//gpu/gles2_conform_support:gles2_conform_test",
       "//gpu/khronos_glcts_support:khronos_glcts_test",
       "//jingle:jingle_unittests",
@@ -157,7 +161,6 @@ group("gn_all") {
       "//content/test:content_perftests",
       "//content/test:content_unittests",
       "//gpu:gpu_unittests",
-      "//gpu/ipc/service:gpu_ipc_service_unittests",
       "//ipc:ipc_tests",
       "//media:media_unittests",
       "//media/midi:midi_unittests",
@@ -166,8 +169,8 @@ group("gn_all") {
       "//mojo:mojo_unittests",
       "//mojo/common:mojo_common_unittests",
       "//net:net_perftests",
-      "//third_party/WebKit/Source/controller:webkit_unit_tests",
-      "//third_party/WebKit/Source/platform/wtf:wtf_unittests",
+      "//third_party/blink/renderer/controller:webkit_unit_tests",
+      "//third_party/blink/renderer/platform/wtf:wtf_unittests",
       "//ui/gl:gl_unittests",
       "//url/ipc:url_ipc_unittests",
     ]
@@ -180,8 +183,7 @@ group("gn_all") {
     ]
   }
 
-  # TODO(https://crbug.com/812268): Fix Windows build, and enable it.
-  if (!is_ios && !is_android && !is_win) {
+  if (!is_ios && !is_android) {
     deps += [
       "//components/cronet:cronet_tests",
       "//components/cronet:cronet_unittests",
@@ -201,11 +203,11 @@ group("gn_all") {
       "//media/capture:capture_unittests",
       "//media/cast:cast_unittests",
       "//storage:storage_unittests",
-      "//third_party/WebKit/Source/platform:blink_platform_unittests",
-      "//third_party/WebKit/Source/platform/heap:blink_heap_unittests",
       "//third_party/angle/src/tests:angle_end2end_tests",
       "//third_party/angle/src/tests:angle_unittests",
       "//third_party/angle/src/tests:angle_white_box_tests",
+      "//third_party/blink/renderer/platform:blink_platform_unittests",
+      "//third_party/blink/renderer/platform/heap:blink_heap_unittests",
       "//third_party/catapult/telemetry:bitmaptools($host_toolchain)",
       "//third_party/smhasher:pmurhash",
       "//tools/imagediff($host_toolchain)",
@@ -286,6 +288,7 @@ group("gn_all") {
       "//build/android/gyp/test:hello_world",
       "//build/android/gyp/test:hello_world",
       "//build/android/stacktrace:java_deobfuscate",
+      "//chrome/android/webapk/shell_apk:maps_go_webapk",
       "//chrome/android/webapk/shell_apk:webapk",
       "//chrome/test/vr/perf:motopho_latency_test",
       "//components/invalidation/impl:components_invalidation_impl_junit_tests",
@@ -309,7 +312,6 @@ group("gn_all") {
       "//tools/android/customtabs_benchmark:customtabs_benchmark_apk",
       "//tools/android/errorprone_plugin:errorprone_plugin_java",
       "//tools/android/kerberos/SpnegoAuthenticator:spnego_authenticator_apk",
-      "//tools/cygprofile:cygprofile_unittests",
       "//ui/android:ui_junit_tests",
     ]
     deps -= [
@@ -371,13 +373,14 @@ group("gn_all") {
       "//ash:ash_content_unittests",
       "//ash:ash_shell_with_content",
       "//ash:ash_unittests",
+      "//ash/app_list/presenter:app_list_presenter_unittests",
       "//chromeos:chromeos_unittests",
       "//chromeos/components:chromeos_components_unittests",
+      "//chromeos/components/proximity_auth:proximity_auth_unittests",
       "//chromeos/services:chromeos_services_unittests",
       "//components/session_manager/core",
       "//ui/app_list:app_list_demo",
       "//ui/app_list:app_list_unittests",
-      "//ui/app_list/presenter:app_list_presenter_unittests",
       "//ui/arc:ui_arc_unittests",
       "//ui/chromeos:ui_chromeos_unittests",
     ]
@@ -482,6 +485,9 @@ group("gn_all") {
         "//extensions/shell:app_shell",
         "//extensions/shell/installer:app_shell_installer",
       ]
+      if (is_desktop_linux && is_official_build) {
+        deps += [ "//extensions/shell:app_shell_linux_symbols" ]
+      }
     }
 
     if (enable_nacl) {
@@ -564,13 +570,12 @@ group("gn_all") {
       "//chrome/install_static:install_static_unittests",
       "//chrome/installer/gcapi",
       "//chrome/installer/setup:setup_unittests",
-      "//chrome/installer/zucchini",
-      "//chrome/tools/build/win/syzygy:chrome_dll_syzygy",
       "//chrome_elf:chrome_elf_import_unittests",
       "//chrome_elf:chrome_elf_unittests",
       "//chrome_elf:dll_hash_main",
       "//cloud_print:cloud_print_unittests",
       "//components/wifi:wifi_test",
+      "//components/zucchini",
       "//net:quic_client",
       "//net:quic_server",
       "//notification_helper:notification_helper_unittests",
@@ -591,8 +596,7 @@ group("gn_all") {
     # TODO(thakis): Enable this in cross builds, https://crbug.com/799827
     if (!(is_component_build && is_debug && target_cpu == "x86") &&
         host_os == "win") {
-      deps +=
-          [ "//chrome/installer/mini_installer:next_version_mini_installer" ]
+      deps += [ "//chrome/test/mini_installer:mini_installer_tests" ]
     }
   } else if (!is_android && !is_ios && !is_fuchsia) {
     deps += [ "//third_party/breakpad:symupload($host_toolchain)" ]
@@ -602,7 +606,7 @@ group("gn_all") {
     deps += [ "//chromecast:cast_shell" ]
   }
 
-  if (is_mac || is_win) {
+  if (is_mac || is_win || is_android || (is_linux && !is_chromeos)) {
     deps += [
       "//third_party/crashpad/crashpad:crashpad_tests",
       "//third_party/crashpad/crashpad/handler:crashpad_handler",
@@ -624,10 +628,6 @@ group("gn_all") {
 
   if (!is_android && !is_ios && !is_fuchsia) {
     deps += [ "//content/browser/bluetooth/tools:bluetooth_metrics_hash" ]
-  }
-
-  if (!is_android && !is_ios && !is_chromeos && !is_fuchsia) {
-    deps += [ "//components/proximity_auth:proximity_auth_unittests" ]
   }
 
   if (is_win || is_linux) {
@@ -659,10 +659,10 @@ group("gn_all") {
       "//chrome/installer/util:strings",
       "//chrome/tools/convert_dict",
       "//components/constrained_window:unit_tests",
-      "//components/filesystem:filesystem_service_unittests",
-      "//components/leveldb:leveldb_service_unittests",
       "//components/metrics:serialization",
       "//components/rappor:unit_tests",
+      "//components/services/filesystem:filesystem_service_unittests",
+      "//components/services/leveldb:leveldb_service_unittests",
       "//components/sessions:unit_tests",
       "//media/blink:media_blink_unittests",
       "//media/cast:udp_proxy",
@@ -743,6 +743,7 @@ group("gn_all") {
       "//headless",
       "//headless:headless_shell",
       "//headless:headless_tests",
+      "//webrunner",
     ]
   }
 }
@@ -763,10 +764,10 @@ if (is_win) {
       "//chrome/common/win:eventlog_provider",
       "//chrome/installer/gcapi",
       "//chrome/installer/mini_installer",
-      "//chrome/installer/zucchini",
       "//cloud_print",
       "//cloud_print/virtual_driver/win/port_monitor:copy_gcp_portmon_binaries",
       "//components/policy:pack_policy_templates",
+      "//components/zucchini",
       "//courgette",
       "//courgette:copy_courgette_binaries",
       "//remoting/webapp",
@@ -805,24 +806,6 @@ if (is_win) {
       "//url:url_unittests",
     ]
   }
-
-  group("All_syzygy") {
-    if (is_syzyasan) {
-      deps = [
-        "//chrome/installer/mini_installer:mini_installer",
-        "//chrome/installer/mini_installer:mini_installer_syzygy",
-      ]
-    }
-  }
-
-  if (is_syzyasan) {
-    group("chrome_official_syzyasan_builder") {
-      deps = [
-        ":All_syzygy",
-        ":chrome_official_builder_no_unittests",
-      ]
-    }
-  }
 }
 
 if (is_chromeos) {
@@ -860,7 +843,7 @@ group("gn_visibility") {
 
   if (!is_ios) {
     deps += [ "//v8:postmortem-metadata" ]
-    if (v8_use_snapshot) {
+    if (v8_use_snapshot && !v8_use_external_startup_data) {
       deps += [ "//v8:v8_snapshot" ]
     }
   }
@@ -874,7 +857,7 @@ if (!is_ios) {
 
     deps = [
       ":webkit_layout_tests",
-      "//third_party/WebKit/public:all_blink",
+      "//third_party/blink/public:all_blink",
     ]
   }
 
@@ -915,13 +898,13 @@ if (!is_ios) {
       "//device/bluetooth/public/mojom:fake_bluetooth_interfaces_js_data_deps",
       "//device/usb/public/mojom:mojom_js_data_deps",
       "//device/vr/public/mojom:mojom_js_data_deps",
-      "//media/capture/mojo:image_capture_js_data_deps",
+      "//media/capture/mojom:image_capture_js_data_deps",
       "//mojo/public/interfaces/bindings/tests:test_data_deps",
       "//services/shape_detection/public/mojom:mojom_js_data_deps",
       "//services/device/public/mojom:mojom_js_data_deps",
       "//services/device/public/mojom:generic_sensor_js_data_deps",
-      "//third_party/WebKit/public:blink_devtools_frontend_resources_files",
-      "//third_party/WebKit/public:mojo_bindings_js_data_deps",
+      "//third_party/blink/public:blink_devtools_frontend_resources_files",
+      "//third_party/blink/public:mojo_bindings_js_data_deps",
       "//third_party/mesa:osmesa",
       "//tools/imagediff",
     ]
@@ -1015,7 +998,7 @@ if (!is_ios) {
       "//third_party/WebKit/LayoutTests/SlowTests",
       "//third_party/WebKit/LayoutTests/TestExpectations",
       "//third_party/WebKit/LayoutTests/VirtualTestSuites",
-      "//third_party/WebKit/Source/bindings/scripts/",
+      "//third_party/blink/renderer/bindings/scripts/",
       "//third_party/WebKit/Tools/Scripts/",
       "//third_party/blink/tools/",
       "//third_party/catapult/common/py_utils/",
@@ -1044,6 +1027,7 @@ group("chromium_builder_perf") {
       "//chrome/test:load_library_perf_tests",
       "//chrome/test:performance_test_suite",
       "//chrome/test:telemetry_perf_tests",
+      "//chrome/test:telemetry_perf_tests_experimental",
       "//components/tracing:tracing_perftests",
       "//gpu:command_buffer_perftests",
       "//gpu:gpu_perftests",
@@ -1076,7 +1060,10 @@ group("chromium_builder_perf") {
           [ "//third_party/breakpad:minidump_stackwalk($host_toolchain)" ]
     }
     if (is_win || is_android) {
-      data_deps += [ "//chrome/test:angle_perftests" ]
+      data_deps += [
+        "//components:components_perftests",
+        "//chrome/test:angle_perftests",
+      ]
     }
   }
 }
@@ -1103,12 +1090,6 @@ if (!is_ios && !is_android && !is_chromecast && !is_fuchsia) {
       deps += [
         "//third_party/pdfium/samples:pdfium_test",
         "//v8:v8_shell($v8_snapshot_toolchain)",
-      ]
-    }
-    if (is_win && symbol_level == 2 && target_cpu == "x86" && is_syzyasan) {
-      deps += [
-        "//chrome/tools/build/win/syzygy:chrome_dll_syzygy",
-        "//content/shell:content_shell_syzyasan",
       ]
     }
   }
@@ -1152,6 +1133,15 @@ template("assert_valid_out_dir") {
   assert(
       sources == invoker.actual_sources,
       "Do not use a platform name in your output directory (found \"$root_build_dir\"). http://crbug.com/548283")
+}
+
+if (closure_compile) {
+  group("webui_closure_compile") {
+    data_deps = [
+      "chrome/browser/resources:closure_compile",
+      "ui/webui/resources:closure_compile",
+    ]
+  }
 }
 
 assert_valid_out_dir("_unused") {

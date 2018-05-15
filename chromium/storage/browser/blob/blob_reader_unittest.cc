@@ -154,6 +154,7 @@ class DelayedReadEntry : public disk_cache::Entry {
   int ReadyForSparseIO(const CompletionCallback& callback) override {
     return entry_->ReadyForSparseIO(callback);
   }
+  void SetLastUsedTimeForTest(base::Time time) override { NOTREACHED(); }
 
  private:
   disk_cache::ScopedEntryPtr entry_;
@@ -1059,7 +1060,7 @@ TEST_F(BlobReaderTest, StateErrors) {
   builder1->AppendData(kData);
   InitializeReader(std::move(builder1));
   EXPECT_EQ(BlobReader::Status::NET_ERROR, reader_->SetReadRange(0, 10));
-  EXPECT_EQ(net::ERR_FAILED, reader_->net_error());
+  EXPECT_EQ(net::ERR_UNEXPECTED, reader_->net_error());
   EXPECT_EQ(BlobReader::Status::NET_ERROR,
             reader_->Read(buffer.get(), 10, &bytes_read,
                           base::BindOnce(&SetValue<int>, &async_bytes_read)));
@@ -1172,7 +1173,7 @@ TEST_F(BlobReaderTest, RangeError) {
   scoped_refptr<net::IOBuffer> buffer = CreateBuffer(kDataSize);
   EXPECT_EQ(BlobReader::Status::NET_ERROR,
             reader_->SetReadRange(kDataSize + 1, kReadLength));
-  EXPECT_EQ(net::ERR_FILE_NOT_FOUND, reader_->net_error());
+  EXPECT_EQ(net::ERR_REQUEST_RANGE_NOT_SATISFIABLE, reader_->net_error());
 
   // Case: length too long.
   auto b2 = std::make_unique<BlobDataBuilder>("uuid2");
@@ -1184,7 +1185,7 @@ TEST_F(BlobReaderTest, RangeError) {
   buffer = CreateBuffer(kDataSize + 1);
   EXPECT_EQ(BlobReader::Status::NET_ERROR,
             reader_->SetReadRange(0, kDataSize + 1));
-  EXPECT_EQ(net::ERR_FILE_NOT_FOUND, reader_->net_error());
+  EXPECT_EQ(net::ERR_REQUEST_RANGE_NOT_SATISFIABLE, reader_->net_error());
 }
 
 TEST_F(BlobReaderTest, HandleBeforeAsyncCancel) {

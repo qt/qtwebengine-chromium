@@ -7,8 +7,8 @@
 #include <memory>
 
 #include "base/android/jni_android.h"
+#include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
-#include "base/memory/ptr_util.h"
 #include "components/autofill/android/form_data_android.h"
 #include "components/autofill/core/browser/autofill_handler_proxy.h"
 #include "components/autofill/core/common/autofill_constants.h"
@@ -60,15 +60,24 @@ void AutofillProviderAndroid::OnQueryFormFieldAutofill(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   id_ = id;
 
-  // Only start a new session when form or handler is changed, the change of
-  // handler indicates query from other frame and a new session is needed.
-  //
   // Focus or field value change will also trigger the query, so it should be
   // ignored if the form is same.
-  if (IsCurrentlyLinkedForm(form) && IsCurrentlyLinkedHandler(handler)) {
-    return;
-  }
+  if (ShouldStartNewSession(handler, form))
+    StartNewSession(handler, form, field, bounding_box);
+}
 
+bool AutofillProviderAndroid::ShouldStartNewSession(
+    AutofillHandlerProxy* handler,
+    const FormData& form) {
+  // Only start a new session when form or handler is changed, the change of
+  // handler indicates query from other frame and a new session is needed.
+  return !IsCurrentlyLinkedForm(form) || !IsCurrentlyLinkedHandler(handler);
+}
+
+void AutofillProviderAndroid::StartNewSession(AutofillHandlerProxy* handler,
+                                              const FormData& form,
+                                              const FormFieldData& field,
+                                              const gfx::RectF& bounding_box) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
@@ -106,22 +115,7 @@ void AutofillProviderAndroid::OnTextFieldDidChange(
     const FormFieldData& field,
     const gfx::RectF& bounding_box,
     const base::TimeTicks timestamp) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  size_t index;
-  if (!IsCurrentlyLinkedHandler(handler) || !IsCurrentlyLinkedForm(form) ||
-      !form_->GetSimilarFieldIndex(field, &index))
-    return;
-
-  form_->OnTextFieldDidChange(index, field.value);
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return;
-
-  gfx::RectF transformed_bounding = ToClientAreaBound(bounding_box);
-  Java_AutofillProvider_onTextFieldDidChange(
-      env, obj, index, transformed_bounding.x(), transformed_bounding.y(),
-      transformed_bounding.width(), transformed_bounding.height());
+  FireFormFieldDidChanged(handler, form, field, bounding_box);
 }
 
 void AutofillProviderAndroid::OnTextFieldDidScroll(
@@ -135,7 +129,7 @@ void AutofillProviderAndroid::OnTextFieldDidScroll(
       !form_->GetSimilarFieldIndex(field, &index))
     return;
 
-  form_->OnTextFieldDidChange(index, field.value);
+  form_->OnFormFieldDidChange(index, field.value);
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
@@ -145,6 +139,16 @@ void AutofillProviderAndroid::OnTextFieldDidScroll(
   Java_AutofillProvider_onTextFieldDidScroll(
       env, obj, index, transformed_bounding.x(), transformed_bounding.y(),
       transformed_bounding.width(), transformed_bounding.height());
+}
+
+void AutofillProviderAndroid::OnSelectControlDidChange(
+    AutofillHandlerProxy* handler,
+    const FormData& form,
+    const FormFieldData& field,
+    const gfx::RectF& bounding_box) {
+  if (ShouldStartNewSession(handler, form))
+    StartNewSession(handler, form, field, bounding_box);
+  FireFormFieldDidChanged(handler, form, field, bounding_box);
 }
 
 void AutofillProviderAndroid::FireSuccessfulSubmission(
@@ -217,6 +221,29 @@ void AutofillProviderAndroid::OnFocusChanged(bool focus_on_form,
       bounding_box.width(), bounding_box.height());
 }
 
+void AutofillProviderAndroid::FireFormFieldDidChanged(
+    AutofillHandlerProxy* handler,
+    const FormData& form,
+    const FormFieldData& field,
+    const gfx::RectF& bounding_box) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  size_t index;
+  if (!IsCurrentlyLinkedHandler(handler) || !IsCurrentlyLinkedForm(form) ||
+      !form_->GetSimilarFieldIndex(field, &index))
+    return;
+
+  form_->OnFormFieldDidChange(index, field.value);
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+
+  gfx::RectF transformed_bounding = ToClientAreaBound(bounding_box);
+  Java_AutofillProvider_onFormFieldDidChange(
+      env, obj, index, transformed_bounding.x(), transformed_bounding.y(),
+      transformed_bounding.width(), transformed_bounding.height());
+}
+
 void AutofillProviderAndroid::OnDidFillAutofillFormData(
     AutofillHandlerProxy* handler,
     const FormData& form,
@@ -236,6 +263,7 @@ void AutofillProviderAndroid::OnDidFillAutofillFormData(
 void AutofillProviderAndroid::OnFormsSeen(AutofillHandlerProxy* handler,
                                           const std::vector<FormData>& forms,
                                           const base::TimeTicks) {
+  handler_for_testing_ = handler->GetWeakPtr();
   if (!check_submission_)
     return;
 

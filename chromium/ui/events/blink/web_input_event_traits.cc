@@ -6,10 +6,10 @@
 
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
-#include "third_party/WebKit/public/platform/WebGestureEvent.h"
-#include "third_party/WebKit/public/platform/WebKeyboardEvent.h"
-#include "third_party/WebKit/public/platform/WebMouseWheelEvent.h"
-#include "third_party/WebKit/public/platform/WebTouchEvent.h"
+#include "third_party/blink/public/platform/web_gesture_event.h"
+#include "third_party/blink/public/platform/web_keyboard_event.h"
+#include "third_party/blink/public/platform/web_mouse_wheel_event.h"
+#include "third_party/blink/public/platform/web_touch_event.h"
 
 using base::StringAppendF;
 using base::SStringPrintf;
@@ -56,14 +56,16 @@ void ApppendEventDetails(const WebMouseWheelEvent& event, std::string* result) {
 }
 
 void ApppendEventDetails(const WebGestureEvent& event, std::string* result) {
-  StringAppendF(
-      result,
-      "{\n Pos: (%d, %d)\n GlobalPos: (%d, %d)\n SourceDevice: %d\n"
-      " RawData: (%f, %f, %f, %f, %d)\n}",
-      event.x, event.y, event.global_x, event.global_y, event.source_device,
-      event.data.scroll_update.delta_x, event.data.scroll_update.delta_y,
-      event.data.scroll_update.velocity_x, event.data.scroll_update.velocity_y,
-      event.data.scroll_update.previous_update_in_sequence_prevented);
+  StringAppendF(result,
+                "{\n Pos: (%f, %f)\n GlobalPos: (%f, %f)\n SourceDevice: %d\n"
+                " RawData: (%f, %f, %f, %f, %d)\n}",
+                event.PositionInWidget().x, event.PositionInWidget().y,
+                event.PositionInScreen().x, event.PositionInScreen().y,
+                event.SourceDevice(), event.data.scroll_update.delta_x,
+                event.data.scroll_update.delta_y,
+                event.data.scroll_update.velocity_x,
+                event.data.scroll_update.velocity_y,
+                event.data.scroll_update.previous_update_in_sequence_prevented);
 }
 
 void ApppendTouchPointDetails(const WebTouchPoint& point, std::string* result) {
@@ -247,10 +249,10 @@ uint32_t WebInputEventTraits::GetUniqueTouchEventId(
 LatencyInfo WebInputEventTraits::CreateLatencyInfoForWebGestureEvent(
     const WebGestureEvent& event) {
   SourceEventType source_event_type = SourceEventType::UNKNOWN;
-  if (event.source_device ==
+  if (event.SourceDevice() ==
       blink::WebGestureDevice::kWebGestureDeviceTouchpad) {
     source_event_type = SourceEventType::WHEEL;
-  } else if (event.source_device ==
+  } else if (event.SourceDevice() ==
              blink::WebGestureDevice::kWebGestureDeviceTouchscreen) {
     source_event_type = SourceEventType::TOUCH;
   }

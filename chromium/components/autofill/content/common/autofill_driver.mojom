@@ -6,8 +6,8 @@ module autofill.mojom;
 
 import "components/autofill/content/common/autofill_types.mojom";
 import "mojo/public/mojom/base/string16.mojom";
-import "mojo/common/text_direction.mojom";
-import "mojo/common/time.mojom";
+import "mojo/public/mojom/base/text_direction.mojom";
+import "mojo/public/mojom/base/time.mojom";
 import "ui/gfx/geometry/mojo/geometry.mojom";
 import "url/mojom/url.mojom";
 
@@ -16,7 +16,7 @@ import "url/mojom/url.mojom";
 interface AutofillDriver {
   // Notification that forms have been seen that are candidates for
   // filling/submitting by the AutofillManager.
-  FormsSeen(array<FormData> forms, mojo.common.mojom.TimeTicks timestamp);
+  FormsSeen(array<FormData> forms, mojo_base.mojom.TimeTicks timestamp);
 
   // Notification that a form has been submitted. The |known_success| indicates
   // whether the submission succeeded or not. Currently, we assume submission
@@ -24,18 +24,26 @@ interface AutofillDriver {
   FormSubmitted(FormData form,
                 bool known_success,
                 SubmissionSource source,
-                mojo.common.mojom.TimeTicks timestamp);
+                mojo_base.mojom.TimeTicks timestamp);
 
   // Notification that a form field's value has changed.
   TextFieldDidChange(FormData form,
                      FormFieldData field,
                      gfx.mojom.RectF bounding_box,
-                     mojo.common.mojom.TimeTicks timestamp);
+                     mojo_base.mojom.TimeTicks timestamp);
 
   // Notification that a form field has scrolled.
   TextFieldDidScroll(FormData form,
                      FormFieldData field,
                      gfx.mojom.RectF bounding_box);
+
+  // Notification that a form select control has changed.
+  SelectControlDidChange(FormData form,
+                         FormFieldData field,
+                         gfx.mojom.RectF bounding_box);
+
+  // Notification that a select element's options were modified.
+  SelectFieldOptionsDidChange(FormData form);
 
   // Queries the browser for Autofill suggestions for a form input field.
   // |id| is the request ID which is used to map responses correctly.
@@ -56,7 +64,7 @@ interface AutofillDriver {
                    gfx.mojom.RectF bounding_box);
 
   // Sent when a form is filled with Autofill suggestions.
-  DidFillAutofillFormData(FormData form, mojo.common.mojom.TimeTicks timestamp);
+  DidFillAutofillFormData(FormData form, mojo_base.mojom.TimeTicks timestamp);
 
   // Sent when a form is previewed with Autofill suggestions.
   DidPreviewAutofillFormData();
@@ -111,7 +119,7 @@ interface PasswordManagerDriver {
   // associated with |key|. The popup will use |text_direction| for displaying
   // text.
   ShowPasswordSuggestions(int32 key,
-                          mojo.common.mojom.TextDirection text_direction,
+                          mojo_base.mojom.TextDirection text_direction,
                           mojo_base.mojom.String16 typed_username,
                           int32 options, gfx.mojom.RectF bounds);
 
@@ -119,14 +127,14 @@ interface PasswordManagerDriver {
   // is not secure. The popup will use |text_direction| for displaying
   // text. This popup is shown when a password form on a non-secure page is
   // autofilled on page load.
-  ShowNotSecureWarning(mojo.common.mojom.TextDirection text_direction,
+  ShowNotSecureWarning(mojo_base.mojom.TextDirection text_direction,
                        gfx.mojom.RectF bounds);
 
 
   // Instructs the browser to show a suggestion, which will redirect the user to
   // the list of all saved passwords. The popup will use |text_direction| for
   // displaying text.
-  ShowManualFallbackSuggestion(mojo.common.mojom.TextDirection text_direction,
+  ShowManualFallbackSuggestion(mojo_base.mojom.TextDirection text_direction,
                            gfx.mojom.RectF bounds);
 
   // Instructs the browser to presave the form with generated password.

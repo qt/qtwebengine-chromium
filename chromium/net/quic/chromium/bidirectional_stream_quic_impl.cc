@@ -12,6 +12,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/timer/timer.h"
 #include "net/http/bidirectional_stream_request_info.h"
+#include "net/http/http_util.h"
 #include "net/quic/core/quic_connection.h"
 #include "net/quic/platform/api/quic_string_piece.h"
 #include "net/socket/next_proto.h"
@@ -68,7 +69,8 @@ void BidirectionalStreamQuicImpl::Start(
     const NetLogWithSource& net_log,
     bool send_request_headers_automatically,
     BidirectionalStreamImpl::Delegate* delegate,
-    std::unique_ptr<base::Timer> /* timer */) {
+    std::unique_ptr<base::Timer> timer,
+    const NetworkTrafficAnnotationTag& traffic_annotation) {
   ScopedBoolSaver saver(&may_invoke_callbacks_, false);
   DCHECK(!stream_);
   CHECK(delegate);
@@ -79,12 +81,11 @@ void BidirectionalStreamQuicImpl::Start(
   delegate_ = delegate;
   request_info_ = request_info;
 
-  // TODO(https://crbug.com/656607): Add proper annotation here.
   int rv = session_->RequestStream(
-      request_info_->method == "POST",
+      !HttpUtil::IsMethodSafe(request_info_->method),
       base::Bind(&BidirectionalStreamQuicImpl::OnStreamReady,
                  weak_factory_.GetWeakPtr()),
-      NO_TRAFFIC_ANNOTATION_BUG_656607);
+      traffic_annotation);
   if (rv == ERR_IO_PENDING)
     return;
 

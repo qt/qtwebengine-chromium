@@ -1,0 +1,77 @@
+<link rel="import" href="chrome://resources/html/polymer.html">
+
+<link rel="import" href="google_tts_engine_subpage.html">
+<link rel="import" href="../controls/settings_slider.html">
+<link rel="import" href="../i18n_setup.html">
+<link rel="import" href="../settings_shared_css.html">
+<link rel="import" href="../settings_vars_css.html">
+<link rel="import" href="chrome://resources/polymer/v1_0/paper-button/paper-button.html">
+<link rel="import" href="chrome://resources/polymer/v1_0/paper-input/paper-textarea.html">
+
+<dom-module id="settings-tts-subpage">
+  <template>
+    <style include="settings-shared">
+      h2 {
+        -webkit-padding-start: var(--settings-box-row-padding);
+      }
+
+      .settings-box {
+        -webkit-margin-end: var(--settings-box-row-padding);
+        -webkit-margin-start: var(--settings-box-row-indent);
+        -webkit-padding-end: 0;
+        -webkit-padding-start: 0;
+      }
+    </style>
+    <h2>$i18n{textToSpeechVoices}</h2>
+    <div class="settings-box block first">
+    </div>
+
+    <h2>$i18n{textToSpeechProperties}</h2>
+    <div class="settings-box first">
+      <div class="start">$i18n{textToSpeechRate}</div>
+      <settings-slider
+          pref="{{prefs.settings.tts.speech_rate}}"
+          min="0.2" max="8.0">
+      </settings-slider>
+    </div>
+    <div class="settings-box continuation">
+      <div class="start">$i18n{textToSpeechPitch}</div>
+      <settings-slider
+          pref="{{prefs.settings.tts.speech_pitch}}"
+          min="0.2" max="3.0">
+      </settings-slider>
+    </div>
+    <h2>$i18n{textToSpeechPreviewHeading}</h2>
+    <div class="settings-box first">
+      <div class="start">
+        <paper-textarea id="previewInput" type="text"
+            label="$i18n{textToSpeechPreviewInputLabel}"
+            always-float-label value="$i18n{textToSpeechPreviewInput}">
+        </paper-textarea>
+      </div>
+      <paper-button on-click="onPreviewTtsClick_">
+          $i18n{textToSpeechPreviewPlay}
+      </paper-button>
+    </div>
+    <h2>$i18n{textToSpeechEngines}</h2>
+    <div class="settings-box block first">
+      <a href="">$i18n{textToSpeechInstallEngines}</a>
+    </div>
+
+    <div class="settings-box two-line"
+        on-click="onManageGoogleTtsEngineSettingsClick_"
+        actionable>
+      <div class="start" id="appearanceSettingsPrimary">
+        $i18n{manageGoogleTtsEngineSettings}
+        <div class="secondary" id="appearanceSettingsSecondary">
+          $i18n{googleTtsEngineSettingsLinkDescription}
+        </div>
+      </div>
+      <paper-icon-button-light class="subpage-arrow">
+        <button aria-labelledby="appearanceSettingsPrimary"
+            aria-describedby="appearanceSettingsSecondary"></button>
+      </paper-icon-button-light>
+    </div>
+  </template>
+  <script src="tts_subpage.js"></script>
+</dom-module>

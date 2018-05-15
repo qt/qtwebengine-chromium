@@ -62,30 +62,32 @@ TcpCubicSenderBytes::~TcpCubicSenderBytes() {}
 void TcpCubicSenderBytes::SetFromConfig(const QuicConfig& config,
                                         Perspective perspective) {
   if (perspective == Perspective::IS_SERVER) {
-    if (config.HasReceivedConnectionOptions() &&
-        ContainsQuicTag(config.ReceivedConnectionOptions(), kIW03)) {
-      // Initial window experiment.
-      SetCongestionWindowInPackets(3);
-    }
-    if (config.HasReceivedConnectionOptions() &&
-        ContainsQuicTag(config.ReceivedConnectionOptions(), kIW10)) {
-      // Initial window experiment.
-      SetCongestionWindowInPackets(10);
-    }
-    if (config.HasReceivedConnectionOptions() &&
-        ContainsQuicTag(config.ReceivedConnectionOptions(), kIW20)) {
-      // Initial window experiment.
-      SetCongestionWindowInPackets(20);
-    }
-    if (config.HasReceivedConnectionOptions() &&
-        ContainsQuicTag(config.ReceivedConnectionOptions(), kIW50)) {
-      // Initial window experiment.
-      SetCongestionWindowInPackets(50);
-    }
-    if (config.HasReceivedConnectionOptions() &&
-        ContainsQuicTag(config.ReceivedConnectionOptions(), kMIN1)) {
-      // Min CWND experiment.
-      SetMinCongestionWindowInPackets(1);
+    if (!GetQuicReloadableFlag(quic_unified_iw_options)) {
+      if (config.HasReceivedConnectionOptions() &&
+          ContainsQuicTag(config.ReceivedConnectionOptions(), kIW03)) {
+        // Initial window experiment.
+        SetInitialCongestionWindowInPackets(3);
+      }
+      if (config.HasReceivedConnectionOptions() &&
+          ContainsQuicTag(config.ReceivedConnectionOptions(), kIW10)) {
+        // Initial window experiment.
+        SetInitialCongestionWindowInPackets(10);
+      }
+      if (config.HasReceivedConnectionOptions() &&
+          ContainsQuicTag(config.ReceivedConnectionOptions(), kIW20)) {
+        // Initial window experiment.
+        SetInitialCongestionWindowInPackets(20);
+      }
+      if (config.HasReceivedConnectionOptions() &&
+          ContainsQuicTag(config.ReceivedConnectionOptions(), kIW50)) {
+        // Initial window experiment.
+        SetInitialCongestionWindowInPackets(50);
+      }
+      if (config.HasReceivedConnectionOptions() &&
+          ContainsQuicTag(config.ReceivedConnectionOptions(), kMIN1)) {
+        // Min CWND experiment.
+        SetMinCongestionWindowInPackets(1);
+      }
     }
     if (config.HasReceivedConnectionOptions() &&
         ContainsQuicTag(config.ReceivedConnectionOptions(), kMIN4)) {
@@ -272,7 +274,7 @@ void TcpCubicSenderBytes::SetCongestionWindowFromBandwidthAndRtt(
                         kMaxResumptionCongestionWindow * kDefaultTCPMSS));
 }
 
-void TcpCubicSenderBytes::SetCongestionWindowInPackets(
+void TcpCubicSenderBytes::SetInitialCongestionWindowInPackets(
     QuicPacketCount congestion_window) {
   congestion_window_ = congestion_window * kDefaultTCPMSS;
 }
@@ -321,7 +323,7 @@ void TcpCubicSenderBytes::OnPacketLost(QuicPacketNumber packet_number,
     prr_.OnPacketLost(prior_in_flight);
   }
 
-  // TODO(jri): Separate out all of slow start into a separate class.
+  // TODO(b/77268641): Separate out all of slow start into a separate class.
   if (slow_start_large_reduction_ && InSlowStart()) {
     DCHECK_LT(kDefaultTCPMSS, congestion_window_);
     if (congestion_window_ >= 2 * initial_tcp_congestion_window_) {

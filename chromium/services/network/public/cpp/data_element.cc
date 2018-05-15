@@ -61,16 +61,41 @@ void DataElement::SetToBlobRange(const std::string& blob_uuid,
 }
 
 void DataElement::SetToDataPipe(mojom::DataPipeGetterPtr data_pipe_getter) {
+  DCHECK(data_pipe_getter);
   type_ = TYPE_DATA_PIPE;
-  data_pipe_getter_ = std::move(data_pipe_getter);
+  data_pipe_getter_ = data_pipe_getter.PassInterface();
+}
+
+void DataElement::SetToChunkedDataPipe(
+    mojom::ChunkedDataPipeGetterPtr chunked_data_pipe_getter) {
+  type_ = TYPE_CHUNKED_DATA_PIPE;
+  chunked_data_pipe_getter_ = std::move(chunked_data_pipe_getter);
 }
 
 base::File DataElement::ReleaseFile() {
   return std::move(file_);
 }
 
-mojom::DataPipeGetterPtr DataElement::ReleaseDataPipeGetter() {
+mojom::DataPipeGetterPtrInfo DataElement::ReleaseDataPipeGetter() {
+  DCHECK_EQ(TYPE_DATA_PIPE, type_);
+  DCHECK(data_pipe_getter_.is_valid());
   return std::move(data_pipe_getter_);
+}
+
+mojom::DataPipeGetterPtr DataElement::CloneDataPipeGetter() const {
+  DCHECK_EQ(TYPE_DATA_PIPE, type_);
+  DCHECK(data_pipe_getter_.is_valid());
+  auto* mutable_this = const_cast<DataElement*>(this);
+  mojom::DataPipeGetterPtr owned(std::move(mutable_this->data_pipe_getter_));
+  mojom::DataPipeGetterPtr clone;
+  owned->Clone(MakeRequest(&clone));
+  mutable_this->data_pipe_getter_ = owned.PassInterface();
+  return clone;
+}
+
+mojom::ChunkedDataPipeGetterPtr DataElement::ReleaseChunkedDataPipeGetter() {
+  DCHECK_EQ(TYPE_CHUNKED_DATA_PIPE, type_);
+  return std::move(chunked_data_pipe_getter_);
 }
 
 void PrintTo(const DataElement& x, std::ostream* os) {
@@ -101,6 +126,9 @@ void PrintTo(const DataElement& x, std::ostream* os) {
     case DataElement::TYPE_DATA_PIPE:
       *os << "TYPE_DATA_PIPE";
       break;
+    case DataElement::TYPE_CHUNKED_DATA_PIPE:
+      *os << "TYPE_CHUNKED_DATA_PIPE";
+      break;
     case DataElement::TYPE_UNKNOWN:
       *os << "TYPE_UNKNOWN";
       break;
@@ -124,6 +152,8 @@ bool operator==(const DataElement& a, const DataElement& b) {
     case DataElement::TYPE_BLOB:
       return a.blob_uuid() == b.blob_uuid();
     case DataElement::TYPE_DATA_PIPE:
+      return false;
+    case DataElement::TYPE_CHUNKED_DATA_PIPE:
       return false;
     case DataElement::TYPE_UNKNOWN:
       NOTREACHED();

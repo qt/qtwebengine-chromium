@@ -636,8 +636,7 @@ bool NetworkQualityEstimator::RequestProvidesRTTObservation(
   DCHECK(thread_checker_.CalledOnValidThread());
 
   bool private_network_request = nqe::internal::IsPrivateHost(
-      request.context()->host_resolver(),
-      HostPortPair(request.url().host(), request.url().EffectiveIntPort()));
+      request.context()->host_resolver(), HostPortPair::FromURL(request.url()));
 
   return (use_localhost_requests_ || !private_network_request) &&
          // Verify that response headers are received, so it can be ensured that
@@ -1473,7 +1472,7 @@ bool NetworkQualityEstimator::ReadCachedNetworkQualityEstimate() {
 }
 
 void NetworkQualityEstimator::SetTickClockForTesting(
-    base::TickClock* tick_clock) {
+    const base::TickClock* tick_clock) {
   DCHECK(thread_checker_.CalledOnValidThread());
   tick_clock_ = tick_clock;
   http_rtt_ms_observations_.SetTickClockForTesting(tick_clock_);

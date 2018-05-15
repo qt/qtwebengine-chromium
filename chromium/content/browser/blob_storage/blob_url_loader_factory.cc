@@ -9,7 +9,6 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "storage/browser/blob/blob_data_handle.h"
 #include "storage/browser/blob/blob_storage_context.h"
@@ -71,6 +70,7 @@ void BlobURLLoaderFactory::CreateLoaderAndStart(
     const network::ResourceRequest& request,
     network::mojom::URLLoaderClientPtr client,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
+  DCHECK(!request.download_to_file);
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   std::unique_ptr<storage::BlobDataHandle> blob_handle;
   if (blob_storage_context_) {

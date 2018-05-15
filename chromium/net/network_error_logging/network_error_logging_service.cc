@@ -10,7 +10,7 @@
 
 #include "base/json/json_reader.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/rand_util.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/tick_clock.h"
@@ -20,7 +20,6 @@
 #include "net/base/net_errors.h"
 #include "net/network_error_logging/network_error_logging_delegate.h"
 #include "net/reporting/reporting_service.h"
-#include "net/socket/next_proto.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -28,9 +27,12 @@ namespace net {
 
 namespace {
 
+const int kMaxJsonSize = 16 * 1024;
+const int kMaxJsonDepth = 4;
+
 const char kReportToKey[] = "report-to";
 const char kMaxAgeKey[] = "max-age";
-const char kIncludeSubdomainsKey[] = "includeSubdomains";
+const char kIncludeSubdomainsKey[] = "include-subdomains";
 const char kSuccessFractionKey[] = "success-fraction";
 const char kFailureFractionKey[] = "failure-fraction";
 
@@ -114,9 +116,52 @@ bool IsHttpError(const NetworkErrorLoggingService::RequestDetails& request) {
   return request.status_code >= 400 && request.status_code < 600;
 }
 
-bool RequestWasSuccessful(
-    const NetworkErrorLoggingService::RequestDetails& request) {
-  return request.type == OK && !IsHttpError(request);
+enum class HeaderOutcome {
+  DISCARDED_NO_NETWORK_ERROR_LOGGING_SERVICE = 0,
+  DISCARDED_INVALID_SSL_INFO = 1,
+  DISCARDED_CERT_STATUS_ERROR = 2,
+
+  DISCARDED_INSECURE_ORIGIN = 3,
+
+  DISCARDED_JSON_TOO_BIG = 4,
+  DISCARDED_JSON_INVALID = 5,
+  DISCARDED_NOT_DICTIONARY = 6,
+  DISCARDED_TTL_MISSING = 7,
+  DISCARDED_TTL_NOT_INTEGER = 8,
+  DISCARDED_TTL_NEGATIVE = 9,
+  DISCARDED_REPORT_TO_MISSING = 10,
+  DISCARDED_REPORT_TO_NOT_STRING = 11,
+
+  REMOVED = 12,
+  SET = 13,
+
+  MAX
+};
+
+void RecordHeaderOutcome(HeaderOutcome outcome) {
+  UMA_HISTOGRAM_ENUMERATION("Net.NetworkErrorLogging.HeaderOutcome", outcome,
+                            HeaderOutcome::MAX);
+}
+
+enum class RequestOutcome {
+  DISCARDED_NO_NETWORK_ERROR_LOGGING_SERVICE = 0,
+
+  DISCARDED_NO_REPORTING_SERVICE = 1,
+  DISCARDED_INSECURE_ORIGIN = 2,
+  DISCARDED_NO_ORIGIN_POLICY = 3,
+  DISCARDED_UNMAPPED_ERROR = 4,
+  DISCARDED_REPORTING_UPLOAD = 5,
+  DISCARDED_UNSAMPLED_SUCCESS = 6,
+  DISCARDED_UNSAMPLED_FAILURE = 7,
+
+  QUEUED = 8,
+
+  MAX
+};
+
+void RecordRequestOutcome(RequestOutcome outcome) {
+  UMA_HISTOGRAM_ENUMERATION("Net.NetworkErrorLogging.RequestOutcome", outcome,
+                            RequestOutcome::MAX);
 }
 
 class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
@@ -127,18 +172,23 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
     DCHECK(delegate_);
   }
 
-  // NetworkErrorLoggingService implementation:
-
   ~NetworkErrorLoggingServiceImpl() override = default;
+
+  // NetworkErrorLoggingService implementation:
 
   void OnHeader(const url::Origin& origin, const std::string& value) override {
     // NEL is only available to secure origins, so don't permit insecure origins
     // to set policies.
-    if (!origin.GetURL().SchemeIsCryptographic())
+    if (!origin.GetURL().SchemeIsCryptographic()) {
+      RecordHeaderOutcome(HeaderOutcome::DISCARDED_INSECURE_ORIGIN);
       return;
+    }
 
     OriginPolicy policy;
-    if (!ParseHeader(value, tick_clock_->NowTicks(), &policy))
+    HeaderOutcome outcome =
+        ParseHeader(value, tick_clock_->NowTicks(), &policy);
+    RecordHeaderOutcome(outcome);
+    if (outcome != HeaderOutcome::SET && outcome != HeaderOutcome::REMOVED)
       return;
 
     PolicyMap::iterator it = policies_.find(origin);
@@ -156,43 +206,70 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
   }
 
   void OnRequest(const RequestDetails& details) override {
-    if (!reporting_service_)
+    if (!reporting_service_) {
+      RecordRequestOutcome(RequestOutcome::DISCARDED_NO_REPORTING_SERVICE);
       return;
-
-    // It is expected for Reporting uploads to terminate with ERR_ABORTED, since
-    // the ReportingUploader cancels them after receiving the response code and
-    // headers.
-    if (details.is_reporting_upload && details.type == ERR_ABORTED)
-      return;
+    }
 
     // NEL is only available to secure origins, so ignore network errors from
     // insecure origins. (The check in OnHeader prevents insecure origins from
     // setting policies, but this check is needed to ensure that insecure
     // origins can't match wildcard policies from secure origins.)
-    if (!details.uri.SchemeIsCryptographic())
+    if (!details.uri.SchemeIsCryptographic()) {
+      RecordRequestOutcome(RequestOutcome::DISCARDED_INSECURE_ORIGIN);
       return;
+    }
 
     const OriginPolicy* policy =
         FindPolicyForOrigin(url::Origin::Create(details.uri));
-    if (!policy)
+    if (!policy) {
+      RecordRequestOutcome(RequestOutcome::DISCARDED_NO_ORIGIN_POLICY);
       return;
+    }
+
+    Error type = details.type;
+    // It is expected for Reporting uploads to terminate with ERR_ABORTED, since
+    // the ReportingUploader cancels them after receiving the response code and
+    // headers.
+    if (details.reporting_upload_depth > 0 && type == ERR_ABORTED) {
+      // TODO(juliatuttle): Modify ReportingUploader to drain successful uploads
+      // instead of aborting them, so NEL can properly report on aborted
+      // requests.
+      type = OK;
+    }
 
     std::string type_string;
-    if (!GetTypeFromNetError(details.type, &type_string))
+    if (!GetTypeFromNetError(type, &type_string)) {
+      RecordRequestOutcome(RequestOutcome::DISCARDED_UNMAPPED_ERROR);
       return;
+    }
 
     if (IsHttpError(details))
       type_string = kHttpErrorType;
 
-    double sampling_fraction = RequestWasSuccessful(details)
-                                   ? policy->success_fraction
-                                   : policy->failure_fraction;
-    if (base::RandDouble() >= sampling_fraction)
+    // This check would go earlier, but the histogram bucket will be more
+    // meaningful if it only includes reports that otherwise could have been
+    // uploaded.
+    if (details.reporting_upload_depth > kMaxNestedReportDepth) {
+      RecordRequestOutcome(RequestOutcome::DISCARDED_REPORTING_UPLOAD);
       return;
+    }
+
+    bool success = (type == OK) && !IsHttpError(details);
+    double sampling_fraction =
+        success ? policy->success_fraction : policy->failure_fraction;
+    if (base::RandDouble() >= sampling_fraction) {
+      RecordRequestOutcome(success
+                               ? RequestOutcome::DISCARDED_UNSAMPLED_SUCCESS
+                               : RequestOutcome::DISCARDED_UNSAMPLED_FAILURE);
+      return;
+    }
 
     reporting_service_->QueueReport(
         details.uri, policy->report_to, kReportType,
-        CreateReportBody(type_string, sampling_fraction, details));
+        CreateReportBody(type_string, sampling_fraction, details),
+        details.reporting_upload_depth);
+    RecordRequestOutcome(RequestOutcome::QUEUED);
   }
 
   void RemoveBrowsingData(const base::RepeatingCallback<bool(const GURL&)>&
@@ -234,7 +311,8 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
   // Would be unordered_map, but url::Origin has no hash.
   using PolicyMap = std::map<url::Origin, OriginPolicy>;
 
-  // Wildcard policies are policies for which the includeSubdomains flag is set.
+  // Wildcard policies are policies for which the include-subdomains flag is
+  // set.
   //
   // Wildcard policies are accessed by domain name, not full origin, so there
   // can be multiple wildcard policies per domain name.
@@ -252,29 +330,41 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
   PolicyMap policies_;
   WildcardPolicyMap wildcard_policies_;
 
-  bool ParseHeader(const std::string& json_value,
-                   base::TimeTicks now_ticks,
-                   OriginPolicy* policy_out) const {
+  HeaderOutcome ParseHeader(const std::string& json_value,
+                            base::TimeTicks now_ticks,
+                            OriginPolicy* policy_out) const {
     DCHECK(policy_out);
 
-    std::unique_ptr<base::Value> value = base::JSONReader::Read(json_value);
+    if (json_value.size() > kMaxJsonSize)
+      return HeaderOutcome::DISCARDED_JSON_TOO_BIG;
+
+    std::unique_ptr<base::Value> value =
+        base::JSONReader::Read(json_value, base::JSON_PARSE_RFC, kMaxJsonDepth);
     if (!value)
-      return false;
+      return HeaderOutcome::DISCARDED_JSON_INVALID;
 
     const base::DictionaryValue* dict = nullptr;
     if (!value->GetAsDictionary(&dict))
-      return false;
+      return HeaderOutcome::DISCARDED_NOT_DICTIONARY;
 
+    if (!dict->HasKey(kMaxAgeKey))
+      return HeaderOutcome::DISCARDED_TTL_MISSING;
     int max_age_sec;
-    if (!dict->GetInteger(kMaxAgeKey, &max_age_sec) || max_age_sec < 0)
-      return false;
+    if (!dict->GetInteger(kMaxAgeKey, &max_age_sec))
+      return HeaderOutcome::DISCARDED_TTL_NOT_INTEGER;
+    if (max_age_sec < 0)
+      return HeaderOutcome::DISCARDED_TTL_NEGATIVE;
 
     std::string report_to;
-    if (!dict->GetString(kReportToKey, &report_to) && max_age_sec > 0)
-      return false;
+    if (max_age_sec > 0) {
+      if (!dict->HasKey(kReportToKey))
+        return HeaderOutcome::DISCARDED_REPORT_TO_MISSING;
+      if (!dict->GetString(kReportToKey, &report_to))
+        return HeaderOutcome::DISCARDED_REPORT_TO_NOT_STRING;
+    }
 
     bool include_subdomains = false;
-    // includeSubdomains is optional and defaults to false, so it's okay if
+    // include-subdomains is optional and defaults to false, so it's okay if
     // GetBoolean fails.
     dict->GetBoolean(kIncludeSubdomainsKey, &include_subdomains);
 
@@ -289,17 +379,17 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
     dict->GetDouble(kFailureFractionKey, &failure_fraction);
 
     policy_out->report_to = report_to;
-    if (max_age_sec > 0) {
-      policy_out->expires =
-          now_ticks + base::TimeDelta::FromSeconds(max_age_sec);
-    } else {
-      policy_out->expires = base::TimeTicks();
-    }
     policy_out->include_subdomains = include_subdomains;
     policy_out->success_fraction = success_fraction;
     policy_out->failure_fraction = failure_fraction;
-
-    return true;
+    if (max_age_sec > 0) {
+      policy_out->expires =
+          now_ticks + base::TimeDelta::FromSeconds(max_age_sec);
+      return HeaderOutcome::SET;
+    } else {
+      policy_out->expires = base::TimeTicks();
+      return HeaderOutcome::REMOVED;
+    }
   }
 
   const OriginPolicy* FindPolicyForOrigin(const url::Origin& origin) const {
@@ -331,7 +421,7 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
     // TODO(juliatuttle): Come up with a deterministic way to resolve these.
     if (it->second.size() > 1) {
       LOG(WARNING) << "Domain " << domain
-                   << " matches multiple origins with includeSubdomains; "
+                   << " matches multiple origins with include-subdomains; "
                    << "choosing one arbitrarily.";
     }
 
@@ -384,10 +474,7 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
     body->SetString(kReferrerKey, details.referrer.spec());
     body->SetDouble(kSamplingFractionKey, sampling_fraction);
     body->SetString(kServerIpKey, details.server_ip.ToString());
-    std::string protocol = NextProtoToString(details.protocol);
-    if (protocol == "unknown")
-      protocol = "";
-    body->SetString(kProtocolKey, protocol);
+    body->SetString(kProtocolKey, details.protocol);
     body->SetInteger(kStatusCodeKey, details.status_code);
     body->SetInteger(kElapsedTimeKey, details.elapsed_time.InMilliseconds());
     body->SetString(kTypeKey, type);
@@ -406,9 +493,21 @@ NetworkErrorLoggingService::RequestDetails::RequestDetails(
     const RequestDetails& other) = default;
 
 NetworkErrorLoggingService::RequestDetails::~RequestDetails() = default;
+
+// static:
+
 const char NetworkErrorLoggingService::kHeaderName[] = "NEL";
 
 const char NetworkErrorLoggingService::kReportType[] = "network-error";
+
+// Allow NEL reports on regular requests, plus NEL reports on Reporting uploads
+// containing only regular requests, but do not allow NEL reports on Reporting
+// uploads containing Reporting uploads.
+//
+// This prevents origins from building purposefully-broken Reporting endpoints
+// that generate new NEL reports to bypass the age limit on Reporting reports.
+const int NetworkErrorLoggingService::kMaxNestedReportDepth = 1;
+
 const char NetworkErrorLoggingService::kUriKey[] = "uri";
 const char NetworkErrorLoggingService::kReferrerKey[] = "referrer";
 const char NetworkErrorLoggingService::kSamplingFractionKey[] =
@@ -418,6 +517,30 @@ const char NetworkErrorLoggingService::kProtocolKey[] = "protocol";
 const char NetworkErrorLoggingService::kStatusCodeKey[] = "status-code";
 const char NetworkErrorLoggingService::kElapsedTimeKey[] = "elapsed-time";
 const char NetworkErrorLoggingService::kTypeKey[] = "type";
+
+// static
+void NetworkErrorLoggingService::
+    RecordHeaderDiscardedForNoNetworkErrorLoggingService() {
+  RecordHeaderOutcome(
+      HeaderOutcome::DISCARDED_NO_NETWORK_ERROR_LOGGING_SERVICE);
+}
+
+// static
+void NetworkErrorLoggingService::RecordHeaderDiscardedForInvalidSSLInfo() {
+  RecordHeaderOutcome(HeaderOutcome::DISCARDED_INVALID_SSL_INFO);
+}
+
+// static
+void NetworkErrorLoggingService::RecordHeaderDiscardedForCertStatusError() {
+  RecordHeaderOutcome(HeaderOutcome::DISCARDED_CERT_STATUS_ERROR);
+}
+
+// static
+void NetworkErrorLoggingService::
+    RecordRequestDiscardedForNoNetworkErrorLoggingService() {
+  RecordRequestOutcome(
+      RequestOutcome::DISCARDED_NO_NETWORK_ERROR_LOGGING_SERVICE);
+}
 
 // static
 std::unique_ptr<NetworkErrorLoggingService> NetworkErrorLoggingService::Create(
@@ -433,7 +556,7 @@ void NetworkErrorLoggingService::SetReportingService(
 }
 
 void NetworkErrorLoggingService::SetTickClockForTesting(
-    base::TickClock* tick_clock) {
+    const base::TickClock* tick_clock) {
   tick_clock_ = tick_clock;
 }
 

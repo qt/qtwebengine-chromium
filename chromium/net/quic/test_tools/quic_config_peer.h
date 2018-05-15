@@ -8,6 +8,7 @@
 #include "base/macros.h"
 #include "net/quic/core/quic_config.h"
 #include "net/quic/core/quic_packets.h"
+#include "net/quic/platform/api/quic_uint128.h"
 
 namespace net {
 
@@ -17,9 +18,6 @@ namespace test {
 
 class QuicConfigPeer {
  public:
-  static void SetReceivedSocketReceiveBuffer(QuicConfig* config,
-                                             uint32_t receive_buffer_bytes);
-
   static void SetReceivedInitialStreamFlowControlWindow(QuicConfig* config,
                                                         uint32_t window_bytes);
 
@@ -39,6 +37,8 @@ class QuicConfigPeer {
 
   static void SetConnectionOptionsToSend(QuicConfig* config,
                                          const QuicTagVector& options);
+
+  static void SetReceivedStatelessResetToken(QuicConfig* config, uint128 token);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(QuicConfigPeer);

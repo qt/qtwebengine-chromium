@@ -12,7 +12,6 @@
 #include "base/logging.h"
 #include "base/run_loop.h"
 #include "components/offline_pages/buildflags/buildflags.h"
-#include "content/browser/browser_thread_impl.h"
 #include "content/browser/service_worker/embedded_worker_test_helper.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
@@ -34,7 +33,7 @@
 #include "services/network/public/cpp/resource_request_body.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 namespace service_worker_controllee_request_handler_unittest {

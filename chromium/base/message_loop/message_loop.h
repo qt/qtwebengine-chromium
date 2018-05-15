@@ -17,6 +17,8 @@
 #include "base/message_loop/incoming_task_queue.h"
 #include "base/message_loop/message_loop_task_runner.h"
 #include "base/message_loop/message_pump.h"
+#include "base/message_loop/message_pump_for_io.h"
+#include "base/message_loop/message_pump_for_ui.h"
 #include "base/message_loop/timer_slack.h"
 #include "base/observer_list.h"
 #include "base/pending_task.h"
@@ -25,17 +27,6 @@
 #include "base/threading/sequence_local_storage_map.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-
-// TODO(sky): these includes should not be necessary. Nuke them.
-#if defined(OS_WIN)
-#include "base/message_loop/message_pump_win.h"
-#elif defined(OS_FUCHSIA)
-#include "base/message_loop/message_pump_fuchsia.h"
-#elif defined(OS_IOS)
-#include "base/message_loop/message_pump_io_ios.h"
-#elif defined(OS_POSIX)
-#include "base/message_loop/message_pump_libevent.h"
-#endif
 
 namespace base {
 
@@ -276,10 +267,6 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate,
   // Runs the specified PendingTask.
   void RunTask(PendingTask* pending_task);
 
-  // Disallow task observers. After this is called, calling
-  // Add/RemoveTaskObserver() on this MessageLoop will crash.
-  void DisallowTaskObservers() { allow_task_observers_ = false; }
-
   //----------------------------------------------------------------------------
  protected:
   std::unique_ptr<MessagePump> pump_;
@@ -302,9 +289,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate,
   friend class internal::IncomingTaskQueue;
   friend class ScheduleWorkTest;
   friend class Thread;
-  friend struct PendingTask;
   FRIEND_TEST_ALL_PREFIXES(MessageLoopTest, DeleteUnboundLoop);
-  friend class PendingTaskTest;
 
   // Creates a MessageLoop without binding to a thread.
   // If |type| is TYPE_CUSTOM non-null |pump_factory| must be also given
@@ -379,13 +364,6 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate,
 
   ObserverList<TaskObserver> task_observers_;
 
-  // Used to allow creating a breadcrumb of program counters in PostTask.
-  // This variable is only initialized while a task is being executed and is
-  // meant only to store context for creating a backtrace breadcrumb. Do not
-  // attach other semantics to it without thinking through the use caes
-  // thoroughly.
-  const PendingTask* current_pending_task_ = nullptr;
-
   scoped_refptr<internal::IncomingTaskQueue> incoming_task_queue_;
 
   // A task runner which we haven't bound to a thread yet.
@@ -398,9 +376,6 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate,
   // Id of the thread this message loop is bound to. Initialized once when the
   // MessageLoop is bound to its thread and constant forever after.
   PlatformThreadId thread_id_ = kInvalidThreadId;
-
-  // Whether task observers are allowed.
-  bool allow_task_observers_ = true;
 
   // Holds data stored through the SequenceLocalStorageSlot API.
   internal::SequenceLocalStorageMap sequence_local_storage_map_;
@@ -468,12 +443,14 @@ class BASE_EXPORT MessageLoopForUI : public MessageLoop {
 #if (defined(USE_OZONE) && !defined(OS_FUCHSIA)) || \
     (defined(USE_X11) && !defined(USE_GLIB))
   // Please see MessagePumpLibevent for definition.
-  bool WatchFileDescriptor(
-      int fd,
-      bool persistent,
-      MessagePumpLibevent::Mode mode,
-      MessagePumpLibevent::FileDescriptorWatcher* controller,
-      MessagePumpLibevent::Watcher* delegate);
+  static_assert(std::is_same<MessagePumpForUI, MessagePumpLibevent>::value,
+                "MessageLoopForUI::WatchFileDescriptor is not supported when "
+                "MessagePumpForUI is not a MessagePumpLibevent.");
+  bool WatchFileDescriptor(int fd,
+                           bool persistent,
+                           MessagePumpForUI::Mode mode,
+                           MessagePumpForUI::FdWatchController* controller,
+                           MessagePumpForUI::FdWatcher* delegate);
 #endif
 };
 
@@ -513,51 +490,18 @@ class BASE_EXPORT MessageLoopForIO : public MessageLoop {
 #if !defined(OS_NACL_SFI)
 
 #if defined(OS_WIN)
-  typedef MessagePumpForIO::IOHandler IOHandler;
-  typedef MessagePumpForIO::IOContext IOContext;
-#elif defined(OS_FUCHSIA)
-  typedef MessagePumpFuchsia::FdWatcher Watcher;
-  typedef MessagePumpFuchsia::FdWatchController FileDescriptorWatcher;
-
-  enum Mode{WATCH_READ = MessagePumpFuchsia::WATCH_READ,
-            WATCH_WRITE = MessagePumpFuchsia::WATCH_WRITE,
-            WATCH_READ_WRITE = MessagePumpFuchsia::WATCH_READ_WRITE};
-
-  typedef MessagePumpFuchsia::ZxHandleWatchController ZxHandleWatchController;
-  typedef MessagePumpFuchsia::ZxHandleWatcher ZxHandleWatcher;
-#elif defined(OS_IOS)
-  typedef MessagePumpIOSForIO::Watcher Watcher;
-  typedef MessagePumpIOSForIO::FileDescriptorWatcher
-      FileDescriptorWatcher;
-
-  enum Mode {
-    WATCH_READ = MessagePumpIOSForIO::WATCH_READ,
-    WATCH_WRITE = MessagePumpIOSForIO::WATCH_WRITE,
-    WATCH_READ_WRITE = MessagePumpIOSForIO::WATCH_READ_WRITE
-  };
-#elif defined(OS_POSIX)
-  using Watcher = MessagePumpLibevent::Watcher;
-  using FileDescriptorWatcher = MessagePumpLibevent::FileDescriptorWatcher;
-
-  enum Mode {
-    WATCH_READ = MessagePumpLibevent::WATCH_READ,
-    WATCH_WRITE = MessagePumpLibevent::WATCH_WRITE,
-    WATCH_READ_WRITE = MessagePumpLibevent::WATCH_READ_WRITE
-  };
-#endif
-
-#if defined(OS_WIN)
   // Please see MessagePumpWin for definitions of these methods.
-  void RegisterIOHandler(HANDLE file, IOHandler* handler);
-  bool RegisterJobObject(HANDLE job, IOHandler* handler);
-  bool WaitForIOCompletion(DWORD timeout, IOHandler* filter);
+  void RegisterIOHandler(HANDLE file, MessagePumpForIO::IOHandler* handler);
+  bool RegisterJobObject(HANDLE job, MessagePumpForIO::IOHandler* handler);
+  bool WaitForIOCompletion(DWORD timeout, MessagePumpForIO::IOHandler* filter);
 #elif defined(OS_POSIX)
-  // Please see MessagePumpIOSForIO/MessagePumpLibevent for definition.
+  // Please see WatchableIOMessagePumpPosix for definition.
+  // Prefer base::FileDescriptorWatcher for non-critical IO.
   bool WatchFileDescriptor(int fd,
                            bool persistent,
-                           Mode mode,
-                           FileDescriptorWatcher* controller,
-                           Watcher* delegate);
+                           MessagePumpForIO::Mode mode,
+                           MessagePumpForIO::FdWatchController* controller,
+                           MessagePumpForIO::FdWatcher* delegate);
 #endif  // defined(OS_IOS) || defined(OS_POSIX)
 #endif  // !defined(OS_NACL_SFI)
 
@@ -566,8 +510,8 @@ class BASE_EXPORT MessageLoopForIO : public MessageLoop {
   bool WatchZxHandle(zx_handle_t handle,
                      bool persistent,
                      zx_signals_t signals,
-                     ZxHandleWatchController* controller,
-                     ZxHandleWatcher* delegate);
+                     MessagePumpForIO::ZxHandleWatchController* controller,
+                     MessagePumpForIO::ZxHandleWatcher* delegate);
 #endif
 };
 

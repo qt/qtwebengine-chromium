@@ -25,7 +25,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
-#include "third_party/WebKit/public/platform/modules/presentation/presentation.mojom.h"
+#include "third_party/blink/public/platform/modules/presentation/presentation.mojom.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -238,6 +238,10 @@ class CONTENT_EXPORT PresentationServiceImpl
 
   // Returns true if this object is associated with |render_frame_host|.
   bool FrameMatches(content::RenderFrameHost* render_frame_host) const;
+
+  // Invoked on Mojo connection error. Closes all Mojo message pipes held by
+  // |this|.
+  void OnConnectionError();
 
   // Returns |controller_delegate| if current frame is controller frame; Returns
   // |receiver_delegate| if current frame is receiver frame.

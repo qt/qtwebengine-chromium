@@ -13,10 +13,11 @@
 
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
-#include "api/fakemetricsobserver.h"
 #include "api/jsep.h"
 #include "api/mediastreaminterface.h"
 #include "api/peerconnectioninterface.h"
+#include "api/umametrics.h"
+#include "pc/mediasession.h"
 #include "pc/mediastream.h"
 #include "pc/mediastreamtrack.h"
 #include "pc/peerconnectionwrapper.h"
@@ -110,13 +111,11 @@ TEST_F(PeerConnectionRtpCallbacksTest, AddTrackWithoutStreamFiresOnAddTrack) {
   auto callee = CreatePeerConnection();
 
   ASSERT_TRUE(caller->AddTrack(caller->CreateAudioTrack("audio_track")));
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
   ASSERT_EQ(callee->observer()->add_track_events_.size(), 1u);
-  // TODO(hbos): When "no stream" is handled correctly we would expect
-  // |add_track_events_[0].streams| to be empty. https://crbug.com/webrtc/7933
+  // Since we are not supporting the no stream case with Plan B, there should be
+  // a generated stream, even though we didn't set one with AddTrack.
   auto& add_track_event = callee->observer()->add_track_events_[0];
   ASSERT_EQ(add_track_event.streams.size(), 1u);
   EXPECT_TRUE(add_track_event.streams[0]->FindAudioTrack("audio_track"));
@@ -129,14 +128,12 @@ TEST_F(PeerConnectionRtpCallbacksTest, AddTrackWithStreamFiresOnAddTrack) {
 
   ASSERT_TRUE(caller->AddTrack(caller->CreateAudioTrack("audio_track"),
                                {"audio_stream"}));
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
   ASSERT_EQ(callee->observer()->add_track_events_.size(), 1u);
   auto& add_track_event = callee->observer()->add_track_events_[0];
   ASSERT_EQ(add_track_event.streams.size(), 1u);
-  EXPECT_EQ("audio_stream", add_track_event.streams[0]->label());
+  EXPECT_EQ("audio_stream", add_track_event.streams[0]->id());
   EXPECT_TRUE(add_track_event.streams[0]->FindAudioTrack("audio_track"));
   EXPECT_EQ(add_track_event.streams, add_track_event.receiver->streams());
 }
@@ -147,14 +144,10 @@ TEST_F(PeerConnectionRtpCallbacksTest,
   auto callee = CreatePeerConnection();
 
   auto sender = caller->AddTrack(caller->CreateAudioTrack("audio_track"), {});
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
   ASSERT_EQ(callee->observer()->add_track_events_.size(), 1u);
   EXPECT_TRUE(caller->pc()->RemoveTrack(sender));
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
   ASSERT_EQ(callee->observer()->add_track_events_.size(), 1u);
   EXPECT_EQ(callee->observer()->GetAddTrackReceivers(),
@@ -168,14 +161,10 @@ TEST_F(PeerConnectionRtpCallbacksTest,
 
   auto sender = caller->AddTrack(caller->CreateAudioTrack("audio_track"),
                                  {"audio_stream"});
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
   ASSERT_EQ(callee->observer()->add_track_events_.size(), 1u);
   EXPECT_TRUE(caller->pc()->RemoveTrack(sender));
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
   ASSERT_EQ(callee->observer()->add_track_events_.size(), 1u);
   EXPECT_EQ(callee->observer()->GetAddTrackReceivers(),
@@ -187,22 +176,18 @@ TEST_F(PeerConnectionRtpCallbacksTest,
   auto caller = CreatePeerConnection();
   auto callee = CreatePeerConnection();
 
-  const char kSharedStreamLabel[] = "shared_audio_stream";
+  const char kSharedStreamId[] = "shared_audio_stream";
   auto sender1 = caller->AddTrack(caller->CreateAudioTrack("audio_track1"),
-                                  {kSharedStreamLabel});
+                                  {kSharedStreamId});
   auto sender2 = caller->AddTrack(caller->CreateAudioTrack("audio_track2"),
-                                  {kSharedStreamLabel});
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+                                  {kSharedStreamId});
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
   ASSERT_EQ(callee->observer()->add_track_events_.size(), 2u);
 
   // Remove "audio_track1".
   EXPECT_TRUE(caller->pc()->RemoveTrack(sender1));
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
   ASSERT_EQ(callee->observer()->add_track_events_.size(), 2u);
   EXPECT_EQ(
       std::vector<rtc::scoped_refptr<RtpReceiverInterface>>{
@@ -211,23 +196,57 @@ TEST_F(PeerConnectionRtpCallbacksTest,
 
   // Remove "audio_track2".
   EXPECT_TRUE(caller->pc()->RemoveTrack(sender2));
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
   ASSERT_EQ(callee->observer()->add_track_events_.size(), 2u);
   EXPECT_EQ(callee->observer()->GetAddTrackReceivers(),
             callee->observer()->remove_track_events_);
 }
 
+// Tests the edge case that if a stream ID changes for a given track that both
+// OnRemoveTrack and OnAddTrack is fired.
+TEST_F(PeerConnectionRtpCallbacksTest,
+       RemoteStreamIdChangesFiresOnRemoveAndOnAddTrack) {
+  auto caller = CreatePeerConnection();
+  auto callee = CreatePeerConnection();
+
+  const char kStreamId1[] = "stream1";
+  const char kStreamId2[] = "stream2";
+  caller->AddTrack(caller->CreateAudioTrack("audio_track1"), {kStreamId1});
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
+  EXPECT_EQ(callee->observer()->add_track_events_.size(), 1u);
+
+  // Change the stream ID of the sender in the session description.
+  auto offer = caller->CreateOfferAndSetAsLocal();
+  auto audio_desc = offer->description()->GetContentDescriptionByName("audio");
+  ASSERT_EQ(audio_desc->mutable_streams().size(), 1u);
+  audio_desc->mutable_streams()[0].set_stream_ids({kStreamId2});
+  ASSERT_TRUE(
+      callee->SetRemoteDescription(CloneSessionDescription(offer.get())));
+
+  ASSERT_EQ(callee->observer()->add_track_events_.size(), 2u);
+  EXPECT_EQ(callee->observer()->add_track_events_[1].streams[0]->id(),
+            kStreamId2);
+  ASSERT_EQ(callee->observer()->remove_track_events_.size(), 1u);
+  EXPECT_EQ(callee->observer()->remove_track_events_[0]->streams()[0]->id(),
+            kStreamId1);
+}
+
 // Tests that setting a remote description with sending transceivers will fire
 // the OnTrack callback for each transceiver and setting a remote description
-// with receive only transceivers will not call OnTrack.
+// with receive only transceivers will not call OnTrack. One transceiver is
+// created without any stream_ids, while the other is created with multiple
+// stream_ids.
 TEST_F(PeerConnectionRtpCallbacksTest, UnifiedPlanAddTransceiverCallsOnTrack) {
+  const std::string kStreamId1 = "video_stream1";
+  const std::string kStreamId2 = "video_stream2";
   auto caller = CreatePeerConnectionWithUnifiedPlan();
   auto callee = CreatePeerConnectionWithUnifiedPlan();
 
   auto audio_transceiver = caller->AddTransceiver(cricket::MEDIA_TYPE_AUDIO);
-  auto video_transceiver = caller->AddTransceiver(cricket::MEDIA_TYPE_VIDEO);
+  RtpTransceiverInit video_transceiver_init;
+  video_transceiver_init.stream_ids = {kStreamId1, kStreamId2};
+  auto video_transceiver =
+      caller->AddTransceiver(cricket::MEDIA_TYPE_VIDEO, video_transceiver_init);
 
   ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
 
@@ -237,6 +256,14 @@ TEST_F(PeerConnectionRtpCallbacksTest, UnifiedPlanAddTransceiverCallsOnTrack) {
             callee->pc()->GetTransceivers()[0]->mid());
   EXPECT_EQ(video_transceiver->mid(),
             callee->pc()->GetTransceivers()[1]->mid());
+  std::vector<rtc::scoped_refptr<MediaStreamInterface>> audio_streams =
+      callee->pc()->GetTransceivers()[0]->receiver()->streams();
+  std::vector<rtc::scoped_refptr<MediaStreamInterface>> video_streams =
+      callee->pc()->GetTransceivers()[1]->receiver()->streams();
+  ASSERT_EQ(0u, audio_streams.size());
+  ASSERT_EQ(2u, video_streams.size());
+  EXPECT_EQ(kStreamId1, video_streams[0]->id());
+  EXPECT_EQ(kStreamId2, video_streams[1]->id());
 }
 
 // Test that doing additional offer/answer exchanges with no changes to tracks
@@ -328,15 +355,13 @@ TEST_F(PeerConnectionRtpObserverTest, AddSenderWithoutStreamAddsReceiver) {
   auto callee = CreatePeerConnection();
 
   ASSERT_TRUE(caller->AddTrack(caller->CreateAudioTrack("audio_track"), {}));
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
   EXPECT_EQ(callee->pc()->GetReceivers().size(), 1u);
   auto receiver_added = callee->pc()->GetReceivers()[0];
   EXPECT_EQ("audio_track", receiver_added->track()->id());
-  // TODO(hbos): When "no stream" is handled correctly we would expect
-  // |receiver_added->streams()| to be empty. https://crbug.com/webrtc/7933
+  // Since we are not supporting the no stream case with Plan B, there should be
+  // a generated stream, even though we didn't set one with AddTrack.
   EXPECT_EQ(receiver_added->streams().size(), 1u);
   EXPECT_TRUE(receiver_added->streams()[0]->FindAudioTrack("audio_track"));
 }
@@ -347,15 +372,13 @@ TEST_F(PeerConnectionRtpObserverTest, AddSenderWithStreamAddsReceiver) {
 
   ASSERT_TRUE(caller->AddTrack(caller->CreateAudioTrack("audio_track"),
                                {"audio_stream"}));
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
   EXPECT_EQ(callee->pc()->GetReceivers().size(), 1u);
   auto receiver_added = callee->pc()->GetReceivers()[0];
   EXPECT_EQ("audio_track", receiver_added->track()->id());
   EXPECT_EQ(receiver_added->streams().size(), 1u);
-  EXPECT_EQ("audio_stream", receiver_added->streams()[0]->label());
+  EXPECT_EQ("audio_stream", receiver_added->streams()[0]->id());
   EXPECT_TRUE(receiver_added->streams()[0]->FindAudioTrack("audio_track"));
 }
 
@@ -366,15 +389,11 @@ TEST_F(PeerConnectionRtpObserverTest,
 
   auto sender = caller->AddTrack(caller->CreateAudioTrack("audio_track"), {});
   ASSERT_TRUE(sender);
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
   ASSERT_EQ(callee->pc()->GetReceivers().size(), 1u);
   auto receiver = callee->pc()->GetReceivers()[0];
   ASSERT_TRUE(caller->pc()->RemoveTrack(sender));
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
   // TODO(hbos): When we implement Unified Plan, receivers will not be removed.
   // Instead, the transceiver owning the receiver will become inactive.
@@ -388,15 +407,11 @@ TEST_F(PeerConnectionRtpObserverTest, RemoveSenderWithStreamRemovesReceiver) {
   auto sender = caller->AddTrack(caller->CreateAudioTrack("audio_track"),
                                  {"audio_stream"});
   ASSERT_TRUE(sender);
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
   ASSERT_EQ(callee->pc()->GetReceivers().size(), 1u);
   auto receiver = callee->pc()->GetReceivers()[0];
   ASSERT_TRUE(caller->pc()->RemoveTrack(sender));
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
   // TODO(hbos): When we implement Unified Plan, receivers will not be removed.
   // Instead, the transceiver owning the receiver will become inactive.
@@ -408,14 +423,12 @@ TEST_F(PeerConnectionRtpObserverTest,
   auto caller = CreatePeerConnection();
   auto callee = CreatePeerConnection();
 
-  const char kSharedStreamLabel[] = "shared_audio_stream";
+  const char kSharedStreamId[] = "shared_audio_stream";
   auto sender1 = caller->AddTrack(caller->CreateAudioTrack("audio_track1"),
-                                  {kSharedStreamLabel});
+                                  {kSharedStreamId});
   auto sender2 = caller->AddTrack(caller->CreateAudioTrack("audio_track2"),
-                                  {kSharedStreamLabel});
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+                                  {kSharedStreamId});
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
   ASSERT_EQ(callee->pc()->GetReceivers().size(), 2u);
   rtc::scoped_refptr<webrtc::RtpReceiverInterface> receiver1;
@@ -432,9 +445,7 @@ TEST_F(PeerConnectionRtpObserverTest,
 
   // Remove "audio_track1".
   EXPECT_TRUE(caller->pc()->RemoveTrack(sender1));
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
   // Only |receiver2| should remain.
   // TODO(hbos): When we implement Unified Plan, receivers will not be removed.
   // Instead, the transceiver owning the receiver will become inactive.
@@ -444,9 +455,7 @@ TEST_F(PeerConnectionRtpObserverTest,
 
   // Remove "audio_track2".
   EXPECT_TRUE(caller->pc()->RemoveTrack(sender2));
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal(),
-                                   static_cast<webrtc::RTCError*>(nullptr)));
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
   // TODO(hbos): When we implement Unified Plan, receivers will not be removed.
   // Instead, the transceiver owning the receiver will become inactive.
   EXPECT_EQ(callee->pc()->GetReceivers().size(), 0u);
@@ -503,6 +512,105 @@ TEST_F(PeerConnectionRtpObserverTest,
       new OnSuccessObserver<decltype(srd2_callback)>(srd2_callback));
   EXPECT_TRUE_WAIT(srd1_callback_called, kDefaultTimeout);
   EXPECT_TRUE_WAIT(srd2_callback_called, kDefaultTimeout);
+}
+
+// Tests that a remote track is created with the signaled MSIDs when they are
+// communicated with a=msid and no SSRCs are signaled at all (i.e., no a=ssrc
+// lines).
+TEST_F(PeerConnectionRtpObserverTest, UnsignaledSsrcCreatesReceiverStreams) {
+  auto caller = CreatePeerConnectionWithUnifiedPlan();
+  auto callee = CreatePeerConnectionWithUnifiedPlan();
+  const char kStreamId1[] = "stream1";
+  const char kStreamId2[] = "stream2";
+  caller->AddTrack(caller->CreateAudioTrack("audio_track1"),
+                   {kStreamId1, kStreamId2});
+
+  auto offer = caller->CreateOfferAndSetAsLocal();
+  // Munge the offer to take out everything but the stream_ids.
+  auto contents = offer->description()->contents();
+  ASSERT_TRUE(!contents.empty());
+  ASSERT_TRUE(!contents[0].media_description()->streams().empty());
+  std::vector<std::string> stream_ids =
+      contents[0].media_description()->streams()[0].stream_ids();
+  contents[0].media_description()->mutable_streams().clear();
+  cricket::StreamParams new_stream;
+  new_stream.set_stream_ids(stream_ids);
+  contents[0].media_description()->AddStream(new_stream);
+
+  // Set the remote description and verify that the streams were added to the
+  // receiver correctly.
+  ASSERT_TRUE(
+      callee->SetRemoteDescription(CloneSessionDescription(offer.get())));
+  auto receivers = callee->pc()->GetReceivers();
+  ASSERT_EQ(receivers.size(), 1u);
+  ASSERT_EQ(receivers[0]->streams().size(), 2u);
+  EXPECT_EQ(receivers[0]->streams()[0]->id(), kStreamId1);
+  EXPECT_EQ(receivers[0]->streams()[1]->id(), kStreamId2);
+}
+
+// Tests that with Unified Plan if the the stream id changes for a track when
+// when setting a new remote description, that the media stream is updated
+// appropriately for the receiver.
+TEST_F(PeerConnectionRtpObserverTest, RemoteStreamIdChangesUpdatesReceiver) {
+  auto caller = CreatePeerConnectionWithUnifiedPlan();
+  auto callee = CreatePeerConnectionWithUnifiedPlan();
+
+  const char kStreamId1[] = "stream1";
+  const char kStreamId2[] = "stream2";
+  caller->AddTrack(caller->CreateAudioTrack("audio_track1"), {kStreamId1});
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
+  EXPECT_EQ(callee->observer()->add_track_events_.size(), 1u);
+
+  // Change the stream id of the sender in the session description.
+  auto offer = caller->CreateOfferAndSetAsLocal();
+  auto contents = offer->description()->contents();
+  ASSERT_EQ(contents.size(), 1u);
+  ASSERT_EQ(contents[0].media_description()->mutable_streams().size(), 1u);
+  contents[0].media_description()->mutable_streams()[0].set_stream_ids(
+      {kStreamId2});
+
+  // Set the remote description and verify that the stream was updated properly.
+  ASSERT_TRUE(
+      callee->SetRemoteDescription(CloneSessionDescription(offer.get())));
+  auto receivers = callee->pc()->GetReceivers();
+  ASSERT_EQ(receivers.size(), 1u);
+  ASSERT_EQ(receivers[0]->streams().size(), 1u);
+  EXPECT_EQ(receivers[0]->streams()[0]->id(), kStreamId2);
+}
+
+// This tests a regression caught by a downstream client, that occured when
+// applying a remote description with a SessionDescription object that
+// contained StreamParams that didn't have ids. Although there were multiple
+// remote audio senders, FindSenderInfo didn't find them as unique, because
+// it looked up by StreamParam.id, which none had. This meant only one
+// AudioRtpReceiver was created, as opposed to one for each remote sender.
+TEST_F(PeerConnectionRtpObserverTest,
+       MultipleRemoteSendersWithoutStreamParamIdAddsMultipleReceivers) {
+  auto caller = CreatePeerConnection();
+  auto callee = CreatePeerConnection();
+
+  const char kStreamId1[] = "stream1";
+  const char kStreamId2[] = "stream2";
+  caller->AddAudioTrack("audio_track1", {kStreamId1});
+  caller->AddAudioTrack("audio_track2", {kStreamId2});
+
+  auto offer = caller->CreateOfferAndSetAsLocal();
+  auto mutable_streams =
+      cricket::GetFirstAudioContentDescription(offer->description())
+          ->mutable_streams();
+  ASSERT_EQ(mutable_streams.size(), 2u);
+  // Clear the IDs in the StreamParams.
+  mutable_streams[0].id.clear();
+  mutable_streams[1].id.clear();
+  ASSERT_TRUE(
+      callee->SetRemoteDescription(CloneSessionDescription(offer.get())));
+
+  auto receivers = callee->pc()->GetReceivers();
+  ASSERT_EQ(receivers.size(), 2u);
+  ASSERT_EQ(receivers[0]->streams().size(), 1u);
+  EXPECT_EQ(kStreamId1, receivers[0]->streams()[0]->id());
+  ASSERT_EQ(receivers[1]->streams().size(), 1u);
+  EXPECT_EQ(kStreamId2, receivers[1]->streams()[0]->id());
 }
 
 // Tests for the legacy SetRemoteDescription() function signature.
@@ -1030,9 +1138,7 @@ TEST_F(PeerConnectionMsidSignalingTest, UnifiedPlanTalkingToOurself) {
   caller->AddAudioTrack("caller_audio");
   auto callee = CreatePeerConnectionWithUnifiedPlan();
   callee->AddAudioTrack("callee_audio");
-  auto caller_observer =
-      new rtc::RefCountedObject<webrtc::FakeMetricsObserver>();
-  caller->pc()->RegisterUMAObserver(caller_observer);
+  auto caller_observer = caller->RegisterFakeMetricsObserver();
 
   ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
 
@@ -1047,18 +1153,8 @@ TEST_F(PeerConnectionMsidSignalingTest, UnifiedPlanTalkingToOurself) {
   EXPECT_EQ(cricket::kMsidSignalingMediaSection,
             answer->description()->msid_signaling());
   // Check that this is counted correctly
-  EXPECT_EQ(1, caller_observer->GetEnumCounter(
-                   webrtc::kEnumCounterSdpSemanticNegotiated,
-                   webrtc::kSdpSemanticNegotiatedUnifiedPlan));
-  EXPECT_EQ(0, caller_observer->GetEnumCounter(
-                   webrtc::kEnumCounterSdpSemanticNegotiated,
-                   webrtc::kSdpSemanticNegotiatedNone));
-  EXPECT_EQ(0, caller_observer->GetEnumCounter(
-                   webrtc::kEnumCounterSdpSemanticNegotiated,
-                   webrtc::kSdpSemanticNegotiatedPlanB));
-  EXPECT_EQ(0, caller_observer->GetEnumCounter(
-                   webrtc::kEnumCounterSdpSemanticNegotiated,
-                   webrtc::kSdpSemanticNegotiatedMixed));
+  EXPECT_TRUE(caller_observer->ExpectOnlySingleEnumCount(
+      kEnumCounterSdpSemanticNegotiated, kSdpSemanticNegotiatedUnifiedPlan));
 }
 
 TEST_F(PeerConnectionMsidSignalingTest, PlanBOfferToUnifiedPlanAnswer) {
@@ -1080,6 +1176,39 @@ TEST_F(PeerConnectionMsidSignalingTest, PlanBOfferToUnifiedPlanAnswer) {
             answer->description()->msid_signaling());
 }
 
+// This tests that a Plan B endpoint appropriately sets the remote description
+// from a Unified Plan offer. When the Unified Plan offer contains a=msid lines
+// that signal no stream ids or multiple stream ids we expect that the Plan B
+// endpoint always has exactly one media stream per track.
+TEST_F(PeerConnectionMsidSignalingTest, UnifiedPlanToPlanBAnswer) {
+  const std::string kStreamId1 = "audio_stream_1";
+  const std::string kStreamId2 = "audio_stream_2";
+
+  auto caller = CreatePeerConnectionWithUnifiedPlan();
+  caller->AddAudioTrack("caller_audio", {kStreamId1, kStreamId2});
+  caller->AddVideoTrack("caller_video", {});
+  auto callee = CreatePeerConnectionWithPlanB();
+  callee->AddAudioTrack("callee_audio");
+  caller->AddVideoTrack("callee_video");
+
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+
+  // Offer should have had both a=msid and a=ssrc MSID lines.
+  auto* offer = callee->pc()->remote_description();
+  EXPECT_EQ((cricket::kMsidSignalingMediaSection |
+             cricket::kMsidSignalingSsrcAttribute),
+            offer->description()->msid_signaling());
+
+  // Callee should always have 1 stream for all of it's receivers.
+  const auto& track_events = callee->observer()->add_track_events_;
+  ASSERT_EQ(2u, track_events.size());
+  ASSERT_EQ(1u, track_events[0].streams.size());
+  EXPECT_EQ(kStreamId1, track_events[0].streams[0]->id());
+  ASSERT_EQ(1u, track_events[1].streams.size());
+  // This autogenerated a stream id for the empty one signalled.
+  EXPECT_FALSE(track_events[1].streams[0]->id().empty());
+}
+
 TEST_F(PeerConnectionMsidSignalingTest, PureUnifiedPlanToUs) {
   auto caller = CreatePeerConnectionWithUnifiedPlan();
   caller->AddAudioTrack("caller_audio");
@@ -1099,6 +1228,76 @@ TEST_F(PeerConnectionMsidSignalingTest, PureUnifiedPlanToUs) {
   auto answer = callee->CreateAnswer();
   EXPECT_EQ(cricket::kMsidSignalingMediaSection,
             answer->description()->msid_signaling());
+}
+
+// Test that the correct UMA metrics are reported for simple/complex SDP.
+
+class SdpFormatReceivedTest : public PeerConnectionRtpTest {};
+
+#ifdef HAVE_SCTP
+TEST_F(SdpFormatReceivedTest, DataChannelOnlyIsReportedAsNoTracks) {
+  auto caller = CreatePeerConnectionWithUnifiedPlan();
+  caller->CreateDataChannel("dc");
+  auto callee = CreatePeerConnectionWithUnifiedPlan();
+  auto callee_metrics = callee->RegisterFakeMetricsObserver();
+
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
+
+  EXPECT_TRUE(callee_metrics->ExpectOnlySingleEnumCount(
+      kEnumCounterSdpFormatReceived, kSdpFormatReceivedNoTracks));
+}
+#endif  // HAVE_SCTP
+
+TEST_F(SdpFormatReceivedTest, SimpleUnifiedPlanIsReportedAsSimple) {
+  auto caller = CreatePeerConnectionWithUnifiedPlan();
+  caller->AddAudioTrack("audio");
+  caller->AddVideoTrack("video");
+  auto callee = CreatePeerConnectionWithPlanB();
+  auto callee_metrics = callee->RegisterFakeMetricsObserver();
+
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
+
+  EXPECT_TRUE(callee_metrics->ExpectOnlySingleEnumCount(
+      kEnumCounterSdpFormatReceived, kSdpFormatReceivedSimple));
+}
+
+TEST_F(SdpFormatReceivedTest, SimplePlanBIsReportedAsSimple) {
+  auto caller = CreatePeerConnectionWithPlanB();
+  caller->AddVideoTrack("video");  // Video only.
+  auto callee = CreatePeerConnectionWithUnifiedPlan();
+  auto callee_metrics = callee->RegisterFakeMetricsObserver();
+
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
+
+  EXPECT_TRUE(callee_metrics->ExpectOnlySingleEnumCount(
+      kEnumCounterSdpFormatReceived, kSdpFormatReceivedSimple));
+}
+
+TEST_F(SdpFormatReceivedTest, ComplexUnifiedIsReportedAsComplexUnifiedPlan) {
+  auto caller = CreatePeerConnectionWithUnifiedPlan();
+  caller->AddAudioTrack("audio1");
+  caller->AddAudioTrack("audio2");
+  caller->AddVideoTrack("video");
+  auto callee = CreatePeerConnectionWithPlanB();
+  auto callee_metrics = callee->RegisterFakeMetricsObserver();
+
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
+
+  EXPECT_TRUE(callee_metrics->ExpectOnlySingleEnumCount(
+      kEnumCounterSdpFormatReceived, kSdpFormatReceivedComplexUnifiedPlan));
+}
+
+TEST_F(SdpFormatReceivedTest, ComplexPlanBIsReportedAsComplexPlanB) {
+  auto caller = CreatePeerConnectionWithPlanB();
+  caller->AddVideoTrack("video1");
+  caller->AddVideoTrack("video2");
+  auto callee = CreatePeerConnectionWithUnifiedPlan();
+  auto callee_metrics = callee->RegisterFakeMetricsObserver();
+
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
+
+  EXPECT_TRUE(callee_metrics->ExpectOnlySingleEnumCount(
+      kEnumCounterSdpFormatReceived, kSdpFormatReceivedComplexPlanB));
 }
 
 // Sender setups in a call.

@@ -36,33 +36,52 @@ static inline bool IsOutOfSync(const base::TimeDelta& timestamp_1,
 
 DecryptingAudioDecoder::DecryptingAudioDecoder(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
-    MediaLog* media_log,
-    const base::Closure& waiting_for_decryption_key_cb)
+    MediaLog* media_log)
     : task_runner_(task_runner),
       media_log_(media_log),
       state_(kUninitialized),
-      waiting_for_decryption_key_cb_(waiting_for_decryption_key_cb),
       decryptor_(NULL),
       key_added_while_decode_pending_(false),
+      support_clear_content_(false),
       weak_factory_(this) {}
 
 std::string DecryptingAudioDecoder::GetDisplayName() const {
   return "DecryptingAudioDecoder";
 }
 
-void DecryptingAudioDecoder::Initialize(const AudioDecoderConfig& config,
-                                        CdmContext* cdm_context,
-                                        const InitCB& init_cb,
-                                        const OutputCB& output_cb) {
+void DecryptingAudioDecoder::Initialize(
+    const AudioDecoderConfig& config,
+    CdmContext* cdm_context,
+    const InitCB& init_cb,
+    const OutputCB& output_cb,
+    const WaitingForDecryptionKeyCB& waiting_for_decryption_key_cb) {
   DVLOG(2) << "Initialize()";
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(decode_cb_.is_null());
   DCHECK(reset_cb_.is_null());
-  DCHECK(cdm_context);
+
+  init_cb_ = BindToCurrentLoop(init_cb);
+  if (!cdm_context) {
+    // Once we have a CDM context, one should always be present.
+    DCHECK(!support_clear_content_);
+    base::ResetAndReturn(&init_cb_).Run(false);
+    return;
+  }
+
+  if (!config.is_encrypted() && !support_clear_content_) {
+    base::ResetAndReturn(&init_cb_).Run(false);
+    return;
+  }
+
+  // Once initialized with encryption support, the value is sticky, so we'll use
+  // the decryptor for clear content as well.
+  support_clear_content_ = true;
 
   weak_this_ = weak_factory_.GetWeakPtr();
-  init_cb_ = BindToCurrentLoop(init_cb);
   output_cb_ = BindToCurrentLoop(output_cb);
+
+  DCHECK(!waiting_for_decryption_key_cb.is_null());
+  waiting_for_decryption_key_cb_ = waiting_for_decryption_key_cb;
 
   // TODO(xhwang): We should be able to DCHECK config.IsValidConfig().
   if (!config.IsValidConfig()) {
@@ -90,7 +109,7 @@ void DecryptingAudioDecoder::Initialize(const AudioDecoderConfig& config,
   InitializeDecoder();
 }
 
-void DecryptingAudioDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
+void DecryptingAudioDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
                                     const DecodeCB& decode_cb) {
   DVLOG(3) << "Decode()";
   DCHECK(task_runner_->BelongsToCurrentThread());
@@ -114,7 +133,7 @@ void DecryptingAudioDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
     timestamp_helper_->SetBaseTimestamp(buffer->timestamp());
   }
 
-  pending_buffer_to_decode_ = buffer;
+  pending_buffer_to_decode_ = std::move(buffer);
   state_ = kPendingDecode;
   DecodePendingBuffer();
 }
@@ -239,8 +258,7 @@ void DecryptingAudioDecoder::DeliverFrame(
   key_added_while_decode_pending_ = false;
 
   scoped_refptr<DecoderBuffer> scoped_pending_buffer_to_decode =
-      pending_buffer_to_decode_;
-  pending_buffer_to_decode_ = NULL;
+      std::move(pending_buffer_to_decode_);
 
   if (!reset_cb_.is_null()) {
     base::ResetAndReturn(&decode_cb_).Run(DecodeStatus::ABORTED);
@@ -268,7 +286,7 @@ void DecryptingAudioDecoder::DeliverFrame(
 
     // Set |pending_buffer_to_decode_| back as we need to try decoding the
     // pending buffer again when new key is added to the decryptor.
-    pending_buffer_to_decode_ = scoped_pending_buffer_to_decode;
+    pending_buffer_to_decode_ = std::move(scoped_pending_buffer_to_decode);
 
     if (need_to_try_again_if_nokey_is_returned) {
       // The |state_| is still kPendingDecode.
@@ -298,7 +316,7 @@ void DecryptingAudioDecoder::DeliverFrame(
   if (scoped_pending_buffer_to_decode->end_of_stream()) {
     // Set |pending_buffer_to_decode_| back as we need to keep flushing the
     // decryptor until kNeedMoreData is returned.
-    pending_buffer_to_decode_ = scoped_pending_buffer_to_decode;
+    pending_buffer_to_decode_ = std::move(scoped_pending_buffer_to_decode);
     DecodePendingBuffer();
     return;
   }

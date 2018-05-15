@@ -10,7 +10,6 @@ const char kCryptohomeInterface[] = "org.chromium.CryptohomeInterface";
 const char kCryptohomeServicePath[] = "/org/chromium/Cryptohome";
 const char kCryptohomeServiceName[] = "org.chromium.Cryptohome";
 // Methods
-const char kCryptohomeCheckKey[] = "CheckKey";
 const char kCryptohomeMigrateKey[] = "MigrateKey";
 const char kCryptohomeRemove[] = "Remove";
 const char kCryptohomeGetSystemSalt[] = "GetSystemSalt";
@@ -32,7 +31,6 @@ const char kCryptohomePkcs11GetTpmTokenInfoForUser[] =
 const char kCryptohomePkcs11IsTpmTokenReady[] = "Pkcs11IsTpmTokenReady";
 const char kCryptohomePkcs11IsTpmTokenReadyForUser[] =
     "Pkcs11IsTpmTokenReadyForUser";
-const char kCryptohomeAsyncCheckKey[] = "AsyncCheckKey";
 const char kCryptohomeAsyncMigrateKey[] = "AsyncMigrateKey";
 const char kCryptohomeAsyncMount[] = "AsyncMount";
 const char kCryptohomeAsyncMountGuest[] = "AsyncMountGuest";
@@ -132,9 +130,9 @@ const char kCryptohomeSetFirmwareManagementParameters[] =
 const char kCryptohomeRemoveFirmwareManagementParameters[] =
     "RemoveFirmwareManagementParameters";
 const char kCryptohomeMigrateToDircrypto[] = "MigrateToDircrypto";
-const char kCryptohomeMigrateToDircryptoEx[] = "MigrateToDircryptoEx";
 const char kCryptohomeNeedsDircryptoMigration[] = "NeedsDircryptoMigration";
 const char kCryptohomeGetSupportedKeyPolicies[] = "GetSupportedKeyPolicies";
+const char kCryptohomeRespondKeyChallenge[] = "RespondKeyChallenge";
 
 // Signals
 const char kSignalAsyncCallStatus[] = "AsyncCallStatus";
@@ -143,6 +141,7 @@ const char kSignalTpmInitStatus[] = "TpmInitStatus";
 const char kSignalCleanupUsersRemoved[] = "CleanupUsersRemoved";
 const char kSignalLowDiskSpace[] = "LowDiskSpace";
 const char kSignalDircryptoMigrationProgress[] = "DircryptoMigrationProgress";
+const char kSignalKeyChallenge[] = "KeyChallenge";
 // Error code
 enum MountError {
   MOUNT_ERROR_NONE = 0,

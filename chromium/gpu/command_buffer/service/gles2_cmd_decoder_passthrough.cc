@@ -82,7 +82,7 @@ void APIENTRY GLDebugMessageCallback(GLenum source,
                                      GLenum severity,
                                      GLsizei length,
                                      const GLchar* message,
-                                     GLvoid* user_param) {
+                                     const GLvoid* user_param) {
   DCHECK(user_param != nullptr);
   GLES2DecoderPassthroughImpl* command_decoder =
       static_cast<GLES2DecoderPassthroughImpl*>(const_cast<void*>(user_param));
@@ -1208,14 +1208,12 @@ gpu::Capabilities GLES2DecoderPassthroughImpl::GetCapabilities() {
   caps.multisample_compatibility =
       feature_info_->feature_flags().ext_multisample_compatibility;
   caps.dc_layers = !offscreen_ && surface_->SupportsDCLayers();
+  caps.commit_overlay_planes = surface_->SupportsCommitOverlayPlanes();
+  caps.use_dc_overlays_for_video = surface_->UseOverlaysForVideo();
   caps.texture_npot = feature_info_->feature_flags().npot_ok;
   caps.chromium_gpu_fence = feature_info_->feature_flags().chromium_gpu_fence;
   caps.texture_target_exception_list =
       group_->gpu_preferences().texture_target_exception_list;
-
-  // TODO:
-  // caps.commit_overlay_planes
-  // caps.use_dc_overlays_for_video = surface_->UseOverlaysForVideo();
 
   return caps;
 }
@@ -1274,7 +1272,7 @@ size_t GLES2DecoderPassthroughImpl::GetCreatedBackTextureCountForTest() {
   return create_color_buffer_count_for_test_;
 }
 
-gpu::gles2::QueryManager* GLES2DecoderPassthroughImpl::GetQueryManager() {
+gpu::QueryManager* GLES2DecoderPassthroughImpl::GetQueryManager() {
   return nullptr;
 }
 
@@ -1388,7 +1386,8 @@ gpu::gles2::ErrorState* GLES2DecoderPassthroughImpl::GetErrorState() {
   return nullptr;
 }
 
-void GLES2DecoderPassthroughImpl::WaitForReadPixels(base::Closure callback) {}
+void GLES2DecoderPassthroughImpl::WaitForReadPixels(
+    base::OnceClosure callback) {}
 
 bool GLES2DecoderPassthroughImpl::WasContextLost() const {
   return context_lost_;
@@ -1487,6 +1486,11 @@ void GLES2DecoderPassthroughImpl::OnDebugMessage(GLenum source,
   if (type == GL_DEBUG_TYPE_ERROR && source == GL_DEBUG_SOURCE_API) {
     had_error_callback_ = true;
   }
+}
+
+void GLES2DecoderPassthroughImpl::SetCopyTextureResourceManagerForTest(
+    CopyTextureCHROMIUMResourceManager* copy_texture_resource_manager) {
+  NOTIMPLEMENTED();
 }
 
 const char* GLES2DecoderPassthroughImpl::GetCommandName(
@@ -2045,6 +2049,21 @@ bool GLES2DecoderPassthroughImpl::IsEmulatedFramebufferBound(
   }
 
   return false;
+}
+
+error::Error GLES2DecoderPassthroughImpl::CheckSwapBuffersResult(
+    gfx::SwapResult result,
+    const char* function_name) {
+  if (result == gfx::SwapResult::SWAP_FAILED) {
+    LOG(ERROR) << "Context lost because " << function_name << " failed.";
+    if (!CheckResetStatus()) {
+      MarkContextLost(error::kUnknown);
+      group_->LoseContexts(error::kUnknown);
+      return error::kLostContext;
+    }
+  }
+
+  return error::kNoError;
 }
 
 // static

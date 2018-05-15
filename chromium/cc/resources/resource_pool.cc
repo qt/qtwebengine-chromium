@@ -20,7 +20,7 @@
 #include "build/build_config.h"
 #include "cc/base/container_util.h"
 #include "cc/resources/layer_tree_resource_provider.h"
-#include "cc/resources/resource_util.h"
+#include "components/viz/common/resources/resource_sizes.h"
 
 using base::trace_event::MemoryAllocatorDump;
 using base::trace_event::MemoryDumpLevelOfDetail;
@@ -124,8 +124,9 @@ ResourcePool::PoolResource* ResourcePool::ReuseResource(
     // Transfer resource to |in_use_resources_|.
     in_use_resources_[resource->unique_id()] = std::move(*it);
     unused_resources_.erase(it);
-    in_use_memory_usage_bytes_ += ResourceUtil::UncheckedSizeInBytes<size_t>(
-        resource->size(), resource->format());
+    in_use_memory_usage_bytes_ +=
+        viz::ResourceSizes::UncheckedSizeInBytes<size_t>(resource->size(),
+                                                         resource->format());
     return resource;
   }
   return nullptr;
@@ -135,19 +136,19 @@ ResourcePool::PoolResource* ResourcePool::CreateResource(
     const gfx::Size& size,
     viz::ResourceFormat format,
     const gfx::ColorSpace& color_space) {
-  DCHECK(ResourceUtil::VerifySizeInBytes<size_t>(size, format));
+  DCHECK(viz::ResourceSizes::VerifySizeInBytes<size_t>(size, format));
 
   auto pool_resource = std::make_unique<PoolResource>(
       next_resource_unique_id_++, size, format, color_space);
 
   total_memory_usage_bytes_ +=
-      ResourceUtil::UncheckedSizeInBytes<size_t>(size, format);
+      viz::ResourceSizes::UncheckedSizeInBytes<size_t>(size, format);
   ++total_resource_count_;
 
   PoolResource* resource = pool_resource.get();
   in_use_resources_[resource->unique_id()] = std::move(pool_resource);
   in_use_memory_usage_bytes_ +=
-      ResourceUtil::UncheckedSizeInBytes<size_t>(size, format);
+      viz::ResourceSizes::UncheckedSizeInBytes<size_t>(size, format);
 
   return resource;
 }
@@ -231,8 +232,9 @@ ResourcePool::TryAcquireResourceForPartialRaster(
     in_use_resources_[resource->unique_id()] =
         std::move(*iter_resource_to_return);
     unused_resources_.erase(iter_resource_to_return);
-    in_use_memory_usage_bytes_ += ResourceUtil::UncheckedSizeInBytes<size_t>(
-        resource->size(), resource->format());
+    in_use_memory_usage_bytes_ +=
+        viz::ResourceSizes::UncheckedSizeInBytes<size_t>(resource->size(),
+                                                         resource->format());
     *total_invalidated_rect = resource->invalidated_rect();
 
     // Clear the invalidated rect and content ID on the resource being retunred.
@@ -282,9 +284,9 @@ void ResourcePool::OnResourceReleased(size_t unique_id,
 void ResourcePool::PrepareForExport(const InUsePoolResource& resource) {
   // Exactly one of gpu or software backing should exist.
   DCHECK(resource.resource_->gpu_backing() ||
-         resource.resource_->shared_bitmap());
+         resource.resource_->software_backing());
   DCHECK(!resource.resource_->gpu_backing() ||
-         !resource.resource_->shared_bitmap());
+         !resource.resource_->software_backing());
   viz::TransferableResource transferable;
   if (resource.resource_->gpu_backing()) {
     transferable = viz::TransferableResource::MakeGLOverlay(
@@ -297,9 +299,11 @@ void ResourcePool::PrepareForExport(const InUsePoolResource& resource) {
         resource.resource_->gpu_backing()->wait_on_fence_required;
   } else {
     transferable = viz::TransferableResource::MakeSoftware(
-        resource.resource_->shared_bitmap()->id(),
-        resource.resource_->shared_bitmap()->sequence_number(),
-        resource.resource_->size());
+        resource.resource_->software_backing()->shared_bitmap_id,
+        // Not needed since this software resource's SharedBitmapId was
+        // notified to the display compositor through the CompositorFrameSink.
+        /*sequence_number=*/0, resource.resource_->size(),
+        resource.resource_->format());
   }
   transferable.format = resource.resource_->format();
   transferable.buffer_format = viz::BufferFormat(transferable.format);
@@ -362,8 +366,9 @@ void ResourcePool::ReleaseResource(InUsePoolResource in_use_resource) {
   CHECK(it->second.get());
 
   pool_resource->set_last_usage(base::TimeTicks::Now());
-  in_use_memory_usage_bytes_ -= ResourceUtil::UncheckedSizeInBytes<size_t>(
-      pool_resource->size(), pool_resource->format());
+  in_use_memory_usage_bytes_ -=
+      viz::ResourceSizes::UncheckedSizeInBytes<size_t>(pool_resource->size(),
+                                                       pool_resource->format());
 
   // Save the ResourceId since the |pool_resource| can be deleted in the next
   // step.
@@ -434,7 +439,7 @@ bool ResourcePool::ResourceUsageTooHigh() {
 }
 
 void ResourcePool::DeleteResource(std::unique_ptr<PoolResource> resource) {
-  size_t resource_bytes = ResourceUtil::UncheckedSizeInBytes<size_t>(
+  size_t resource_bytes = viz::ResourceSizes::UncheckedSizeInBytes<size_t>(
       resource->size(), resource->format());
   total_memory_usage_bytes_ -= resource_bytes;
   --total_resource_count_;
@@ -569,12 +574,11 @@ void ResourcePool::PoolResource::OnMemoryDump(
     bool is_free) const {
   base::UnguessableToken shm_guid;
   base::trace_event::MemoryAllocatorDumpGuid backing_guid;
-  if (shared_bitmap_) {
-    // Software resources are in shared memory but are kept closed to avoid
-    // holding an fd open. So there is no SharedMemoryHandle to get a guid
-    // from.
-    DCHECK(!shared_bitmap_->GetSharedMemoryHandle().IsValid());
-    backing_guid = viz::GetSharedBitmapGUIDForTracing(shared_bitmap_->id());
+  if (software_backing_) {
+    // Software resources are allocated in shared memory for use cross-process
+    // in the display compositor. So we use the guid for the shared memory to
+    // identify them in tracing in all processes.
+    shm_guid = software_backing_->SharedMemoryGuid();
   } else if (gpu_backing_) {
     // We prefer the SharedMemoryGuid() if it exists, if the resource is backed
     // by shared memory.
@@ -610,7 +614,7 @@ void ResourcePool::PoolResource::OnMemoryDump(
   }
 
   uint64_t total_bytes =
-      ResourceUtil::UncheckedSizeInBytesAligned<size_t>(size_, format_);
+      viz::ResourceSizes::UncheckedSizeInBytesAligned<size_t>(size_, format_);
   dump->AddScalar(MemoryAllocatorDump::kNameSize,
                   MemoryAllocatorDump::kUnitsBytes, total_bytes);
 

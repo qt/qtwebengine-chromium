@@ -20,7 +20,7 @@
 #include "content/public/renderer/render_frame_observer.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
-#include "third_party/WebKit/public/web/WebInputElement.h"
+#include "third_party/blink/public/web/web_input_element.h"
 #include "url/gurl.h"
 
 namespace autofill {
@@ -94,6 +94,8 @@ class PasswordGenerationAgent : public content::RenderFrameObserver,
   typedef std::vector<AccountCreationFormData> AccountCreationFormDataList;
 
   // RenderFrameObserver:
+  void DidCommitProvisionalLoad(bool is_new_navigation,
+                                bool is_same_document_navigation) override;
   void DidFinishDocumentLoad() override;
   void DidFinishLoad() override;
   void OnDestruct() override;
@@ -196,6 +198,10 @@ class PasswordGenerationAgent : public content::RenderFrameObserver,
 
   // If the form classifier should run.
   bool form_classifier_enabled_;
+
+  // True iff the generation element should be marked with special HTML
+  // attribute (only for experimental purposes).
+  bool mark_generation_element_;
 
   // Unowned pointer. Used to notify PassowrdAutofillAgent when values
   // in password fields are updated.

@@ -68,11 +68,13 @@ std::string D3D11VideoDecoder::GetDisplayName() const {
   return "D3D11VideoDecoder";
 }
 
-void D3D11VideoDecoder::Initialize(const VideoDecoderConfig& config,
-                                   bool low_delay,
-                                   CdmContext* cdm_context,
-                                   const InitCB& init_cb,
-                                   const OutputCB& output_cb) {
+void D3D11VideoDecoder::Initialize(
+    const VideoDecoderConfig& config,
+    bool low_delay,
+    CdmContext* cdm_context,
+    const InitCB& init_cb,
+    const OutputCB& output_cb,
+    const WaitingForDecryptionKeyCB& waiting_for_decryption_key_cb) {
   bool is_h264 = config.profile() >= H264PROFILE_MIN &&
                  config.profile() <= H264PROFILE_MAX;
   if (!is_h264) {
@@ -88,15 +90,18 @@ void D3D11VideoDecoder::Initialize(const VideoDecoderConfig& config,
       base::BindOnce(
           &VideoDecoder::Initialize, impl_weak_, config, low_delay, cdm_context,
           BindToCurrentThreadIfWeakPtr(weak_factory_.GetWeakPtr(), init_cb),
-          BindToCurrentThreadIfWeakPtr(weak_factory_.GetWeakPtr(), output_cb)));
+          BindToCurrentThreadIfWeakPtr(weak_factory_.GetWeakPtr(), output_cb),
+          BindToCurrentThreadIfWeakPtr(weak_factory_.GetWeakPtr(),
+                                       waiting_for_decryption_key_cb)));
 }
 
-void D3D11VideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
+void D3D11VideoDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
                                const DecodeCB& decode_cb) {
   impl_task_runner_->PostTask(
-      FROM_HERE, base::BindOnce(&VideoDecoder::Decode, impl_weak_, buffer,
-                                BindToCurrentThreadIfWeakPtr(
-                                    weak_factory_.GetWeakPtr(), decode_cb)));
+      FROM_HERE,
+      base::BindOnce(
+          &VideoDecoder::Decode, impl_weak_, std::move(buffer),
+          BindToCurrentThreadIfWeakPtr(weak_factory_.GetWeakPtr(), decode_cb)));
 }
 
 void D3D11VideoDecoder::Reset(const base::Closure& closure) {

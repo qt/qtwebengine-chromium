@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/user_metrics.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -19,7 +18,7 @@
 #include "extensions/browser/guest_view/web_view/web_view_guest.h"
 #include "extensions/browser/guest_view/web_view/web_view_permission_helper_delegate.h"
 #include "extensions/browser/guest_view/web_view/web_view_permission_types.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 
 using base::UserMetricsAction;
 using content::BrowserPluginGuestDelegate;
@@ -207,7 +206,7 @@ void WebViewPermissionHelper::RequestMediaAccessPermission(
 }
 
 bool WebViewPermissionHelper::CheckMediaAccessPermission(
-    content::WebContents* source,
+    content::RenderFrameHost* render_frame_host,
     const GURL& security_origin,
     content::MediaStreamType type) {
   if (!web_view_guest()->attached() ||
@@ -217,8 +216,7 @@ bool WebViewPermissionHelper::CheckMediaAccessPermission(
   return web_view_guest()
       ->embedder_web_contents()
       ->GetDelegate()
-      ->CheckMediaAccessPermission(
-          web_view_guest()->embedder_web_contents(), security_origin, type);
+      ->CheckMediaAccessPermission(render_frame_host, security_origin, type);
 }
 
 void WebViewPermissionHelper::OnMediaPermissionResponse(

@@ -37,22 +37,25 @@ InlineLoginHandler::InlineLoginHandler() : weak_ptr_factory_(this) {}
 InlineLoginHandler::~InlineLoginHandler() {}
 
 void InlineLoginHandler::RegisterMessages() {
-  web_ui()->RegisterMessageCallback("initialize",
-      base::Bind(&InlineLoginHandler::HandleInitializeMessage,
-                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("completeLogin",
-      base::Bind(&InlineLoginHandler::HandleCompleteLoginMessage,
-                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "initialize",
+      base::BindRepeating(&InlineLoginHandler::HandleInitializeMessage,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "completeLogin",
+      base::BindRepeating(&InlineLoginHandler::HandleCompleteLoginMessage,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "switchToFullTab",
-      base::Bind(&InlineLoginHandler::HandleSwitchToFullTabMessage,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("navigationButtonClicked",
-      base::Bind(&InlineLoginHandler::HandleNavigationButtonClicked,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("dialogClose",
-      base::Bind(&InlineLoginHandler::HandleDialogClose,
-                 base::Unretained(this)));
+      base::BindRepeating(&InlineLoginHandler::HandleSwitchToFullTabMessage,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "navigationButtonClicked",
+      base::BindRepeating(&InlineLoginHandler::HandleNavigationButtonClicked,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "dialogClose", base::BindRepeating(&InlineLoginHandler::HandleDialogClose,
+                                         base::Unretained(this)));
 }
 
 void InlineLoginHandler::HandleInitializeMessage(const base::ListValue* args) {
@@ -105,8 +108,12 @@ void InlineLoginHandler::ContinueHandleInitializeMessage() {
   if (reason != signin_metrics::Reason::REASON_REAUTHENTICATION &&
       reason != signin_metrics::Reason::REASON_UNLOCK &&
       reason != signin_metrics::Reason::REASON_ADD_SECONDARY_ACCOUNT) {
-    signin_metrics::LogSigninAccessPointStarted(access_point);
-    signin_metrics::RecordSigninUserActionForAccessPoint(access_point);
+    signin_metrics::LogSigninAccessPointStarted(
+        access_point,
+        signin_metrics::PromoAction::PROMO_ACTION_NO_SIGNIN_PROMO);
+    signin_metrics::RecordSigninUserActionForAccessPoint(
+        access_point,
+        signin_metrics::PromoAction::PROMO_ACTION_NO_SIGNIN_PROMO);
     base::RecordAction(base::UserMetricsAction("Signin_SigninPage_Loading"));
     params.SetBoolean("isLoginPrimaryAccount", true);
   }

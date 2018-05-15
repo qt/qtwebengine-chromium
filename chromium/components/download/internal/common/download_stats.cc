@@ -6,6 +6,7 @@
 
 #include <map>
 
+#include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/metrics/histogram_functions.h"
@@ -18,6 +19,9 @@
 namespace download {
 
 namespace {
+
+// The maximium value for download deletion retention time histogram.
+const int kMaxDeletionRetentionHours = 720;
 
 // All possible error codes from the network module. Note that the error codes
 // are all positive (since histograms expect positive sample values).
@@ -335,6 +339,28 @@ void RecordDownloadCompleted(const base::TimeTicks& start,
   if (is_parallelizable) {
     UMA_HISTOGRAM_CUSTOM_COUNTS("Download.DownloadSize.Parallelizable",
                                 download_len, 1, max, 256);
+  }
+}
+
+void RecordDownloadDeletion(base::Time completion_time,
+                            const std::string& mime_type) {
+  if (completion_time == base::Time())
+    return;
+
+  // Records how long the user keeps media files on disk.
+  base::TimeDelta retention_time = base::Time::Now() - completion_time;
+  int retention_hours = retention_time.InHours();
+
+  DownloadContent type = DownloadContentFromMimeType(mime_type, false);
+  if (type == DownloadContent::VIDEO) {
+    UMA_HISTOGRAM_CUSTOM_COUNTS("Download.DeleteRetentionTime.Video",
+                                retention_hours, 1, kMaxDeletionRetentionHours,
+                                50);
+  }
+  if (type == DownloadContent::AUDIO) {
+    UMA_HISTOGRAM_CUSTOM_COUNTS("Download.DeleteRetentionTime.Audio",
+                                retention_hours, 1, kMaxDeletionRetentionHours,
+                                50);
   }
 }
 
@@ -1042,6 +1068,32 @@ void RecordDownloadConnectionSecurity(const GURL& download_url,
 
   UMA_HISTOGRAM_ENUMERATION("Download.TargetConnectionSecurity", state,
                             DOWNLOAD_CONNECTION_SECURITY_MAX);
+}
+
+void RecordDownloadContentTypeSecurity(
+    const GURL& download_url,
+    const std::vector<GURL>& url_chain,
+    const std::string& mime_type,
+    const base::RepeatingCallback<bool(const GURL&)>&
+        is_origin_secure_callback) {
+  bool is_final_download_secure = is_origin_secure_callback.Run(download_url);
+  bool is_redirect_chain_secure = true;
+  for (const auto& url : url_chain) {
+    if (!is_origin_secure_callback.Run(url)) {
+      is_redirect_chain_secure = false;
+      break;
+    }
+  }
+
+  DownloadContent download_content =
+      download::DownloadContentFromMimeType(mime_type, false);
+  if (is_final_download_secure && is_redirect_chain_secure) {
+    UMA_HISTOGRAM_ENUMERATION("Download.Start.ContentType.SecureChain",
+                              download_content, DownloadContent::MAX);
+  } else {
+    UMA_HISTOGRAM_ENUMERATION("Download.Start.ContentType.InsecureChain",
+                              download_content, DownloadContent::MAX);
+  }
 }
 
 void RecordDownloadSourcePageTransitionType(

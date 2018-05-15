@@ -17,7 +17,7 @@
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/unowned_ptr.h"
 
-class IFX_PauseIndicator;
+class PauseIndicatorIface;
 class CPDF_Dictionary;
 class CPDF_Stream;
 class CPDF_Document;
@@ -49,13 +49,19 @@ class CPDF_PageObjectHolder {
 
   virtual bool IsPage() const;
 
-  void ContinueParse(IFX_PauseIndicator* pPause);
+  void ContinueParse(PauseIndicatorIface* pPause);
   bool IsParsed() const { return m_ParseState == CONTENT_PARSED; }
 
   CPDF_PageObjectList* GetPageObjectList() { return &m_PageObjectList; }
   const CPDF_PageObjectList* GetPageObjectList() const {
     return &m_PageObjectList;
   }
+
+  size_t GetPageObjectCount() const;
+  CPDF_PageObject* GetPageObjectByIndex(size_t index) const;
+  void AppendPageObject(std::unique_ptr<CPDF_PageObject> pPageObj);
+  bool RemovePageObject(CPDF_PageObject* pPageObj);
+
   const CFX_Matrix& GetLastCTM() const { return m_LastCTM; }
 
   bool BackgroundAlphaNeeded() const { return m_bBackgroundAlphaNeeded; }

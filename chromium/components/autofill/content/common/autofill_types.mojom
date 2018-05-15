@@ -4,8 +4,8 @@
 
 module autofill.mojom;
 
-import "mojo/common/text_direction.mojom";
-import "mojo/common/time.mojom";
+import "mojo/public/mojom/base/text_direction.mojom";
+import "mojo/public/mojom/base/time.mojom";
 import "mojo/public/mojom/base/string16.mojom";
 import "url/mojom/origin.mojom";
 import "url/mojom/url.mojom";
@@ -96,6 +96,7 @@ enum LabelSource {
   DD_TAG,
   LI_TAG,
   PLACE_HOLDER,
+  ARIA_LABEL,
   COMBINED,
   VALUE,
 };
@@ -118,7 +119,7 @@ struct FormFieldData {
   bool is_focusable;
   bool should_autocomplete;
   RoleAttribute role;
-  mojo.common.mojom.TextDirection text_direction;
+  mojo_base.mojom.TextDirection text_direction;
 
   array<mojo_base.mojom.String16> option_values;
   array<mojo_base.mojom.String16> option_contents;
@@ -182,8 +183,8 @@ struct PasswordFormGenerationData {
   uint32 confirmation_field_signature;
 };
 
-// autofill::PossibleUsernamePair
-struct PossibleUsernamePair {
+// autofill::ValueElementPair
+struct ValueElementPair {
   mojo_base.mojom.String16 value;
   mojo_base.mojom.String16 field_name;
 };
@@ -199,8 +200,8 @@ struct PasswordForm {
   mojo_base.mojom.String16 username_element;
   bool username_marked_by_site;
   mojo_base.mojom.String16 username_value;
-  array<PossibleUsernamePair> other_possible_usernames;
-  array<mojo_base.mojom.String16> all_possible_passwords;
+  array<ValueElementPair> other_possible_usernames;
+  array<ValueElementPair> all_possible_passwords;
   bool form_has_autofilled_value;
   mojo_base.mojom.String16 password_element;
   mojo_base.mojom.String16 password_value;
@@ -211,8 +212,8 @@ struct PasswordForm {
   bool new_password_marked_by_site;
   mojo_base.mojom.String16 confirmation_password_element;
   bool preferred;
-  mojo.common.mojom.Time date_created;
-  mojo.common.mojom.Time date_synced;
+  mojo_base.mojom.Time date_created;
+  mojo_base.mojom.Time date_synced;
   bool blacklisted_by_user;
   PasswordFormType type;
   int32 times_used;

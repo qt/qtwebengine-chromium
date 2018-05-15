@@ -175,9 +175,7 @@ rtc_source_set("test_support") {
     "testsupport/unittest_utils.h",
   ]
 
-  public_deps = [
-    ":fileutils",
-  ]
+  public_deps = []
   if (is_ios) {
     public_deps += [ ":test_support_objc" ]
   }
@@ -197,10 +195,6 @@ rtc_source_set("test_support") {
   if (!build_with_chromium && is_clang) {
     # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
     suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
-  if (is_android) {
-    deps += [ "//base:base" ]
   }
 
   if (is_ios && !build_with_chromium) {
@@ -225,6 +219,7 @@ if (rtc_include_tests) {
     ]
     deps = [
       ":field_trial",
+      ":fileutils",
       ":perf_test",
       "../rtc_base:rtc_base_approved",
       "../system_wrappers:field_trial_default",
@@ -240,8 +235,6 @@ if (rtc_include_tests) {
     sources = [
       "testsupport/frame_reader.h",
       "testsupport/frame_writer.h",
-      "testsupport/metrics/video_metrics.cc",
-      "testsupport/metrics/video_metrics.h",
       "testsupport/mock/mock_frame_reader.h",
       "testsupport/y4m_frame_writer.cc",
       "testsupport/yuv_frame_reader.cc",
@@ -249,6 +242,7 @@ if (rtc_include_tests) {
     ]
 
     deps = [
+      ":fileutils",
       ":test_support",
       ":video_test_common",
       "..:webrtc_common",
@@ -269,10 +263,6 @@ if (rtc_include_tests) {
     } else {
       sources += [ "testsupport/jpeg_frame_writer_ios.cc" ]
     }
-
-    public_deps = [
-      ":fileutils",
-    ]
 
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
@@ -326,26 +316,24 @@ if (rtc_include_tests) {
 
   rtc_test("test_support_unittests") {
     deps = [
-      ":fake_audio_device",
+      ":fileutils",
       ":perf_test",
       ":rtp_test_utils",
       "../api:video_frame_api",
       "../api:video_frame_api_i420",
       "../call:call_interfaces",
       "../common_audio",
+      "../modules/audio_device",
       "../modules/rtp_rtcp",
       "../rtc_base:rtc_base_approved",
       "../system_wrappers",
     ]
     sources = [
-      "fake_audio_device_unittest.cc",
-      "fake_network_pipe_unittest.cc",
       "frame_generator_unittest.cc",
       "rtp_file_reader_unittest.cc",
       "rtp_file_writer_unittest.cc",
       "single_threaded_task_queue_unittest.cc",
       "testsupport/always_passing_unittest.cc",
-      "testsupport/metrics/video_metrics_unittest.cc",
       "testsupport/perf_test_unittest.cc",
       "testsupport/test_artifacts_unittest.cc",
       "testsupport/y4m_frame_writer_unittest.cc",
@@ -404,12 +392,7 @@ if (is_ios) {
 
 rtc_source_set("fileutils") {
   testonly = true
-  visibility = [
-    ":fileutils_unittests",
-    ":test_support_test_artifacts",
-    ":test_support",
-    ":video_test_support",
-  ]
+  visibility = [ "*" ]
   sources = [
     "testsupport/fileutils.cc",
     "testsupport/fileutils.h",
@@ -494,8 +477,6 @@ rtc_source_set("direct_transport") {
   sources = [
     "direct_transport.cc",
     "direct_transport.h",
-    "fake_network_pipe.cc",
-    "fake_network_pipe.h",
   ]
   if (!build_with_chromium && is_clang) {
     # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
@@ -505,7 +486,6 @@ rtc_source_set("direct_transport") {
     "..:webrtc_common",
     "../:typedefs",
     "../api:transport_api",
-    "../call",
     "../call:call_interfaces",
     "../modules/rtp_rtcp",
     "../rtc_base:rtc_base_approved",
@@ -514,6 +494,7 @@ rtc_source_set("direct_transport") {
   ]
   public_deps = [
     ":single_threaded_task_queue",
+    "../call:fake_network",
   ]
 }
 
@@ -526,29 +507,6 @@ rtc_source_set("single_threaded_task_queue") {
   deps = [
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
-  ]
-}
-
-rtc_source_set("fake_audio_device") {
-  visibility = [ "*" ]
-  testonly = true
-  sources = [
-    "fake_audio_device.cc",
-    "fake_audio_device.h",
-  ]
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-  deps = [
-    "..:webrtc_common",
-    "../:typedefs",
-    "../api:array_view",
-    "../common_audio:common_audio",
-    "../modules/audio_device:audio_device",
-    "../rtc_base:checks",
-    "../rtc_base:rtc_base_approved",
-    "../system_wrappers",
   ]
 }
 
@@ -572,6 +530,7 @@ rtc_source_set("test_common") {
     "fake_videorenderer.h",
     "layer_filtering_transport.cc",
     "layer_filtering_transport.h",
+    "mock_transport.cc",
     "mock_transport.h",
     "null_transport.cc",
     "null_transport.h",
@@ -594,7 +553,7 @@ rtc_source_set("test_common") {
 
   deps = [
     ":direct_transport",
-    ":fake_audio_device",
+    ":fileutils",
     ":rtp_test_utils",
     ":test_support",
     ":video_test_common",
@@ -615,7 +574,10 @@ rtc_source_set("test_common") {
     "../common_video",
     "../logging:rtc_event_log_api",
     "../logging:rtc_event_log_impl_base",
+    "../media:rtc_internal_video_codecs",
     "../media:rtc_media_base",
+    "../modules/audio_device",
+    "../modules/audio_device:audio_device_impl",
     "../modules/audio_device:mock_audio_device",
     "../modules/audio_mixer:audio_mixer_impl",
     "../modules/audio_processing",
@@ -625,6 +587,7 @@ rtc_source_set("test_common") {
     "../modules/video_coding:video_codec_interface",
     "../modules/video_coding:video_coding_utility",
     "../modules/video_coding:webrtc_h264",
+    "../modules/video_coding:webrtc_multiplex",
     "../modules/video_coding:webrtc_vp8",
     "../modules/video_coding:webrtc_vp9",
     "../rtc_base:checks",

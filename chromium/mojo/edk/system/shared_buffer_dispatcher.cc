@@ -12,7 +12,6 @@
 #include <utility>
 
 #include "base/logging.h"
-#include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/system/configuration.h"
 #include "mojo/edk/system/node_controller.h"
 #include "mojo/edk/system/options_validation.h"
@@ -237,6 +236,15 @@ MojoResult SharedBufferDispatcher::MapBuffer(
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
   }
 
+  return MOJO_RESULT_OK;
+}
+
+MojoResult SharedBufferDispatcher::GetBufferInfo(MojoSharedBufferInfo* info) {
+  if (!info)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  base::AutoLock lock(lock_);
+  info->size = shared_buffer_->GetNumBytes();
   return MOJO_RESULT_OK;
 }
 

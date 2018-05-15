@@ -57,9 +57,6 @@ class CookieChangeDispatcher;
 // latter case, the cookie callback will be queued in tasks_pending_for_key_
 // while PermanentCookieStore loads cookies for the specified domain key on DB
 // thread.
-//
-// TODO(deanm) Implement CookieMonster, the cookie database.
-//  - Verify that our domain enforcement and non-dotted handling is correct
 class NET_EXPORT CookieMonster : public CookieStore {
  public:
   class PersistentCookieStore;
@@ -134,16 +131,16 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // this class, but it must remain valid for the duration of the cookie
   // monster's existence. If |store| is NULL, then no backing store will be
   // updated.
-  explicit CookieMonster(PersistentCookieStore* store);
+  explicit CookieMonster(scoped_refptr<PersistentCookieStore> store);
 
   // Like above, but includes a non-owning pointer |channel_id_service| for the
   // corresponding ChannelIDService used with this CookieStore. The
   // |channel_id_service| must outlive the CookieMonster.
-  CookieMonster(PersistentCookieStore* store,
+  CookieMonster(scoped_refptr<PersistentCookieStore> store,
                 ChannelIDService* channel_id_service);
 
   // Only used during unit testing.
-  CookieMonster(PersistentCookieStore* store,
+  CookieMonster(scoped_refptr<PersistentCookieStore> store,
                 base::TimeDelta last_access_threshold);
 
   ~CookieMonster() override;
@@ -207,6 +204,9 @@ class NET_EXPORT CookieMonster : public CookieStore {
 
   bool IsEphemeral() override;
 
+  void DumpMemoryStats(base::trace_event::ProcessMemoryDump* pmd,
+                       const std::string& parent_absolute_name) const override;
+
   // Find a key based on the given domain, which will be used to find all
   // cookies potentially relevant to it. This is used for lookup in cookies_ as
   // well as for PersistentCookieStore::LoadCookiesForKey. See comment on keys
@@ -214,7 +214,7 @@ class NET_EXPORT CookieMonster : public CookieStore {
   static std::string GetKey(base::StringPiece domain);
 
  private:
-  CookieMonster(PersistentCookieStore* store,
+  CookieMonster(scoped_refptr<PersistentCookieStore> store,
                 ChannelIDService* channel_id_service,
                 base::TimeDelta last_access_threshold);
 
@@ -642,12 +642,6 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // create a value that compares earlier than any other time value, which is
   // wanted.  Thus this value is not initialized.
   base::Time earliest_access_time_;
-
-  // During loading, holds the set of all loaded cookie creation times. Used to
-  // avoid ever letting cookies with duplicate creation times into the store;
-  // that way we don't have to worry about what sections of code are safe
-  // to call while it's in that state.
-  std::set<int64_t> creation_times_;
 
   std::vector<std::string> cookieable_schemes_;
 

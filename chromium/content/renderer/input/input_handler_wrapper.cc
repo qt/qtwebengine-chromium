@@ -10,7 +10,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/renderer/input/input_event_filter.h"
 #include "content/renderer/input/input_handler_manager.h"
-#include "third_party/WebKit/public/platform/Platform.h"
+#include "third_party/blink/public/platform/platform.h"
 #include "ui/events/blink/did_overscroll_params.h"
 
 namespace content {
@@ -86,6 +86,10 @@ void InputHandlerWrapper::DidStopFlinging() {
 
 void InputHandlerWrapper::DidAnimateForInput() {
   input_handler_manager_->DidAnimateForInput();
+}
+
+void InputHandlerWrapper::DidStartScrollingViewport() {
+  input_handler_manager_->DidStartScrollingViewport(routing_id_);
 }
 
 void InputHandlerWrapper::GenerateScrollBeginAndSendToMainThread(

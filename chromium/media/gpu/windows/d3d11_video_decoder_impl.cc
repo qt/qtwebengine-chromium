@@ -22,7 +22,7 @@ namespace media {
 namespace {
 
 static bool MakeContextCurrent(gpu::CommandBufferStub* stub) {
-  return stub && stub->decoder()->MakeCurrent();
+  return stub && stub->decoder_context()->MakeCurrent();
 }
 
 }  // namespace
@@ -41,11 +41,13 @@ std::string D3D11VideoDecoderImpl::GetDisplayName() const {
   return "D3D11VideoDecoderImpl";
 }
 
-void D3D11VideoDecoderImpl::Initialize(const VideoDecoderConfig& config,
-                                       bool low_delay,
-                                       CdmContext* cdm_context,
-                                       const InitCB& init_cb,
-                                       const OutputCB& output_cb) {
+void D3D11VideoDecoderImpl::Initialize(
+    const VideoDecoderConfig& config,
+    bool low_delay,
+    CdmContext* cdm_context,
+    const InitCB& init_cb,
+    const OutputCB& output_cb,
+    const WaitingForDecryptionKeyCB& waiting_for_decryption_key_cb) {
   init_cb_ = init_cb;
   output_cb_ = output_cb;
 
@@ -153,15 +155,15 @@ void D3D11VideoDecoderImpl::Initialize(const VideoDecoderConfig& config,
     return;
   }
 
-  h264_accelerator_.reset(new D3D11H264Accelerator(
-      this, video_decoder, video_device_, video_context_));
-  decoder_.reset(new media::H264Decoder(h264_accelerator_.get()));
+  accelerated_video_decoder_ =
+      std::make_unique<H264Decoder>(std::make_unique<D3D11H264Accelerator>(
+          this, video_decoder, video_device_, video_context_));
 
   state_ = State::kRunning;
   std::move(init_cb_).Run(true);
 }
 
-void D3D11VideoDecoderImpl::Decode(const scoped_refptr<DecoderBuffer>& buffer,
+void D3D11VideoDecoderImpl::Decode(scoped_refptr<DecoderBuffer> buffer,
                                    const DecodeCB& decode_cb) {
   if (state_ == State::kError) {
     // TODO(liberato): consider posting, though it likely doesn't matter.
@@ -169,7 +171,7 @@ void D3D11VideoDecoderImpl::Decode(const scoped_refptr<DecoderBuffer>& buffer,
     return;
   }
 
-  input_buffer_queue_.push_back(std::make_pair(buffer, decode_cb));
+  input_buffer_queue_.push_back(std::make_pair(std::move(buffer), decode_cb));
   // Post, since we're not supposed to call back before this returns.  It
   // probably doesn't matter since we're in the gpu process anyway.
   base::ThreadTaskRunnerHandle::Get()->PostTask(
@@ -185,14 +187,14 @@ void D3D11VideoDecoderImpl::DoDecode() {
     if (input_buffer_queue_.empty()) {
       return;
     }
-    current_buffer_ = input_buffer_queue_.front().first;
+    current_buffer_ = std::move(input_buffer_queue_.front().first);
     current_decode_cb_ = input_buffer_queue_.front().second;
     current_timestamp_ = current_buffer_->timestamp();
     input_buffer_queue_.pop_front();
     if (current_buffer_->end_of_stream()) {
       // Flush, then signal the decode cb once all pictures have been output.
       current_buffer_ = nullptr;
-      if (!decoder_->Flush()) {
+      if (!accelerated_video_decoder_->Flush()) {
         // This will also signal error |current_decode_cb_|.
         NotifyError("Flush failed");
         return;
@@ -202,8 +204,9 @@ void D3D11VideoDecoderImpl::DoDecode() {
       std::move(current_decode_cb_).Run(DecodeStatus::OK);
       return;
     }
-    decoder_->SetStream((const uint8_t*)current_buffer_->data(),
-                        current_buffer_->data_size());
+    accelerated_video_decoder_->SetStream(
+        -1, (const uint8_t*)current_buffer_->data(),
+        current_buffer_->data_size());
   }
 
   while (true) {
@@ -211,7 +214,8 @@ void D3D11VideoDecoderImpl::DoDecode() {
     if (state_ == State::kError)
       return;
 
-    media::AcceleratedVideoDecoder::DecodeResult result = decoder_->Decode();
+    media::AcceleratedVideoDecoder::DecodeResult result =
+        accelerated_video_decoder_->Decode();
     // TODO(liberato): switch + class enum.
     if (result == media::AcceleratedVideoDecoder::kRanOutOfStreamData) {
       current_buffer_ = nullptr;
@@ -248,7 +252,7 @@ void D3D11VideoDecoderImpl::Reset(const base::Closure& closure) {
   input_buffer_queue_.clear();
 
   // TODO(liberato): how do we signal an error?
-  decoder_->Reset();
+  accelerated_video_decoder_->Reset();
   closure.Run();
 }
 
@@ -272,7 +276,7 @@ void D3D11VideoDecoderImpl::CreatePictureBuffers() {
   // the VDA requests 20.
   const int num_buffers = 20;
 
-  gfx::Size size = decoder_->GetPicSize();
+  gfx::Size size = accelerated_video_decoder_->GetPicSize();
 
   // Create an array of |num_buffers| elements to back the PictureBuffers.
   D3D11_TEXTURE2D_DESC texture_desc = {};
@@ -338,6 +342,8 @@ void D3D11VideoDecoderImpl::OutputResult(D3D11PictureBuffer* buffer) {
   frame->SetReleaseMailboxCB(media::BindToCurrentLoop(base::BindOnce(
       &D3D11VideoDecoderImpl::OnMailboxReleased, weak_factory_.GetWeakPtr(),
       scoped_refptr<D3D11PictureBuffer>(buffer))));
+  frame->metadata()->SetBoolean(VideoFrameMetadata::POWER_EFFICIENT, true);
+
   output_cb_.Run(frame);
 }
 

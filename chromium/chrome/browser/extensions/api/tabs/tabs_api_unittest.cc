@@ -20,9 +20,12 @@
 #include "extensions/browser/api_test_utils.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_builder.h"
+#include "ui/display/test/scoped_screen_override.h"
 #include "ui/display/test/test_screen.h"
 
 namespace extensions {
+
+using display::test::ScopedScreenOverride;
 
 namespace {
 
@@ -58,6 +61,8 @@ class TabsApiUnitTest : public ExtensionServiceTestBase {
 
   display::test::TestScreen test_screen_;
 
+  std::unique_ptr<ScopedScreenOverride> scoped_screen_override_;
+
   DISALLOW_COPY_AND_ASSIGN(TabsApiUnitTest);
 };
 
@@ -71,7 +76,8 @@ void TabsApiUnitTest::SetUp() {
   params.type = Browser::TYPE_TABBED;
   params.window = browser_window_.get();
   browser_.reset(new Browser(params));
-  display::Screen::SetScreenInstance(&test_screen_);
+  scoped_screen_override_ =
+      std::make_unique<ScopedScreenOverride>(&test_screen_);
 }
 
 void TabsApiUnitTest::TearDown() {
@@ -247,7 +253,7 @@ TEST_F(TabsApiUnitTest, PDFExtensionNavigation) {
   EXPECT_EQ(kGoogle, web_contents->GetVisibleURL());
 
   SessionTabHelper::CreateForWebContents(web_contents);
-  int tab_id = SessionTabHelper::IdForTab(web_contents);
+  int tab_id = SessionTabHelper::IdForTab(web_contents).id();
   browser()->tab_strip_model()->AppendWebContents(web_contents, true);
 
   scoped_refptr<TabsUpdateFunction> function = new TabsUpdateFunction();

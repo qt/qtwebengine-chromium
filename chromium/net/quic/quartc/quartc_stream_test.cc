@@ -9,6 +9,7 @@
 #include "net/quic/core/quic_session.h"
 #include "net/quic/core/quic_simple_buffer_allocator.h"
 #include "net/quic/platform/api/quic_ptr_util.h"
+#include "net/quic/platform/api/quic_test_mem_slice_vector.h"
 #include "net/quic/quartc/quartc_clock_interface.h"
 #include "net/quic/quartc/quartc_factory.h"
 #include "net/quic/test_tools/mock_clock.h"
@@ -20,7 +21,6 @@ namespace net {
 
 namespace {
 
-static const SpdyPriority kDefaultPriority = 3;
 static const QuicStreamId kStreamId = 5;
 static const QuartcStreamInterface::WriteParameters kDefaultParam;
 
@@ -78,7 +78,9 @@ class MockQuicSession : public QuicSession {
 
   // Tracks whether the stream is write blocked and its priority.
   void RegisterReliableStream(QuicStreamId stream_id, SpdyPriority priority) {
-    write_blocked_streams()->RegisterStream(stream_id, priority);
+    write_blocked_streams()->RegisterStream(stream_id,
+                                            /*is_static_stream=*/false,
+                                            priority);
   }
 
   // The session take ownership of the stream.
@@ -125,8 +127,8 @@ class MockQuartcStreamDelegate : public QuartcStreamInterface::Delegate {
   MockQuartcStreamDelegate(int id, std::string* read_buffer)
       : id_(id), read_buffer_(read_buffer) {}
 
-  void OnCanWrite(QuartcStreamInterface* stream) override {
-    ++on_can_write_callbacks_;
+  void OnBufferChanged(QuartcStreamInterface* stream) override {
+    last_bytes_buffered_ = stream->bytes_buffered();
   }
 
   void OnReceived(QuartcStreamInterface* stream,
@@ -140,7 +142,7 @@ class MockQuartcStreamDelegate : public QuartcStreamInterface::Delegate {
 
   bool closed() { return closed_; }
 
-  int32_t on_can_write_callbacks() { return on_can_write_callbacks_; }
+  uint64_t last_bytes_buffered() { return last_bytes_buffered_; }
 
  protected:
   uint32_t id_;
@@ -148,8 +150,9 @@ class MockQuartcStreamDelegate : public QuartcStreamInterface::Delegate {
   std::string* read_buffer_;
   // Whether the QuicStream is closed.
   bool closed_ = false;
-  // How many times OnCanWrite has been called.
-  int32_t on_can_write_callbacks_ = 0;
+
+  // Last amount of data observed as buffered.
+  uint64_t last_bytes_buffered_ = 0;
 };
 
 class QuartcStreamTest : public ::testing::Test,
@@ -177,7 +180,10 @@ class QuartcStreamTest : public ::testing::Test,
         QuicMakeUnique<MockQuartcStreamDelegate>(kStreamId, &read_buffer_);
     stream_ = new QuartcStream(kStreamId, session_.get());
     stream_->SetDelegate(mock_stream_delegate_.get());
-    session_->RegisterReliableStream(stream_->stream_id(), kDefaultPriority);
+    if (!session_->register_streams_early()) {
+      session_->RegisterReliableStream(stream_->stream_id(),
+                                       QuicStream::kDefaultPriority);
+    }
     session_->ActivateReliableStream(std::unique_ptr<QuartcStream>(stream_));
   }
 
@@ -212,42 +218,67 @@ class QuartcStreamTest : public ::testing::Test,
 // Write an entire string.
 TEST_F(QuartcStreamTest, WriteDataWhole) {
   CreateReliableQuicStream();
-  stream_->Write("Foo bar", 7, kDefaultParam);
+  char message[] = "Foo bar";
+  test::QuicTestMemSliceVector data({std::make_pair(message, 7)});
+  stream_->Write(data.span(), kDefaultParam);
   EXPECT_EQ("Foo bar", write_buffer_);
 }
 
 // Write part of a string.
 TEST_F(QuartcStreamTest, WriteDataPartial) {
   CreateReliableQuicStream();
-  stream_->Write("Foo bar", 5, kDefaultParam);
+  char message[] = "Foo bar";
+  test::QuicTestMemSliceVector data({std::make_pair(message, 5)});
+  stream_->Write(data.span(), kDefaultParam);
   EXPECT_EQ("Foo b", write_buffer_);
 }
 
-// Test that strings are not buffered.
-TEST_F(QuartcStreamTest, NoBuffer) {
+// Test that a QuartcStream buffers writes correctly.
+TEST_F(QuartcStreamTest, StreamBuffersData) {
   CreateReliableQuicStream();
 
+  char message[] = "Foo bar";
+  test::QuicTestMemSliceVector data({std::make_pair(message, 7)});
+
+  // The stream is not yet writable, so data will be buffered.
   session_->set_writable(false);
-  stream_->Write("Foo bar", 7, kDefaultParam);
-  // The data will not be buffered.
-  EXPECT_EQ(0ul, write_buffer_.size());
+  stream_->Write(data.span(), kDefaultParam);
+
+  // Check that data is buffered.
   EXPECT_TRUE(stream_->HasBufferedData());
-  EXPECT_EQ(0u, stream_->bytes_written());
-  // The stream is writable, but there's nothing to send.
+  EXPECT_EQ(7u, stream_->bytes_buffered());
+
+  // Check that the stream told its delegate about the buffer change.
+  EXPECT_EQ(7u, mock_stream_delegate_->last_bytes_buffered());
+
+  // Check that none of the data was written yet.
+  // Note that |write_buffer_| actually holds data written by the QuicSession
+  // (not data buffered by the stream).
+  EXPECT_EQ(0ul, write_buffer_.size());
+
+  char message1[] = "xyzzy";
+  test::QuicTestMemSliceVector data1({std::make_pair(message1, 5)});
+
+  // More writes go into the buffer.
+  stream_->Write(data1.span(), kDefaultParam);
+
+  EXPECT_TRUE(stream_->HasBufferedData());
+  EXPECT_EQ(12u, stream_->bytes_buffered());
+  EXPECT_EQ(12u, mock_stream_delegate_->last_bytes_buffered());
+  EXPECT_EQ(0ul, write_buffer_.size());
+
+  // The stream becomes writable, so it sends the buffered data.
   session_->set_writable(true);
   stream_->OnCanWrite();
-  EXPECT_EQ(7u, stream_->bytes_written());
-  EXPECT_EQ(7ul, write_buffer_.size());
-  EXPECT_FALSE(stream_->HasBufferedData());
 
-  stream_->Write("xyzzy", 5, kDefaultParam);
+  EXPECT_FALSE(stream_->HasBufferedData());
+  EXPECT_EQ(0u, stream_->bytes_buffered());
+  EXPECT_EQ(0u, mock_stream_delegate_->last_bytes_buffered());
   EXPECT_EQ("Foo barxyzzy", write_buffer_);
-  EXPECT_EQ(12u, stream_->bytes_written());
 }
 
 // Finish writing to a stream.
-// The stream no longer calls OnCanWrite().  It delivers the fin bit and closes
-// the write-side as soon as possible.
+// It delivers the fin bit and closes the write-side as soon as possible.
 TEST_F(QuartcStreamTest, FinishWriting) {
   CreateReliableQuicStream();
 
@@ -255,16 +286,11 @@ TEST_F(QuartcStreamTest, FinishWriting) {
   stream_->FinishWriting();
   EXPECT_FALSE(stream_->fin_sent());
 
-  // Fin is buffered, no callback to OnCanWrite.
-  stream_->OnCanWrite();
-  EXPECT_EQ(0, mock_stream_delegate_->on_can_write_callbacks());
-  EXPECT_FALSE(stream_->fin_sent());
-
-  // Fin is sent, no callback to OnCanWrite.
+  // Fin is sent as soon as the stream becomes writable.
   session_->set_writable(true);
   stream_->OnCanWrite();
-  EXPECT_EQ(0, mock_stream_delegate_->on_can_write_callbacks());
   EXPECT_TRUE(stream_->fin_sent());
+  EXPECT_TRUE(stream_->write_side_closed());
 }
 
 // Read an entire string.
@@ -319,7 +345,8 @@ TEST_F(QuartcStreamTest, CloseOnFins) {
 
   QuartcStreamInterface::WriteParameters param;
   param.fin = true;
-  stream_->Write(nullptr, 0, param);
+  test::QuicTestMemSliceVector data({});
+  stream_->Write(data.span(), param);
 
   // Check that the OnClose() callback occurred.
   EXPECT_TRUE(mock_stream_delegate_->closed());

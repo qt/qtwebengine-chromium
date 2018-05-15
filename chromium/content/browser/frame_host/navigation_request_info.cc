@@ -4,6 +4,7 @@
 
 #include "content/browser/frame_host/navigation_request_info.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "mojo/common/values_struct_traits.h"
 
 namespace content {
 
@@ -17,7 +18,9 @@ NavigationRequestInfo::NavigationRequestInfo(
     int frame_tree_node_id,
     bool is_for_guests_only,
     bool report_raw_headers,
-    bool is_prerendering)
+    bool is_prerendering,
+    std::unique_ptr<network::SharedURLLoaderFactoryInfo>
+        blob_url_loader_factory)
     : common_params(common_params),
       begin_params(std::move(begin_params)),
       site_for_cookies(site_for_cookies),
@@ -27,7 +30,20 @@ NavigationRequestInfo::NavigationRequestInfo(
       frame_tree_node_id(frame_tree_node_id),
       is_for_guests_only(is_for_guests_only),
       report_raw_headers(report_raw_headers),
-      is_prerendering(is_prerendering) {}
+      is_prerendering(is_prerendering),
+      blob_url_loader_factory(std::move(blob_url_loader_factory)) {}
+
+NavigationRequestInfo::NavigationRequestInfo(const NavigationRequestInfo& other)
+    : common_params(other.common_params),
+      begin_params(other.begin_params.Clone()),
+      site_for_cookies(other.site_for_cookies),
+      is_main_frame(other.is_main_frame),
+      parent_is_main_frame(other.parent_is_main_frame),
+      are_ancestors_secure(other.are_ancestors_secure),
+      frame_tree_node_id(other.frame_tree_node_id),
+      is_for_guests_only(other.is_for_guests_only),
+      report_raw_headers(other.report_raw_headers),
+      is_prerendering(other.is_prerendering) {}
 
 NavigationRequestInfo::~NavigationRequestInfo() {}
 

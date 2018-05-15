@@ -173,8 +173,9 @@ class MEDIA_EXPORT MediaCodecLoop {
     // call back won't happen.
     virtual void OnInputDataQueued(bool success) = 0;
 
-    // Called when an EOS buffer is dequeued from the output.
-    virtual void OnDecodedEos(const OutputBuffer& out) = 0;
+    // Called when an EOS buffer is dequeued from the output.  If this returns
+    // false, then we transition to STATE_ERROR.
+    virtual bool OnDecodedEos(const OutputBuffer& out) = 0;
 
     // Processes the output buffer after it comes from MediaCodec.  The client
     // has the responsibility to release the codec buffer, though it doesn't
@@ -208,7 +209,7 @@ class MEDIA_EXPORT MediaCodecLoop {
   // Optionally set the tick clock used for testing.  It is our caller's
   // responsibility to maintain ownership of this, since
   // FakeSingleThreadTaskRunner maintains a raw ptr to it also.
-  void SetTestTickClock(base::TickClock* test_tick_clock);
+  void SetTestTickClock(const base::TickClock* test_tick_clock);
 
   // Does the MediaCodec processing cycle: enqueues an input buffer, then
   // dequeues output buffers.  This should be called by the client when more
@@ -312,9 +313,11 @@ class MEDIA_EXPORT MediaCodecLoop {
 
   // Optional clock for use during testing.  It may be null.  We do not maintain
   // ownership of it.
-  base::TickClock* test_tick_clock_ = nullptr;
+  const base::TickClock* test_tick_clock_ = nullptr;
 
-  // BuildInfo::sdk_int(), eventually.
+  // Has the value of BuildInfo::sdk_int(), except in tests where it
+  // might be set to other values. Will not be needed when there is a
+  // mockable BuildInfo.
   const int sdk_int_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.

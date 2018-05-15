@@ -10,32 +10,50 @@
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "base/macros.h"
-#include "media/cdm/api/content_decryption_module.h"
-#include "media/cdm/supported_cdm_versions.h"
-
-#if defined(USE_PPAPI_CDM_ADAPTER)
-// When building the ppapi adapter do not include any non-trivial base/ headers.
-#include "ppapi/cpp/logging.h"  // nogncheck
-#define PLATFORM_DCHECK PP_DCHECK
-#else
 #include "base/feature_list.h"
 #include "base/logging.h"
-#include "media/base/media_switches.h"  // nogncheck
-#define PLATFORM_DCHECK DCHECK
-#endif
+#include "base/macros.h"
+#include "media/base/media_switches.h"
+#include "media/cdm/api/content_decryption_module.h"
+#include "media/cdm/supported_cdm_versions.h"
 
 namespace media {
 
 namespace {
 
 bool IsExperimentalCdmInterfaceSupported() {
-#if defined(USE_PPAPI_CDM_ADAPTER)
-  // No new CDM interface will be supported using pepper CDM.
-  return false;
-#else
   return base::FeatureList::IsEnabled(media::kSupportExperimentalCdmInterface);
-#endif
+}
+
+bool IsEncryptionSchemeSupportedByLegacyCdms(
+    const cdm::EncryptionScheme& scheme) {
+  // CDM_8 and CDM_9 don't check the encryption scheme, so do it here.
+  return scheme == cdm::EncryptionScheme::kUnencrypted ||
+         scheme == cdm::EncryptionScheme::kCenc;
+}
+
+cdm::AudioDecoderConfig_1 ToAudioDecoderConfig_1(
+    const cdm::AudioDecoderConfig_2& config) {
+  return {config.codec,
+          config.channel_count,
+          config.bits_per_channel,
+          config.samples_per_second,
+          config.extra_data,
+          config.extra_data_size};
+}
+
+cdm::VideoDecoderConfig_1 ToVideoDecoderConfig_1(
+    const cdm::VideoDecoderConfig_2& config) {
+  return {config.codec,      config.profile,    config.format,
+          config.coded_size, config.extra_data, config.extra_data_size};
+}
+
+cdm::InputBuffer_1 ToInputBuffer_1(const cdm::InputBuffer_2& buffer) {
+  return {buffer.data,       buffer.data_size,
+          buffer.key_id,     buffer.key_id_size,
+          buffer.iv,         buffer.iv_size,
+          buffer.subsamples, buffer.num_subsamples,
+          buffer.timestamp};
 }
 
 }  // namespace
@@ -122,19 +140,19 @@ class CdmWrapper {
                              const char* session_id,
                              uint32_t session_id_size) = 0;
   virtual void TimerExpired(void* context) = 0;
-  virtual cdm::Status Decrypt(const cdm::InputBuffer& encrypted_buffer,
+  virtual cdm::Status Decrypt(const cdm::InputBuffer_2& encrypted_buffer,
                               cdm::DecryptedBlock* decrypted_buffer) = 0;
   virtual cdm::Status InitializeAudioDecoder(
-      const cdm::AudioDecoderConfig& audio_decoder_config) = 0;
+      const cdm::AudioDecoderConfig_2& audio_decoder_config) = 0;
   virtual cdm::Status InitializeVideoDecoder(
-      const cdm::VideoDecoderConfig& video_decoder_config) = 0;
+      const cdm::VideoDecoderConfig_2& video_decoder_config) = 0;
   virtual void DeinitializeDecoder(cdm::StreamType decoder_type) = 0;
   virtual void ResetDecoder(cdm::StreamType decoder_type) = 0;
   virtual cdm::Status DecryptAndDecodeFrame(
-      const cdm::InputBuffer& encrypted_buffer,
+      const cdm::InputBuffer_2& encrypted_buffer,
       cdm::VideoFrame* video_frame) = 0;
   virtual cdm::Status DecryptAndDecodeSamples(
-      const cdm::InputBuffer& encrypted_buffer,
+      const cdm::InputBuffer_2& encrypted_buffer,
       cdm::AudioFrames* audio_frames) = 0;
   virtual void OnPlatformChallengeResponse(
       const cdm::PlatformChallengeResponse& response) = 0;
@@ -238,18 +256,18 @@ class CdmWrapperImpl : public CdmWrapper {
 
   void TimerExpired(void* context) override { cdm_->TimerExpired(context); }
 
-  cdm::Status Decrypt(const cdm::InputBuffer& encrypted_buffer,
+  cdm::Status Decrypt(const cdm::InputBuffer_2& encrypted_buffer,
                       cdm::DecryptedBlock* decrypted_buffer) override {
     return cdm_->Decrypt(encrypted_buffer, decrypted_buffer);
   }
 
   cdm::Status InitializeAudioDecoder(
-      const cdm::AudioDecoderConfig& audio_decoder_config) override {
+      const cdm::AudioDecoderConfig_2& audio_decoder_config) override {
     return cdm_->InitializeAudioDecoder(audio_decoder_config);
   }
 
   cdm::Status InitializeVideoDecoder(
-      const cdm::VideoDecoderConfig& video_decoder_config) override {
+      const cdm::VideoDecoderConfig_2& video_decoder_config) override {
     return cdm_->InitializeVideoDecoder(video_decoder_config);
   }
 
@@ -261,13 +279,14 @@ class CdmWrapperImpl : public CdmWrapper {
     cdm_->ResetDecoder(decoder_type);
   }
 
-  cdm::Status DecryptAndDecodeFrame(const cdm::InputBuffer& encrypted_buffer,
+  cdm::Status DecryptAndDecodeFrame(const cdm::InputBuffer_2& encrypted_buffer,
                                     cdm::VideoFrame* video_frame) override {
     return cdm_->DecryptAndDecodeFrame(encrypted_buffer, video_frame);
   }
 
-  cdm::Status DecryptAndDecodeSamples(const cdm::InputBuffer& encrypted_buffer,
-                                      cdm::AudioFrames* audio_frames) override {
+  cdm::Status DecryptAndDecodeSamples(
+      const cdm::InputBuffer_2& encrypted_buffer,
+      cdm::AudioFrames* audio_frames) override {
     return cdm_->DecryptAndDecodeSamples(encrypted_buffer, audio_frames);
   }
 
@@ -290,7 +309,7 @@ class CdmWrapperImpl : public CdmWrapper {
   }
 
  private:
-  CdmWrapperImpl(CdmInterface* cdm) : cdm_(cdm) { PLATFORM_DCHECK(cdm_); }
+  CdmWrapperImpl(CdmInterface* cdm) : cdm_(cdm) { DCHECK(cdm_); }
 
   CdmInterface* cdm_;
 
@@ -307,6 +326,67 @@ bool CdmWrapperImpl<cdm::ContentDecryptionModule_9>::Initialize(
     bool /* use_hw_secure_codecs*/) {
   cdm_->Initialize(allow_distinctive_identifier, allow_persistent_state);
   return false;
+}
+
+template <>
+cdm::Status
+CdmWrapperImpl<cdm::ContentDecryptionModule_9>::InitializeAudioDecoder(
+    const cdm::AudioDecoderConfig_2& audio_decoder_config) {
+  if (!IsEncryptionSchemeSupportedByLegacyCdms(
+          audio_decoder_config.encryption_scheme))
+    return cdm::kInitializationError;
+
+  return cdm_->InitializeAudioDecoder(
+      ToAudioDecoderConfig_1(audio_decoder_config));
+}
+
+template <>
+cdm::Status
+CdmWrapperImpl<cdm::ContentDecryptionModule_9>::InitializeVideoDecoder(
+    const cdm::VideoDecoderConfig_2& video_decoder_config) {
+  if (!IsEncryptionSchemeSupportedByLegacyCdms(
+          video_decoder_config.encryption_scheme))
+    return cdm::kInitializationError;
+
+  return cdm_->InitializeVideoDecoder(
+      ToVideoDecoderConfig_1(video_decoder_config));
+}
+
+template <>
+cdm::Status CdmWrapperImpl<cdm::ContentDecryptionModule_9>::Decrypt(
+    const cdm::InputBuffer_2& encrypted_buffer,
+    cdm::DecryptedBlock* decrypted_buffer) {
+  if (!IsEncryptionSchemeSupportedByLegacyCdms(
+          encrypted_buffer.encryption_scheme))
+    return cdm::kDecryptError;
+
+  return cdm_->Decrypt(ToInputBuffer_1(encrypted_buffer), decrypted_buffer);
+}
+
+template <>
+cdm::Status
+CdmWrapperImpl<cdm::ContentDecryptionModule_9>::DecryptAndDecodeFrame(
+    const cdm::InputBuffer_2& encrypted_buffer,
+    cdm::VideoFrame* video_frame) {
+  if (!IsEncryptionSchemeSupportedByLegacyCdms(
+          encrypted_buffer.encryption_scheme))
+    return cdm::kDecryptError;
+
+  return cdm_->DecryptAndDecodeFrame(ToInputBuffer_1(encrypted_buffer),
+                                     video_frame);
+}
+
+template <>
+cdm::Status
+CdmWrapperImpl<cdm::ContentDecryptionModule_9>::DecryptAndDecodeSamples(
+    const cdm::InputBuffer_2& encrypted_buffer,
+    cdm::AudioFrames* audio_frames) {
+  if (!IsEncryptionSchemeSupportedByLegacyCdms(
+          encrypted_buffer.encryption_scheme))
+    return cdm::kDecryptError;
+
+  return cdm_->DecryptAndDecodeSamples(ToInputBuffer_1(encrypted_buffer),
+                                       audio_frames);
 }
 
 // Specialization for cdm::ContentDecryptionModule_8 methods.
@@ -334,6 +414,67 @@ void CdmWrapperImpl<cdm::ContentDecryptionModule_8>::OnStorageId(
     const uint8_t* storage_id,
     uint32_t storage_id_size) {}
 
+template <>
+cdm::Status
+CdmWrapperImpl<cdm::ContentDecryptionModule_8>::InitializeAudioDecoder(
+    const cdm::AudioDecoderConfig_2& audio_decoder_config) {
+  if (!IsEncryptionSchemeSupportedByLegacyCdms(
+          audio_decoder_config.encryption_scheme))
+    return cdm::kInitializationError;
+
+  return cdm_->InitializeAudioDecoder(
+      ToAudioDecoderConfig_1(audio_decoder_config));
+}
+
+template <>
+cdm::Status
+CdmWrapperImpl<cdm::ContentDecryptionModule_8>::InitializeVideoDecoder(
+    const cdm::VideoDecoderConfig_2& video_decoder_config) {
+  if (!IsEncryptionSchemeSupportedByLegacyCdms(
+          video_decoder_config.encryption_scheme))
+    return cdm::kInitializationError;
+
+  return cdm_->InitializeVideoDecoder(
+      ToVideoDecoderConfig_1(video_decoder_config));
+}
+
+template <>
+cdm::Status CdmWrapperImpl<cdm::ContentDecryptionModule_8>::Decrypt(
+    const cdm::InputBuffer_2& encrypted_buffer,
+    cdm::DecryptedBlock* decrypted_buffer) {
+  if (!IsEncryptionSchemeSupportedByLegacyCdms(
+          encrypted_buffer.encryption_scheme))
+    return cdm::kDecryptError;
+
+  return cdm_->Decrypt(ToInputBuffer_1(encrypted_buffer), decrypted_buffer);
+}
+
+template <>
+cdm::Status
+CdmWrapperImpl<cdm::ContentDecryptionModule_8>::DecryptAndDecodeFrame(
+    const cdm::InputBuffer_2& encrypted_buffer,
+    cdm::VideoFrame* video_frame) {
+  if (!IsEncryptionSchemeSupportedByLegacyCdms(
+          encrypted_buffer.encryption_scheme))
+    return cdm::kDecryptError;
+
+  return cdm_->DecryptAndDecodeFrame(ToInputBuffer_1(encrypted_buffer),
+                                     video_frame);
+}
+
+template <>
+cdm::Status
+CdmWrapperImpl<cdm::ContentDecryptionModule_8>::DecryptAndDecodeSamples(
+    const cdm::InputBuffer_2& encrypted_buffer,
+    cdm::AudioFrames* audio_frames) {
+  if (!IsEncryptionSchemeSupportedByLegacyCdms(
+          encrypted_buffer.encryption_scheme))
+    return cdm::kDecryptError;
+
+  return cdm_->DecryptAndDecodeSamples(ToInputBuffer_1(encrypted_buffer),
+                                       audio_frames);
+}
+
 CdmWrapper* CdmWrapper::Create(CreateCdmFunc create_cdm_func,
                                const char* key_system,
                                uint32_t key_system_size,
@@ -351,14 +492,13 @@ CdmWrapper* CdmWrapper::Create(CreateCdmFunc create_cdm_func,
   // TODO(xhwang): Static assert these at compile time.
   const int kMinVersion = cdm::ContentDecryptionModule_8::kVersion;
   const int kMaxVersion = cdm::ContentDecryptionModule_10::kVersion;
-  PLATFORM_DCHECK(!IsSupportedCdmInterfaceVersion(kMinVersion - 1));
+  DCHECK(!IsSupportedCdmInterfaceVersion(kMinVersion - 1));
   for (int version = kMinVersion; version <= kMaxVersion; ++version)
-    PLATFORM_DCHECK(IsSupportedCdmInterfaceVersion(version));
-  PLATFORM_DCHECK(!IsSupportedCdmInterfaceVersion(kMaxVersion + 1));
+    DCHECK(IsSupportedCdmInterfaceVersion(version));
+  DCHECK(!IsSupportedCdmInterfaceVersion(kMaxVersion + 1));
 
   // Try to create the CDM using the latest CDM interface version.
-  // This is only attempted if requested. For pepper plugins, this is done
-  // at compile time. For mojo, it is done using a media feature setting.
+  // This is only attempted if requested.
   CdmWrapper* cdm_wrapper = nullptr;
 
   // TODO(xhwang): Check whether we can use static loops to simplify this code.
@@ -396,7 +536,5 @@ static_assert(cdm::ContentDecryptionModule::kVersion ==
               "ensure cdm wrapper templates have old version support");
 
 }  // namespace media
-
-#undef PLATFORM_DCHECK
 
 #endif  // MEDIA_CDM_CDM_WRAPPER_H_

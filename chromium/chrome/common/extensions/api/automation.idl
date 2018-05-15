@@ -24,6 +24,7 @@
     documentSelectionChanged,
     expandedChanged,
     focus,
+    focusContext,
     imageFrameUpdated,
     hide,
     hitTestResult,
@@ -57,6 +58,7 @@
     selectionAdd,
     selectionRemove,
     show,
+    stateChanged,
     textChanged,
     textSelectionChanged,
     treeChanged,
@@ -217,10 +219,35 @@
     protected,
     required,
     richlyEditable,
-    selectable,
-    selected,
     vertical,
     visited
+  };
+
+  // All possible actions that can be performed on automation nodes.
+  enum ActionType {
+    blur,
+    customAction,
+    decrement,
+    doDefault,
+    focus,
+    getImageData,
+    hitTest,
+    increment,
+    loadInlineTextBoxes,
+    replaceSelectedText,
+    scrollBackward,
+    scrollDown,
+    scrollForward,
+    scrollLeft,
+    scrollRight,
+    scrollToMakeVisible,
+    scrollToPoint,
+    scrollUp,
+    setScrollOffset,
+    setSelection,
+    setSequentialFocusNavigationStartingPoint,
+    setValue,
+    showContextMenu
   };
 
   // Possible changes to the automation tree. For any given atomic change
@@ -276,6 +303,19 @@
     disabled,
     readOnly
   };
+
+  // Describes possible actions when performing a do default action.
+  enum DefaultActionVerb {
+    activate,
+    check,
+    click,
+    clickAncestor,
+    jump,
+    open,
+    press,
+    select,
+    uncheck
+};
 
   dictionary Rect {
     long left;
@@ -489,8 +529,14 @@
     // Reverse relationship for labelledBy.
     AutomationNode[]? labelFor;
 
+    // An array of standard actions available on this node.
+    ActionType[]? standardActions;
+
     // An array of custom actions.
     CustomAction[]? customActions;
+
+    // The action taken by calling <code>doDefault</code>.
+    DefaultActionVerb? defaultActionVerb;
 
     //
     // Link attributes.
@@ -741,6 +787,9 @@
     // Indicates node text is line through.
     boolean lineThrough;
 
+    // Indicates whether this node is selected, unselected, or neither.
+    boolean? selected;
+
     //
     // Walking the tree.
     //
@@ -798,6 +847,14 @@
     // Performs custom action.
     static void performCustomAction(long customActionId);
 
+    // Convenience method to perform a standard action supported by this node.
+    // For actions requiring additional arguments, call the specific binding
+    // e.g. <code>setSelection</code>.
+    static void performStandardAction(ActionType actionType);
+
+    // Replaces the selected text within a text field.
+    static void replaceSelectedText(DOMString value);
+
     // Sets selection within a text field.
     static void setSelection(long startIndex, long endIndex);
 
@@ -805,6 +862,9 @@
     // time the user presses Tab or Shift+Tab.
     static void setSequentialFocusNavigationStartingPoint();
 
+    // Sets the value of a text field.
+    static void setValue(DOMString value);
+    
     // Show the context menu for this element, as if the user right-clicked.
     static void showContextMenu();
 

@@ -48,16 +48,21 @@ config("audio_device_warnings_config") {
 rtc_source_set("audio_device") {
   visibility = [ "*" ]
   public_deps = [
-    ":audio_device_generic",
+    ":audio_device_api",
+
+    # Deprecated.
+    # TODO(webrtc:7452): Remove this public dep. audio_device_impl should
+    # be depended on directly if needed.
+    ":audio_device_impl",
   ]
-  if (rtc_include_internal_audio_device && is_ios) {
-    public_deps += [ ":audio_device_ios_objc" ]
-  }
 }
 
 if (rtc_include_internal_audio_device && is_ios) {
   rtc_source_set("audio_device_ios_objc") {
-    visibility = [ ":audio_device" ]
+    visibility = [
+      ":audio_device_impl",
+      ":audio_device_ios_objc_unittests",
+    ]
     sources = [
       "ios/audio_device_ios.h",
       "ios/audio_device_ios.mm",
@@ -77,6 +82,8 @@ if (rtc_include_internal_audio_device && is_ios) {
       "UIKit.framework",
     ]
     deps = [
+      ":audio_device_api",
+      ":audio_device_buffer",
       ":audio_device_generic",
       "../../api:array_view",
       "../../rtc_base:checks",
@@ -94,14 +101,82 @@ if (rtc_include_internal_audio_device && is_ios) {
   }
 }
 
-rtc_source_set("audio_device_generic") {
+rtc_source_set("audio_device_api") {
   visibility = [
     ":audio_device",
+    ":audio_device_buffer",
+    ":audio_device_impl",
     ":audio_device_ios_objc",
+    ":audio_device_generic",
   ]
+  sources = [
+    "include/audio_device.h",
+    "include/audio_device_defines.h",
+  ]
+  deps = [
+    "../../:typedefs",
+    "../../rtc_base:checks",
+    "../../rtc_base:deprecation",
+    "../../rtc_base:rtc_base_approved",
+    "../../rtc_base:stringutils",
+  ]
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+  }
+}
+
+rtc_source_set("audio_device_buffer") {
+  sources = [
+    "audio_device_buffer.cc",
+    "audio_device_buffer.h",
+    "audio_device_config.h",
+    "fine_audio_buffer.cc",
+    "fine_audio_buffer.h",
+  ]
+  deps = [
+    ":audio_device_api",
+    "../../:typedefs",
+    "../../api:array_view",
+    "../../common_audio:common_audio_c",
+    "../../rtc_base:checks",
+    "../../rtc_base:rtc_base_approved",
+    "../../rtc_base:rtc_task_queue",
+    "../../system_wrappers",
+    "../../system_wrappers:metrics_api",
+  ]
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+  }
+}
+
+rtc_source_set("audio_device_generic") {
+  sources = [
+    "audio_device_generic.cc",
+    "audio_device_generic.h",
+  ]
+  deps = [
+    ":audio_device_api",
+    ":audio_device_buffer",
+    "../../rtc_base:rtc_base_approved",
+  ]
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+  }
+}
+
+# Contains default implementations of webrtc::AudioDeviceModule for Windows,
+# Linux, Mac, iOS and Android.
+rtc_source_set("audio_device_impl") {
+  visibility = [ "*" ]
   public_configs = [ ":audio_device_config" ]
 
   deps = [
+    ":audio_device_api",
+    ":audio_device_buffer",
+    ":audio_device_generic",
     "..:module_api",
     "../..:webrtc_common",
     "../../:typedefs",
@@ -112,26 +187,23 @@ rtc_source_set("audio_device_generic") {
     "../../rtc_base:deprecation",
     "../../rtc_base:rtc_base_approved",
     "../../rtc_base:rtc_task_queue",
+    "../../rtc_base/system:file_wrapper",
     "../../system_wrappers",
     "../../system_wrappers:metrics_api",
     "../utility",
   ]
+  if (rtc_include_internal_audio_device && is_ios) {
+    deps += [ ":audio_device_ios_objc" ]
+  }
 
   sources = [
-    "audio_device_buffer.cc",
-    "audio_device_buffer.h",
-    "audio_device_config.h",
-    "audio_device_generic.cc",
-    "audio_device_generic.h",
     "dummy/audio_device_dummy.cc",
     "dummy/audio_device_dummy.h",
     "dummy/file_audio_device.cc",
     "dummy/file_audio_device.h",
-    "fine_audio_buffer.cc",
-    "fine_audio_buffer.h",
-    "include/audio_device.h",
-    "include/audio_device_defines.h",
     "include/fake_audio_device.h",
+    "include/test_audio_device.cc",
+    "include/test_audio_device.h",
   ]
 
   if (build_with_mozilla) {
@@ -161,6 +233,9 @@ rtc_source_set("audio_device_generic") {
   cflags = []
   if (rtc_audio_device_plays_sinus_tone) {
     defines += [ "AUDIO_DEVICE_PLAYS_SINUS_TONE" ]
+  }
+  if (rtc_enable_android_aaudio) {
+    defines += [ "AUDIO_DEVICE_INCLUDE_ANDROID_AAUDIO" ]
   }
   if (rtc_include_internal_audio_device) {
     # TODO(bugs.webrtc.org/8850): remove this when the circular dependency will be fixed.
@@ -194,6 +269,17 @@ rtc_source_set("audio_device_generic") {
         "log",
         "OpenSLES",
       ]
+      if (rtc_enable_android_aaudio) {
+        sources += [
+          "android/aaudio_player.cc",
+          "android/aaudio_player.h",
+          "android/aaudio_recorder.cc",
+          "android/aaudio_recorder.h",
+          "android/aaudio_wrapper.cc",
+          "android/aaudio_wrapper.h",
+        ]
+        libs += [ "aaudio" ]
+      }
 
       if (build_with_mozilla) {
         include_dirs += [
@@ -305,6 +391,8 @@ rtc_source_set("mock_audio_device") {
   ]
   deps = [
     ":audio_device",
+    ":audio_device_buffer",
+    ":audio_device_impl",
     "../../test:test_support",
   ]
 }
@@ -321,10 +409,14 @@ if (rtc_include_tests) {
       ]
       deps = [
         ":audio_device",
+        ":audio_device_buffer",
+        ":audio_device_impl",
+        ":audio_device_ios_objc",
         ":mock_audio_device",
         "../../rtc_base:rtc_base_approved",
         "../../sdk:audio_objc",
         "../../system_wrappers",
+        "../../test:fileutils",
         "../../test:test_support",
         "//third_party/ocmock",
       ]
@@ -340,15 +432,20 @@ if (rtc_include_tests) {
 
     sources = [
       "fine_audio_buffer_unittest.cc",
+      "include/test_audio_device_unittest.cc",
     ]
     deps = [
       ":audio_device",
+      ":audio_device_buffer",
+      ":audio_device_impl",
       ":mock_audio_device",
       "../../api:array_view",
       "../../api:optional",
+      "../../common_audio",
       "../../rtc_base:checks",
       "../../rtc_base:rtc_base_approved",
       "../../system_wrappers",
+      "../../test:fileutils",
       "../../test:test_support",
       "../utility:utility",
     ]

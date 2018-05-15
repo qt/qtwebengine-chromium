@@ -9,7 +9,6 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/memory/ptr_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cookies/canonical_cookie.h"
 #include "url/origin.h"
@@ -158,6 +157,20 @@ bool BrowsingDataFilterBuilderImpl::IsEmptyBlacklist() const {
 base::RepeatingCallback<bool(const GURL&)>
 BrowsingDataFilterBuilderImpl::BuildGeneralFilter() const {
   return base::BindRepeating(&MatchesURL, origins_, domains_, mode_);
+}
+
+network::mojom::ClearCacheUrlFilterPtr
+BrowsingDataFilterBuilderImpl::BuildClearCacheUrlFilter() const {
+  network::mojom::ClearCacheUrlFilterPtr filter =
+      network::mojom::ClearCacheUrlFilter::New();
+  filter->type = (mode_ == Mode::WHITELIST)
+                     ? network::mojom::ClearCacheUrlFilter::Type::DELETE_MATCHES
+                     : network::mojom::ClearCacheUrlFilter::Type::KEEP_MATCHES;
+  filter->origins.insert(filter->origins.begin(), origins_.begin(),
+                         origins_.end());
+  filter->domains.insert(filter->domains.begin(), domains_.begin(),
+                         domains_.end());
+  return filter;
 }
 
 base::RepeatingCallback<bool(const net::CanonicalCookie& cookie)>

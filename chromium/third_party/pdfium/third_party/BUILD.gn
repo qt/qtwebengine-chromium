@@ -163,10 +163,8 @@ if (pdf_bundle_freetype) {
       "//third_party/freetype/src/src/base/ftbase.c",
       "//third_party/freetype/src/src/base/ftbase.h",
       "//third_party/freetype/src/src/base/ftbitmap.c",
-      "//third_party/freetype/src/src/base/ftfntfmt.c",
       "//third_party/freetype/src/src/base/ftglyph.c",
       "//third_party/freetype/src/src/base/ftinit.c",
-      "//third_party/freetype/src/src/base/ftlcdfil.c",
       "//third_party/freetype/src/src/base/ftmm.c",
       "//third_party/freetype/src/src/base/ftsystem.c",
       "//third_party/freetype/src/src/cff/cff.c",
@@ -372,6 +370,7 @@ static_library("fx_libopenjpeg") {
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [
     "//build/config/compiler:no_chromium_code",
+    "//build/config/sanitizers:cfi_icall_generalize_pointers",
     ":pdfium_third_party_config",
 
     # Must be after no_chromium_code for warning flags to be ordered correctly.
@@ -563,6 +562,7 @@ jumbo_source_set("pdfium_base") {
     "base/numerics/safe_math_impl.h",
     "base/optional.h",
     "base/ptr_util.h",
+    "base/span.h",
     "base/stl_util.h",
     "base/sys_byteorder.h",
     "base/template_util.h",

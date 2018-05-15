@@ -4,6 +4,9 @@
 
 // NOTE: No header guards are used, since this file is intended to be expanded
 // directly into net_log.h. DO NOT include this file anywhere else.
+// The following line silences a presubmit warning that would otherwise be
+// triggered by this:
+// no-include-guard-because-multiply-included
 
 // In the event of a failure, a many end events will have a |net_error|
 // parameter with the integer error code associated with the failure.  Most
@@ -208,12 +211,12 @@ EVENT_TYPE(HOST_RESOLVER_IMPL_DNS_TASK)
 // ------------------------------------------------------------------------
 
 // The start/end of auto-detect + custom PAC URL configuration.
-EVENT_TYPE(PROXY_SCRIPT_DECIDER)
+EVENT_TYPE(PAC_FILE_DECIDER)
 
 // The start/end of when proxy autoconfig was artificially paused following
 // a network change event. (We wait some amount of time after being told of
 // network changes to avoid hitting spurious errors during auto-detect).
-EVENT_TYPE(PROXY_SCRIPT_DECIDER_WAIT)
+EVENT_TYPE(PAC_FILE_DECIDER_WAIT)
 
 // The start/end of download of a PAC script. This could be the well-known
 // WPAD URL (if testing auto-detect), or a custom PAC URL.
@@ -227,27 +230,27 @@ EVENT_TYPE(PROXY_SCRIPT_DECIDER_WAIT)
 //   {
 //      "net_error": <Net error code integer>,
 //   }
-EVENT_TYPE(PROXY_SCRIPT_DECIDER_FETCH_PAC_SCRIPT)
+EVENT_TYPE(PAC_FILE_DECIDER_FETCH_PAC_SCRIPT)
 
 // This event means that initialization failed because there was no
 // configured script fetcher. (This indicates a configuration error).
-EVENT_TYPE(PROXY_SCRIPT_DECIDER_HAS_NO_FETCHER)
+EVENT_TYPE(PAC_FILE_DECIDER_HAS_NO_FETCHER)
 
 // This event is emitted after deciding to fall-back to the next source
 // of PAC scripts in the list.
-EVENT_TYPE(PROXY_SCRIPT_DECIDER_FALLING_BACK_TO_NEXT_PAC_SOURCE)
+EVENT_TYPE(PAC_FILE_DECIDER_FALLING_BACK_TO_NEXT_PAC_SOURCE)
 
 // ------------------------------------------------------------------------
 // ProxyResolutionService
 // ------------------------------------------------------------------------
 
 // The start/end of a proxy resolve request.
-EVENT_TYPE(PROXY_SERVICE)
+EVENT_TYPE(PROXY_RESOLUTION_SERVICE)
 
 // The time while a request is waiting on InitProxyResolver to configure
 // against either WPAD or custom PAC URL. The specifics on this time
 // are found from ProxyResolutionService::init_proxy_resolver_log().
-EVENT_TYPE(PROXY_SERVICE_WAITING_FOR_INIT_PAC)
+EVENT_TYPE(PROXY_RESOLUTION_SERVICE_WAITING_FOR_INIT_PAC)
 
 // This event is emitted to show what the PAC script returned. It can contain
 // extra parameters that are either:
@@ -259,7 +262,7 @@ EVENT_TYPE(PROXY_SERVICE_WAITING_FOR_INIT_PAC)
 //   {
 //      "net_error": <Net error code that resolver failed with>,
 //   }
-EVENT_TYPE(PROXY_SERVICE_RESOLVED_PROXY_LIST)
+EVENT_TYPE(PROXY_RESOLUTION_SERVICE_RESOLVED_PROXY_LIST)
 
 // This event is emitted after proxies marked as bad have been deprioritized.
 //
@@ -267,7 +270,7 @@ EVENT_TYPE(PROXY_SERVICE_RESOLVED_PROXY_LIST)
 //   {
 //      "pac_string": <List of valid proxy servers, in PAC format>,
 //   }
-EVENT_TYPE(PROXY_SERVICE_DEPRIORITIZED_BAD_PROXIES)
+EVENT_TYPE(PROXY_RESOLUTION_SERVICE_DEPRIORITIZED_BAD_PROXIES)
 
 // This event is emitted whenever the proxy settings used by
 // ProxyResolutionService change.
@@ -1216,12 +1219,6 @@ EVENT_TYPE(HTTP_TRANSACTION_DRAIN_BODY_FOR_AUTH_RESTART)
 
 // Measures the time taken to look up the key used for Token Binding.
 EVENT_TYPE(HTTP_TRANSACTION_GET_TOKEN_BINDING_KEY)
-
-// Measures the time taken due to throttling by the NetworkThrottleManager.
-EVENT_TYPE(HTTP_TRANSACTION_THROTTLED)
-
-// Record priority changes on the network transaction.
-EVENT_TYPE(HTTP_TRANSACTION_SET_PRIORITY)
 
 // This event is sent when we try to restart a transaction after an error.
 // The following parameters are attached:
@@ -2580,6 +2577,25 @@ EVENT_TYPE(CERT_VERIFIER_JOB)
 //   }
 EVENT_TYPE(CERT_VERIFIER_REQUEST_BOUND_TO_JOB)
 
+// This event is created when a TrialComparisonCertVerifier starts a
+// verification using the trial verifier.
+//
+// The event parameters are:
+//   {
+//      "trial_success": <True if the trial verification had the same result>,
+//   }
+EVENT_TYPE(TRIAL_CERT_VERIFIER_JOB)
+
+// This event is created when a TrialComparisonCertVerifier begins a trial
+// comparison job for a regular CertVerifier job.
+//
+// The event parameters are:
+//   {
+//      "source_dependency": <Source identifier for the trial comparison job
+//                            that was started>,
+//   }
+EVENT_TYPE(TRIAL_CERT_VERIFIER_JOB_COMPARISON_STARTED)
+
 // ------------------------------------------------------------------------
 // Download start events.
 // ------------------------------------------------------------------------
@@ -3080,50 +3096,6 @@ EVENT_TYPE(DATA_REDUCTION_PROXY_FALLBACK)
 //  }
 EVENT_TYPE(DATA_REDUCTION_PROXY_CONFIG_REQUEST)
 
-// -----------------------------------------------------------------------------
-// Safe Browsing related events
-// -----------------------------------------------------------------------------
-
-// The start/end of an async URL check by Safe Browsing. Will only show up if
-// it can't be classified as "safe" synchronously.
-//
-// The BEGIN phase contains the following parameters:
-//  {
-//    "url": <The URL being checked>,
-//  }
-//
-// The END phase contains the following parameters:
-//  {
-//    "result": <"safe", "unsafe", or "request_canceled">
-//  }
-EVENT_TYPE(SAFE_BROWSING_CHECKING_URL)
-
-// The start/end of some portion of the SAFE_BROWSING_CHECKING_URL during which
-// the request is delayed due to that check.
-//
-// The BEGIN phase contains the following parameters:
-//  {
-//    "url": <The URL being checked>,
-//    "defer_reason" : < "at_start", "at_response", "redirect",
-//                       "resumed_redirect", "unchecked_redirect">
-//  }
-EVENT_TYPE(SAFE_BROWSING_DEFERRED)
-
-// The start/end of a Safe Browsing ping being sent.
-//
-// The BEGIN phase contains the following parameters:
-//  {
-//    "url": <The URL the ping is going to, which identifies the type of ping
-//            that is being sent (eg: ThreatReport, SafeBrowsingHit)>
-//    "data": <The base64 encoding of the payload sent with the ping>
-//
-// The END phase contains the following parameters:
-//  {
-//    "status": <The integer status of the report transmission. Corresponds to
-//               URLRequestStatus::Status>
-//    "error": <The error code returned by the server, 0 indicating success>
-EVENT_TYPE(SAFE_BROWSING_PING)
-
 // Marks start of UploadDataStream that is logged on initialization.
 // The END phase contains the following parameters:
 // {
@@ -3219,3 +3191,55 @@ EVENT_TYPE(HOST_CACHE_PREF_WRITE)
 // This event is created when the HostCachePersistenceManager starts the timer
 // for writing a cache change to prefs.
 EVENT_TYPE(HOST_CACHE_PERSISTENCE_START_TIMER)
+
+// -----------------------------------------------------------------------------
+// DHCP-based WPAD (Windows)
+// -----------------------------------------------------------------------------
+
+// The start/end of running DHCP based WPAD.
+//
+// The start event contains no parameters, whereas the END event describes
+// which of the "adapter fetchers" was used:
+//  {
+//    "fetcher_index": <Index of the fetcher that "won" the race, or -1 if no
+//                     fetcher won>,
+//    "net_error": <The network error code for the overall result of DHCP
+//                  based auto-discovery>,
+//  }
+EVENT_TYPE(WPAD_DHCP_WIN_FETCH)
+
+// The start/end of getting the list of network adapters.
+//
+// The END event describes all the adapters that were enumerated, as well
+// as how long it took to do the various thread-hops (from origin to worker
+// thread, and then worker thread back to origin thread):
+//  {
+//    "adapters": <List describing each adapter (its name, flags, and
+//                 status)>,
+//    "origin_to_worker_thread_hop_dt": <The time in milliseconds it took
+//                                       for the worker thread task to get
+//                                       scheduled>,
+//    "worker_to_origin_thread_hop_dt": <The time in milliseconds it took
+//                                       for the reply task from worker
+//                                       thread to get scheduled>,
+//    "worker_dt": <The time in milliseconds it took to enumerate network
+//                  adapters on the worker thread>,
+//    "error": <The result code returned by iphlpapi!GetAdaptersAddresses>
+//  }
+EVENT_TYPE(WPAD_DHCP_WIN_GET_ADAPTERS)
+
+// This event logs when one of the "adapter fetchers" completed. (Fetchers
+// may not complete in the order that they were started):
+//  {
+//    "fetcher_index": <Index of the fetcher that completed>,
+//    "net_error": <The network error code returned by the fetcher>,
+//  }
+EVENT_TYPE(WPAD_DHCP_WIN_ON_FETCHER_DONE)
+
+// This event is logged when a timer is started to timeout remaining
+// adapter fetchers. The event has no parameters.
+EVENT_TYPE(WPAD_DHCP_WIN_START_WAIT_TIMER)
+
+// This event is emitted if the wait timer for remaining fetchers fires. It
+// has no parameters.
+EVENT_TYPE(WPAD_DHCP_WIN_ON_WAIT_TIMER)

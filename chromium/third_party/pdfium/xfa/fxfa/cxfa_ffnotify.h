@@ -58,13 +58,10 @@ class CXFA_FFNotify {
                                bool bIsFormReady,
                                bool bRecursive);
   void AddCalcValidate(CXFA_Node* pNode);
-  CXFA_FFDoc* GetHDOC();
-  IXFA_DocEnvironment* GetDocEnvironment() const;
+  CXFA_FFDoc* GetHDOC() { return m_pDoc.Get(); }
   IXFA_AppProvider* GetAppProvider();
   CXFA_FFWidgetHandler* GetWidgetHandler();
-  CXFA_FFWidget* GetHWidget(CXFA_LayoutItem* pLayoutItem);
   void OpenDropDownList(CXFA_FFWidget* hWidget);
-  WideString GetCurrentDateTime();
   void ResetData(CXFA_Node* pNode);
   int32_t GetLayoutStatus();
   void RunNodeInitialize(CXFA_Node* pNode);

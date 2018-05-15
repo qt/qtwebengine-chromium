@@ -9,13 +9,20 @@
 #include <string>
 #include <vector>
 
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/optional.h"
-#include "content/browser/web_package/signed_exchange_header_parser.h"
+#include "content/browser/web_package/signed_exchange_utils.h"
 #include "content/common/content_export.h"
 #include "net/cert/x509_certificate.h"
 
+namespace base {
+class Time;
+}  // namespace base
+
 namespace content {
+
+class SignedExchangeHeader;
 
 // SignedExchangeSignatureVerifier verifies the signature of the given
 // signed exchange. This is done by reconstructing the signed message
@@ -26,28 +33,28 @@ namespace content {
 // of the certificate used to generate the signature, which can't be done
 // synchronously. (See SignedExchangeCertFetcher for this logic.)
 //
-// https://wicg.github.io/webpackage/draft-yasskin-http-origin-signed-responses.html#rfc.section.3.6
+// https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html#signature-validity
 class CONTENT_EXPORT SignedExchangeSignatureVerifier final {
  public:
-  struct CONTENT_EXPORT Input {
-   public:
-    Input();
-    Input(const Input&);
-    ~Input();
-
-    std::string method;
-    std::string url;
-    int response_code;
-    std::map<std::string, std::string> response_headers;
-
-    SignedExchangeHeaderParser::Signature signature;
-    scoped_refptr<net::X509Certificate> certificate;
+  enum class Result {
+    kSuccess,
+    kErrNoCertificate,
+    kErrNoCertificateSHA256,
+    kErrCertificateSHA256Mismatch,
+    kErrInvalidSignatureFormat,
+    kErrSignatureVerificationFailed,
+    kErrInvalidSignatureIntegrity,
+    kErrInvalidTimestamp
   };
 
-  static bool Verify(const Input& input);
+  static Result Verify(
+      const SignedExchangeHeader& header,
+      scoped_refptr<net::X509Certificate> certificate,
+      const base::Time& verification_time,
+      const signed_exchange_utils::LogCallback& error_message_callback);
 
   static base::Optional<std::vector<uint8_t>> EncodeCanonicalExchangeHeaders(
-      const Input& input);
+      const SignedExchangeHeader& header);
 };
 
 }  // namespace content

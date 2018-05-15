@@ -65,7 +65,7 @@ Polymer({
       return loadTimeData.getStringF(
           'triggeredResetPageTitle', this.triggeredResetToolName_);
     }
-    return loadTimeData.getStringF('resetTrigger');
+    return loadTimeData.getStringF('resetDialogCommit');
   },
 
   /** @override */
@@ -115,7 +115,12 @@ Polymer({
 
   /** @private */
   onCancelTap_: function() {
-    this.$.dialog.cancel();
+    this.cancel();
+  },
+
+  cancel: function() {
+    if (this.$.dialog.open)
+      this.$.dialog.cancel();
   },
 
   /** @private */

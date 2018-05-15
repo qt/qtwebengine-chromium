@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "base/macros.h"
-#include "base/memory/ref_counted.h"
+#include "base/optional.h"
 #include "net/base/completion_once_callback.h"
 #include "net/base/net_export.h"
 #include "net/http/http_basic_state.h"
@@ -25,7 +25,7 @@ class ClientSocketHandle;
 class HttpResponseHeaders;
 class HttpResponseInfo;
 class HttpStreamParser;
-
+class WebSocketEndpointLockManager;
 struct WebSocketExtensionParams;
 class WebSocketStreamRequest;
 
@@ -39,7 +39,8 @@ class NET_EXPORT_PRIVATE WebSocketBasicHandshakeStream
       bool using_proxy,
       std::vector<std::string> requested_sub_protocols,
       std::vector<std::string> requested_extensions,
-      WebSocketStreamRequest* request);
+      WebSocketStreamRequest* request,
+      WebSocketEndpointLockManager* websocket_endpoint_lock_manager);
 
   ~WebSocketBasicHandshakeStream() override;
 
@@ -107,6 +108,8 @@ class NET_EXPORT_PRIVATE WebSocketBasicHandshakeStream
 
   HttpStreamParser* parser() const { return state_.parser(); }
 
+  HandshakeResult result_;
+
   // The request URL.
   GURL url_;
 
@@ -122,7 +125,7 @@ class NET_EXPORT_PRIVATE WebSocketBasicHandshakeStream
 
   // The key to be sent in the next Sec-WebSocket-Key header. Usually NULL (the
   // key is generated on the fly).
-  std::unique_ptr<std::string> handshake_challenge_for_testing_;
+  base::Optional<std::string> handshake_challenge_for_testing_;
 
   // The required value for the Sec-WebSocket-Accept header.
   std::string handshake_challenge_response_;
@@ -143,7 +146,9 @@ class NET_EXPORT_PRIVATE WebSocketBasicHandshakeStream
   // to avoid including extension-related header files here.
   std::unique_ptr<WebSocketExtensionParams> extension_params_;
 
-  WebSocketStreamRequest* stream_request_;
+  WebSocketStreamRequest* const stream_request_;
+
+  WebSocketEndpointLockManager* const websocket_endpoint_lock_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(WebSocketBasicHandshakeStream);
 };

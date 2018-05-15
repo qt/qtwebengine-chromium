@@ -19,7 +19,7 @@
 #include "base/task_scheduler/post_task.h"
 #include "chrome/browser/printing/pwg_raster_converter.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/print_preview/printer_capabilities.h"
+#include "chrome/browser/ui/webui/print_preview/print_preview_utils.h"
 #include "components/cloud_devices/common/cloud_device_description.h"
 #include "components/cloud_devices/common/printer_description.h"
 #include "device/base/device_client.h"
@@ -185,7 +185,7 @@ void ExtensionPrinterHandler::StartPrint(
     const base::string16& job_title,
     const std::string& ticket_json,
     const gfx::Size& page_size,
-    const scoped_refptr<base::RefCountedBytes>& print_data,
+    const scoped_refptr<base::RefCountedMemory>& print_data,
     PrintCallback callback) {
   auto print_job = std::make_unique<extensions::PrinterProviderPrintJob>();
   print_job->printer_id = destination_id;
@@ -265,13 +265,16 @@ void ExtensionPrinterHandler::ConvertToPWGRaster(
     const gfx::Size& page_size,
     std::unique_ptr<extensions::PrinterProviderPrintJob> job,
     PrintJobCallback callback) {
-  if (!pwg_raster_converter_) {
+  if (!pwg_raster_converter_)
     pwg_raster_converter_ = PwgRasterConverter::CreateDefault();
-  }
+
+  printing::PwgRasterSettings bitmap_settings =
+      PwgRasterConverter::GetBitmapSettings(printer_description, ticket);
   pwg_raster_converter_->Start(
       data.get(),
-      PwgRasterConverter::GetConversionSettings(printer_description, page_size),
-      PwgRasterConverter::GetBitmapSettings(printer_description, ticket),
+      PwgRasterConverter::GetConversionSettings(printer_description, page_size,
+                                                bitmap_settings.use_color),
+      bitmap_settings,
       base::BindOnce(&UpdateJobFileInfo, std::move(job), std::move(callback)));
 }
 
@@ -370,7 +373,7 @@ void ExtensionPrinterHandler::OnUsbDevicesEnumerated(
                          device->product_string(), base::string16(), false))
                 .Set("extensionId", extension->id())
                 .Set("extensionName", extension->name())
-                .Set("provisional", true)
+                .SetBoolean("provisional", true)
                 .Build());
       }
     }

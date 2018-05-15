@@ -29,7 +29,6 @@
 <translation id="1966382378801805537">Chromium nevar noteikt vai iestatīt noklusējuma pārlūku.</translation>
 <translation id="1967743265616885482">Ir zināms, ka modulis ar tādu pašu nosaukumu konfliktē ar Chromium.</translation>
 <translation id="2008474315282236005">Veicot šo darbību, no šīs ierīces tiks dzēsts 1 vienums. Lai vēlāk izgūtu datus, pierakstieties pārlūkā Chromium kā <ph name="USER_EMAIL" />.</translation>
-<translation id="2077129598763517140">Izmantot aparatūras paātrināšanas režīmu, kad tas ir pieejams</translation>
 <translation id="2117378023188580026">Lai lietotu šo atjauninājumu, administrators lūdz restartēt pārlūku Chromium.</translation>
 <translation id="2119636228670142020">Par &amp;Chromium OS</translation>
 <translation id="2158734852934720349">Chromium OS atklātā pirmkoda licences</translation>
@@ -77,7 +76,6 @@
 <translation id="3479552764303398839">Vēlāk</translation>
 <translation id="3509308970982693815">Aizveriet visus Chromium logus un mēģiniet vēlreiz.</translation>
 <translation id="352783484088404971">Noņemšana no pārlūka Chromium...</translation>
-<translation id="3549345495227188780">Darba sākšana operētājsistēmā Chromium OS</translation>
 <translation id="3582788516608077514">Notiek Chromium atjaunināšana...</translation>
 <translation id="358997566136285270">Chromium logotips</translation>
 <translation id="3713809861844741608">Atvērt saiti jaunā Chromium &amp;cilnē</translation>
@@ -87,15 +85,14 @@
 <translation id="3852700440713538496">Piespraudiet pārlūku Chromium uzdevumjoslai</translation>
 <translation id="3889543394854987837">Noklikšķiniet uz sava vārda, lai atvērtu Chromium un sāktu pārlūkošanu.</translation>
 <translation id="3898493977366060150">Tīmekļa pārlūkošana, izmantojot Google viedās tehnoloģijas</translation>
-<translation id="390894725198123737">Operētājsistēmā Mac paroles var tikt saglabātas sistēmā Keychain, un citi Chromium lietotāji, kuri koplieto šo OS X kontu, var piekļūt tām un sinhronizēt tās.</translation>
 <translation id="4036079820698952681">Palīdziet uzlabot pārlūku Chromium, ziņojot par <ph name="BEGIN_LINK" />pašreizējiem iestatījumiem<ph name="END_LINK" />.</translation>
 <translation id="4050175100176540509">Jaunākajā versijā ir pieejami svarīgi drošības uzlabojumi un jaunas funkcijas.</translation>
 <translation id="407254336480250557">Atlasiet <ph name="SMALL_PRODUCT_LOGO" /> <ph name="BEGIN_BOLD" />Chromium<ph name="END_BOLD" /></translation>
-<translation id="4077262827416206768">Aizveriet visus Chromium logus un atkārtoti palaidiet Chromium, lai šīs izmaiņas stātos spēkā.</translation>
 <translation id="421369550622382712">Atklājiet lieliskas lietotnes, spēles, paplašinājumus un motīvus, ko varat izmantot pārlūkā Chromium.</translation>
 <translation id="4222580632002216401">Jūs esat pierakstījies operētājsistēmā Chromium. Jūsu administrators ir atspējojis sinhronizēšanu.</translation>
 <translation id="4224199872375172890">Chromium ir atjaunināts.</translation>
 <translation id="4230135487732243613">Vai saistīt Chromium datus ar šo kontu?</translation>
+<translation id="4260985389288095068">Jūsu datorā ir kaitīga programmatūra. Chromium var to noņemt un atjaunot jūsu iestatījumus, lai pārlūks atkal darbotos, kā paredzēts.</translation>
 <translation id="4271805377592243930">Saņemt palīdzību par Chromium</translation>
 <translation id="4285930937574705105">Instalācija neizdevās nenoteiktas kļūdas dēļ. Ja Chromium šobrīd darbojas, aizveriet to un mēģiniet vēlreiz.</translation>
 <translation id="4330585738697551178">Ir zināms, ka šis modulis konfliktē ar Chromium.</translation>
@@ -104,7 +101,6 @@
 <translation id="4421155425831608516">Šīs ierīces administrators ir atspējojis pierakstīšanos pārlūkā Chromium.</translation>
 <translation id="4423735387467980091">Pielāgot un kontrolēt Chromium</translation>
 <translation id="4449801103833300785">{0,plural, =1{Chromium tiks palaists atkārtoti pēc stundas}zero{Chromium tiks palaists atkārtoti pēc # stundām}one{Chromium tiks palaists atkārtoti pēc # stundas}other{Chromium tiks palaists atkārtoti pēc # stundām}}</translation>
-<translation id="4458285410772214805">Lūdzu, izrakstieties un pierakstieties vēlreiz, lai šīs izmaiņas stātos spēkā.</translation>
 <translation id="4469812139324097969">Pārlūks Chromium ir novecojis, jo jau kādu laiku tas nav restartēts. Atjauninājums ir pieejams un tiks lietots, tiklīdz veiksiet atkārtotu palaišanu.</translation>
 <translation id="4488554488975128561">Varat palīdzēt uzlabot Chromium drošību un lietošanas ērtumu, automātiski nosūtot noteiktu sistēmas informāciju un lapas saturu Google serveriem, lai palīdzētu noteikt bīstamas lietotnes un vietnes.</translation>
 <translation id="4567424176335768812">Jūs esat pierakstījies kā <ph name="USER_EMAIL_ADDRESS" />. Tagad varat piekļūt savām grāmatzīmēm, vēsturei un citiem iestatījumiem visās ierīcēs, kurās esat pierakstījies.</translation>
@@ -139,7 +135,6 @@
 <translation id="5698481217667032250">Rādīt Chromium šajā valodā</translation>
 <translation id="5726838626470692954">Jūsu konta pārzinim ir jānoņem jūs no pārlūka Chromium un atkal jāpievieno.</translation>
 <translation id="5768914737813585044">Rādīt Chromium OS šajā valodā</translation>
-<translation id="5772805321386874569">(ir <ph name="BEGIN_BUTTON" />jārestartē<ph name="END_BUTTON" /> operētājsistēma Chromium)</translation>
 <translation id="5796460469508169315">Chromium ir gandrīz gatavs!</translation>
 <translation id="5820394555380036790">Chromium OS</translation>
 <translation id="5862307444128926510">Laipni lūdzam pārlūkā Chromium!</translation>
@@ -237,7 +232,6 @@ Papildu norādījumus skatiet e-pasta ziņojumā šeit: <ph name="ACCOUNT_EMAIL"
 <translation id="8563206822260884157">Izmantot Chromium ģenerētu drošu paroli</translation>
 <translation id="85843667276690461">Saņemt palīdzību par Chromium izmantošanu</translation>
 <translation id="8586442755830160949">Autortiesības <ph name="YEAR" /> Chromium autori. Visas tiesības paturētas.</translation>
-<translation id="8590769996813453836">Chromium atrada kaitīgu programmatūru jūsu datorā. Chromium var to noņemt un atjaunot jūsu iestatījumus, lai pārlūks atkal darbotos, kā paredzēts.</translation>
 <translation id="8621669128220841554">Instalēšana neizdevās nenoteiktas kļūdas dēļ. Lejupielādējiet pārlūku Chromium vēlreiz.</translation>
 <translation id="8628626585870903697">Pārlūka Chromium komplektācijā nav PDF skatītāja, kas nepieciešams funkcijas Drukas priekšskatījums darbībai.</translation>
 <translation id="8667808506758191620"><ph name="DEVICE_TYPE" /> ierīce ir atjaunināta.</translation>

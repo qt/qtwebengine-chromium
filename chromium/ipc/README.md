@@ -54,7 +54,7 @@ In the limit, this is the preferred destination for any message conversions
 pertaining to foundational system services (more info at
 [https://www.chromium.org/servicification](https://www.chromium.org/servicification).)
 For other code it may make sense to introduce services elsewhere (*e.g.*, in
-`//chrome/services` or `//components/foo/service`), or to simply
+`//chrome/services` or `//components/services`), or to simply
 avoid using services altogether for now and instead define some one-off Mojom
 interface alongside the old messages file.
 
@@ -191,8 +191,8 @@ DataDecoderService::DataDecoderService() {
 ```
 
 and finally you need to update the usage of the old IPC by probably deleting
-lots of ugly code which sets up a `UtilityProcessHostImpl` and replacing it
-with something like:
+lots of ugly code which sets up a `UtilityProcessHost` and replacing it with
+something like:
 
 ``` cpp
 void OnDecodedPng(const std::vector<uint8_t>& rgba_data) { /* ... */ }

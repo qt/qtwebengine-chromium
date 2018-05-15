@@ -25,7 +25,7 @@ namespace wl {
 // Base class for managing the life cycle of server objects.
 class ServerObject {
  public:
-  ServerObject(wl_resource* resource);
+  explicit ServerObject(wl_resource* resource);
   virtual ~ServerObject();
 
   wl_resource* resource() { return resource_; }
@@ -54,24 +54,29 @@ class MockXdgSurface : public ServerObject {
   MOCK_METHOD1(SetAppId, void(const char* app_id));
   MOCK_METHOD1(AckConfigure, void(uint32_t serial));
   MOCK_METHOD4(SetWindowGeometry,
-               void(int32_t x, int32_t y, int32_t widht, int32_t height));
+               void(int32_t x, int32_t y, int32_t width, int32_t height));
   MOCK_METHOD0(SetMaximized, void());
   MOCK_METHOD0(UnsetMaximized, void());
   MOCK_METHOD0(SetFullscreen, void());
   MOCK_METHOD0(UnsetFullscreen, void());
   MOCK_METHOD0(SetMinimized, void());
 
-  // Used when xdg v6 is used.
-  std::unique_ptr<MockXdgTopLevel> xdg_toplevel;
+  void set_xdg_toplevel(std::unique_ptr<MockXdgTopLevel> xdg_toplevel) {
+    xdg_toplevel_ = std::move(xdg_toplevel);
+  }
+  MockXdgTopLevel* xdg_toplevel() { return xdg_toplevel_.get(); }
 
  private:
+  // Used when xdg v6 is used.
+  std::unique_ptr<MockXdgTopLevel> xdg_toplevel_;
+
   DISALLOW_COPY_AND_ASSIGN(MockXdgSurface);
 };
 
 // Manage zxdg_toplevel for providing desktop UI.
 class MockXdgTopLevel : public MockXdgSurface {
  public:
-  MockXdgTopLevel(wl_resource* resource);
+  explicit MockXdgTopLevel(wl_resource* resource);
   ~MockXdgTopLevel() override;
 
   // TODO(msisov): mock other zxdg_toplevel specific methods once implementation
@@ -85,7 +90,7 @@ class MockXdgTopLevel : public MockXdgSurface {
 // Manage client surface
 class MockSurface : public ServerObject {
  public:
-  MockSurface(wl_resource* resource);
+  explicit MockSurface(wl_resource* resource);
   ~MockSurface() override;
 
   static MockSurface* FromResource(wl_resource* resource);
@@ -95,15 +100,20 @@ class MockSurface : public ServerObject {
                void(int32_t x, int32_t y, int32_t width, int32_t height));
   MOCK_METHOD0(Commit, void());
 
-  std::unique_ptr<MockXdgSurface> xdg_surface;
+  void set_xdg_surface(std::unique_ptr<MockXdgSurface> xdg_surface) {
+    xdg_surface_ = std::move(xdg_surface);
+  }
+  MockXdgSurface* xdg_surface() { return xdg_surface_.get(); }
 
  private:
+  std::unique_ptr<MockXdgSurface> xdg_surface_;
+
   DISALLOW_COPY_AND_ASSIGN(MockSurface);
 };
 
 class MockPointer : public ServerObject {
  public:
-  MockPointer(wl_resource* resource);
+  explicit MockPointer(wl_resource* resource);
   ~MockPointer() override;
 
  private:
@@ -112,7 +122,7 @@ class MockPointer : public ServerObject {
 
 class MockKeyboard : public ServerObject {
  public:
-  MockKeyboard(wl_resource* resource);
+  explicit MockKeyboard(wl_resource* resource);
   ~MockKeyboard() override;
 
  private:
@@ -207,11 +217,26 @@ class MockSeat : public Global {
   MockSeat();
   ~MockSeat() override;
 
-  std::unique_ptr<MockPointer> pointer;
-  std::unique_ptr<MockKeyboard> keyboard;
-  std::unique_ptr<MockTouch> touch;
+  void set_pointer(std::unique_ptr<MockPointer> pointer) {
+    pointer_ = std::move(pointer);
+  }
+  MockPointer* pointer() { return pointer_.get(); }
+
+  void set_keyboard(std::unique_ptr<MockKeyboard> keyboard) {
+    keyboard_ = std::move(keyboard);
+  }
+  MockKeyboard* keyboard() { return keyboard_.get(); }
+
+  void set_touch(std::unique_ptr<MockTouch> touch) {
+    touch_ = std::move(touch);
+  }
+  MockTouch* touch() { return touch_.get(); }
 
  private:
+  std::unique_ptr<MockPointer> pointer_;
+  std::unique_ptr<MockKeyboard> keyboard_;
+  std::unique_ptr<MockTouch> touch_;
+
   DISALLOW_COPY_AND_ASSIGN(MockSeat);
 };
 
@@ -244,7 +269,7 @@ struct DisplayDeleter {
   void operator()(wl_display* display);
 };
 
-class FakeServer : public base::Thread, base::MessagePumpLibevent::Watcher {
+class FakeServer : public base::Thread, base::MessagePumpLibevent::FdWatcher {
  public:
   FakeServer();
   ~FakeServer() override;
@@ -278,7 +303,7 @@ class FakeServer : public base::Thread, base::MessagePumpLibevent::Watcher {
 
   std::unique_ptr<base::MessagePump> CreateMessagePump();
 
-  // base::MessagePumpLibevent::Watcher
+  // base::MessagePumpLibevent::FdWatcher
   void OnFileCanReadWithoutBlocking(int fd) override;
   void OnFileCanWriteWithoutBlocking(int fd) override;
 
@@ -296,7 +321,7 @@ class FakeServer : public base::Thread, base::MessagePumpLibevent::Watcher {
   MockXdgShell xdg_shell_;
   MockXdgShellV6 zxdg_shell_v6_;
 
-  base::MessagePumpLibevent::FileDescriptorWatcher controller_;
+  base::MessagePumpLibevent::FdWatchController controller_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeServer);
 };

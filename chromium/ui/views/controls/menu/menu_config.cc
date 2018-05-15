@@ -7,7 +7,6 @@
 #include "base/macros.h"
 #include "ui/views/controls/menu/menu_image_util.h"
 #include "ui/views/round_rect_painter.h"
-
 namespace views {
 
 MenuConfig::MenuConfig()
@@ -19,10 +18,16 @@ MenuConfig::MenuConfig()
       item_bottom_margin(3),
       item_no_icon_top_margin(4),
       item_no_icon_bottom_margin(4),
+      fixed_text_item_height(0),
+      fixed_menu_width(0),
       item_left_margin(10),
+      touchable_item_left_margin(16),
       label_to_arrow_padding(10),
       arrow_to_edge_padding(5),
       icon_to_label_padding(10),
+      touchable_icon_to_label_padding(22),
+      touchable_icon_size(20),
+      touchable_icon_color(SkColorSetA(SK_ColorBLACK, 0xDE)),
       check_width(kMenuCheckSize),
       check_height(kMenuCheckSize),
       arrow_width(kSubmenuArrowSize),
@@ -43,7 +48,13 @@ MenuConfig::MenuConfig()
       icons_in_label(false),
       check_selected_combobox_item(false),
       show_delay(400),
-      corner_radius(0) {
+      corner_radius(0),
+      touchable_corner_radius(8),
+      touchable_anchor_offset(8),
+      touchable_menu_height(36),
+      touchable_menu_width(256),
+      touchable_menu_shadow_elevation(12),
+      vertical_touchable_menu_item_padding(8) {
   Init();
 }
 

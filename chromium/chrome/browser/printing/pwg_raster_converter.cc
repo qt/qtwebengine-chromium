@@ -16,7 +16,6 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/sequenced_task_runner.h"
 #include "base/task_scheduler/post_task.h"
 #include "base/threading/thread_restrictions.h"
@@ -194,6 +193,7 @@ void PwgRasterConverterHelper::RunCallback(bool success) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (callback_)
     std::move(callback_).Run(success, files_->GetPwgPath());
+  pdf_to_pwg_raster_converter_ptr_.reset();
 }
 
 class PwgRasterConverterImpl : public PwgRasterConverter {
@@ -239,7 +239,8 @@ std::unique_ptr<PwgRasterConverter> PwgRasterConverter::CreateDefault() {
 // static
 PdfRenderSettings PwgRasterConverter::GetConversionSettings(
     const cloud_devices::CloudDeviceDescription& printer_capabilities,
-    const gfx::Size& page_size) {
+    const gfx::Size& page_size,
+    bool use_color) {
   gfx::Size dpi = gfx::Size(kDefaultPdfDpi, kDefaultPdfDpi);
   cloud_devices::printer::DpiCapability dpis;
   if (dpis.LoadFrom(printer_capabilities))
@@ -264,7 +265,7 @@ PdfRenderSettings PwgRasterConverter::GetConversionSettings(
   gfx::Rect area(final_page_size.width() * scale_x,
                  final_page_size.height() * scale_y);
   return PdfRenderSettings(area, gfx::Point(0, 0), dpi,
-                           /*autorotate=*/true,
+                           /*autorotate=*/true, use_color,
                            PdfRenderSettings::Mode::NORMAL);
 }
 

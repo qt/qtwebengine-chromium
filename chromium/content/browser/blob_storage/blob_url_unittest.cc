@@ -12,7 +12,6 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
 #include "base/numerics/safe_conversions.h"
@@ -22,7 +21,7 @@
 #include "content/browser/blob_storage/blob_url_loader_factory.h"
 #include "content/browser/url_loader_factory_getter.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "mojo/common/data_pipe_utils.h"
+#include "mojo/public/cpp/system/data_pipe_utils.h"
 #include "net/base/net_errors.h"
 #include "net/base/request_priority.h"
 #include "net/base/test_completion_callback.h"
@@ -307,7 +306,7 @@ class BlobURLRequestJobTest : public testing::TestWithParam<RequestTestType> {
         url_loader_client.RunUntilComplete();
 
         if (url_loader_client.response_body().is_valid()) {
-          EXPECT_TRUE(mojo::common::BlockingCopyToString(
+          EXPECT_TRUE(mojo::BlockingCopyToString(
               url_loader_client.response_body_release(), &response_));
         }
         response_headers_ = url_loader_client.response_head().headers;
@@ -362,7 +361,7 @@ class BlobURLRequestJobTest : public testing::TestWithParam<RequestTestType> {
         url_loader_client.RunUntilComplete();
 
         if (url_loader_client.response_body().is_valid()) {
-          EXPECT_TRUE(mojo::common::BlockingCopyToString(
+          EXPECT_TRUE(mojo::BlockingCopyToString(
               url_loader_client.response_body_release(), &response_));
         }
         response_headers_ = url_loader_client.response_head().headers;
@@ -509,7 +508,7 @@ TEST_P(BlobURLRequestJobTest, TestGetChangedFileRequest) {
   base::Time old_time =
       temp_file_modification_time1_ - base::TimeDelta::FromSeconds(10);
   blob_data_->AppendFile(temp_file1_, 0, 3, old_time);
-  TestErrorRequest(net::ERR_FILE_NOT_FOUND);
+  TestErrorRequest(net::ERR_UPLOAD_FILE_CHANGED);
 }
 
 TEST_P(BlobURLRequestJobTest, TestGetSlicedFileRequest) {
@@ -558,7 +557,7 @@ TEST_P(BlobURLRequestJobTest, TestGetInvalidFileSystemFileRequest) {
   blob_data_->AppendFileSystemFile(invalid_file, 0,
                                    std::numeric_limits<uint64_t>::max(),
                                    base::Time(), file_system_context_);
-  TestErrorRequest(net::ERR_FAILED);
+  TestErrorRequest(net::ERR_FILE_NOT_FOUND);
 }
 
 TEST_P(BlobURLRequestJobTest, TestGetChangedFileSystemFileRequest) {
@@ -567,7 +566,7 @@ TEST_P(BlobURLRequestJobTest, TestGetChangedFileSystemFileRequest) {
                         base::TimeDelta::FromSeconds(10);
   blob_data_->AppendFileSystemFile(temp_file_system_file1_, 0, 3, old_time,
                                    file_system_context_);
-  TestErrorRequest(net::ERR_FILE_NOT_FOUND);
+  TestErrorRequest(net::ERR_UPLOAD_FILE_CHANGED);
 }
 
 TEST_P(BlobURLRequestJobTest, TestGetSlicedFileSystemFileRequest) {

@@ -260,12 +260,14 @@ ManagedDisplayInfo ManagedDisplayInfo::CreateFromSpecWithID(
 
 ManagedDisplayInfo::ManagedDisplayInfo()
     : id_(kInvalidDisplayId),
+      year_of_manufacture_(kInvalidYearOfManufacture),
       has_overscan_(false),
       active_rotation_source_(Display::RotationSource::UNKNOWN),
       touch_support_(Display::TouchSupport::UNKNOWN),
       device_scale_factor_(1.0f),
       device_dpi_(kDpi96),
       overscan_insets_in_dip_(0, 0, 0, 0),
+      zoom_factor_(1.f),
       configured_ui_scale_(1.0f),
       native_(false),
       is_aspect_preserving_scaling_(false),
@@ -276,12 +278,14 @@ ManagedDisplayInfo::ManagedDisplayInfo(int64_t id,
                                        bool has_overscan)
     : id_(id),
       name_(name),
+      year_of_manufacture_(kInvalidYearOfManufacture),
       has_overscan_(has_overscan),
       active_rotation_source_(Display::RotationSource::UNKNOWN),
       touch_support_(Display::TouchSupport::UNKNOWN),
       device_scale_factor_(1.0f),
       device_dpi_(kDpi96),
       overscan_insets_in_dip_(0, 0, 0, 0),
+      zoom_factor_(1.f),
       configured_ui_scale_(1.0f),
       native_(false),
       is_aspect_preserving_scaling_(false),
@@ -312,6 +316,9 @@ Display::Rotation ManagedDisplayInfo::GetRotation(
 
 void ManagedDisplayInfo::Copy(const ManagedDisplayInfo& native_info) {
   DCHECK(id_ == native_info.id_);
+  manufacturer_id_ = native_info.manufacturer_id_;
+  product_id_ = native_info.product_id_;
+  year_of_manufacture_ = native_info.year_of_manufacture_;
   name_ = native_info.name_;
   has_overscan_ = native_info.has_overscan_;
 
@@ -340,6 +347,7 @@ void ManagedDisplayInfo::Copy(const ManagedDisplayInfo& native_info) {
     overscan_insets_in_dip_ = native_info.overscan_insets_in_dip_;
 
   rotations_ = native_info.rotations_;
+  zoom_factor_ = native_info.zoom_factor_;
   configured_ui_scale_ = native_info.configured_ui_scale_;
 }
 
@@ -357,10 +365,10 @@ float ManagedDisplayInfo::GetDensityRatio() const {
 
 float ManagedDisplayInfo::GetEffectiveDeviceScaleFactor() const {
   if (Display::IsInternalDisplayId(id_) && device_scale_factor_ == 1.25f)
-    return (configured_ui_scale_ == 0.8f) ? 1.25f : 1.0f;
+    return ((configured_ui_scale_ == 0.8f) ? 1.25f : 1.0f) * zoom_factor_;
   if (device_scale_factor_ == configured_ui_scale_)
-    return 1.0f;
-  return device_scale_factor_;
+    return zoom_factor_;
+  return device_scale_factor_ * zoom_factor_;
 }
 
 float ManagedDisplayInfo::GetEffectiveUIScale() const {
@@ -395,7 +403,7 @@ void ManagedDisplayInfo::SetOverscanInsets(const gfx::Insets& insets_in_dip) {
 }
 
 gfx::Insets ManagedDisplayInfo::GetOverscanInsetsInPixel() const {
-  return overscan_insets_in_dip_.Scale(device_scale_factor_);
+  return overscan_insets_in_dip_.Scale(device_scale_factor_ * zoom_factor_);
 }
 
 void ManagedDisplayInfo::SetManagedDisplayModes(
@@ -418,9 +426,9 @@ std::string ManagedDisplayInfo::ToString() const {
 
   std::string result = base::StringPrintf(
       "ManagedDisplayInfo[%lld] native bounds=%s, size=%s, device-scale=%g, "
-      "overscan=%s, rotation=%d, ui-scale=%g, touchscreen=%s, ",
+      "display-zoom=%g, overscan=%s, rotation=%d, ui-scale=%g, touchscreen=%s",
       static_cast<long long int>(id_), bounds_in_native_.ToString().c_str(),
-      size_in_pixel_.ToString().c_str(), device_scale_factor_,
+      size_in_pixel_.ToString().c_str(), device_scale_factor_, zoom_factor_,
       overscan_insets_in_dip_.ToString().c_str(), rotation_degree,
       configured_ui_scale_,
       touch_support_ == Display::TouchSupport::AVAILABLE

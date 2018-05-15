@@ -25,7 +25,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "net/base/net_errors.h"
-#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
 
 namespace content {
 
@@ -75,15 +75,14 @@ ServiceWorkerRegisterJob::~ServiceWorkerRegisterJob() {
       << "Jobs should only be interrupted during shutdown.";
 }
 
-void ServiceWorkerRegisterJob::AddCallback(
-    const RegistrationCallback& callback) {
+void ServiceWorkerRegisterJob::AddCallback(RegistrationCallback callback) {
   if (!is_promise_resolved_) {
-    callbacks_.push_back(callback);
+    callbacks_.emplace_back(std::move(callback));
     return;
   }
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
-      base::BindOnce(callback, promise_resolved_status_,
+      base::BindOnce(std::move(callback), promise_resolved_status_,
                      promise_resolved_status_message_,
                      base::RetainedRef(promise_resolved_registration_)));
 }
@@ -389,7 +388,7 @@ void ServiceWorkerRegisterJob::OnStartWorkerFinished(
   if (main_script_status.status() != net::URLRequestStatus::SUCCESS) {
     message = new_version()->script_cache_map()->main_script_status_message();
     if (message.empty())
-      message = kFetchScriptError;
+      message = kServiceWorkerFetchScriptError;
   }
   Complete(status, message);
 }
@@ -579,11 +578,8 @@ void ServiceWorkerRegisterJob::ResolvePromise(
   promise_resolved_status_ = status;
   promise_resolved_status_message_ = status_message,
   promise_resolved_registration_ = registration;
-  for (std::vector<RegistrationCallback>::iterator it = callbacks_.begin();
-       it != callbacks_.end();
-       ++it) {
-    it->Run(status, status_message, registration);
-  }
+  for (RegistrationCallback& callback : callbacks_)
+    std::move(callback).Run(status, status_message, registration);
   callbacks_.clear();
 }
 
@@ -591,14 +587,14 @@ void ServiceWorkerRegisterJob::AddRegistrationToMatchingProviderHosts(
     ServiceWorkerRegistration* registration) {
   DCHECK(registration);
   for (std::unique_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
-           context_->GetProviderHostIterator();
+           context_->GetClientProviderHostIterator(
+               registration->pattern().GetOrigin());
        !it->IsAtEnd(); it->Advance()) {
     ServiceWorkerProviderHost* host = it->GetProviderHost();
-    if (host->IsHostToRunningServiceWorker())
-      continue;
     if (!ServiceWorkerUtils::ScopeMatches(registration->pattern(),
-                                          host->document_url()))
+                                          host->document_url())) {
       continue;
+    }
     host->AddMatchingRegistration(registration);
   }
 }

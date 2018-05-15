@@ -283,9 +283,9 @@ bool CJS_PublicMethods::MaskSatisfied(wchar_t c_Change, wchar_t c_Mask) {
     case L'9':
       return !!std::iswdigit(c_Change);
     case L'A':
-      return FXSYS_iswalpha(c_Change);
+      return isascii(c_Change) && isalpha(c_Change);
     case L'O':
-      return FXSYS_iswalnum(c_Change);
+      return isascii(c_Change) && isalnum(c_Change);
     case L'X':
       return true;
     default:
@@ -559,7 +559,7 @@ double CJS_PublicMethods::MakeRegularDate(const WideString& value,
         } else if (remaining == 1 || format[i + 2] != c) {
           switch (c) {
             case 'y':
-              nYear = ParseStringInteger(value, j, &nSkip, 4);
+              nYear = ParseStringInteger(value, j, &nSkip, 2);
               i += 2;
               j += nSkip;
               break;

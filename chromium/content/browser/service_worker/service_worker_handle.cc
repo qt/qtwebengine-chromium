@@ -4,10 +4,8 @@
 
 #include "content/browser/service_worker/service_worker_handle.h"
 
-#include "base/memory/ptr_util.h"
 #include "content/browser/service_worker/service_worker_client_utils.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
-#include "content/browser/service_worker/service_worker_dispatcher_host.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_type_converters.h"
@@ -153,39 +151,22 @@ void DispatchExtendableMessageEventFromServiceWorker(
 
 }  // namespace
 
-// static
-base::WeakPtr<ServiceWorkerHandle> ServiceWorkerHandle::Create(
-    ServiceWorkerDispatcherHost* dispatcher_host,
-    base::WeakPtr<ServiceWorkerContextCore> context,
-    base::WeakPtr<ServiceWorkerProviderHost> provider_host,
-    ServiceWorkerVersion* version,
-    blink::mojom::ServiceWorkerObjectInfoPtr* out_info) {
-  DCHECK(context && provider_host && version && out_info);
-  ServiceWorkerHandle* handle =
-      new ServiceWorkerHandle(dispatcher_host, context, provider_host, version);
-  *out_info = handle->CreateObjectInfo();
-  return handle->AsWeakPtr();
-}
-
 ServiceWorkerHandle::ServiceWorkerHandle(
-    ServiceWorkerDispatcherHost* dispatcher_host,
     base::WeakPtr<ServiceWorkerContextCore> context,
-    base::WeakPtr<ServiceWorkerProviderHost> provider_host,
-    ServiceWorkerVersion* version)
-    : dispatcher_host_(dispatcher_host),
-      context_(context),
+    ServiceWorkerProviderHost* provider_host,
+    scoped_refptr<ServiceWorkerVersion> version)
+    : context_(context),
       provider_host_(provider_host),
+      provider_origin_(url::Origin::Create(provider_host->document_url())),
       provider_id_(provider_host->provider_id()),
       handle_id_(context->GetNewServiceWorkerHandleId()),
-      version_(version),
+      version_(std::move(version)),
       weak_ptr_factory_(this) {
   DCHECK(context_ && provider_host_ && version_);
   DCHECK(context_->GetLiveRegistration(version_->registration_id()));
   version_->AddListener(this);
   bindings_.set_connection_error_handler(base::BindRepeating(
       &ServiceWorkerHandle::OnConnectionError, base::Unretained(this)));
-  if (dispatcher_host_)
-    dispatcher_host_->RegisterServiceWorkerHandle(base::WrapUnique(this));
 }
 
 ServiceWorkerHandle::~ServiceWorkerHandle() {
@@ -194,8 +175,6 @@ ServiceWorkerHandle::~ServiceWorkerHandle() {
 
 void ServiceWorkerHandle::OnVersionStateChanged(ServiceWorkerVersion* version) {
   DCHECK(version);
-  if (!provider_host_)
-    return;
   provider_host_->SendServiceWorkerStateChangedMessage(
       handle_id_,
       mojo::ConvertTo<blink::mojom::ServiceWorkerState>(version->status()));
@@ -213,26 +192,15 @@ ServiceWorkerHandle::CreateObjectInfo() {
   return info;
 }
 
-void ServiceWorkerHandle::RegisterIntoDispatcherHost(
-    ServiceWorkerDispatcherHost* dispatcher_host) {
-  DCHECK(ServiceWorkerUtils::IsServicificationEnabled() ||
-         IsNavigationMojoResponseEnabled());
-  DCHECK(!dispatcher_host_);
-  dispatcher_host_ = dispatcher_host;
-  dispatcher_host_->RegisterServiceWorkerHandle(base::WrapUnique(this));
-}
-
 void ServiceWorkerHandle::PostMessageToServiceWorker(
-    ::blink::TransferableMessage message,
-    const url::Origin& source_origin) {
+    ::blink::TransferableMessage message) {
   // When this method is called the encoded_message inside message could just
   // point to the IPC message's buffer. But that buffer can become invalid
   // before the message is passed on to the service worker, so make sure
   // message owns its data.
   message.EnsureDataIsOwned();
 
-  DispatchExtendableMessageEvent(std::move(message), source_origin,
-                                 base::DoNothing());
+  DispatchExtendableMessageEvent(std::move(message), base::DoNothing());
 }
 
 void ServiceWorkerHandle::TerminateForTesting(
@@ -242,21 +210,19 @@ void ServiceWorkerHandle::TerminateForTesting(
 
 void ServiceWorkerHandle::DispatchExtendableMessageEvent(
     ::blink::TransferableMessage message,
-    const url::Origin& source_origin,
     StatusCallback callback) {
-  if (!context_ || !provider_host_) {
-    std::move(callback).Run(SERVICE_WORKER_ERROR_FAILED);
+  if (!context_) {
+    std::move(callback).Run(SERVICE_WORKER_ERROR_ABORT);
     return;
   }
+  DCHECK_EQ(provider_origin_,
+            url::Origin::Create(provider_host_->document_url()));
   switch (provider_host_->provider_type()) {
     case blink::mojom::ServiceWorkerProviderType::kForWindow:
-    // TODO(leonhsl): Move kForSharedWorker to the kUnknown block to clarify
-    // that currently a shared worker can not postMessage to a service worker.
-    case blink::mojom::ServiceWorkerProviderType::kForSharedWorker:
       service_worker_client_utils::GetClient(
-          provider_host_.get(),
+          provider_host_,
           base::BindOnce(&DispatchExtendableMessageEventFromClient, version_,
-                         std::move(message), source_origin,
+                         std::move(message), provider_origin_,
                          std::move(callback)));
       return;
     case blink::mojom::ServiceWorkerProviderType::kForServiceWorker: {
@@ -268,11 +234,14 @@ void ServiceWorkerHandle::DispatchExtendableMessageEvent(
       base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE,
           base::BindOnce(&DispatchExtendableMessageEventFromServiceWorker,
-                         version_, std::move(message), source_origin,
+                         version_, std::move(message), provider_origin_,
                          base::make_optional(timeout), std::move(callback),
-                         provider_host_));
+                         provider_host_->AsWeakPtr()));
       return;
     }
+    case blink::mojom::ServiceWorkerProviderType::kForSharedWorker:
+    // Shared workers don't yet have access to ServiceWorker objects, so they
+    // can't postMessage to one (https://crbug.com/371690).
     case blink::mojom::ServiceWorkerProviderType::kUnknown:
       break;
   }
@@ -287,16 +256,8 @@ void ServiceWorkerHandle::OnConnectionError() {
   // If there are still bindings, |this| is still being used.
   if (!bindings_.empty())
     return;
-  // S13nServiceWorker: This handle may have been precreated before registering
-  // to a dispatcher host. Just self-destruct since we're no longer needed.
-  if (!dispatcher_host_) {
-    DCHECK(ServiceWorkerUtils::IsServicificationEnabled() ||
-           IsNavigationMojoResponseEnabled());
-    delete this;
-    return;
-  }
   // Will destroy |this|.
-  dispatcher_host_->UnregisterServiceWorkerHandle(handle_id_);
+  provider_host_->RemoveServiceWorkerHandle(version_->version_id());
 }
 
 }  // namespace content

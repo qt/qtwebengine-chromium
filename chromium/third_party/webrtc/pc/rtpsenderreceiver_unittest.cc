@@ -16,6 +16,7 @@
 #include "media/base/fakemediaengine.h"
 #include "media/base/rtpdataengine.h"
 #include "media/engine/fakewebrtccall.h"
+#include "p2p/base/fakedtlstransport.h"
 #include "pc/audiotrack.h"
 #include "pc/channelmanager.h"
 #include "pc/localaudiosource.h"
@@ -24,7 +25,6 @@
 #include "pc/rtpreceiver.h"
 #include "pc/rtpsender.h"
 #include "pc/streamcollection.h"
-#include "pc/test/faketransportcontroller.h"
 #include "pc/test/fakevideotracksource.h"
 #include "pc/videotrack.h"
 #include "pc/videotracksource.h"
@@ -39,7 +39,7 @@ using ::testing::Return;
 
 namespace {
 
-static const char kStreamLabel1[] = "local_stream_1";
+static const char kStreamId1[] = "local_stream_1";
 static const char kVideoTrackId[] = "video_1";
 static const char kAudioTrackId[] = "audio_1";
 static const uint32_t kVideoSsrc = 98;
@@ -65,21 +65,22 @@ class RtpSenderReceiverTest : public testing::Test,
                          worker_thread_,
                          network_thread_),
         fake_call_(),
-        local_stream_(MediaStream::Create(kStreamLabel1)) {
+        local_stream_(MediaStream::Create(kStreamId1)) {
     // Create channels to be used by the RtpSenders and RtpReceivers.
     channel_manager_.Init();
     bool srtp_required = true;
-    cricket::DtlsTransportInternal* rtp_transport =
-        fake_transport_controller_.CreateDtlsTransport(
-            cricket::CN_AUDIO, cricket::ICE_CANDIDATE_COMPONENT_RTP);
+    rtp_dtls_transport_ = rtc::MakeUnique<cricket::FakeDtlsTransport>(
+        "fake_dtls_transport", cricket::ICE_CANDIDATE_COMPONENT_RTP);
+    rtp_transport_ = CreateDtlsSrtpTransport();
+
     voice_channel_ = channel_manager_.CreateVoiceChannel(
-        &fake_call_, cricket::MediaConfig(),
-        rtp_transport, nullptr, rtc::Thread::Current(),
-        cricket::CN_AUDIO, srtp_required, cricket::AudioOptions());
+        &fake_call_, cricket::MediaConfig(), rtp_transport_.get(),
+        rtc::Thread::Current(), cricket::CN_AUDIO, srtp_required,
+        rtc::CryptoOptions(), cricket::AudioOptions());
     video_channel_ = channel_manager_.CreateVideoChannel(
-        &fake_call_, cricket::MediaConfig(),
-        rtp_transport, nullptr, rtc::Thread::Current(),
-        cricket::CN_VIDEO, srtp_required, cricket::VideoOptions());
+        &fake_call_, cricket::MediaConfig(), rtp_transport_.get(),
+        rtc::Thread::Current(), cricket::CN_VIDEO, srtp_required,
+        rtc::CryptoOptions(), cricket::VideoOptions());
     voice_channel_->Enable(true);
     video_channel_->Enable(true);
     voice_media_channel_ = media_engine_->GetVoiceChannel(0);
@@ -111,6 +112,18 @@ class RtpSenderReceiverTest : public testing::Test,
         cricket::StreamParams::CreateLegacy(kVideoSsrc2));
   }
 
+  std::unique_ptr<webrtc::RtpTransportInternal> CreateDtlsSrtpTransport() {
+    auto rtp_transport =
+        rtc::MakeUnique<webrtc::RtpTransport>(/*rtcp_mux_required=*/true);
+    auto srtp_transport =
+        rtc::MakeUnique<webrtc::SrtpTransport>(std::move(rtp_transport));
+    auto dtls_srtp_transport =
+        rtc::MakeUnique<webrtc::DtlsSrtpTransport>(std::move(srtp_transport));
+    dtls_srtp_transport->SetDtlsTransports(rtp_dtls_transport_.get(),
+                                           /*rtcp_dtls_transport=*/nullptr);
+    return dtls_srtp_transport;
+  }
+
   // Needed to use DTMF sender.
   void AddDtmfCodec() {
     cricket::AudioSendParameters params;
@@ -138,7 +151,7 @@ class RtpSenderReceiverTest : public testing::Test,
     EXPECT_TRUE(local_stream_->AddTrack(audio_track_));
     audio_rtp_sender_ =
         new AudioRtpSender(worker_thread_, local_stream_->GetAudioTracks()[0],
-                           {local_stream_->label()}, nullptr);
+                           {local_stream_->id()}, nullptr);
     audio_rtp_sender_->SetVoiceMediaChannel(voice_media_channel_);
     audio_rtp_sender_->SetSsrc(kAudioSsrc);
     audio_rtp_sender_->GetOnDestroyedSignal()->connect(
@@ -159,7 +172,7 @@ class RtpSenderReceiverTest : public testing::Test,
     AddVideoTrack(is_screencast);
     video_rtp_sender_ =
         new VideoRtpSender(worker_thread_, local_stream_->GetVideoTracks()[0],
-                           {local_stream_->label()});
+                           {local_stream_->id()});
     video_rtp_sender_->SetVideoMediaChannel(video_media_channel_);
     video_rtp_sender_->SetSsrc(kVideoSsrc);
     VerifyVideoChannelInput();
@@ -268,9 +281,12 @@ class RtpSenderReceiverTest : public testing::Test,
   rtc::Thread* const network_thread_;
   rtc::Thread* const worker_thread_;
   webrtc::RtcEventLogNullImpl event_log_;
+  // The |rtp_dtls_transport_| and |rtp_transport_| should be destroyed after
+  // the |channel_manager|.
+  std::unique_ptr<cricket::DtlsTransportInternal> rtp_dtls_transport_;
+  std::unique_ptr<webrtc::RtpTransportInternal> rtp_transport_;
   // |media_engine_| is actually owned by |channel_manager_|.
   cricket::FakeMediaEngine* media_engine_;
-  cricket::FakeTransportController fake_transport_controller_;
   cricket::ChannelManager channel_manager_;
   cricket::FakeCall fake_call_;
   cricket::VoiceChannel* voice_channel_;
@@ -780,9 +796,9 @@ TEST_F(RtpSenderReceiverTest,
   // Setting detailed overrides the default non-screencast mode. This should be
   // applied even if the track is set on construction.
   video_track_->set_content_hint(VideoTrackInterface::ContentHint::kDetailed);
-  video_rtp_sender_ = new VideoRtpSender(worker_thread_,
-                                         local_stream_->GetVideoTracks()[0],
-                                         {local_stream_->label()});
+  video_rtp_sender_ =
+      new VideoRtpSender(worker_thread_, local_stream_->GetVideoTracks()[0],
+                         {local_stream_->id()});
   video_rtp_sender_->SetVideoMediaChannel(video_media_channel_);
   video_track_->set_enabled(true);
 

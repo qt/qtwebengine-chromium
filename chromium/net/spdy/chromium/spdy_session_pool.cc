@@ -19,6 +19,7 @@
 #include "net/base/trace_constants.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties.h"
+#include "net/http/http_stream_request.h"
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_source.h"
 #include "net/log/net_log_with_source.h"
@@ -149,17 +150,10 @@ base::WeakPtr<SpdySession> SpdySessionPool::FindAvailableSession(
       net_log.AddEvent(
           NetLogEventType::HTTP2_SESSION_POOL_FOUND_EXISTING_SESSION,
           it->second->net_log().source().ToEventParametersCallback());
-    } else {
-      if (!enable_ip_based_pooling) {
-        // Remove session from available sessions and from aliases, and remove
-        // key from the session's pooled alias set, so that a new session can be
-        // created with this |key|.
-        it->second->RemovePooledAlias(key);
-        UnmapKey(key);
-        RemoveAliases(key);
-        return base::WeakPtr<SpdySession>();
-      }
+      return it->second;
+    }
 
+    if (enable_ip_based_pooling) {
       UMA_HISTOGRAM_ENUMERATION("Net.SpdySessionGet",
                                 FOUND_EXISTING_FROM_IP_POOL,
                                 SPDY_SESSION_GET_MAX);
@@ -167,8 +161,16 @@ base::WeakPtr<SpdySession> SpdySessionPool::FindAvailableSession(
           NetLogEventType::
               HTTP2_SESSION_POOL_FOUND_EXISTING_SESSION_FROM_IP_POOL,
           it->second->net_log().source().ToEventParametersCallback());
+      return it->second;
     }
-    return it->second;
+
+    // Remove session from available sessions and from aliases, and remove
+    // key from the session's pooled alias set, so that a new session can be
+    // created with this |key|.
+    it->second->RemovePooledAlias(key);
+    UnmapKey(key);
+    RemoveAliases(key);
+    return base::WeakPtr<SpdySession>();
   }
 
   if (!enable_ip_based_pooling)
@@ -403,7 +405,7 @@ void SpdySessionPool::OnNewSpdySessionReady(
     auto iter = spdy_session_request_map_.find(spdy_session_key);
     if (iter == spdy_session_request_map_.end())
       return;
-    HttpStreamFactoryImpl::Request* request = *iter->second.begin();
+    HttpStreamRequest* request = *iter->second.begin();
     request->Complete(was_alpn_negotiated, negotiated_protocol, using_spdy);
     RemoveRequestFromSpdySessionRequestMap(request);
     if (request->stream_type() == HttpStreamRequest::BIDIRECTIONAL_STREAM) {
@@ -446,7 +448,7 @@ void SpdySessionPool::ResumePendingRequests(
 
 void SpdySessionPool::AddRequestToSpdySessionRequestMap(
     const SpdySessionKey& spdy_session_key,
-    HttpStreamFactoryImpl::Request* request) {
+    HttpStreamRequest* request) {
   if (request->HasSpdySessionKey())
     return;
   RequestSet& request_set = spdy_session_request_map_[spdy_session_key];
@@ -456,7 +458,7 @@ void SpdySessionPool::AddRequestToSpdySessionRequestMap(
 }
 
 void SpdySessionPool::RemoveRequestFromSpdySessionRequestMap(
-    HttpStreamFactoryImpl::Request* request) {
+    HttpStreamRequest* request) {
   if (!request->HasSpdySessionKey())
     return;
   const SpdySessionKey& spdy_session_key = request->GetSpdySessionKey();

@@ -10,7 +10,8 @@
 #include <string>
 #include <vector>
 
-#include "device/fido/ctap_constants.h"
+#include "base/component_export.h"
+#include "device/fido/fido_constants.h"
 
 namespace device {
 
@@ -19,7 +20,7 @@ namespace internal {
 // Represents CTAP requests with empty parameters, including
 // AuthenticatorGetInfo, AuthenticatorCancel, AuthenticatorReset and
 // AuthenticatorGetNextAssertion commands.
-class CtapEmptyAuthenticatorRequest {
+class COMPONENT_EXPORT(DEVICE_FIDO) CtapEmptyAuthenticatorRequest {
  public:
   CtapRequestCommand cmd() const { return cmd_; }
   std::vector<uint8_t> Serialize() const;
@@ -33,7 +34,7 @@ class CtapEmptyAuthenticatorRequest {
 
 }  // namespace internal
 
-class AuthenticatorGetNextAssertionRequest
+class COMPONENT_EXPORT(DEVICE_FIDO) AuthenticatorGetNextAssertionRequest
     : public internal::CtapEmptyAuthenticatorRequest {
  public:
   AuthenticatorGetNextAssertionRequest()
@@ -41,7 +42,7 @@ class AuthenticatorGetNextAssertionRequest
             CtapRequestCommand::kAuthenticatorGetNextAssertion) {}
 };
 
-class AuthenticatorGetInfoRequest
+class COMPONENT_EXPORT(DEVICE_FIDO) AuthenticatorGetInfoRequest
     : public internal::CtapEmptyAuthenticatorRequest {
  public:
   AuthenticatorGetInfoRequest()
@@ -49,20 +50,12 @@ class AuthenticatorGetInfoRequest
             CtapRequestCommand::kAuthenticatorGetInfo) {}
 };
 
-class AuthenticatorResetRequest
+class COMPONENT_EXPORT(DEVICE_FIDO) AuthenticatorResetRequest
     : public internal::CtapEmptyAuthenticatorRequest {
  public:
   AuthenticatorResetRequest()
       : CtapEmptyAuthenticatorRequest(CtapRequestCommand::kAuthenticatorReset) {
   }
-};
-
-class AuthenticatorCancelRequest
-    : public internal::CtapEmptyAuthenticatorRequest {
- public:
-  AuthenticatorCancelRequest()
-      : CtapEmptyAuthenticatorRequest(
-            CtapRequestCommand::kAuthenticatorCancel) {}
 };
 
 }  // namespace device

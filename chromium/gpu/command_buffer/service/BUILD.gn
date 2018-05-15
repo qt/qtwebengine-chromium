@@ -86,7 +86,7 @@ target(link_target_type, "service_sources") {
     "//gpu/command_buffer/client:client_sources",
     "//gpu/config:config_sources",
     "//gpu/ipc/common:surface_handle_type",
-    "//media:media_features",
+    "//media:media_buildflags",
     "//ui/gfx",
     "//ui/gfx/geometry",
     "//ui/gl",
@@ -153,6 +153,8 @@ target(link_target_type, "gles2_sources") {
     "gles2_cmd_validation.h",
     "gles2_cmd_validation_autogen.h",
     "gles2_cmd_validation_implementation_autogen.h",
+    "gles2_query_manager.cc",
+    "gles2_query_manager.h",
     "gpu_fence_manager.cc",
     "gpu_fence_manager.h",
     "gpu_state_tracer.cc",
@@ -183,6 +185,10 @@ target(link_target_type, "gles2_sources") {
     "program_manager.h",
     "query_manager.cc",
     "query_manager.h",
+    "raster_cmd_validation.cc",
+    "raster_cmd_validation.h",
+    "raster_cmd_validation_autogen.h",
+    "raster_cmd_validation_implementation_autogen.h",
     "raster_decoder.cc",
     "raster_decoder.h",
     "renderbuffer_manager.cc",
@@ -225,6 +231,7 @@ target(link_target_type, "gles2_sources") {
   public_deps = [
     "//gpu/command_buffer/common",
     "//gpu/command_buffer/common:gles2_sources",
+    "//gpu/command_buffer/common:raster_sources",
   ]
   deps = [
     ":disk_cache_proto",

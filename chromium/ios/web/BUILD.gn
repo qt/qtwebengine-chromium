@@ -135,7 +135,7 @@ source_set("run_all_unittests") {
     "//base/test:test_support",
     "//ios/web/public/test",
     "//ios/web/public/test/http_server",
-    "//mojo/edk/system",
+    "//mojo/edk",
   ]
 }
 
@@ -255,10 +255,9 @@ source_set("ios_web_navigation_unittests") {
     "navigation/navigation_manager_impl_unittest.mm",
     "navigation/navigation_manager_util_unittest.mm",
     "navigation/nscoder_util_unittest.mm",
-    "navigation/placeholder_navigation_util_unittest.mm",
     "navigation/serializable_user_data_manager_impl_unittest.mm",
     "navigation/wk_based_navigation_manager_impl_unittest.mm",
-    "navigation/wk_based_restore_session_util_unittest.mm",
+    "navigation/wk_navigation_util_unittest.mm",
   ]
 }
 
@@ -382,7 +381,6 @@ source_set("ios_web_web_state_unittests") {
     "//ios/web/test:test_constants",
     "//ios/web/test:test_support",
     "//ios/web/web_state:context_menu",
-    "//ios/web/web_state:crw_pass_kit_downloader",
     "//ios/web/web_state:session_certificate_policy_cache",
     "//ios/web/web_state:web_view_internal_creation_util",
     "//ios/web/web_state:wk_web_view_security_util",
@@ -397,7 +395,6 @@ source_set("ios_web_web_state_unittests") {
 
   sources = [
     "web_state/context_menu_params_utils_unittest.mm",
-    "web_state/crw_pass_kit_downloader_unittest.mm",
     "web_state/error_translation_util_unittest.mm",
     "web_state/navigation_context_impl_unittest.mm",
     "web_state/page_display_state_unittest.mm",
@@ -556,7 +553,7 @@ test("ios_web_inttests") {
     "//ios/web/test:resources",
     "//ios/web/test:test_constants",
     "//ios/web/test:test_support",
-    "//mojo/edk/system",
+    "//mojo/edk",
     "//net:test_support",
     "//services/network/public/cpp",
     "//services/service_manager/public/cpp",
@@ -572,7 +569,6 @@ test("ios_web_inttests") {
     "url_loader_inttest.mm",
     "web_state/favicon_callbacks_inttest.mm",
     "web_state/http_auth_inttest.mm",
-    "web_state/js/form_inttest.mm",
     "web_state/navigation_and_load_callbacks_inttest.mm",
     "webui/web_ui_mojo_inttest.mm",
   ]
@@ -599,9 +595,9 @@ js_compile_bundle("main_frame_web_bundle") {
 
   sources = [
     "web_state/js/resources/console.js",
-    "web_state/js/resources/context_menu.js",
     "web_state/js/resources/error.js",
     "web_state/js/resources/legacy.js",
+    "web_state/js/resources/main_frame_context_menu.js",
     "web_state/js/resources/main_frame_web_bundle.js",
     "web_state/js/resources/navigation.js",
     "web_state/js/resources/scroll_workaround.js",
@@ -613,10 +609,10 @@ js_compile_bundle("all_frames_web_bundle") {
   closure_entry_point = "__crWeb.allFramesWebBundle"
 
   sources = [
+    "web_state/js/resources/all_frames_context_menu.js",
     "web_state/js/resources/all_frames_web_bundle.js",
     "web_state/js/resources/base.js",
     "web_state/js/resources/common.js",
-    "web_state/js/resources/form.js",
     "web_state/js/resources/message.js",
   ]
 }

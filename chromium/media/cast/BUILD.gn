@@ -104,8 +104,6 @@ source_set("net") {
     "net/rtp/rtp_sender.h",
     "net/udp_packet_pipe.cc",
     "net/udp_packet_pipe.h",
-    "net/udp_socket_client.cc",
-    "net/udp_socket_client.h",
     "net/udp_transport_impl.cc",
     "net/udp_transport_impl.h",
     "net/udp_transport_interface.h",
@@ -117,7 +115,6 @@ source_set("net") {
     "//media/mojo/common",
     "//mojo/public/cpp/system",
     "//net",
-    "//services/network/public/mojom",
   ]
 
   public_deps = [
@@ -230,6 +227,8 @@ static_library("test_support") {
     "test/fake_receiver_time_offset_estimator.h",
     "test/loopback_transport.cc",
     "test/loopback_transport.h",
+    "test/mock_cast_transport.cc",
+    "test/mock_cast_transport.h",
     "test/skewed_single_thread_task_runner.cc",
     "test/skewed_single_thread_task_runner.h",
     "test/skewed_tick_clock.cc",
@@ -263,6 +262,7 @@ static_library("test_support") {
     "//base/test:test_support",
     "//media",
     "//net",
+    "//testing/gmock",
     "//testing/gtest",
     "//third_party/libyuv",
     "//ui/gfx:test_support",
@@ -293,8 +293,6 @@ test("cast_unittests") {
     "logging/simple_event_subscriber_unittest.cc",
     "logging/stats_event_subscriber_unittest.cc",
     "net/cast_transport_impl_unittest.cc",
-    "net/mock_cast_transport.cc",
-    "net/mock_cast_transport.h",
     "net/pacing/mock_paced_packet_sender.cc",
     "net/pacing/mock_paced_packet_sender.h",
     "net/pacing/paced_sender_unittest.cc",
@@ -319,7 +317,6 @@ test("cast_unittests") {
     "net/rtp/rtp_packetizer_unittest.cc",
     "net/rtp/rtp_parser_unittest.cc",
     "net/udp_packet_pipe_unittest.cc",
-    "net/udp_socket_client_unittest.cc",
     "net/udp_transport_unittest.cc",
     "receiver/audio_decoder_unittest.cc",
     "receiver/frame_receiver_unittest.cc",
@@ -345,12 +342,12 @@ test("cast_unittests") {
     ":sender",
     ":test_support",
     "//base",
+    "//base:cfi_buildflags",
     "//base/test:test_support",
     "//media:test_support",
     "//media/test:run_all_unittests",
     "//mojo/public/cpp/bindings",
     "//net",
-    "//services/network/public/mojom",
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/opus",
@@ -546,6 +543,7 @@ if (is_linux && !is_chromeos) {
 
 static_library("cast_sender") {
   complete_static_lib = true
+  configs -= [ "//build/config/compiler:thin_archive" ]
   deps = [
     ":sender",
   ]
@@ -553,6 +551,7 @@ static_library("cast_sender") {
 
 static_library("cast_receiver") {
   complete_static_lib = true
+  configs -= [ "//build/config/compiler:thin_archive" ]
   deps = [
     ":receiver",
   ]

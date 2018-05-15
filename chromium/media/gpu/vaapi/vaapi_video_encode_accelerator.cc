@@ -323,7 +323,7 @@ void VaapiVideoEncodeAccelerator::EndFrame() {
   while (ref_pic_list0_.size() > max_num_ref_frames)
     ref_pic_list0_.pop_back();
 
-  submitted_encode_jobs_.push(make_linked_ptr(current_encode_job_.release()));
+  submitted_encode_jobs_.push(std::move(current_encode_job_));
 }
 
 static void InitVAPicture(VAPictureH264* va_pic) {
@@ -539,9 +539,8 @@ void VaapiVideoEncodeAccelerator::TryToReturnBitstreamBuffer() {
     return;
 
   while (!submitted_encode_jobs_.empty()) {
-    linked_ptr<EncodeJob> encode_job = submitted_encode_jobs_.front();
-    // An null job indicates a flush command.
-    if (encode_job == nullptr) {
+    // A null job indicates a flush command.
+    if (submitted_encode_jobs_.front() == nullptr) {
       submitted_encode_jobs_.pop();
       DVLOGF(2) << "FlushDone";
       DCHECK(flush_callback_);
@@ -552,10 +551,11 @@ void VaapiVideoEncodeAccelerator::TryToReturnBitstreamBuffer() {
 
     if (available_bitstream_buffers_.empty())
       break;
-    auto buffer = available_bitstream_buffers_.front();
 
-    available_bitstream_buffers_.pop();
+    const auto encode_job = std::move(submitted_encode_jobs_.front());
     submitted_encode_jobs_.pop();
+    const auto buffer = std::move(available_bitstream_buffers_.front());
+    available_bitstream_buffers_.pop();
 
     uint8_t* target_data = reinterpret_cast<uint8_t*>(buffer->shm->memory());
 
@@ -630,7 +630,7 @@ void VaapiVideoEncodeAccelerator::EncodeTask(
   DCHECK_NE(state_, kUninitialized);
 
   encoder_input_queue_.push(
-      make_linked_ptr(new InputFrameRef(frame, force_keyframe)));
+      std::make_unique<InputFrameRef>(frame, force_keyframe));
   EncodeFrameTask();
 }
 
@@ -640,12 +640,20 @@ void VaapiVideoEncodeAccelerator::EncodeFrameTask() {
   if (state_ != kEncoding || encoder_input_queue_.empty())
     return;
 
+  // Pass the nullptr to the next queue |submitted_encode_jobs_|.
+  if (encoder_input_queue_.front() == nullptr) {
+    encoder_input_queue_.pop();
+    submitted_encode_jobs_.push(nullptr);
+    TryToReturnBitstreamBuffer();
+    return;
+  }
+
   if (!PrepareNextJob(encoder_input_queue_.front()->frame->timestamp())) {
     DVLOGF(4) << "Not ready for next frame yet";
     return;
   }
 
-  linked_ptr<InputFrameRef> frame_ref = encoder_input_queue_.front();
+  const auto frame_ref = std::move(encoder_input_queue_.front());
   encoder_input_queue_.pop();
 
   TRACE_EVENT0("media,gpu", "VAVEA::EncodeFrameTask");
@@ -708,7 +716,7 @@ void VaapiVideoEncodeAccelerator::UseOutputBitstreamBufferTask(
   DCHECK(encoder_thread_task_runner_->BelongsToCurrentThread());
   DCHECK_NE(state_, kUninitialized);
 
-  available_bitstream_buffers_.push(make_linked_ptr(buffer_ref.release()));
+  available_bitstream_buffers_.push(std::move(buffer_ref));
   TryToReturnBitstreamBuffer();
 }
 
@@ -783,8 +791,8 @@ void VaapiVideoEncodeAccelerator::FlushTask() {
   DCHECK(encoder_thread_task_runner_->BelongsToCurrentThread());
 
   // Insert an null job to indicate a flush command.
-  submitted_encode_jobs_.push(linked_ptr<EncodeJob>(nullptr));
-  TryToReturnBitstreamBuffer();
+  encoder_input_queue_.push(std::unique_ptr<InputFrameRef>(nullptr));
+  EncodeFrameTask();
 }
 
 void VaapiVideoEncodeAccelerator::Destroy() {

@@ -15,7 +15,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/media_stream_request.h"
 #include "extensions/browser/guest_view/web_view/web_view_permission_types.h"
-#include "ppapi/features/features.h"
+#include "ppapi/buildflags/buildflags.h"
 
 namespace extensions {
 
@@ -63,7 +63,7 @@ class WebViewPermissionHelper
       content::WebContents* source,
       const content::MediaStreamRequest& request,
       const content::MediaResponseCallback& callback);
-  bool CheckMediaAccessPermission(content::WebContents* source,
+  bool CheckMediaAccessPermission(content::RenderFrameHost* render_frame_host,
                                   const GURL& security_origin,
                                   content::MediaStreamType type);
   void CanDownload(const GURL& url,

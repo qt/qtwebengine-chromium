@@ -15,13 +15,13 @@
 #include "content/common/leveldb_wrapper.mojom.h"
 #include "content/common/possibly_associated_interface_ptr.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
-#include "third_party/WebKit/public/platform/WebScopedVirtualTimePauser.h"
+#include "third_party/blink/public/platform/web_scoped_virtual_time_pauser.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
 namespace blink {
 namespace scheduler {
-class RendererScheduler;
+class WebMainThreadScheduler;
 }
 }  // namespace blink
 
@@ -52,12 +52,12 @@ class CONTENT_EXPORT LocalStorageCachedArea
       const url::Origin& origin,
       mojom::SessionStorageNamespace* session_namespace,
       LocalStorageCachedAreas* cached_areas,
-      blink::scheduler::RendererScheduler* renderer_schedule);
+      blink::scheduler::WebMainThreadScheduler* main_thread_scheduler);
   LocalStorageCachedArea(
       const url::Origin& origin,
       mojom::StoragePartitionService* storage_partition_service,
       LocalStorageCachedAreas* cached_areas,
-      blink::scheduler::RendererScheduler* renderer_schedule);
+      blink::scheduler::WebMainThreadScheduler* main_thread_scheduler);
 
   // These correspond to blink::WebStorageArea.
   unsigned GetLength();
@@ -144,7 +144,10 @@ class CONTENT_EXPORT LocalStorageCachedArea
   mojo::AssociatedBinding<mojom::LevelDBObserver> binding_;
   LocalStorageCachedAreas* cached_areas_;
   std::map<std::string, LocalStorageArea*> areas_;
-  blink::scheduler::RendererScheduler* renderer_scheduler_;  // NOT OWNED
+
+  // Not owned.
+  blink::scheduler::WebMainThreadScheduler* main_thread_scheduler_;
+
   base::WeakPtrFactory<LocalStorageCachedArea> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(LocalStorageCachedArea);

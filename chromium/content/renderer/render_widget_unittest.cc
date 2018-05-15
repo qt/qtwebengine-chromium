@@ -29,9 +29,9 @@
 #include "ipc/ipc_test_sink.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebCoalescedInputEvent.h"
-#include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
-#include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
+#include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/web_coalesced_input_event.h"
+#include "third_party/blink/public/web/web_device_emulation_params.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/blink/web_input_event_traits.h"
 #include "ui/gfx/geometry/rect.h"
@@ -83,6 +83,8 @@ class MockWidgetInputHandlerHost : public mojom::WidgetInputHandlerHost {
   MOCK_METHOD1(DidOverscroll, void(const ui::DidOverscrollParams&));
 
   MOCK_METHOD0(DidStopFlinging, void());
+
+  MOCK_METHOD0(DidStartScrollingViewport, void());
 
   MOCK_METHOD0(ImeCancelComposition, void());
 
@@ -190,7 +192,7 @@ class InteractiveRenderWidget : public RenderWidget {
                                         event.data.scroll_update.delta_y),
                     blink::WebFloatSize(event.data.scroll_update.delta_x,
                                         event.data.scroll_update.delta_y),
-                    blink::WebFloatPoint(event.x, event.y),
+                    event.PositionInWidget(),
                     blink::WebFloatSize(event.data.scroll_update.velocity_x,
                                         event.data.scroll_update.velocity_y),
                     blink::WebOverscrollBehavior());
@@ -263,7 +265,7 @@ TEST_F(RenderWidgetUnittest, EventOverscroll) {
       blink::WebInputEvent::kGestureScrollUpdate,
       blink::WebInputEvent::kNoModifiers,
       ui::EventTimeStampToSeconds(ui::EventTimeForNow()));
-  scroll.x = -10;
+  scroll.SetPositionInWidget(gfx::PointF(-10, 0));
   scroll.data.scroll_update.delta_y = 10;
   MockHandledEventCallback handled_event;
 
@@ -444,9 +446,14 @@ TEST_F(RenderWidgetUnittest, SurfaceSynchronizationAutoResizeThrottling) {
 
   // Send the LocalSurfaceId for the first Auto-Resize.
   viz::ParentLocalSurfaceIdAllocator allocator;
-  widget()->OnMessageReceived(ViewMsg_SetLocalSurfaceIdForAutoResize(
-      widget()->routing_id(), auto_resize_sequence_number, auto_size,
-      auto_size2, ScreenInfo(), 0u, allocator.GenerateId()));
+  content::ResizeParams resize_params;
+  resize_params.auto_resize_enabled = true;
+  resize_params.auto_resize_sequence_number = auto_resize_sequence_number;
+  resize_params.min_size_for_auto_resize = auto_size;
+  resize_params.max_size_for_auto_resize = auto_size2;
+  resize_params.local_surface_id = allocator.GenerateId();
+  widget()->OnMessageReceived(
+      ViewMsg_Resize(widget()->routing_id(), resize_params));
 
   // The LocalSurfaceId should not take because there's another in-flight auto-
   // resize operation.

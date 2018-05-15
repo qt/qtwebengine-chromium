@@ -51,7 +51,6 @@ class DynamicGeometryBinding;
 class ScopedRenderPassTexture;
 class StaticGeometryBinding;
 class TextureDrawQuad;
-struct DrawRenderPassDrawQuadParams;
 
 // Class that handles drawing of composited render layers using GL.
 class VIZ_SERVICE_EXPORT GLRenderer : public DirectRenderer {
@@ -168,6 +167,8 @@ class VIZ_SERVICE_EXPORT GLRenderer : public DirectRenderer {
     int frames_waiting_for_reuse = 0;
   };
 
+  struct DrawRenderPassDrawQuadParams;
+
   // If any of the following functions returns false, then it means that drawing
   // is not possible.
   bool InitializeRPDQParameters(DrawRenderPassDrawQuadParams* params);
@@ -244,7 +245,7 @@ class VIZ_SERVICE_EXPORT GLRenderer : public DirectRenderer {
                         const gfx::QuadF* clip_region);
   void DrawOverlayCandidateQuadBorder(float* gl_matrix);
 
-  void SetShaderOpacity(const DrawQuad* quad);
+  void SetShaderOpacity(float opacity);
   void SetShaderQuadF(const gfx::QuadF& quad);
   void SetShaderMatrix(const gfx::Transform& transform);
   void SetShaderColor(SkColor color, float opacity);

@@ -12,6 +12,7 @@
 
 #include "base/command_line.h"
 #include "base/macros.h"
+#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -628,8 +629,10 @@ base::Time HostContentSettingsMap::GetSettingLastModifiedDate(
 void HostContentSettingsMap::ClearSettingsForOneTypeWithPredicate(
     ContentSettingsType content_type,
     base::Time begin_time,
+    base::Time end_time,
     const PatternSourcePredicate& pattern_predicate) {
-  if (pattern_predicate.is_null() && begin_time.is_null()) {
+  if (pattern_predicate.is_null() && begin_time.is_null() &&
+      (end_time.is_null() || end_time.is_max())) {
     ClearSettingsForOneType(content_type);
     return;
   }
@@ -644,7 +647,8 @@ void HostContentSettingsMap::ClearSettingsForOneTypeWithPredicate(
         base::Time last_modified = provider->GetWebsiteSettingLastModified(
             setting.primary_pattern, setting.secondary_pattern, content_type,
             std::string());
-        if (last_modified >= begin_time) {
+        if (last_modified >= begin_time &&
+            (last_modified < end_time || end_time.is_null())) {
           provider->SetWebsiteSetting(setting.primary_pattern,
                                       setting.secondary_pattern, content_type,
                                       std::string(), nullptr);
@@ -693,8 +697,7 @@ void HostContentSettingsMap::AddSettingsForOneType(
   while (rule_iterator->HasNext()) {
     const content_settings::Rule& rule = rule_iterator->Next();
     settings->push_back(ContentSettingPatternSource(
-        rule.primary_pattern, rule.secondary_pattern,
-        std::make_unique<base::Value>(rule.value->Clone()),
+        rule.primary_pattern, rule.secondary_pattern, rule.value->Clone(),
         kProviderNamesSourceMap[provider_type].provider_name, incognito));
   }
 }

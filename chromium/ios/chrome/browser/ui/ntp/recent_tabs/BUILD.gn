@@ -18,13 +18,7 @@ source_set("recent_tabs") {
     "recent_tabs_handset_coordinator.mm",
     "recent_tabs_handset_view_controller.h",
     "recent_tabs_handset_view_controller.mm",
-    "recent_tabs_mediator.h",
-    "recent_tabs_mediator.mm",
     "recent_tabs_table_consumer.h",
-    "recent_tabs_table_coordinator.h",
-    "recent_tabs_table_coordinator.mm",
-    "recent_tabs_table_view_controller.h",
-    "recent_tabs_table_view_controller.mm",
     "sessions_sync_user_state.h",
     "synced_sessions.h",
     "synced_sessions.mm",
@@ -33,6 +27,7 @@ source_set("recent_tabs") {
     "//base",
     "//components/browser_sync",
     "//components/sessions",
+    "//components/strings",
     "//components/sync",
     "//ios/chrome/app/strings",
     "//ios/chrome/app/theme",
@@ -64,17 +59,6 @@ source_set("recent_tabs") {
   allow_circular_includes_from =
       [ "//ios/chrome/browser/ui/ntp/recent_tabs/views" ]
   libs = [ "UIKit.framework" ]
-}
-
-source_set("base_feature") {
-  configs += [ "//build/config/compiler:enable_arc" ]
-  sources = [
-    "recent_tabs_feature.h",
-    "recent_tabs_feature.mm",
-  ]
-  deps = [
-    "//base",
-  ]
 }
 
 source_set("unit_tests") {
@@ -115,6 +99,7 @@ source_set("eg_tests") {
     "//ios/chrome/browser/ui",
     "//ios/chrome/browser/ui/authentication:eg_test_support",
     "//ios/chrome/browser/ui/ntp/recent_tabs",
+    "//ios/chrome/browser/ui/table_view",
     "//ios/chrome/test/app:test_support",
     "//ios/chrome/test/earl_grey:test_support",
     "//ios/public/provider/chrome/browser/signin:test_support",

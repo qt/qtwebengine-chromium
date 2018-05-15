@@ -34,7 +34,7 @@ PrefService* TestAutofillClient::GetPrefs() {
 }
 
 syncer::SyncService* TestAutofillClient::GetSyncService() {
-  return nullptr;
+  return test_sync_service_;
 }
 
 identity::IdentityManager* TestAutofillClient::GetIdentityManager() {
@@ -145,6 +145,10 @@ bool TestAutofillClient::ShouldShowSigninPromo() {
 void TestAutofillClient::ExecuteCommand(int id) {}
 
 bool TestAutofillClient::IsAutofillSupported() {
+  return true;
+}
+
+bool TestAutofillClient::AreServerCardsSupported() {
   return true;
 }
 

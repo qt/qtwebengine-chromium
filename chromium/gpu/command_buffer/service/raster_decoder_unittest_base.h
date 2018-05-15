@@ -9,7 +9,9 @@
 #include <stdint.h>
 
 #include <array>
+#include <initializer_list>
 #include <memory>
+#include <string>
 
 #include "base/message_loop/message_loop.h"
 #include "gpu/command_buffer/client/client_test_helper.h"
@@ -39,7 +41,9 @@
 namespace gpu {
 
 namespace gles2 {
+class ImageManager;
 class MemoryTracker;
+class MockCopyTextureResourceManager;
 }  // namespace gles2
 
 namespace raster {
@@ -127,8 +131,16 @@ class RasterDecoderTestBase : public ::testing::TestWithParam<bool>,
                            const char** str,
                            GLsizei count_in_header,
                            char str_end);
+  void set_memory_tracker(gles2::MemoryTracker* memory_tracker) {
+    memory_tracker_ = memory_tracker;
+  }
 
-  void InitDecoderWithWorkarounds();
+  void AddExpectationsForVertexAttribManager();
+  void AddExpectationsForBindVertexArrayOES();
+  void AddExpectationsForRestoreAttribState(GLuint attrib);
+
+  void InitDecoderWithWorkarounds(
+      std::initializer_list<std::string> extensions);
 
   void ResetDecoder();
 
@@ -147,11 +159,18 @@ class RasterDecoderTestBase : public ::testing::TestWithParam<bool>,
   }
 
   RasterDecoder* GetDecoder() const { return decoder_.get(); }
+  gles2::ImageManager* GetImageManagerForTest() {
+    return decoder_->GetImageManagerForTest();
+  }
 
   typedef gles2::TestHelper::AttribInfo AttribInfo;
   typedef gles2::TestHelper::UniformInfo UniformInfo;
 
+  void SetupInitCapabilitiesExpectations(bool es3_capable);
   void SetupInitStateExpectations(bool es3_capable);
+  void SetupInitStateManualExpectations(bool es3_capable);
+  void SetupInitStateManualExpectationsForDoLineWidth(GLfloat width);
+  void ExpectEnableDisable(GLenum cap, bool enable);
 
   void SetupTexture();
 
@@ -165,15 +184,40 @@ class RasterDecoderTestBase : public ::testing::TestWithParam<bool>,
 
   void DoBindTexture(GLenum target, GLuint client_id, GLuint service_id);
   void DoDeleteTexture(GLuint client_id, GLuint service_id);
+  void SetScopedTextureBinderExpectations(GLenum target);
+  void DoTexStorage2D(GLuint client_id,
+                      GLint levels,
+                      GLsizei width,
+                      GLsizei height);
+
+  void SetupClearTextureExpectations(GLuint service_id,
+                                     GLuint old_service_id,
+                                     GLenum bind_target,
+                                     GLenum target,
+                                     GLint level,
+                                     GLenum format,
+                                     GLenum type,
+                                     GLint xoffset,
+                                     GLint yoffset,
+                                     GLsizei width,
+                                     GLsizei height,
+                                     GLuint bound_pixel_unpack_buffer);
 
   GLvoid* BufferOffset(unsigned i) { return static_cast<int8_t*>(NULL) + (i); }
 
  protected:
   static const GLint kMaxTextureSize = 2048;
   static const GLint kNumTextureUnits = 8;
+  static const GLint kNumVertexAttribs = 16;
+
+  static const GLint kViewportX = 0;
+  static const GLint kViewportY = 0;
+  static const GLint kViewportWidth = 1;
+  static const GLint kViewportHeight = 1;
 
   static const GLuint kServiceBufferId = 301;
   static const GLuint kServiceTextureId = 304;
+  static const GLuint kServiceVertexArrayId = 310;
 
   static const size_t kSharedBufferSize = 2048;
   static const uint32_t kSharedMemoryOffset = 132;
@@ -217,6 +261,7 @@ class RasterDecoderTestBase : public ::testing::TestWithParam<bool>,
   ServiceDiscardableManager discardable_manager_;
   scoped_refptr<gles2::ContextGroup> group_;
   base::MessageLoop message_loop_;
+  gles2::MockCopyTextureResourceManager* copy_texture_manager_;  // not owned
 };
 
 }  // namespace raster

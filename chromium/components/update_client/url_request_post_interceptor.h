@@ -7,10 +7,12 @@
 
 #include <stdint.h>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "base/callback.h"
 #include "base/containers/queue.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -28,14 +30,22 @@ class HttpRequestHeaders;
 
 namespace update_client {
 
+class URLRequestMockJob;
+
 // Intercepts requests to a file path, counts them, and captures the body of
 // the requests. Optionally, for each request, it can return a canned response
 // from a given file. The class maintains a queue of expectations, and returns
 // one and only one response for each request that matches the expectation.
 // Then, the expectation is removed from the queue.
-class URLRequestPostInterceptor {
+class URLRequestPostInterceptor
+    : public base::RefCountedThreadSafe<URLRequestPostInterceptor> {
  public:
   using InterceptedRequest = std::pair<std::string, net::HttpRequestHeaders>;
+
+  // Called when the job associated with the url request which is intercepted
+  // by this object has been created.
+  using UrlJobRequestReadyCallback = base::OnceCallback<void()>;
+
   // Allows a generic string maching interface when setting up expectations.
   class RequestMatcher {
    public:
@@ -51,11 +61,11 @@ class URLRequestPostInterceptor {
   // the expectation is met. If no |file_path| is provided, then an empty
   // response body is served. If |response_code| is provided, then an empty
   // response body with that response code is returned.
-  // Returns |true| if the expectation was set. This class takes ownership of
-  // the |request_matcher| object.
-  bool ExpectRequest(class RequestMatcher* request_matcher);
-  bool ExpectRequest(class RequestMatcher* request_matcher, int response_code);
-  bool ExpectRequest(class RequestMatcher* request_matcher,
+  // Returns |true| if the expectation was set.
+  bool ExpectRequest(std::unique_ptr<RequestMatcher> request_matcher);
+  bool ExpectRequest(std::unique_ptr<RequestMatcher> request_matcher,
+                     int response_code);
+  bool ExpectRequest(std::unique_ptr<RequestMatcher> request_matcher,
                      const base::FilePath& filepath);
 
   // Returns how many requests have been intercepted and matched by
@@ -77,10 +87,28 @@ class URLRequestPostInterceptor {
   // Resets the state of the interceptor so that new expectations can be set.
   void Reset();
 
-  class Delegate;
+  // Prevents the intercepted request from starting, as a way to simulate
+  // the effects of a very slow network. Call this function before the actual
+  // network request occurs.
+  void Pause();
+
+  // Allows a previously paused request to continue.
+  void Resume();
+
+  // Sets a callback to be invoked when the request job associated with
+  // an intercepted request is created. This allows the test execution to
+  // synchronize with network tasks running on the IO thread and avoid polling
+  // using idle run loops. A paused request can be resumed after this callback
+  // has been invoked.
+  void url_job_request_ready_callback(
+      UrlJobRequestReadyCallback url_job_request_ready_callback);
 
  private:
+  class Delegate;
+  class URLRequestMockJob;
+
   friend class URLRequestPostInterceptorFactory;
+  friend class base::RefCountedThreadSafe<URLRequestPostInterceptor>;
 
   static const int kResponseCode200 = 200;
 
@@ -90,7 +118,8 @@ class URLRequestPostInterceptor {
     const int response_code;
     const std::string response_body;
   };
-  typedef std::pair<const RequestMatcher*, ExpectationResponse> Expectation;
+  using Expectation =
+      std::pair<std::unique_ptr<RequestMatcher>, ExpectationResponse>;
 
   URLRequestPostInterceptor(
       const GURL& url,
@@ -114,6 +143,12 @@ class URLRequestPostInterceptor {
   // Contains the expectations which this interceptor tries to match.
   base::queue<Expectation> expectations_;
 
+  URLRequestMockJob* request_job_ = nullptr;
+
+  bool is_paused_ = false;
+
+  UrlJobRequestReadyCallback url_job_request_ready_callback_;
+
   DISALLOW_COPY_AND_ASSIGN(URLRequestPostInterceptor);
 };
 
@@ -125,10 +160,9 @@ class URLRequestPostInterceptorFactory {
       scoped_refptr<base::SequencedTaskRunner> io_task_runner);
   ~URLRequestPostInterceptorFactory();
 
-  // Creates an interceptor object for the specified url path. Returns NULL
-  // in case of errors or a valid interceptor object otherwise. The caller
-  // does not own the returned object.
-  URLRequestPostInterceptor* CreateInterceptor(const base::FilePath& filepath);
+  // Creates an interceptor object for the specified url path.
+  scoped_refptr<URLRequestPostInterceptor> CreateInterceptor(
+      const base::FilePath& filepath);
 
  private:
   const std::string scheme_;
@@ -151,10 +185,11 @@ class InterceptorFactory : public URLRequestPostInterceptorFactory {
   ~InterceptorFactory();
 
   // Creates an interceptor for the url path defined by POST_INTERCEPT_PATH.
-  URLRequestPostInterceptor* CreateInterceptor();
+  scoped_refptr<URLRequestPostInterceptor> CreateInterceptor();
 
   // Creates an interceptor for the given url path.
-  URLRequestPostInterceptor* CreateInterceptorForPath(const char* url_path);
+  scoped_refptr<URLRequestPostInterceptor> CreateInterceptorForPath(
+      const char* url_path);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(InterceptorFactory);

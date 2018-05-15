@@ -13,10 +13,11 @@
 #include "base/strings/stringprintf.h"
 #include "components/download/public/common/download_create_info.h"
 #include "components/download/public/common/download_interrupt_reasons.h"
+#include "components/download/public/common/download_interrupt_reasons_utils.h"
 #include "components/download/public/common/download_task_runner.h"
 #include "components/download/public/common/download_ukm_helper.h"
 #include "content/browser/byte_stream.h"
-#include "content/browser/download/download_interrupt_reasons_utils.h"
+#include "content/browser/download/byte_stream_input_stream.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/download/download_request_handle.h"
 #include "content/browser/frame_host/frame_tree_node.h"
@@ -92,7 +93,7 @@ static void StartOnUIThread(
 
   download_manager->StartDownload(
       std::move(info),
-      std::make_unique<DownloadManager::InputStream>(std::move(stream)),
+      std::make_unique<ByteStreamInputStream>(std::move(stream)), nullptr,
       started_cb);
 }
 

@@ -41,8 +41,9 @@
 #include "media/filters/ffmpeg_bitstream_converter.h"
 #include "media/filters/ffmpeg_glue.h"
 #include "media/filters/ffmpeg_h264_to_annex_b_bitstream_converter.h"
+#include "media/formats/mpeg/mpeg1_audio_stream_parser.h"
 #include "media/formats/webm/webm_crypto_helpers.h"
-#include "media/media_features.h"
+#include "media/media_buildflags.h"
 #include "third_party/ffmpeg/ffmpeg_features.h"
 
 #if BUILDFLAG(ENABLE_HEVC_DEMUXING)
@@ -306,7 +307,8 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
       waiting_for_keyframe_(false),
       aborted_(false),
       fixup_negative_timestamps_(false),
-      fixup_chained_ogg_(false) {
+      fixup_chained_ogg_(false),
+      num_discarded_packet_warnings_(0) {
   DCHECK(demuxer_);
 
   bool is_encrypted = false;
@@ -362,6 +364,8 @@ FFmpegDemuxerStream::~FFmpegDemuxerStream() {
 
 void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
   DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(packet->size);
+  DCHECK(packet->data);
 
   if (!demuxer_ || end_of_stream_) {
     NOTREACHED() << "Attempted to enqueue packet on a stopped stream";
@@ -369,7 +373,7 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
   }
 
   if (waiting_for_keyframe_) {
-    if (packet.get()->flags & AV_PKT_FLAG_KEY)
+    if (packet->flags & AV_PKT_FLAG_KEY)
       waiting_for_keyframe_ = false;
     else {
       DVLOG(3) << "Dropped non-keyframe pts=" << packet->pts;
@@ -379,16 +383,15 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
 
 #if BUILDFLAG(USE_PROPRIETARY_CODECS)
   // Convert the packet if there is a bitstream filter.
-  if (packet->data && bitstream_converter_ &&
+  if (bitstream_converter_ &&
       !bitstream_converter_->ConvertPacket(packet.get())) {
-    LOG(ERROR) << "Format conversion failed.";
+    MEDIA_LOG(ERROR, media_log_) << "Format conversion failed.";
   }
 #endif
 
-  const bool is_audio = type() == AUDIO;
-
   scoped_refptr<DecoderBuffer> buffer;
 
+  const bool is_audio = type() == AUDIO;
   if (type() == DemuxerStream::TEXT) {
     int id_size = 0;
     uint8_t* id_data = av_packet_get_side_data(
@@ -403,7 +406,7 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
                  settings_data, settings_data + settings_size,
                  &side_data);
 
-    buffer = DecoderBuffer::CopyFrom(packet.get()->data, packet.get()->size,
+    buffer = DecoderBuffer::CopyFrom(packet->data, packet->size,
                                      side_data.data(), side_data.size());
   } else {
     int side_data_size = 0;
@@ -418,7 +421,40 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
               packet->data, packet->size,
               reinterpret_cast<const uint8_t*>(encryption_key_id_.data()),
               encryption_key_id_.size(), &decrypt_config, &data_offset)) {
-        LOG(ERROR) << "Creation of DecryptConfig failed.";
+        MEDIA_LOG(ERROR, media_log_) << "Creation of DecryptConfig failed.";
+      }
+    }
+
+    // FFmpeg may return garbage packets for MP3 stream containers, so we need
+    // to drop these to avoid decoder errors. The ffmpeg team maintains that
+    // this behavior isn't ideal, but have asked for a significant refactoring
+    // of the AVParser infrastructure to fix this, which is overkill for now.
+    // See http://crbug.com/794782.
+    //
+    // This behavior may also occur with ADTS streams, but is rarer in practice
+    // because ffmpeg's ADTS demuxer does more validation on the packets, so
+    // when invalid data is received, av_read_frame() fails and playback ends.
+    if (is_audio && demuxer_->container() == container_names::CONTAINER_MP3) {
+      DCHECK(!data_offset);  // Only set for containers supporting encryption...
+
+      // MP3 packets may be zero-padded according to ffmpeg, so trim until we
+      // have the packet; adjust |data_offset| too so this work isn't repeated.
+      uint8_t* packet_end = packet->data + packet->size;
+      uint8_t* header_start = packet->data;
+      while (header_start < packet_end && !*header_start) {
+        ++header_start;
+        ++data_offset;
+      }
+
+      if (packet_end - header_start < MPEG1AudioStreamParser::kHeaderSize ||
+          !MPEG1AudioStreamParser::ParseHeader(nullptr, header_start,
+                                               nullptr)) {
+        LIMITED_MEDIA_LOG(INFO, media_log_, num_discarded_packet_warnings_, 5)
+            << "Discarding invalid MP3 packet, ts: "
+            << ConvertStreamTimestamp(stream_->time_base, packet->pts)
+            << ", duration: "
+            << ConvertStreamTimestamp(stream_->time_base, packet->duration);
+        return;
       }
     }
 
@@ -426,12 +462,12 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
     // reference inner memory of FFmpeg.  As such we should transfer the packet
     // into memory we control.
     if (side_data_size > 0) {
-      buffer = DecoderBuffer::CopyFrom(packet.get()->data + data_offset,
-                                       packet.get()->size - data_offset,
-                                       side_data, side_data_size);
+      buffer = DecoderBuffer::CopyFrom(packet->data + data_offset,
+                                       packet->size - data_offset, side_data,
+                                       side_data_size);
     } else {
-      buffer = DecoderBuffer::CopyFrom(packet.get()->data + data_offset,
-                                       packet.get()->size - data_offset);
+      buffer = DecoderBuffer::CopyFrom(packet->data + data_offset,
+                                       packet->size - data_offset);
     }
 
     int skip_samples_size = 0;
@@ -581,7 +617,7 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
     }
   }
 
-  if (packet.get()->flags & AV_PKT_FLAG_KEY)
+  if (packet->flags & AV_PKT_FLAG_KEY)
     buffer->set_is_key_frame(true);
 
   last_packet_timestamp_ = buffer->timestamp();
@@ -591,7 +627,7 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
   if (new_duration > duration_ || duration_ == kNoTimestamp)
     duration_ = new_duration;
 
-  buffer_queue_.Push(buffer);
+  buffer_queue_.Push(std::move(buffer));
   SatisfyPendingRead();
 }
 
@@ -1839,29 +1875,22 @@ void FFmpegDemuxer::OnReadFrameDone(ScopedAVPacket packet, int result) {
   // Queue the packet with the appropriate stream; we must defend against ffmpeg
   // giving us a bad stream index.  See http://crbug.com/698549 for example.
   if (packet->stream_index >= 0 &&
-      packet->stream_index < static_cast<int>(streams_.size()) &&
-      streams_[packet->stream_index]) {
-    // TODO(scherkus): Fix demuxing upstream to never return packets w/o data
-    // when av_read_frame() returns success code. See bug comment for ideas:
-    //
-    // https://code.google.com/p/chromium/issues/detail?id=169133#c10
-    if (!packet->data) {
-      ScopedAVPacket new_packet(new AVPacket());
-      av_new_packet(new_packet.get(), 0);
-      av_packet_copy_props(new_packet.get(), packet.get());
-      packet.swap(new_packet);
-    }
+      static_cast<size_t>(packet->stream_index) < streams_.size()) {
+    // Drop empty packets since they're ignored on the decoder side anyways.
+    if (!packet->data || !packet->size) {
+      DLOG(WARNING) << "Dropping empty packet, size: " << packet->size
+                    << ", data: " << static_cast<void*>(packet->data);
+    } else if (auto& demuxer_stream = streams_[packet->stream_index]) {
+      if (demuxer_stream->IsEnabled())
+        demuxer_stream->EnqueuePacket(std::move(packet));
 
-    FFmpegDemuxerStream* demuxer_stream = streams_[packet->stream_index].get();
-    if (demuxer_stream->IsEnabled())
-      demuxer_stream->EnqueuePacket(std::move(packet));
-
-    // If duration estimate was incorrect, update it and tell higher layers.
-    if (duration_known_) {
-      const base::TimeDelta duration = demuxer_stream->duration();
-      if (duration != kNoTimestamp && duration > duration_) {
-        duration_ = duration;
-        host_->SetDuration(duration_);
+      // If duration estimate was incorrect, update it and tell higher layers.
+      if (duration_known_) {
+        const base::TimeDelta duration = demuxer_stream->duration();
+        if (duration != kNoTimestamp && duration > duration_) {
+          duration_ = duration;
+          host_->SetDuration(duration_);
+        }
       }
     }
   }

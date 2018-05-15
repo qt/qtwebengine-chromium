@@ -15,7 +15,6 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
@@ -82,9 +81,7 @@ class RejectingResourceDispatcherHostDelegate final
 class URLLoaderFactoryImplTest : public ::testing::TestWithParam<size_t> {
  public:
   URLLoaderFactoryImplTest()
-      : thread_bundle_(
-            new TestBrowserThreadBundle(TestBrowserThreadBundle::IO_MAINLOOP)),
-        browser_context_(new TestBrowserContext()),
+      : browser_context_(new TestBrowserContext()),
         resource_message_filter_(new ResourceMessageFilter(
             kChildId,
             nullptr,
@@ -125,7 +122,6 @@ class URLLoaderFactoryImplTest : public ::testing::TestWithParam<size_t> {
     base::RunLoop().RunUntilIdle();
     MojoAsyncResourceHandler::SetAllocationSizeForTesting(
         MojoAsyncResourceHandler::kDefaultAllocationSize);
-    thread_bundle_.reset(nullptr);
   }
 
   void GetContexts(ResourceType resource_type,
@@ -136,7 +132,9 @@ class URLLoaderFactoryImplTest : public ::testing::TestWithParam<size_t> {
         browser_context_->GetResourceContext()->GetRequestContext();
   }
 
-  std::unique_ptr<TestBrowserThreadBundle> thread_bundle_;
+  // Must outlive all members below.
+  TestBrowserThreadBundle thread_bundle_{TestBrowserThreadBundle::IO_MAINLOOP};
+
   LoaderDelegateImpl loader_deleate_;
   ResourceDispatcherHostImpl rdh_;
   std::unique_ptr<TestBrowserContext> browser_context_;

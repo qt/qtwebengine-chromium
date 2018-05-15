@@ -35,12 +35,6 @@ class RasterDecoderTest1 : public RasterDecoderTestBase {
 
 INSTANTIATE_TEST_CASE_P(Service, RasterDecoderTest1, ::testing::Bool());
 
-template <>
-void RasterDecoderTestBase::SpecializedSetup<cmds::TexParameteri, 0>(
-    bool /* valid */) {
-  DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
-};
-
 #include "gpu/command_buffer/service/raster_decoder_unittest_1_autogen.h"
 
 }  // namespace raster

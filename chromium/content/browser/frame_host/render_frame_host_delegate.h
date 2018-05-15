@@ -19,6 +19,7 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/common/javascript_dialog_type.h"
 #include "content/public/common/media_stream_request.h"
+#include "content/public/common/resource_load_info.mojom.h"
 #include "content/public/common/resource_type.h"
 #include "mojo/public/cpp/bindings/scoped_interface_endpoint_handle.h"
 #include "net/cert/cert_status_flags.h"
@@ -44,6 +45,7 @@ class Message;
 
 namespace gfx {
 class Rect;
+class Size;
 }
 
 namespace url {
@@ -177,7 +179,8 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // Checks if we have permission to access the microphone or camera. Note that
   // this does not query the user. |type| must be MEDIA_DEVICE_AUDIO_CAPTURE
   // or MEDIA_DEVICE_VIDEO_CAPTURE.
-  virtual bool CheckMediaAccessPermission(const url::Origin& security_origin,
+  virtual bool CheckMediaAccessPermission(RenderFrameHost* render_frame_host,
+                                          const url::Origin& security_origin,
                                           MediaStreamType type);
 
   // Returns the ID of the default device for the given media device |type|.
@@ -344,11 +347,11 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
 
   // Notifies that the render frame started loading a subresource.
   virtual void SubresourceResponseStarted(const GURL& url,
-                                          const GURL& referrer,
-                                          const std::string& method,
-                                          ResourceType resource_type,
-                                          const std::string& ip,
                                           net::CertStatus cert_status) {}
+
+  // Notifies that the render finished loading a subresource.
+  virtual void ResourceLoadComplete(
+      mojom::ResourceLoadInfoPtr resource_load_info) {}
 
   // Request to print a frame that is in a different process than its parent.
   virtual void PrintCrossProcessSubframe(const gfx::Rect& rect,
@@ -357,7 +360,12 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
 
   // Updates the Picture-in-Picture controller with the relevant viz::SurfaceId
   // of the video to be in Picture-in-Picture mode.
-  virtual void UpdatePictureInPictureSurfaceId(viz::SurfaceId surface_id) {}
+  virtual void UpdatePictureInPictureSurfaceId(const viz::SurfaceId& surface_id,
+                                               const gfx::Size& natural_size) {}
+
+  // Updates the Picture-in-Picture controller with a signal that
+  // Picture-in-Picture mode has ended.
+  virtual void ExitPictureInPicture() {}
 
  protected:
   virtual ~RenderFrameHostDelegate() {}

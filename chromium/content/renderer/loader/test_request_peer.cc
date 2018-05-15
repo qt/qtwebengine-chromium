@@ -7,7 +7,7 @@
 #include "content/renderer/loader/resource_dispatcher.h"
 #include "net/url_request/redirect_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
 
 namespace content {
 
@@ -44,6 +44,13 @@ void TestRequestPeer::OnReceivedResponse(
         blink::scheduler::GetSingleThreadTaskRunnerForTesting());
     context_->cancelled = true;
   }
+}
+
+void TestRequestPeer::OnStartLoadingResponseBody(
+    mojo::ScopedDataPipeConsumerHandle body) {
+  EXPECT_TRUE(context_->received_response);
+  EXPECT_FALSE(context_->cancelled);
+  EXPECT_FALSE(context_->complete);
 }
 
 void TestRequestPeer::OnDownloadedData(int len, int encoded_data_length) {

@@ -17,10 +17,11 @@
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/webui_url_constants.cc"
+#include "chrome/common/webui_url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/prefs/pref_service.h"
+#include "components/printing/browser/features.h"
 #include "components/printing/browser/print_composite_client.h"
 #include "components/printing/browser/print_manager_utils.h"
 #include "components/printing/common/print_messages.h"
@@ -133,8 +134,7 @@ class KillPrintFrameContentMsgFilter : public content::BrowserMessageFilter {
 
   void KillRenderProcess(int document_cookie,
                          const PrintHostMsg_DidPrintContent_Params& param) {
-    base::ScopedAllowBaseSyncPrimitivesForTesting allow_sync_primitives;
-    rph_->Shutdown(0, true);
+    rph_->Shutdown(0);
   }
 
   content::RenderProcessHost* rph_;
@@ -436,6 +436,19 @@ IN_PROC_BROWSER_TEST_F(PrintBrowserTest, PrintSubframeABA) {
   WaitUntilMessagesReceived();
 }
 
+// Printing preview a simple webpage when site per process is enabled.
+// Test that the basic oopif printing should succeed. The test should not crash
+// or timed out. There could be other reasons that cause the test fail, but the
+// most obvious ones would be font access outage or web sandbox support being
+// absent because we explicitly check these when pdf compositor service starts.
+IN_PROC_BROWSER_TEST_F(SitePerProcessPrintBrowserTest, BasicPrint) {
+  ASSERT_TRUE(embedded_test_server()->Started());
+  GURL url(embedded_test_server()->GetURL("/printing/test1.html"));
+  ui_test_utils::NavigateToURL(browser(), url);
+
+  PrintAndWaitUntilPreviewIsReady(/*print_only_selection=*/false);
+}
+
 // Printing a web page with a dead subframe for site per process should succeed.
 // This test passes whenever the print preview is rendered. This should not be
 // a timed out test which indicates the print preview hung.
@@ -457,7 +470,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessPrintBrowserTest,
       test_frame->GetProcess(),
       content::RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
   // Shutdown the subframe.
-  ASSERT_TRUE(test_frame->GetProcess()->Shutdown(0, false));
+  ASSERT_TRUE(test_frame->GetProcess()->Shutdown(0));
   render_process_watcher.Wait();
   ASSERT_FALSE(test_frame->IsRenderFrameLive());
 
@@ -520,7 +533,9 @@ IN_PROC_BROWSER_TEST_F(PrintBrowserTest, RegularPrinting) {
   ui_test_utils::NavigateToURL(browser(), url);
 
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSitePerProcess)) {
+          switches::kSitePerProcess) ||
+      base::FeatureList::IsEnabled(
+          printing::features::kUsePdfCompositorServiceForPrint)) {
     EXPECT_TRUE(IsOopifEnabled());
   } else {
     EXPECT_FALSE(IsOopifEnabled());

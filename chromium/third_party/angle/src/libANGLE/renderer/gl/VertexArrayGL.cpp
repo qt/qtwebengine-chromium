@@ -104,7 +104,7 @@ void VertexArrayGL::destroy(const gl::Context *context)
     mAppliedElementArrayBuffer.set(context, nullptr);
     for (auto &binding : mAppliedBindings)
     {
-        binding.setBuffer(context, nullptr);
+        binding.setBuffer(context, nullptr, false);
     }
 }
 
@@ -482,7 +482,7 @@ void VertexArrayGL::updateAttribPointer(const gl::Context *context, size_t attri
     {
         // Mark the applied binding isn't using a buffer by setting its buffer to nullptr so that if
         // it starts to use a buffer later, there is no chance that the caching will skip it.
-        mAppliedBindings[attribIndex].setBuffer(context, nullptr);
+        mAppliedBindings[attribIndex].setBuffer(context, nullptr, false);
         return;
     }
 
@@ -521,7 +521,7 @@ void VertexArrayGL::updateAttribPointer(const gl::Context *context, size_t attri
 
     mAppliedBindings[attribIndex].setStride(binding.getStride());
     mAppliedBindings[attribIndex].setOffset(binding.getOffset());
-    mAppliedBindings[attribIndex].setBuffer(context, binding.getBuffer().get());
+    mAppliedBindings[attribIndex].setBuffer(context, binding.getBuffer().get(), false);
 }
 
 void VertexArrayGL::callVertexAttribPointer(GLuint attribIndex,
@@ -614,7 +614,7 @@ void VertexArrayGL::updateBindingBuffer(const gl::Context *context, size_t bindi
 
     mAppliedBindings[bindingIndex].setStride(binding.getStride());
     mAppliedBindings[bindingIndex].setOffset(binding.getOffset());
-    mAppliedBindings[bindingIndex].setBuffer(context, binding.getBuffer().get());
+    mAppliedBindings[bindingIndex].setBuffer(context, binding.getBuffer().get(), false);
 }
 
 void VertexArrayGL::updateBindingDivisor(size_t bindingIndex)
@@ -640,57 +640,109 @@ void VertexArrayGL::updateBindingDivisor(size_t bindingIndex)
     mAppliedBindings[bindingIndex].setDivisor(adjustedDivisor);
 }
 
-void VertexArrayGL::syncState(const gl::Context *context, const VertexArray::DirtyBits &dirtyBits)
+void VertexArrayGL::syncDirtyAttrib(const gl::Context *context,
+                                    size_t attribIndex,
+                                    const gl::VertexArray::DirtyAttribBits &dirtyAttribBits)
+{
+    ASSERT(dirtyAttribBits.any());
+
+    for (size_t dirtyBit : dirtyAttribBits)
+    {
+        switch (dirtyBit)
+        {
+            case VertexArray::DIRTY_ATTRIB_ENABLED:
+                updateAttribEnabled(attribIndex);
+                break;
+
+            case VertexArray::DIRTY_ATTRIB_POINTER:
+                updateAttribPointer(context, attribIndex);
+                break;
+
+            case VertexArray::DIRTY_ATTRIB_FORMAT:
+                ASSERT(supportVertexAttribBinding());
+                updateAttribFormat(attribIndex);
+                break;
+
+            case VertexArray::DIRTY_ATTRIB_BINDING:
+                ASSERT(supportVertexAttribBinding());
+                updateAttribBinding(attribIndex);
+                break;
+
+            default:
+                UNREACHABLE();
+                break;
+        }
+    }
+}
+
+void VertexArrayGL::syncDirtyBinding(const gl::Context *context,
+                                     size_t bindingIndex,
+                                     const gl::VertexArray::DirtyBindingBits &dirtyBindingBits)
+{
+    ASSERT(dirtyBindingBits.any());
+
+    for (size_t dirtyBit : dirtyBindingBits)
+    {
+        switch (dirtyBit)
+        {
+            case VertexArray::DIRTY_BINDING_BUFFER:
+                ASSERT(supportVertexAttribBinding());
+                updateBindingBuffer(context, bindingIndex);
+                break;
+
+            case VertexArray::DIRTY_BINDING_DIVISOR:
+                updateBindingDivisor(bindingIndex);
+                break;
+
+            default:
+                UNREACHABLE();
+                break;
+        }
+    }
+}
+
+gl::Error VertexArrayGL::syncState(const gl::Context *context,
+                                   const VertexArray::DirtyBits &dirtyBits,
+                                   const gl::VertexArray::DirtyAttribBitsArray &attribBits,
+                                   const gl::VertexArray::DirtyBindingBitsArray &bindingBits)
 {
     mStateManager->bindVertexArray(mVertexArrayID, getAppliedElementArrayBufferID());
 
     for (size_t dirtyBit : dirtyBits)
     {
-        if (dirtyBit == VertexArray::DIRTY_BIT_ELEMENT_ARRAY_BUFFER)
+        switch (dirtyBit)
         {
-            updateElementArrayBufferBinding(context);
-            continue;
-        }
+            case VertexArray::DIRTY_BIT_ELEMENT_ARRAY_BUFFER:
+                updateElementArrayBufferBinding(context);
+                break;
 
-        size_t index = VertexArray::GetVertexIndexFromDirtyBit(dirtyBit);
-        if (dirtyBit >= VertexArray::DIRTY_BIT_ATTRIB_0_ENABLED &&
-            dirtyBit < VertexArray::DIRTY_BIT_ATTRIB_MAX_ENABLED)
-        {
-            updateAttribEnabled(index);
-        }
-        else if (dirtyBit >= VertexArray::DIRTY_BIT_ATTRIB_0_POINTER &&
-                 dirtyBit < VertexArray::DIRTY_BIT_ATTRIB_MAX_POINTER)
-        {
-            updateAttribPointer(context, index);
-        }
+            case VertexArray::DIRTY_BIT_ELEMENT_ARRAY_BUFFER_DATA:
+                break;
 
-        else if (dirtyBit >= VertexArray::DIRTY_BIT_ATTRIB_0_FORMAT &&
-                 dirtyBit < VertexArray::DIRTY_BIT_ATTRIB_MAX_FORMAT)
-        {
-            ASSERT(supportVertexAttribBinding());
-            updateAttribFormat(index);
+            default:
+            {
+                ASSERT(dirtyBit >= VertexArray::DIRTY_BIT_ATTRIB_0);
+                size_t index = VertexArray::GetVertexIndexFromDirtyBit(dirtyBit);
+                if (dirtyBit < VertexArray::DIRTY_BIT_ATTRIB_MAX)
+                {
+                    syncDirtyAttrib(context, index, attribBits[index]);
+                }
+                else if (dirtyBit < VertexArray::DIRTY_BIT_BINDING_MAX)
+                {
+                    ASSERT(dirtyBit >= VertexArray::DIRTY_BIT_BINDING_0);
+                    syncDirtyBinding(context, index, bindingBits[index]);
+                }
+                else
+                {
+                    ASSERT(dirtyBit >= VertexArray::DIRTY_BIT_BUFFER_DATA_0 &&
+                           dirtyBit < VertexArray::DIRTY_BIT_BUFFER_DATA_MAX);
+                }
+                break;
+            }
         }
-        else if (dirtyBit >= VertexArray::DIRTY_BIT_ATTRIB_0_BINDING &&
-                 dirtyBit < VertexArray::DIRTY_BIT_ATTRIB_MAX_BINDING)
-        {
-            ASSERT(supportVertexAttribBinding());
-            updateAttribBinding(index);
-        }
-        else if (dirtyBit >= VertexArray::DIRTY_BIT_BINDING_0_BUFFER &&
-                 dirtyBit < VertexArray::DIRTY_BIT_BINDING_MAX_BUFFER)
-        {
-            ASSERT(supportVertexAttribBinding());
-            updateBindingBuffer(context, index);
-        }
-
-        else if (dirtyBit >= VertexArray::DIRTY_BIT_BINDING_0_DIVISOR &&
-                 dirtyBit < VertexArray::DIRTY_BIT_BINDING_MAX_DIVISOR)
-        {
-            updateBindingDivisor(index);
-        }
-        else
-            UNREACHABLE();
     }
+
+    return gl::NoError();
 }
 
 void VertexArrayGL::applyNumViewsToDivisor(int numViews)
@@ -706,4 +758,4 @@ void VertexArrayGL::applyNumViewsToDivisor(int numViews)
     }
 }
 
-}  // rx
+}  // namespace rx

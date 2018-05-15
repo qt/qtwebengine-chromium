@@ -120,7 +120,7 @@ config("common_inherited_config") {
       ".",
     ]
   }
-  if (is_posix) {
+  if (is_posix || is_fuchsia) {
     defines += [ "WEBRTC_POSIX" ]
   }
   if (is_ios) {
@@ -171,7 +171,9 @@ config("common_inherited_config") {
 
 config("common_config") {
   cflags = []
+  cflags_c = []
   cflags_cc = []
+  cflags_objc = []
   defines = []
 
   if (rtc_enable_protobuf) {
@@ -211,7 +213,7 @@ config("common_config") {
       "LOGGING_INSIDE_WEBRTC",
     ]
   } else {
-    if (is_posix) {
+    if (is_posix || is_fuchsia) {
       # Enable more warnings: -Wextra is currently disabled in Chromium.
       cflags = [
         "-Wextra",
@@ -219,8 +221,21 @@ config("common_config") {
         # Repeat some flags that get overridden by -Wextra.
         "-Wno-unused-parameter",
         "-Wno-missing-field-initializers",
-        "-Wno-strict-overflow",
       ]
+      cflags_c += [
+        # TODO(bugs.webrtc.org/9029): enable commented compiler flags.
+        # Some of these flags should also be added to cflags_objc.
+
+        # "-Wextra",  (used when building C++ but not when building C)
+        # "-Wmissing-prototypes",  (C/Obj-C only)
+        # "-Wmissing-declarations",  (ensure this is always used C/C++, etc..)
+        "-Wstrict-prototypes",
+
+        # "-Wpointer-arith",  (ensure this is always used C/C++, etc..)
+        # "-Wbad-function-cast",  (C/Obj-C only)
+        # "-Wnested-externs",  (C/Obj-C only)
+      ]
+      cflags_objc += [ "-Wstrict-prototypes" ]
       cflags_cc = [
         "-Wnon-virtual-dtor",
 
@@ -311,6 +326,7 @@ if (!build_with_chromium) {
 
     sources = []
     complete_static_lib = true
+    rtc_remove_configs = [ "//build/config/compiler:thin_archive" ]
     defines = []
 
     deps = [

@@ -43,14 +43,14 @@ class KEYBOARD_EXPORT ContainerFloatingBehavior : public ContainerBehavior {
   void InitializeShowAnimationStartingState(aura::Window* container) override;
   const gfx::Rect AdjustSetBoundsRequest(
       const gfx::Rect& display_bounds,
-      const gfx::Rect& requested_bounds) override;
+      const gfx::Rect& requested_bounds_in_screen_coords) override;
   bool IsOverscrollAllowed() const override;
   bool IsDragHandle(const gfx::Vector2d& offset,
                     const gfx::Size& keyboard_size) const override;
   void SavePosition(const gfx::Rect& keyboard_bounds,
                     const gfx::Size& screen_size) override;
-  void HandlePointerEvent(const ui::LocatedEvent& event,
-                          const gfx::Rect& display_bounds) override;
+  bool HandlePointerEvent(const ui::LocatedEvent& event,
+                          const display::Display& current_display) override;
   void SetCanonicalBounds(aura::Window* container,
                           const gfx::Rect& display_bounds) override;
   ContainerType GetType() const override;
@@ -83,10 +83,6 @@ class KEYBOARD_EXPORT ContainerFloatingBehavior : public ContainerBehavior {
   // Current state of a cursor drag to move the keyboard, if one exists.
   // Otherwise nullptr.
   std::unique_ptr<DragDescriptor> drag_descriptor_ = nullptr;
-
-  // Distinguish whether the current drag is from a touch event or mouse event,
-  // so drag/move events can be filtered accordingly
-  bool drag_started_by_touch_ = false;
 
   gfx::Rect draggable_area_ = gfx::Rect();
 };

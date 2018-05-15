@@ -17,7 +17,6 @@
 #include "net/base/ip_address.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_export.h"
-#include "net/socket/next_proto.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -51,17 +50,26 @@ class NET_EXPORT NetworkErrorLoggingService {
     GURL uri;
     GURL referrer;
     IPAddress server_ip;
-    NextProto protocol;
+    std::string protocol;
     int status_code;
     base::TimeDelta elapsed_time;
     Error type;
 
-    bool is_reporting_upload;
+    // Upload nesting depth of this request.
+    //
+    // If the request is not a Reporting upload, the depth is 0.
+    //
+    // If the request is a Reporting upload, the depth is the max of the depth
+    // of the requests reported within it plus 1. (Non-NEL reports are
+    // considered to have depth 0.)
+    int reporting_upload_depth;
   };
 
   static const char kHeaderName[];
 
   static const char kReportType[];
+
+  static const int kMaxNestedReportDepth;
 
   // Keys for data included in report bodies. Exposed for tests.
 
@@ -73,6 +81,12 @@ class NET_EXPORT NetworkErrorLoggingService {
   static const char kStatusCodeKey[];
   static const char kElapsedTimeKey[];
   static const char kTypeKey[];
+
+  static void RecordHeaderDiscardedForNoNetworkErrorLoggingService();
+  static void RecordHeaderDiscardedForInvalidSSLInfo();
+  static void RecordHeaderDiscardedForCertStatusError();
+
+  static void RecordRequestDiscardedForNoNetworkErrorLoggingService();
 
   static std::unique_ptr<NetworkErrorLoggingService> Create(
       std::unique_ptr<NetworkErrorLoggingDelegate> delegate);
@@ -104,13 +118,13 @@ class NET_EXPORT NetworkErrorLoggingService {
   // Sets a base::TickClock (used to track policy expiration) for tests.
   // |tick_clock| must outlive the NetworkErrorLoggingService, and cannot be
   // nullptr.
-  void SetTickClockForTesting(base::TickClock* tick_clock);
+  void SetTickClockForTesting(const base::TickClock* tick_clock);
 
  protected:
   NetworkErrorLoggingService();
 
   // Unowned:
-  base::TickClock* tick_clock_;
+  const base::TickClock* tick_clock_;
   ReportingService* reporting_service_;
 
  private:

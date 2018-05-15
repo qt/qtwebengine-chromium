@@ -11,10 +11,11 @@
 #include "content/browser/web_package/web_package_loader.h"
 #include "content/common/throttling_url_loader.h"
 #include "content/public/common/content_features.h"
-#include "content/public/common/shared_url_loader_factory.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/http/http_response_headers.h"
+#include "net/url_request/url_request_context_getter.h"
 #include "services/network/public/cpp/resource_response.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
 
 namespace content {
@@ -23,18 +24,22 @@ namespace content {
 bool WebPackageRequestHandler::IsSupportedMimeType(
     const std::string& mime_type) {
   DCHECK(base::FeatureList::IsEnabled(features::kSignedHTTPExchange));
-  return mime_type == "application/http-exchange+cbor";
+  return mime_type == "application/signed-exchange";
 }
 
 WebPackageRequestHandler::WebPackageRequestHandler(
     url::Origin request_initiator,
     uint32_t url_loader_options,
-    scoped_refptr<SharedURLLoaderFactory> url_loader_factory,
-    URLLoaderThrottlesGetter url_loader_throttles_getter)
+    int frame_tree_node_id,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+    URLLoaderThrottlesGetter url_loader_throttles_getter,
+    scoped_refptr<net::URLRequestContextGetter> request_context_getter)
     : request_initiator_(std::move(request_initiator)),
       url_loader_options_(url_loader_options),
+      frame_tree_node_id_(frame_tree_node_id),
       url_loader_factory_(url_loader_factory),
       url_loader_throttles_getter_(std::move(url_loader_throttles_getter)),
+      request_context_getter_(std::move(request_context_getter)),
       weak_factory_(this) {
   DCHECK(base::FeatureList::IsEnabled(features::kSignedHTTPExchange));
 }
@@ -78,8 +83,9 @@ bool WebPackageRequestHandler::MaybeCreateLoaderForResponse(
   // to support SafeBrowsing checking of the content of the WebPackage.
   web_package_loader_ = std::make_unique<WebPackageLoader>(
       response, std::move(client), url_loader->Unbind(),
-      std::move(request_initiator_), url_loader_options_,
-      std::move(url_loader_factory_), std::move(url_loader_throttles_getter_));
+      std::move(request_initiator_), url_loader_options_, frame_tree_node_id_,
+      std::move(url_loader_factory_), std::move(url_loader_throttles_getter_),
+      std::move(request_context_getter_));
   return true;
 }
 

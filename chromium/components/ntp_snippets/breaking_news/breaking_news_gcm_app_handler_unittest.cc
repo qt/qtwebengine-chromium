@@ -204,13 +204,13 @@ void ParseJson(
 ACTION_TEMPLATE(InvokeCallbackArgument,
                 HAS_1_TEMPLATE_PARAMS(int, k),
                 AND_1_VALUE_PARAMS(p0)) {
-  ::std::tr1::get<k>(args).Run(p0);
+  std::get<k>(args).Run(p0);
 }
 
 ACTION_TEMPLATE(InvokeCallbackArgument,
                 HAS_1_TEMPLATE_PARAMS(int, k),
                 AND_2_VALUE_PARAMS(p0, p1)) {
-  ::std::tr1::get<k>(args).Run(p0, p1);
+  std::get<k>(args).Run(p0, p1);
 }
 
 base::Time GetDummyNow() {
@@ -254,9 +254,6 @@ class BreakingNewsGCMAppHandlerTest : public testing::Test {
 
   std::unique_ptr<BreakingNewsGCMAppHandler> MakeHandler(
       scoped_refptr<TestMockTimeTaskRunner> timer_mock_task_runner) {
-    tick_clock_ = timer_mock_task_runner->GetMockTickClock();
-    clock_ = timer_mock_task_runner->GetMockClock();
-
     message_loop_.SetTaskRunner(timer_mock_task_runner);
 
     // TODO(vitaliii): Initialize MockSubscriptionManager in the constructor, so
@@ -265,18 +262,19 @@ class BreakingNewsGCMAppHandlerTest : public testing::Test {
         std::make_unique<NiceMock<MockSubscriptionManager>>();
     mock_subscription_manager_ = wrapped_mock_subscription_manager.get();
 
-    auto token_validation_timer =
-        std::make_unique<base::OneShotTimer>(tick_clock_.get());
+    auto token_validation_timer = std::make_unique<base::OneShotTimer>(
+        timer_mock_task_runner->GetMockTickClock());
     token_validation_timer->SetTaskRunner(timer_mock_task_runner);
 
-    auto forced_subscription_timer =
-        std::make_unique<base::OneShotTimer>(tick_clock_.get());
+    auto forced_subscription_timer = std::make_unique<base::OneShotTimer>(
+        timer_mock_task_runner->GetMockTickClock());
     forced_subscription_timer->SetTaskRunner(timer_mock_task_runner);
 
     return std::make_unique<BreakingNewsGCMAppHandler>(
         mock_gcm_driver_.get(), mock_instance_id_driver_.get(), pref_service(),
         std::move(wrapped_mock_subscription_manager), base::Bind(&ParseJson),
-        clock_.get(), std::move(token_validation_timer),
+        timer_mock_task_runner->GetMockClock(),
+        std::move(token_validation_timer),
         std::move(forced_subscription_timer));
   }
 
@@ -312,8 +310,6 @@ class BreakingNewsGCMAppHandlerTest : public testing::Test {
   std::unique_ptr<StrictMock<MockGCMDriver>> mock_gcm_driver_;
   std::unique_ptr<StrictMock<MockInstanceIDDriver>> mock_instance_id_driver_;
   std::unique_ptr<StrictMock<MockInstanceID>> mock_instance_id_;
-  std::unique_ptr<TickClock> tick_clock_;
-  std::unique_ptr<Clock> clock_;
 };
 
 TEST_F(BreakingNewsGCMAppHandlerTest,
@@ -931,7 +927,8 @@ TEST_F(BreakingNewsGCMAppHandlerTest, ShouldReportMissingAction) {
       histogram_tester.GetAllSamples(
           "NewTabPage.ContentSuggestions.BreakingNews.ReceivedMessageAction"),
       ElementsAre(base::Bucket(
-          /*min=*/metrics::ReceivedMessageAction::NO_ACTION, /*count=*/1)));
+          /*min=*/static_cast<int>(metrics::ReceivedMessageAction::NO_ACTION),
+          /*count=*/1)));
 }
 
 TEST_F(BreakingNewsGCMAppHandlerTest, ShouldReportInvalidAction) {
@@ -957,7 +954,8 @@ TEST_F(BreakingNewsGCMAppHandlerTest, ShouldReportInvalidAction) {
       histogram_tester.GetAllSamples(
           "NewTabPage.ContentSuggestions.BreakingNews.ReceivedMessageAction"),
       ElementsAre(
-          base::Bucket(/*min=*/metrics::ReceivedMessageAction::INVALID_ACTION,
+          base::Bucket(/*min=*/static_cast<int>(
+                           metrics::ReceivedMessageAction::INVALID_ACTION),
                        /*count=*/1)));
 }
 
@@ -984,7 +982,8 @@ TEST_F(BreakingNewsGCMAppHandlerTest, ShouldReportPushToRefreshAction) {
       histogram_tester.GetAllSamples(
           "NewTabPage.ContentSuggestions.BreakingNews.ReceivedMessageAction"),
       ElementsAre(
-          base::Bucket(/*min=*/metrics::ReceivedMessageAction::PUSH_TO_REFRESH,
+          base::Bucket(/*min=*/static_cast<int>(
+                           metrics::ReceivedMessageAction::PUSH_TO_REFRESH),
                        /*count=*/1)));
 }
 
@@ -1012,7 +1011,9 @@ TEST_F(BreakingNewsGCMAppHandlerTest, ShouldReportPushByValueAction) {
       histogram_tester.GetAllSamples(
           "NewTabPage.ContentSuggestions.BreakingNews.ReceivedMessageAction"),
       ElementsAre(base::Bucket(
-          /*min=*/metrics::ReceivedMessageAction::PUSH_BY_VALUE, /*count=*/1)));
+          /*min=*/static_cast<int>(
+              metrics::ReceivedMessageAction::PUSH_BY_VALUE),
+          /*count=*/1)));
 }
 
 TEST_F(BreakingNewsGCMAppHandlerTest,

@@ -27,8 +27,6 @@
 (function() {
 'use strict';
 
-const PASSWORD_ACTIVE_DURATION_MS = 10 * 60 * 1000;  // Ten minutes.
-
 Polymer({
   is: 'settings-password-prompt-dialog',
 
@@ -36,8 +34,9 @@ Polymer({
     /**
      * A wrapper around chrome.quickUnlockPrivate.setModes with the account
      * password already supplied. If this is null, the authentication screen
-     * needs to be redisplayed. This property will be cleared after
-     * |this.passwordActiveDurationMs_| milliseconds.
+     * needs to be redisplayed. This property will be cleared after the timeout
+     * returned by quickUnlockPrivate.getAuthToken.
+     * @type {?Object}
      */
     setModes: {
       type: Object,
@@ -45,15 +44,13 @@ Polymer({
     },
 
     /**
-     * The actual value of the password field. This is cleared whenever the
-     * authentication screen is not displayed so that the user's password is not
-     * easily available to an attacker. The actual password is stored as an
-     * captured closure variable inside of setModes.
+     * Authhentication token used when calling setModes, returned by
+     * quickUnlockPrivate.getAuthToken. Reflected to lock-screen.
      * @private
      */
-    password_: {
+    authToken: {
       type: String,
-      observer: 'onPasswordChanged_',
+      notify: true,
     },
 
     /**
@@ -64,12 +61,9 @@ Polymer({
 
     /**
      * Interface for chrome.quickUnlockPrivate calls. May be overriden by tests.
-     * @private
+     * @private {QuickUnlockPrivate}
      */
-    quickUnlockPrivate_: {
-      type: Object,
-      value: chrome.quickUnlockPrivate,
-    },
+    quickUnlockPrivate_: {type: Object, value: chrome.quickUnlockPrivate},
 
     /**
      * writeUma_ is a function that handles writing uma stats. It may be
@@ -84,24 +78,17 @@ Polymer({
         return settings.recordLockScreenProgress;
       }
     },
-
-    /**
-     * PASSWORD_ACTIVE_DURATION_MS value. May be overridden by tests.
-     * @private
-     */
-    passwordActiveDurationMs_: {
-      type: Number,
-      value: PASSWORD_ACTIVE_DURATION_MS,
-    },
   },
 
   /** @override */
   attached: function() {
     this.writeUma_(LockScreenProgress.START_SCREEN_LOCK);
     this.$.dialog.showModal();
+    // This needs to occur at the next paint otherwise the password input will
+    // not receive focus.
     this.async(() => {
       this.$.passwordInput.focus();
-    });
+    }, 1);
   },
 
   /** @private */
@@ -111,72 +98,65 @@ Polymer({
   },
 
   /**
-   * Called whenever the dialog is closed.
-   * @private
-   */
-  onClose_: function() {
-    this.password_ = '';
-  },
-
-  /**
    * Run the account password check.
    * @private
    */
   submitPassword_: function() {
     clearTimeout(this.clearAccountPasswordTimeout_);
 
+    let password = this.$.passwordInput.value;
     // The user might have started entering a password and then deleted it all.
     // Do not submit/show an error in this case.
-    if (!this.password_) {
+    if (!password) {
       this.passwordInvalid_ = false;
       return;
     }
 
-    function onPasswordChecked(valid) {
-      // The password might have been cleared during the duration of the
-      // getActiveModes call.
-      this.passwordInvalid_ = !valid && !!this.password_;
-
-      // Select the whole password if user entered an incorrect password.
-      // Return focus to the password input if it lost focus while being checked
-      // (user pressed confirm button).
-      if (this.passwordInvalid_) {
+    this.quickUnlockPrivate_.getAuthToken(password, (tokenInfo) => {
+      if (chrome.runtime.lastError) {
+        this.passwordInvalid_ = true;
+        // Select the whole password if user entered an incorrect password.
+        // Return focus to the password input if it lost focus while being
+        // checked (user pressed confirm button).
         this.$.passwordInput.inputElement.select();
         if (!this.$.passwordInput.focused)
           this.$.passwordInput.focus();
+        return;
       }
 
-      if (valid) {
-        // Create the |this.setModes| closure and automatically clear it after
-        // |this.passwordActiveDurationMs_|.
-        let password = this.password_;
-        this.password_ = '';
+      this.authToken = tokenInfo.token;
+      this.passwordInvalid_ = false;
 
-        this.setModes = (modes, credentials, onComplete) => {
-          this.quickUnlockPrivate_.setModes(
-              password, modes, credentials, onComplete);
-        };
+      // Create the |this.setModes| closure and automatically clear it after
+      // tokenInfo.lifetimeSeconds.
+      this.setModes = (modes, credentials, onComplete) => {
+        this.quickUnlockPrivate_.setModes(
+            tokenInfo.token, modes, credentials, () => {
+              let result = true;
+              if (chrome.runtime.lastError) {
+                console.error(
+                    'setModes failed: ' + chrome.runtime.lastError.message);
+                result = false;
+              }
+              onComplete(result);
+            });
+      };
 
-        function clearSetModes() {
-          // Reset the password so that any cached references to this.setModes
-          // will fail.
-          password = '';
-          this.setModes = null;
-        }
+      // Subtract time from the exiration time to account for IPC delays.
+      // Treat values less than the minimum as 0 for testing.
+      const IPC_SECONDS = 2;
+      const lifetimeMs = tokenInfo.lifetimeSeconds > IPC_SECONDS ?
+          (tokenInfo.lifetimeSeconds - IPC_SECONDS) * 1000 :
+          0;
+      this.clearAccountPasswordTimeout_ = setTimeout(() => {
+        this.setModes = null;
+      }, lifetimeMs);
 
-        this.clearAccountPasswordTimeout_ = setTimeout(
-            clearSetModes.bind(this), this.passwordActiveDurationMs_);
+      if (this.$.dialog.open)
+        this.$.dialog.close();
 
-        // Clear stored password state and close the dialog.
-        this.password_ = '';
-        if (this.$.dialog.open)
-          this.$.dialog.close();
-
-        this.writeUma_(LockScreenProgress.ENTER_PASSWORD_CORRECTLY);
-      }
-    }
-
-    this.checkAccountPassword_(onPasswordChecked.bind(this));
+      this.writeUma_(LockScreenProgress.ENTER_PASSWORD_CORRECTLY);
+    });
   },
 
   /** @private */
@@ -186,23 +166,7 @@ Polymer({
 
   /** @private */
   enableConfirm_: function() {
-    return !!this.password_ && !this.passwordInvalid_;
+    return !!this.$.passwordInput.value && !this.passwordInvalid_;
   },
-
-  /**
-   * Helper method that checks if the current password is valid.
-   * @param {function(boolean):void} onCheck
-   */
-  checkAccountPassword_: function(onCheck) {
-    // We check the account password by trying to update the active set of quick
-    // unlock modes without changing any credentials.
-    this.quickUnlockPrivate_.getActiveModes(modes => {
-      const credentials =
-          /** @type {!Array<string>} */ (Array(modes.length).fill(''));
-      this.quickUnlockPrivate_.setModes(
-          this.password_, modes, credentials, onCheck);
-    });
-  }
 });
-
 })();

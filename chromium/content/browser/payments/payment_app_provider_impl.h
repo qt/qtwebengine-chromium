@@ -9,6 +9,7 @@
 #include "base/memory/singleton.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/payment_app_provider.h"
+#include "content/public/browser/web_contents_observer.h"
 
 namespace content {
 
@@ -28,10 +29,11 @@ class CONTENT_EXPORT PaymentAppProviderImpl : public PaymentAppProvider {
       WebContents* web_contents,
       payments::mojom::PaymentRequestEventDataPtr event_data,
       const std::string& app_name,
+      const SkBitmap& app_icon,
       const std::string& sw_js_url,
       const std::string& sw_scope,
       bool sw_use_cache,
-      const std::vector<std::string>& enabled_methods,
+      const std::string& method,
       InvokePaymentAppCallback callback) override;
   void CanMakePayment(BrowserContext* browser_context,
                       int64_t registration_id,
@@ -40,12 +42,25 @@ class CONTENT_EXPORT PaymentAppProviderImpl : public PaymentAppProvider {
   void AbortPayment(BrowserContext* browser_context,
                     int64_t registration_id,
                     PaymentEventResultCallback callback) override;
+  void SetOpenedWindow(WebContents* web_contents) override;
+  void CloseOpenedWindow(BrowserContext* browser_context) override;
 
  private:
   PaymentAppProviderImpl();
   ~PaymentAppProviderImpl() override;
 
   friend struct base::DefaultSingletonTraits<PaymentAppProviderImpl>;
+
+  // Note that constructor of WebContentsObserver is protected.
+  class PaymentHandlerWindowObserver : public WebContentsObserver {
+   public:
+    explicit PaymentHandlerWindowObserver(WebContents* web_contents);
+    ~PaymentHandlerWindowObserver() override;
+  };
+
+  // Map to maintain at most one opened window per browser context.
+  std::map<BrowserContext*, std::unique_ptr<PaymentHandlerWindowObserver>>
+      payment_handler_windows_;
 
   DISALLOW_COPY_AND_ASSIGN(PaymentAppProviderImpl);
 };

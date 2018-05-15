@@ -6,13 +6,14 @@
 
 #include <utility>
 
-#include "base/memory/ptr_util.h"
 #include "components/download/public/common/download_item.h"
 #include "components/download/public/common/download_url_parameters.h"
 #include "content/browser/background_fetch/background_fetch_job_controller.h"
-#include "content/public/browser/background_fetch_delegate.h"
 #include "content/public/browser/background_fetch_response.h"
 #include "content/public/browser/download_manager.h"
+#include "ui/gfx/geometry/size.h"
+
+class SkBitmap;
 
 namespace content {
 
@@ -39,16 +40,40 @@ class BackgroundFetchDelegateProxy::Core
     return weak_ptr_factory_.GetWeakPtr();
   }
 
+  void ForwardGetIconDisplaySizeCallbackToIO(
+      BackgroundFetchDelegate::GetIconDisplaySizeCallback callback,
+      const gfx::Size& display_size) {
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
+    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+                            base::BindOnce(std::move(callback), display_size));
+  }
+
+  void GetIconDisplaySize(
+      BackgroundFetchDelegate::GetIconDisplaySizeCallback callback) {
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+    if (delegate_) {
+      delegate_->GetIconDisplaySize(
+          base::BindOnce(&Core::ForwardGetIconDisplaySizeCallbackToIO,
+                         weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
+    } else {
+      BrowserThread::PostTask(
+          BrowserThread::IO, FROM_HERE,
+          base::BindOnce(std::move(callback), gfx::Size(0, 0)));
+    }
+  }
+
   void CreateDownloadJob(const std::string& job_unique_id,
                          const std::string& title,
                          const url::Origin& origin,
+                         const SkBitmap& icon,
                          int completed_parts,
                          int total_parts,
                          const std::vector<std::string>& current_guids) {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
     if (delegate_) {
-      delegate_->CreateDownloadJob(job_unique_id, title, origin,
+      delegate_->CreateDownloadJob(job_unique_id, title, origin, icon,
                                    completed_parts, total_parts, current_guids);
     }
   }
@@ -227,10 +252,19 @@ BackgroundFetchDelegateProxy::~BackgroundFetchDelegateProxy() {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 }
 
+void BackgroundFetchDelegateProxy::GetIconDisplaySize(
+    BackgroundFetchDelegate::GetIconDisplaySizeCallback callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                          base::BindOnce(&Core::GetIconDisplaySize,
+                                         ui_core_ptr_, std::move(callback)));
+}
+
 void BackgroundFetchDelegateProxy::CreateDownloadJob(
     const std::string& job_unique_id,
     const std::string& title,
     const url::Origin& origin,
+    const SkBitmap& icon,
     base::WeakPtr<Controller> controller,
     int completed_parts,
     int total_parts,
@@ -243,7 +277,7 @@ void BackgroundFetchDelegateProxy::CreateDownloadJob(
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::BindOnce(&Core::CreateDownloadJob, ui_core_ptr_, job_unique_id,
-                     title, origin, completed_parts, total_parts,
+                     title, origin, icon, completed_parts, total_parts,
                      current_guids));
 }
 

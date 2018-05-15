@@ -50,7 +50,7 @@ RootCompositorFrameSinkImpl::RootCompositorFrameSinkImpl(
   frame_sink_manager->RegisterBeginFrameSource(begin_frame_source(),
                                                frame_sink_id);
   display_->Initialize(this, frame_sink_manager->surface_manager());
-  support_->SetUpHitTest();
+  support_->SetUpHitTest(display_.get());
 }
 
 RootCompositorFrameSinkImpl::~RootCompositorFrameSinkImpl() {
@@ -170,8 +170,9 @@ void RootCompositorFrameSinkImpl::DisplayDidReceiveCALayerParams(
 void RootCompositorFrameSinkImpl::DisplayDidDrawAndSwap() {}
 
 void RootCompositorFrameSinkImpl::OnClientConnectionLost() {
-  support_->frame_sink_manager()->OnClientConnectionLost(
-      support_->frame_sink_id());
+  // TODO(kylechar): I'm not sure what we need to do here. If |this| is
+  // destroyed then |display_| will be destroyed and we'll stop producing
+  // frames.
 }
 
 BeginFrameSource* RootCompositorFrameSinkImpl::begin_frame_source() {

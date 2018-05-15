@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -320,6 +319,7 @@ bool CrxUpdateService::CheckForUpdates() {
     update_client_->Update(
         unsecure_ids,
         base::BindOnce(&CrxUpdateService::OnUpdate, base::Unretained(this)),
+        false,
         base::BindOnce(&CrxUpdateService::OnUpdateComplete,
                        base::Unretained(this), Callback(),
                        base::TimeTicks::Now()));
@@ -329,6 +329,7 @@ bool CrxUpdateService::CheckForUpdates() {
     update_client_->Update(
         secure_ids,
         base::BindOnce(&CrxUpdateService::OnUpdate, base::Unretained(this)),
+        false,
         base::BindOnce(&CrxUpdateService::OnUpdateComplete,
                        base::Unretained(this), Callback(),
                        base::TimeTicks::Now()));

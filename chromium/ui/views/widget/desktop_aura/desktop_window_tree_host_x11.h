@@ -51,7 +51,8 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
       DesktopNativeWidgetAura* desktop_native_widget_aura);
   ~DesktopWindowTreeHostX11() override;
 
-  // A way of converting an X11 |xid| host window into a |content_window_|.
+  // A way of converting an X11 |xid| host window into the content_window()
+  // of the associated DesktopNativeWidgetAura.
   static aura::Window* GetContentWindowForXID(XID xid);
 
   // A way of converting an X11 |xid| host window into this object.
@@ -88,8 +89,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
 
  protected:
   // Overridden from DesktopWindowTreeHost:
-  void Init(aura::Window* content_window,
-            const Widget::InitParams& params) override;
+  void Init(const Widget::InitParams& params) override;
   void OnNativeWidgetCreated(const Widget::InitParams& params) override;
   void OnWidgetInitDone() override;
   void OnActiveWindowChanged(bool active) override;
@@ -167,6 +167,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   bool CaptureSystemKeyEventsImpl(
       base::Optional<base::flat_set<int>> keys_codes) override;
   void ReleaseSystemKeyEventCapture() override;
+  bool IsKeyLocked(int native_key_code) override;
   void SetCursorNative(gfx::NativeCursor cursor) override;
   void MoveCursorToScreenLocationInPixels(
       const gfx::Point& location_in_pixels) override;
@@ -188,7 +189,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   // initialization related to talking to the X11 server.
   void InitX11Window(const Widget::InitParams& params);
 
-  // Creates an aura::WindowEventDispatcher to contain the |content_window|,
+  // Creates an aura::WindowEventDispatcher to contain the content_window()
   // along with all aura client objects that direct behavior.
   aura::WindowEventDispatcher* InitDispatcher(const Widget::InitParams& params);
 
@@ -282,6 +283,12 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   // the queue) and adds it back at the end of the queue.
   void RestartDelayedResizeTask();
 
+  // Set visibility and fire OnNativeWidgetVisibilityChanged() if it changed.
+  void SetVisible(bool visible);
+
+  // Accessor for DesktopNativeWidgetAura::content_window().
+  aura::Window* content_window();
+
   // X11 things
   // The display and the native X window hosting the root window.
   XDisplay* xdisplay_;
@@ -351,8 +358,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   internal::NativeWidgetDelegate* native_widget_delegate_;
 
   DesktopNativeWidgetAura* desktop_native_widget_aura_;
-
-  aura::Window* content_window_;
 
   // We can optionally have a parent which can order us to close, or own
   // children who we're responsible for closing when we CloseNow().

@@ -1469,10 +1469,12 @@ void GL_APIENTRY GLES2ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
                                                    GLfloat uv_x,
                                                    GLfloat uv_y,
                                                    GLfloat uv_width,
-                                                   GLfloat uv_height) {
+                                                   GLfloat uv_height,
+                                                   GLboolean enable_blend) {
   gles2::GetGLContext()->ScheduleOverlayPlaneCHROMIUM(
       plane_z_order, plane_transform, overlay_texture_id, bounds_x, bounds_y,
-      bounds_width, bounds_height, uv_x, uv_y, uv_width, uv_height);
+      bounds_width, bounds_height, uv_x, uv_y, uv_width, uv_height,
+      enable_blend);
 }
 void GL_APIENTRY
 GLES2ScheduleCALayerSharedStateCHROMIUM(GLfloat opacity,
@@ -1499,9 +1501,6 @@ GLES2ScheduleCALayerInUseQueryCHROMIUM(GLsizei count, const GLuint* textures) {
 }
 void GL_APIENTRY GLES2CommitOverlayPlanesCHROMIUM() {
   gles2::GetGLContext()->CommitOverlayPlanesCHROMIUM();
-}
-void GL_APIENTRY GLES2SwapInterval(GLint interval) {
-  gles2::GetGLContext()->SwapInterval(interval);
 }
 void GL_APIENTRY GLES2FlushDriverCachesCHROMIUM() {
   gles2::GetGLContext()->FlushDriverCachesCHROMIUM();
@@ -1769,12 +1768,11 @@ GLES2BeginRasterCHROMIUM(GLuint texture_id,
                          GLuint sk_color,
                          GLuint msaa_sample_count,
                          GLboolean can_use_lcd_text,
-                         GLboolean use_distance_field_text,
                          GLint color_type,
                          GLuint color_space_transfer_cache_id) {
   gles2::GetGLContext()->BeginRasterCHROMIUM(
-      texture_id, sk_color, msaa_sample_count, can_use_lcd_text,
-      use_distance_field_text, color_type, color_space_transfer_cache_id);
+      texture_id, sk_color, msaa_sample_count, can_use_lcd_text, color_type,
+      color_space_transfer_cache_id);
 }
 void* GL_APIENTRY GLES2MapRasterCHROMIUM(GLsizeiptr size) {
   return gles2::GetGLContext()->MapRasterCHROMIUM(size);
@@ -2952,10 +2950,6 @@ extern const NameToFunc g_gles2_function_table[] = {
     {
         "glCommitOverlayPlanesCHROMIUM",
         reinterpret_cast<GLES2FunctionPointer>(glCommitOverlayPlanesCHROMIUM),
-    },
-    {
-        "glSwapInterval",
-        reinterpret_cast<GLES2FunctionPointer>(glSwapInterval),
     },
     {
         "glFlushDriverCachesCHROMIUM",

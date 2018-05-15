@@ -46,6 +46,11 @@ class AutofillHandler {
                             const FormFieldData& field,
                             const gfx::RectF& bounding_box);
 
+  // Invoked when the value of select is changed.
+  void OnSelectControlDidChange(const FormData& form,
+                                const FormFieldData& field,
+                                const gfx::RectF& bounding_box);
+
   // Invoked when the |form| needs to be autofilled, the |bounding_box| is
   // a window relative value of |field|.
   void OnQueryFormFieldAutofill(int query_id,
@@ -91,6 +96,9 @@ class AutofillHandler {
   virtual void OnSetDataList(const std::vector<base::string16>& values,
                              const std::vector<base::string16>& labels) = 0;
 
+  // Invoked when the options of a select element in the |form| changed.
+  virtual void SelectFieldOptionsDidChange(const FormData& form) = 0;
+
   // Resets cache.
   virtual void Reset() = 0;
 
@@ -124,6 +132,10 @@ class AutofillHandler {
   virtual void OnFocusOnFormFieldImpl(const FormData& form,
                                       const FormFieldData& field,
                                       const gfx::RectF& bounding_box) = 0;
+
+  virtual void OnSelectControlDidChangeImpl(const FormData& form,
+                                            const FormFieldData& field,
+                                            const gfx::RectF& bounding_box) = 0;
 
   AutofillDriver* driver() { return driver_; }
 
