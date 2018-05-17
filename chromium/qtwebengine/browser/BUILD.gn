@@ -18,6 +18,10 @@ service_manifest("qtwebengine_manifest") {
   source = "//qtwebengine/browser/qtwebengine_manifest.json"
 }
 
+service_manifest("qtwebengine_renderer_manifest") {
+  source = "//qtwebengine/browser/qtwebengine_renderer_manifest.json"
+}
+
 service_manifest("qtwebengine_content_renderer_manifest_overlay") {
   source = "//qtwebengine/browser/qtwebengine_content_renderer_manifest_overlay.json"
 }
@@ -55,6 +59,7 @@ group("service_manifests") {
 
 qtwebengine_embedded_services = [
   ":qtwebengine_content_renderer_manifest",
+  ":qtwebengine_renderer_manifest",
 ]
 
 catalog("catalog") {

@@ -18,6 +18,7 @@
         <include name="IDR_SANDBOX_INTERNALS_HTML" file="../../chrome/browser/resources/sandbox_internals/sandbox_internals.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" compress="gzip" />
         <include name="IDR_SANDBOX_INTERNALS_JS" file="../../chrome/browser/resources/sandbox_internals/sandbox_internals.js" type="BINDATA" compress="gzip" />
       </if>
+      <include name="IDR_QTWEBENGINE_RENDERER_SERVICE_MANIFEST" file="qtwebengine_renderer_manifest.json" type="BINDATA" />
       <include name="IDR_QTWEBENGINE_CONTENT_RENDERER_MANIFEST_OVERLAY" file="gen\qtwebengine\browser\qtwebengine_content_renderer_manifest_overlay.json" use_base_dir="false" type="BINDATA" />
       <include name="IDR_QTWEBENGINE_CONTENT_PACKAGED_SERVICES_MANIFEST_OVERLAY" use_base_dir="false" file="gen\qtwebengine\browser\qtwebengine_content_packaged_services_manifest_overlay.json" type="BINDATA" />
     </includes>

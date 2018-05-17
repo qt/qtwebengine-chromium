@@ -9,8 +9,11 @@
         ]
       },
       "requires": {
+        "qtwebengine_renderer": [ "browser" ],
         "service_manager": [
-          "service_manager:all_users"
+          "service_manager:all_users",
+          "service_manager:client_process",
+          "service_manager:instance_name"
         ]
       }
     }

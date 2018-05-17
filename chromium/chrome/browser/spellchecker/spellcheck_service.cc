@@ -13,10 +13,14 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#if defined (TOOLKIT_QT)
+#include "qtwebengine/browser/service_qt.h"
+#else
 #include "chrome/browser/chrome_service.h"
+#include "chrome/common/constants.mojom.h"
+#endif
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_hunspell_dictionary.h"
-#include "chrome/common/constants.mojom.h"
 #include "chrome/common/pref_names.h"
 #include "components/prefs/pref_member.h"
 #include "components/prefs/pref_service.h"
@@ -204,11 +208,19 @@ void SpellcheckService::InitForRenderer(
   }
 
   spellcheck::mojom::SpellCheckerPtr spellchecker;
+#if defined (TOOLKIT_QT)
+  ServiceQt::GetInstance()->connector()->BindInterface(
+      service_manager::Identity("qtwebengine_renderer",
+                                renderer_identity.user_id(),
+                                renderer_identity.instance()),
+      &spellchecker);
+#else
   ChromeService::GetInstance()->connector()->BindInterface(
       service_manager::Identity(chrome::mojom::kRendererServiceName,
                                 renderer_identity.user_id(),
                                 renderer_identity.instance()),
       &spellchecker);
+#endif
   spellchecker->Initialize(std::move(dictionaries), custom_words, enable);
 }
 
@@ -288,14 +300,22 @@ void SpellcheckService::OnCustomDictionaryChanged(
   const std::vector<std::string> deletions(change.to_remove().begin(),
                                            change.to_remove().end());
   while (!process_hosts.IsAtEnd()) {
-    service_manager::Identity renderer_identity =
-        process_hosts.GetCurrentValue()->GetChildIdentity();
+      service_manager::Identity renderer_identity =
+          process_hosts.GetCurrentValue()->GetChildIdentity();
     spellcheck::mojom::SpellCheckerPtr spellchecker;
+#if defined (TOOLKIT_QT)
+    ServiceQt::GetInstance()->connector()->BindInterface(
+        service_manager::Identity("qtwebengine_renderer",
+                                  renderer_identity.user_id(),
+                                  renderer_identity.instance()),
+        &spellchecker);
+#else
     ChromeService::GetInstance()->connector()->BindInterface(
         service_manager::Identity(chrome::mojom::kRendererServiceName,
                                   renderer_identity.user_id(),
                                   renderer_identity.instance()),
         &spellchecker);
+#endif
     spellchecker->CustomDictionaryChanged(additions, deletions);
     process_hosts.Advance();
   }
