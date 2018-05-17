@@ -502,7 +502,11 @@ std::string DevToolsHttpHandler::GetFrontendURLInternal(
     const std::string& host) {
   std::string frontend_url;
   if (delegate_->HasBundledFrontendResources()) {
+#if defined(TOOLKIT_QT)
+    frontend_url = "/devtools/devtools_app.html";
+#else
     frontend_url = "/devtools/inspector.html";
+#endif
   } else {
     std::string type = agent_host->GetType();
     bool is_worker = type == DevToolsAgentHost::kTypeServiceWorker ||
