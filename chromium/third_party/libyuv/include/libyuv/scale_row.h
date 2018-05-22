@@ -42,7 +42,8 @@ extern "C" {
 
 // clang >= 3.4.0 required for AVX2.
 #if defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
-#if (__clang_major__ > 3) || (__clang_major__ == 3 && (__clang_minor__ >= 4))
+#if ((__clang_major__ > 3) || (__clang_major__ == 3 && (__clang_minor__ >= 4))) && \
+    (!defined(__apple_build_version__) || __apple_build_version__ >= 5030038)
 #define CLANG_HAS_AVX2 1
 #endif  // clang >= 3.4
 #endif  // __clang__

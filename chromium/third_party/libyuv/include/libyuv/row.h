@@ -36,7 +36,8 @@ extern "C" {
 #endif
 // clang >= 3.5.0 required for Arm64.
 #if defined(__clang__) && defined(__aarch64__) && !defined(LIBYUV_DISABLE_NEON)
-#if (__clang_major__ < 3) || (__clang_major__ == 3 && (__clang_minor__ < 5))
+#if ((__clang_major__ < 3) || (__clang_major__ == 3 && (__clang_minor__ < 5))) && \
+    (!defined(__apple_build_version__) || __apple_build_version__ >= 6000051)
 #define LIBYUV_DISABLE_NEON
 #endif  // clang >= 3.5
 #endif  // __clang__
@@ -50,15 +51,15 @@ extern "C" {
 
 // clang >= 3.4.0 required for AVX2.
 #if defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
-#if (__clang_major__ > 3) || (__clang_major__ == 3 && (__clang_minor__ >= 4))
+#if ((__clang_major__ > 3) || (__clang_major__ == 3 && (__clang_minor__ >= 4))) && \
+    (!defined(__apple_build_version__) || __apple_build_version__ >= 5030038)
 #define CLANG_HAS_AVX2 1
 #endif  // clang >= 3.4
 #endif  // __clang__
 
 // clang >= 6.0.0 required for AVX512.
-// TODO(fbarchard): fix xcode 9 ios b/789.
 #if defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
-#if (__clang_major__ >= 7) && !defined(__APPLE_EMBEDDED_SIMULATOR__)
+#if (__clang_major__ >= 7) && !defined(__apple_build_version__)
 #define CLANG_HAS_AVX512 1
 #endif  // clang >= 7
 #endif  // __clang__
