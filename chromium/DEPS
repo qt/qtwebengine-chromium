@@ -477,7 +477,7 @@ deps = {
     (Var("webrtc_git")) + '/deps/third_party/openmax.git@b611996df3b8f6b151339d22c12c21f167009cb6',
   'src/third_party/pdfium': {
     'url':
-      '{pdfium_git}/pdfium.git@e839a6adb305467759e0d22fe7532a72fe4d8fa7'
+      '{pdfium_git}/pdfium.git@aaf58321fcaefae4bdf2419b5094f810cdcb1a49'
   },
   'src/third_party/pefile': {
     'condition':
@@ -523,7 +523,7 @@ deps = {
     (Var("chromium_git")) + '/external/github.com/google/shaderc.git@cd8793c34907073025af2622c28bcee64e9879a4',
   'src/third_party/skia': {
     'url':
-      '{skia_git}/skia.git@bd0dafbc8112f6cfa92a8096d8cb5696d8535ef9'
+      '{skia_git}/skia.git@3eace5f5bc494d185caa3787bce425e2098bd575'
   },
   'src/third_party/smhasher/src':
     (Var("chromium_git")) + '/external/smhasher.git@e87738e57558e0ec472b2fc3a643b838e5b6e88f',
@@ -565,7 +565,7 @@ deps = {
     (Var("chromium_git")) + '/external/khronosgroup/webgl.git@d458ada06171a85af00367251a4ed55db7fe2018',
   'src/third_party/webrtc': {
     'url':
-      '{webrtc_git}/src.git@9f7e2a90da243288657e1802af85168e87daab01'
+      '{webrtc_git}/src.git@bccbc278e6b809b0b39f4b46e6f5a072f4123182'
   },
   'src/third_party/xdg-utils': {
     'condition':
@@ -583,7 +583,7 @@ deps = {
     (Var("chromium_git")) + '/infra/luci/client-py.git@88229872dd17e71658fe96763feaa77915d8cbd6',
   'src/v8': {
     'url':
-      '{chromium_git}/v8/v8.git@2bc5f566416da419601d55ffc83f92374be50779'
+      '{chromium_git}/v8/v8.git@8db46042ed29e8696d1ad58155e6efb182adebd7'
   }
 }
 
@@ -1275,6 +1275,18 @@ hooks = [
       '.',
     'name':
       'zucchini_testdata'
+  },
+  {
+    'action': [
+      'python',
+      'src/build/cipd/clobber_cipd_root.py',
+      '--root',
+      '.'
+    ],
+    'pattern':
+      '.',
+    'name':
+      'Clobber Upcoming GClient CIPD Root'
   },
   {
     'action': [
