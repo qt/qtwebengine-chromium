@@ -828,6 +828,14 @@ void AAHairlineBatch::onPrepareDraws(Target* target) const {
 
     int lineCount = lines.count() / 2;
     int conicCount = conics.count() / 3;
+    int quadAndConicCount = conicCount + quadCount;
+
+
+    static constexpr int kMaxLines = SK_MaxS32 / kLineSegNumVertices;
+    static constexpr int kMaxQuadsAndConics = SK_MaxS32 / kQuadNumVertices;
+    if (lineCount > kMaxLines || quadAndConicCount > kMaxQuadsAndConics) {
+        return;
+    }
 
     // do lines first
     if (lineCount) {
