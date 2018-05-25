@@ -25,17 +25,25 @@
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/ifx_renderdevicedriver.h"
-
+#include "core/fxcrt/fx_safe_types.h"
 namespace {
 
-uint32_t CountOutputs(
+
+uint32_t CountOutputsFromFunctions(
     const std::vector<std::unique_ptr<CPDF_Function>>& funcs) {
-  uint32_t total = 0;
+  FX_SAFE_UINT32 total = 0;
   for (const auto& func : funcs) {
     if (func)
       total += func->CountOutputs();
   }
-  return total;
+  return total.ValueOrDefault(0);
+}
+
+uint32_t GetValidatedOutputsCount(
+    const std::vector<std::unique_ptr<CPDF_Function>>& funcs,
+    const CPDF_ColorSpace* pCS) {
+  uint32_t funcs_outputs = CountOutputsFromFunctions(funcs);
+  return funcs_outputs ? std::max(funcs_outputs, pCS->CountComponents()) : 0;
 }
 
 #define SHADING_STEPS 256
@@ -46,6 +54,11 @@ void DrawAxialShading(CFX_DIBitmap* pBitmap,
                       CPDF_ColorSpace* pCS,
                       int alpha) {
   ASSERT(pBitmap->GetFormat() == FXDIB_Argb);
+
+  const uint32_t total_results = GetValidatedOutputsCount(funcs, pCS);
+  if (total_results == 0)
+    return;
+
   CPDF_Array* pCoords = pDict->GetArrayFor("Coords");
   if (!pCoords) {
     return;
@@ -75,8 +88,7 @@ void DrawAxialShading(CFX_DIBitmap* pBitmap,
   FX_FLOAT axis_len_square = (x_span * x_span) + (y_span * y_span);
   CFX_Matrix matrix;
   matrix.SetReverse(*pObject2Bitmap);
-  uint32_t total_results =
-      std::max(CountOutputs(funcs), pCS->CountComponents());
+
   CFX_FixedBufGrow<FX_FLOAT, 16> result_array(total_results);
   FX_FLOAT* pResults = result_array;
   FXSYS_memset(pResults, 0, total_results * sizeof(FX_FLOAT));
@@ -129,6 +141,11 @@ void DrawRadialShading(CFX_DIBitmap* pBitmap,
                        CPDF_ColorSpace* pCS,
                        int alpha) {
   ASSERT(pBitmap->GetFormat() == FXDIB_Argb);
+
+  const uint32_t total_results = GetValidatedOutputsCount(funcs, pCS);
+  if (total_results == 0)
+    return;
+
   CPDF_Array* pCoords = pDict->GetArrayFor("Coords");
   if (!pCoords) {
     return;
@@ -155,8 +172,7 @@ void DrawRadialShading(CFX_DIBitmap* pBitmap,
     bStartExtend = !!pArray->GetIntegerAt(0);
     bEndExtend = !!pArray->GetIntegerAt(1);
   }
-  uint32_t total_results =
-      std::max(CountOutputs(funcs), pCS->CountComponents());
+
   CFX_FixedBufGrow<FX_FLOAT, 16> result_array(total_results);
   FX_FLOAT* pResults = result_array;
   FXSYS_memset(pResults, 0, total_results * sizeof(FX_FLOAT));
@@ -260,8 +276,16 @@ void DrawFuncShading(CFX_DIBitmap* pBitmap,
                      CPDF_ColorSpace* pCS,
                      int alpha) {
   ASSERT(pBitmap->GetFormat() == FXDIB_Argb);
+
+  const uint32_t total_results = GetValidatedOutputsCount(funcs, pCS);
+  if (total_results == 0)
+    return;
+
   CPDF_Array* pDomain = pDict->GetArrayFor("Domain");
-  FX_FLOAT xmin = 0, ymin = 0, xmax = 1.0f, ymax = 1.0f;
+  FX_FLOAT xmin = 0.0f;
+  FX_FLOAT ymin = 0.0f;
+  FX_FLOAT xmax = 1.0f;
+  FX_FLOAT ymax = 1.0f;
   if (pDomain) {
     xmin = pDomain->GetNumberAt(0);
     xmax = pDomain->GetNumberAt(1);
@@ -276,8 +300,6 @@ void DrawFuncShading(CFX_DIBitmap* pBitmap,
   int width = pBitmap->GetWidth();
   int height = pBitmap->GetHeight();
   int pitch = pBitmap->GetPitch();
-  uint32_t total_results =
-      std::max(CountOutputs(funcs), pCS->CountComponents());
   CFX_FixedBufGrow<FX_FLOAT, 16> result_array(total_results);
   FX_FLOAT* pResults = result_array;
   FXSYS_memset(pResults, 0, total_results * sizeof(FX_FLOAT));
