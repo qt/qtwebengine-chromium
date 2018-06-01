@@ -874,6 +874,7 @@ void QuotaManager::GetUsageAndQuotaWithBreakdown(
     const GURL& origin,
     StorageType type,
     UsageAndQuotaWithBreakdownCallback callback) {
+  DCHECK(origin == origin.GetOrigin());
   if (!IsSupportedType(type) ||
       (is_incognito_ && !IsSupportedIncognitoType(type))) {
     std::move(callback).Run(blink::mojom::QuotaStatusCode::kErrorNotSupported,
