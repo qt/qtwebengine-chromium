@@ -142,7 +142,7 @@ SecurityOrigin::SecurityOrigin(const KURL& url)
     port_ = kInvalidPort;
 
   // By default, only local SecurityOrigins can load local resources.
-  can_load_local_resources_ = IsLocal() || DeprecatedEqualIgnoringCase(protocol_, "qrc");
+  can_load_local_resources_ = IsLocal();
 }
 
 SecurityOrigin::SecurityOrigin()
