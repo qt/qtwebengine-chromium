@@ -31,10 +31,20 @@ class ReadableStreamBytesConsumer::OnFulfilled final : public ScriptFunction {
   ScriptValue call(ScriptValue v) override {
     bool done;
     v8::Local<v8::Value> item = v.v8Value();
-    DCHECK(item->IsObject());
-    v8::Local<v8::Value> value =
-        v8UnpackIteratorResult(v.getScriptState(), item.As<v8::Object>(), &done)
-            .ToLocalChecked();
+
+    if (!item->IsObject()) {
+      m_consumer->onRejected();
+      return ScriptValue();
+    }
+
+    v8::Local<v8::Value> value;
+    if (!v8UnpackIteratorResult(v.getScriptState(), item.As<v8::Object>(),
+                                &done)
+             .ToLocal(&value)) {
+      m_consumer->onRejected();
+      return ScriptValue();
+    }
+
     if (done) {
       m_consumer->onReadDone();
       return v;
