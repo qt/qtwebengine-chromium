@@ -84,9 +84,6 @@ std::string Origin::Serialize() const {
   if (scheme() == kFileScheme)
     return "file://";
 
-  if (scheme() == kQrcScheme)
-    return "qrc://";
-
   return tuple_.Serialize();
 }
 
@@ -96,9 +93,6 @@ GURL Origin::GetURL() const {
 
   if (scheme() == kFileScheme)
     return GURL("file:///");
-
-  if (scheme() == kQrcScheme)
-    return GURL("qrc://");
 
   GURL tuple_url(tuple_.GetURL());
 
