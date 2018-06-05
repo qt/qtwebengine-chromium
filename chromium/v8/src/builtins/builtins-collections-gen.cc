@@ -186,6 +186,7 @@ void BaseCollectionsAssembler::AddConstructorEntriesFromFastJSArray(
   CSA_ASSERT(this, IntPtrGreaterThanOrEqual(length, IntPtrConstant(0)));
 
   Label exit(this), if_doubles(this), if_smiorobjects(this);
+  GotoIf(IntPtrEqual(length, IntPtrConstant(0)), &exit);
   Branch(IsFastSmiOrTaggedElementsKind(elements_kind), &if_smiorobjects,
          &if_doubles);
   BIND(&if_smiorobjects);
