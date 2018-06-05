@@ -562,7 +562,9 @@ static bool clip_to_limit(const SkRegion& orig, SkRegion* reduced) {
   * account for potential FDot6 rounding edge-cases.
   */
 #ifdef SK_RASTERIZE_EVEN_ROUNDING
-static const double kRoundBias = 0.5 / SK_FDot6One;
+// This value has been determined trial and error: pick the smallest value (after the 0.5) that
+// fixes any problematic cases (e.g. crbug.com/844457)
+static const double kRoundBias = 1.0 / SK_FDot6One;
 #else
 static const double kRoundBias = 0.0;
 #endif
