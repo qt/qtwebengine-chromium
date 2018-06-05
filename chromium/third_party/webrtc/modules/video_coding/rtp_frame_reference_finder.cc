@@ -430,8 +430,12 @@ void RtpFrameReferenceFinder::ManageFrameVp9(
       LOG(LS_WARNING) << "Received keyframe without scalability structure";
 
     frame->num_references = 0;
-    GofInfo info = gof_info_.find(codec_header.tl0_pic_idx)->second;
-    FrameReceivedVp9(frame->picture_id, &info);
+
+    auto gof_info_it = gof_info_.find(codec_header.tl0_pic_idx);
+    if (gof_info_it == gof_info_.end())
+      return;
+
+    FrameReceivedVp9(frame->picture_id, &gof_info_it->second);
     CompletedFrameVp9(std::move(frame));
     return;
   }
