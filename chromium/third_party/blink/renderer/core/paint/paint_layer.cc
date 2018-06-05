@@ -1856,16 +1856,6 @@ scoped_refptr<HitTestingTransformState> PaintLayer::CreateLocalTransformState(
     ConvertToLayerCoords(root_layer, offset);
   }
   offset.MoveBy(translation_offset);
-  // The location of a foreignObject element is added *after* transform, not
-  // before (all SVG child elements have this behavior). Therefore, remove
-  // the offset here to avoid applying it before the transform. It will be
-  // added later.
-  // TODO(chrishtr): this ugliness can be removed if we change the code to
-  // to be based on PaintOffset rather than PaintLayer offsets, like the
-  // paint code does. This is a larger effort though, that involves using
-  // property trees to drive hit testing coordinate spaces.
-  if (GetLayoutObject().IsSVGForeignObject())
-    offset.MoveBy(-LayoutBoxLocation());
 
   LayoutObject* container_layout_object =
       container_layer ? &container_layer->GetLayoutObject() : nullptr;
@@ -1943,11 +1933,11 @@ PaintLayer* PaintLayer::HitTestLayer(
   if (result.GetHitTestRequest().IgnoreClipping())
     clip_behavior = kIgnoreOverflowClip;
 
-  // Always send foreignObject PaintLayers through the "transform" code path,
-  // even if they have no transform. This is in order to collect any ancestor
-  // SVG transforms, including the SVG root to border box transform, which
-  // are represented outside of the PaintLayer tree.
-  bool use_transform = Transform() || GetLayoutObject().IsSVGForeignObject();
+  // We can only reach an SVG foreign object's PaintLayer from
+  // LayoutSVGForeignObject::NodeAtFloatPoint (because
+  // IsReplacedNormalFlowStacking() true for LayoutSVGForeignObject),
+  // where the hit_test_rect has already been transformed to local coordinates.
+  bool use_transform = Transform() && !GetLayoutObject().IsSVGForeignObject();
 
   // Apply a transform if we have one.
   if (use_transform && !applied_transform) {
@@ -1977,17 +1967,6 @@ PaintLayer* PaintLayer::HitTestLayer(
   }
 
   if (HitTestClippedOutByClipPath(root_layer, hit_test_location))
-    return nullptr;
-
-  // TODO(chrishtr): this can have incorrect results for rects that are not
-  // unit-sized due to use of Center().
-  if (GetLayoutObject().IsSVGForeignObject() &&
-      !GeometryMapper::PointVisibleInAncestorSpace(
-          GetLayoutObject().FirstFragment().LocalBorderBoxProperties(),
-          container_layer->GetLayoutObject()
-              .FirstFragment()
-              .LocalBorderBoxProperties(),
-          FloatPoint(hit_test_location.BoundingBox().Center())))
     return nullptr;
 
   // The natural thing would be to keep HitTestingTransformState on the stack,
@@ -2098,10 +2077,6 @@ PaintLayer* PaintLayer::HitTestLayer(
   }
 
   LayoutPoint offset = -LayoutBoxLocation();
-  // See comment in CreateLocalTransformState. The code here is
-  // where we re-add the location.
-  if (root_layer->GetLayoutObject().IsSVGForeignObject())
-    offset.MoveBy(root_layer->LayoutBoxLocation());
 
   // Next we want to see if the mouse pos is inside the child LayoutObjects of
   // the layer. Check every fragment in reverse order.
@@ -2315,6 +2290,14 @@ bool PaintLayer::HitTestContents(HitTestResult& result,
   return true;
 }
 
+bool PaintLayer::IsReplacedNormalFlowStacking() {
+  if (!GetLayoutObject().IsSVGForeignObject())
+    return false;
+  if (!GetLayoutObject().StyleRef().HasAutoZIndex())
+    return false;
+  return true;
+}
+
 PaintLayer* PaintLayer::HitTestChildren(
     ChildrenIteration childrento_visit,
     PaintLayer* root_layer,
@@ -2334,6 +2317,10 @@ PaintLayer* PaintLayer::HitTestChildren(
                                                  childrento_visit);
   while (PaintLayerStackingNode* child = iterator.Next()) {
     PaintLayer* child_layer = child->Layer();
+
+    if (child_layer->IsReplacedNormalFlowStacking())
+      continue;
+
     PaintLayer* hit_layer = nullptr;
     HitTestResult temp_result(result.GetHitTestRequest(),
                               result.GetHitTestLocation());

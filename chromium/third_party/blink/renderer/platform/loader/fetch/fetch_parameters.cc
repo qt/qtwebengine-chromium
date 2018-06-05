@@ -123,7 +123,9 @@ void FetchParameters::MakeSynchronous() {
   // renderer.
   resource_request_.SetPriority(ResourceLoadPriority::kHighest);
   if (resource_request_.TimeoutInterval() == INT_MAX) {
-    resource_request_.SetTimeoutInterval(10);
+    // This 1 day timeout is a temporary value to avoid the 100% CPU usage bug
+    // in stable (crbug/848210) and mitigate the timeout bug (crbug/844268).
+    resource_request_.SetTimeoutInterval(60 * 60 * 24);
   }
   // Skip ServiceWorker for synchronous loads from the main thread to avoid
   // deadlocks.

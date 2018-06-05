@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "third_party/blink/renderer/core/layout/layout_geometry_map.h"
+#include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
 
 namespace blink {
@@ -263,6 +264,72 @@ TEST_F(LayoutSVGForeignObjectTest, HitTestUnderClipPath) {
   EXPECT_EQ(svg, GetDocument().ElementFromPoint(20, 20));
   EXPECT_EQ(foreignObject, GetDocument().ElementFromPoint(250, 250));
   EXPECT_EQ(svg, GetDocument().ElementFromPoint(400, 400));
+}
+
+TEST_F(LayoutSVGForeignObjectTest,
+       HitTestUnderClippedPositionedForeignObjectDescendant) {
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      * {
+        margin: 0
+      }
+    </style>
+    <svg id="svg" style="width: 600px; height: 600px">
+      <foreignObject id="foreignObject" x="200" y="200" width="100"
+          height="100">
+        <div id="target" style="overflow: hidden; position: relative;
+            width: 100px; height: 50px; left: 5px"></div>
+      </foreignObject>
+    </svg>
+  )HTML");
+
+  const auto& svg = *GetDocument().getElementById("svg");
+  const auto& target = *GetDocument().getElementById("target");
+  const auto& foreignObject = *GetDocument().getElementById("foreignObject");
+
+  EXPECT_EQ(svg, GetDocument().ElementFromPoint(1, 1));
+  EXPECT_EQ(foreignObject, GetDocument().ElementFromPoint(201, 201));
+  EXPECT_EQ(target, GetDocument().ElementFromPoint(206, 206));
+  EXPECT_EQ(foreignObject, GetDocument().ElementFromPoint(205, 255));
+
+  HitTestRequest request(HitTestRequest::kReadOnly | HitTestRequest::kActive);
+  HitTestResult result(request, LayoutPoint(206, 206));
+  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  EXPECT_EQ(target, result.InnerNode());
+  EXPECT_EQ(LayoutPoint(206, 206), result.PointInInnerNodeFrame());
+}
+
+TEST_F(LayoutSVGForeignObjectTest,
+       HitTestUnderTransformedForeignObjectDescendant) {
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      * {
+        margin: 0
+      }
+    </style>
+    <svg id="svg" style="width: 600px; height: 600px">
+      <foreignObject id="foreignObject" x="200" y="200" width="100"
+          height="100" transform="translate(30)">
+        <div id="target" style="overflow: hidden; position: relative;
+            width: 100px; height: 50px; left: 5px"></div>
+      </foreignObject>
+    </svg>
+  )HTML");
+
+  const auto& svg = *GetDocument().getElementById("svg");
+  const auto& target = *GetDocument().getElementById("target");
+  const auto& foreignObject = *GetDocument().getElementById("foreignObject");
+
+  EXPECT_EQ(svg, GetDocument().ElementFromPoint(1, 1));
+  EXPECT_EQ(foreignObject, GetDocument().ElementFromPoint(231, 201));
+  EXPECT_EQ(target, GetDocument().ElementFromPoint(236, 206));
+  EXPECT_EQ(foreignObject, GetDocument().ElementFromPoint(235, 255));
+
+  HitTestRequest request(HitTestRequest::kReadOnly | HitTestRequest::kActive);
+  HitTestResult result(request, LayoutPoint(236, 206));
+  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  EXPECT_EQ(target, result.InnerNode());
+  EXPECT_EQ(LayoutPoint(236, 206), result.PointInInnerNodeFrame());
 }
 
 }  // namespace blink
