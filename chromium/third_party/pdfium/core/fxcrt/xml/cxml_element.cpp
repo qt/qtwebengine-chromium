@@ -9,6 +9,8 @@
 #include "core/fxcrt/xml/cxml_content.h"
 #include "core/fxcrt/xml/cxml_parser.h"
 
+template class fxcrt::StringViewTemplate<char>;
+
 namespace {
 
 void SplitQualifiedName(const ByteStringView& bsFullName,
