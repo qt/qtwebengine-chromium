@@ -436,8 +436,8 @@ void WebGL2RenderingContextBase::framebufferTextureLayer(GLenum target,
                              "framebufferTextureLayer", target, attachment))
     return;
   if (texture && !texture->Validate(ContextGroup(), this)) {
-    SynthesizeGLError(GL_INVALID_VALUE, "framebufferTextureLayer",
-                      "no texture or texture not from this context");
+    SynthesizeGLError(GL_INVALID_OPERATION, "framebufferTextureLayer",
+                      "texture does not belong to this context");
     return;
   }
   GLenum textarget = texture ? texture->GetTarget() : 0;
@@ -3969,9 +3969,6 @@ GLboolean WebGL2RenderingContextBase::isSampler(WebGLSampler* sampler) {
 
 void WebGL2RenderingContextBase::bindSampler(GLuint unit,
                                              WebGLSampler* sampler) {
-  if (isContextLost())
-    return;
-
   bool deleted;
   if (!CheckObjectToBeBound("bindSampler", sampler, deleted))
     return;
@@ -4240,7 +4237,7 @@ void WebGL2RenderingContextBase::deleteTransformFeedback(
 
 GLboolean WebGL2RenderingContextBase::isTransformFeedback(
     WebGLTransformFeedback* feedback) {
-  if (isContextLost() || !feedback)
+  if (isContextLost() || !feedback || !feedback->Validate(ContextGroup(), this))
     return 0;
 
   if (!feedback->HasEverBeenBound())
@@ -4751,7 +4748,8 @@ WebGLVertexArrayObject* WebGL2RenderingContextBase::createVertexArray() {
 
 void WebGL2RenderingContextBase::deleteVertexArray(
     WebGLVertexArrayObject* vertex_array) {
-  if (isContextLost() || !vertex_array)
+  if (isContextLost() || !vertex_array ||
+      !ValidateWebGLObject("deleteVertexArray", vertex_array))
     return;
 
   if (!vertex_array->IsDefaultObject() &&
@@ -4763,7 +4761,8 @@ void WebGL2RenderingContextBase::deleteVertexArray(
 
 GLboolean WebGL2RenderingContextBase::isVertexArray(
     WebGLVertexArrayObject* vertex_array) {
-  if (isContextLost() || !vertex_array)
+  if (isContextLost() || !vertex_array ||
+      !vertex_array->Validate(ContextGroup(), this))
     return 0;
 
   if (!vertex_array->HasEverBeenBound())
@@ -4774,13 +4773,13 @@ GLboolean WebGL2RenderingContextBase::isVertexArray(
 
 void WebGL2RenderingContextBase::bindVertexArray(
     WebGLVertexArrayObject* vertex_array) {
-  if (isContextLost())
+  bool deleted;
+  if (!CheckObjectToBeBound("bindVertexArray", vertex_array, deleted))
     return;
 
-  if (vertex_array &&
-      (vertex_array->IsDeleted() || !vertex_array->Validate(nullptr, this))) {
+  if (deleted) {
     SynthesizeGLError(GL_INVALID_OPERATION, "bindVertexArray",
-                      "invalid vertexArray");
+                      "attempt to bind a deleted vertex array");
     return;
   }
 
