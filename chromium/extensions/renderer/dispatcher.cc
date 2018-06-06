@@ -1232,6 +1232,13 @@ void Dispatcher::UpdateActiveExtensions() {
 void Dispatcher::InitOriginPermissions(const Extension* extension) {
   delegate_->InitOriginPermissions(extension,
                                    IsExtensionActive(extension->id()));
+  const GURL webstore_launch_url = extension_urls::GetWebstoreLaunchURL();
+  WebSecurityPolicy::AddOriginAccessBlacklistEntry(
+      extension->url(), WebString::FromUTF8(webstore_launch_url.scheme()),
+      WebString::FromUTF8(webstore_launch_url.host()), true);
+  // TODO(devlin): Should we also block the webstore update URL here? See
+  // https://crbug.com/826946 for a related instance.
+
   UpdateOriginPermissions(
       extension->url(),
       URLPatternSet(),  // No old permissions.
