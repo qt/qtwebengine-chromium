@@ -23,8 +23,6 @@ namespace url {
 
 namespace {
 
-extern const char kQrcScheme[] = "qrc";
-
 bool IsCanonicalHost(const base::StringPiece& host) {
   std::string canon_host;
 
@@ -58,11 +56,8 @@ bool IsValidInput(const base::StringPiece& scheme,
       scheme.data(),
       Component(0, base::checked_cast<int>(scheme.length())),
       &scheme_type);
-  if (!is_standard && scheme != kQrcScheme)
+  if (!is_standard)
     return false;
-
-  if (scheme == kQrcScheme)
-      return true;
 
   switch (scheme_type) {
     case SCHEME_WITH_HOST_AND_PORT:
