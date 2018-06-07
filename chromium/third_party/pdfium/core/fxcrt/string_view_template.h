@@ -42,7 +42,7 @@ class StringViewTemplate {
       : m_Span(reinterpret_cast<const UnsignedType*>(ptr),
                ptr ? FXSYS_len(ptr) : 0) {}
 
-  constexpr StringViewTemplate(const CharType* ptr, size_t len) noexcept
+  StringViewTemplate(const CharType* ptr, size_t len) noexcept
       : m_Span(reinterpret_cast<const UnsignedType*>(ptr), len) {}
 
   explicit constexpr StringViewTemplate(
@@ -68,7 +68,7 @@ class StringViewTemplate {
   // Deliberately implicit to avoid calling on every string literal.
   // |ch| must be an lvalue that outlives the StringViewTemplate.
   // NOLINTNEXTLINE(runtime/explicit)
-  constexpr StringViewTemplate(CharType& ch) noexcept
+  StringViewTemplate(CharType& ch) noexcept
       : m_Span(reinterpret_cast<const UnsignedType*>(&ch), 1) {}
 
   // Any changes to |vec| invalidate the string.
