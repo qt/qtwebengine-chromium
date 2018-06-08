@@ -223,6 +223,10 @@ class V8_EXPORT_PRIVATE CodeStubAssembler : public compiler::CodeAssembler {
   // Select the minimum of the two provided Number values.
   TNode<Object> NumberMin(SloppyTNode<Object> left, SloppyTNode<Object> right);
 
+
+  // Returns true iff the given value fits into smi range and is >= 0.
+  TNode<BoolT> IsValidPositiveSmi(TNode<IntPtrT> value);
+
   // Tag a Word as a Smi value.
   TNode<Smi> SmiTag(SloppyTNode<IntPtrT> value);
   // Untag a Smi value as a Word.
