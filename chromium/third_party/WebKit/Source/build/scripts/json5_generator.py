@@ -60,9 +60,8 @@ import os.path
 import re
 import sys
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..',
-                             'third_party', 'blink', 'tools'))
-from blinkpy.common.name_style_converter import NameStyleConverter
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'bindings', 'scripts'))
+from name_style_converter import NameStyleConverter
 
 
 def _json5_load(lines):
