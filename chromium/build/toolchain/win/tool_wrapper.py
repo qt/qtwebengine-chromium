@@ -28,7 +28,7 @@ import sys
 #   match_tag: < platform: "win_amd64" >
 # >
 # [VPYTHON:END]
-
+"""
 if sys.platform == "win32":
   try:
     # First, try the normal way. This will work for python installations which
@@ -60,6 +60,9 @@ if sys.platform == "win32":
 else:
   def superflush(pe_name):
     return None
+"""
+def superflush(pe_name):
+  return None
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
