@@ -23,10 +23,12 @@ import sys
 # if it finds versions with a different bitness first then win32file.pyd will
 # fail to load with a cryptic error:
 #     ImportError: DLL load failed: %1 is not a valid Win32 application.
+"""
 if sys.platform == 'win32':
   os.environ['PATH'] = os.path.dirname(sys.executable) + \
                        os.pathsep + os.environ['PATH']
   import win32file    # pylint: disable=import-error
+"""
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -156,6 +158,7 @@ class WinTool(object):
           not line.startswith('Finished generating code')):
         print line,
     result = link.wait()
+    """
     if result == 0 and sys.platform == 'win32':
       # Flush the file buffers to try to work around a Windows 10 kernel bug,
       # https://crbug.com/644525
@@ -163,6 +166,7 @@ class WinTool(object):
                                       0, None, win32file.OPEN_EXISTING, 0, 0)
       win32file.FlushFileBuffers(output_handle)
       output_handle.Close()
+    """
     return result
 
   def ExecAsmWrapper(self, arch, *args):
