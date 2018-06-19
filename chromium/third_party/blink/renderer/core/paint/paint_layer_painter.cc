@@ -983,6 +983,9 @@ PaintResult PaintLayerPainter::PaintChildren(
             painting_info.GetGlobalPaintFlags()))
       continue;
 
+    if (child->Layer()->IsReplacedNormalFlowStacking())
+      continue;
+
     PaintLayerPaintingInfo child_painting_info = painting_info;
     child_painting_info.scroll_offset_accumulation =
         scroll_offset_accumulation_for_children;

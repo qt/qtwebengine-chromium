@@ -712,7 +712,7 @@ deps = {
   },
   'src/third_party/angle': {
     'url':
-      '{chromium_git}/angle/angle.git@f7d4f25ecb44e47cecea9f3685b5c03aa7a4f9d3'
+      '{chromium_git}/angle/angle.git@702006f4a07e4f0069f189679f5c84ebda7c5772'
   },
   'src/third_party/apache-portable-runtime/src': {
     'condition':
@@ -1226,7 +1226,7 @@ deps = {
     (Var("chromium_git")) + '/external/github.com/google/shaderc.git@cd8793c34907073025af2622c28bcee64e9879a4',
   'src/third_party/skia': {
     'url':
-      '{skia_git}/skia.git@c097162d82fe7b13b349ed33bc17f1d2bafa7e82'
+      '{skia_git}/skia.git@78b60f4ff13b83da98ae2bca85aaef0a98b61098'
   },
   'src/third_party/smhasher/src':
     (Var("chromium_git")) + '/external/smhasher.git@e87738e57558e0ec472b2fc3a643b838e5b6e88f',
@@ -1314,7 +1314,7 @@ deps = {
     (Var("chromium_git")) + '/infra/luci/client-py.git@88229872dd17e71658fe96763feaa77915d8cbd6',
   'src/v8': {
     'url':
-      '{chromium_git}/v8/v8.git@ebf52875c9eb32ee6dca35c18a6311020634e3b7'
+      '{chromium_git}/v8/v8.git@7093b6561585bf66c0d44fe24e3f8235c263d979'
   }
 }
 
