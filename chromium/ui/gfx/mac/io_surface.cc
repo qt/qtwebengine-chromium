@@ -223,7 +223,7 @@ void IOSurfaceSetColorSpace(IOSurfaceRef io_surface,
         ICCProfile::FromParametricColorSpace(color_space.GetAsFullRangeRGB());
   }
   if (!icc_profile.IsValid()) {
-    if (__builtin_available(macos 10.12, *)) {
+    if (base::mac::IsAtLeastOS10_12()) {
       static const ColorSpace kBt2020(ColorSpace::PrimaryID::BT2020,
                                       ColorSpace::TransferID::SMPTEST2084,
                                       ColorSpace::MatrixID::BT2020_NCL,
