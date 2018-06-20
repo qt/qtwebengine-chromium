@@ -107,7 +107,7 @@ ScopedVirtualAuthenticatorEnvironment::CreateFidoDiscovery(
     discovery->AddVirtualDevice(authenticator.second->ConstructDevice());
   }
   discoveries_.insert(discovery.get());
-  return discovery;
+  return std::move(discovery);
 }
 
 void ScopedVirtualAuthenticatorEnvironment::OnDiscoveryDestroyed(
