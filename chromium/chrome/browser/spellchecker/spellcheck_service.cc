@@ -16,7 +16,7 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #if defined (TOOLKIT_QT)
-#include "qtwebengine/browser/service_qt.h"
+#include "service_qt.h"
 #else
 #include "chrome/browser/chrome_service.h"
 #include "chrome/common/constants.mojom.h"
