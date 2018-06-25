@@ -170,9 +170,6 @@ def main(argv):
     input_file = open(file_name, "r")
     pdl_string = input_file.read()
     protocol = parse(pdl_string)
-    output_file = open(argv[0].replace('.pdl', '.json'), 'wb')
-    json.dump(protocol, output_file, indent=4, separators=(',', ': '))
-    output_file.close()
 
     output_file = open(os.path.normpath(argv[1]), 'wb')
     json.dump(protocol, output_file, indent=4, separators=(',', ': '))
