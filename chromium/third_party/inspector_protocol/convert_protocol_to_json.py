@@ -20,9 +20,6 @@ def main(argv):
     pdl_string = input_file.read()
     protocol = pdl.loads(pdl_string, file_name)
     input_file.close()
-    output_file = open(argv[0].replace('.pdl', '.json'), 'wb')
-    json.dump(protocol, output_file, indent=4, separators=(',', ': '))
-    output_file.close()
 
     output_file = open(os.path.normpath(argv[1]), 'wb')
     json.dump(protocol, output_file, indent=4, separators=(',', ': '))
