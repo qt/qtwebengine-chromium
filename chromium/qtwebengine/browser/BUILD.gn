@@ -1,5 +1,12 @@
 import("//chrome/common/features.gni")
 import("//tools/grit/grit_rule.gni")
+import ("//mojo/public/tools/bindings/mojom.gni")
+
+mojom("interfaces") {
+  sources = [
+    "qtwebchannel.mojom",
+  ]
+}
 
 grit("qt_webengine_resources") {
   source = "qt_webengine_resources.grd"
