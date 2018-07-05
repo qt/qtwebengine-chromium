@@ -91,7 +91,7 @@ const double kMinDpi = 1.0;
 // Also set in third_party/WebKit/Source/core/page/PrintContext.h
 const float kPrintingMinimumShrinkFactor = 1.33333333f;
 
-#if BUILDFLAG(ENABLE_PRINT_PREVIEW) && !defined(TOOLKIT_QT)
+#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
 bool g_is_preview_enabled = true;
 #else
 bool g_is_preview_enabled = false;
