@@ -945,6 +945,8 @@ def build_gn_with_gn(temp_gn, build_dir, options):
   # gets updated to "./gn".
   cmd = [os.path.join(build_dir, 'gn'), 'gen', build_dir,
          '--args=%s' % gn_gen_args]
+  if sys.executable:
+    cmd.append('--script-executable=%s' % sys.executable)
   check_call(cmd)
 
   if not options.debug and not is_win:
