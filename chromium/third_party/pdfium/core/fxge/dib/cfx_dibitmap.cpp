@@ -531,12 +531,13 @@ std::optional<CFX_DIBitmap::PitchAndSize> CFX_DIBitmap::CalculatePitchAndSize(
       return std::nullopt;
     }
   }
-  FX_SAFE_UINT32 safe_size = pitch;
+  size_t safe_size = pitch;
   safe_size *= height;
-  if (!safe_size.IsValid())
+  // The final size of the buffer will be (*size + 4). We are trying to not exceed this.
+  if (((std::numeric_limits<std::size_t>::max() - 4) / pitch) < static_cast<uint32_t>(height))
     return std::nullopt;
 
-  return PitchAndSize{pitch, safe_size.ValueOrDie()};
+  return PitchAndSize{pitch, safe_size};
 }
 
 bool CFX_DIBitmap::CompositeBitmap(int dest_left,
