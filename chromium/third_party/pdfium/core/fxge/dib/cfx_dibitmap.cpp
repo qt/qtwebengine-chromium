@@ -45,7 +45,7 @@ bool CFX_DIBitmap::Create(int width,
   m_Height = 0;
   m_Pitch = 0;
 
-  uint32_t calculatedSize;
+  size_t calculatedSize;
   if (!CalculatePitchAndSize(height, width, format, &pitch, &calculatedSize))
     return false;
 
@@ -842,7 +842,7 @@ bool CFX_DIBitmap::CalculatePitchAndSize(int height,
                                          int width,
                                          FXDIB_Format format,
                                          uint32_t* pitch,
-                                         uint32_t* size) {
+                                         size_t* size) {
   if (width <= 0 || height <= 0)
     return false;
 
@@ -856,7 +856,8 @@ bool CFX_DIBitmap::CalculatePitchAndSize(int height,
   if (!*pitch)
     *pitch = static_cast<uint32_t>((width * bpp + 31) / 32 * 4);
 
-  if ((1 << 30) / *pitch < static_cast<uint32_t>(height))
+  // The final size of the buffer will be (*size + 4). We are trying to not exceed this.
+  if ((std::numeric_limits<std::size_t>::max() - 4) / *pitch < static_cast<uint32_t>(height))
     return false;
 
   *size = *pitch * static_cast<uint32_t>(height);
