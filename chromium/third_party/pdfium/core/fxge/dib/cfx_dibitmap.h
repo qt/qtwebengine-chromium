@@ -18,7 +18,7 @@ class CFX_DIBitmap : public CFX_DIBBase {
  public:
   struct PitchAndSize {
     uint32_t pitch;
-    uint32_t size;
+    size_t size;
   };
 
   CONSTRUCT_VIA_MAKE_RETAIN;
