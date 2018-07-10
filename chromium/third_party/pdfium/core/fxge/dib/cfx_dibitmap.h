@@ -25,7 +25,7 @@ class CFX_DIBitmap final : public CFX_DIBBase {
  public:
   struct PitchAndSize {
     uint32_t pitch;
-    uint32_t size;
+    size_t size;
   };
 
 #if defined(PDF_USE_SKIA)
