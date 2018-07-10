@@ -99,7 +99,7 @@ class CFX_DIBitmap : public CFX_DIBSource {
                                     int width,
                                     FXDIB_Format format,
                                     uint32_t* pitch,
-                                    uint32_t* size);
+                                    size_t* size);
 
 #if defined _SKIA_SUPPORT_ || _SKIA_SUPPORT_PATHS_
   void PreMultiply();
