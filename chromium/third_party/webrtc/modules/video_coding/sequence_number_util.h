@@ -84,12 +84,6 @@ struct DescendingSeqNumComp {
 // can be set. The unwrapped value is not allowed to wrap.
 template <typename T, T M = 0>
 class SeqNumUnwrapper {
-  static_assert(
-      std::is_unsigned<T>::value &&
-          rtc::safe_cmp::Lt(std::numeric_limits<T>::max(),
-                      std::numeric_limits<uint64_t>::max()),
-      "Type unwrapped must be an unsigned integer smaller than uint64_t.");
-
  public:
   SeqNumUnwrapper() : last_unwrapped_(0) {}
   explicit SeqNumUnwrapper(uint64_t start_at) : last_unwrapped_(start_at) {}
