@@ -97,6 +97,7 @@
 #include "content/browser/frame_host/render_frame_message_filter.h"
 #include "content/browser/gpu/browser_gpu_client_delegate.h"
 #include "content/browser/gpu/compositor_util.h"
+#include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/shader_cache_factory.h"
 #include "content/browser/histogram_controller.h"
@@ -1616,7 +1617,10 @@ bool RenderProcessHostImpl::Init() {
   is_dead_ = false;
   sent_render_process_ready_ = false;
 
-  if (gpu_client_)
+  // Don't grant further access to GPU if it is not allowed.
+  GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
+  DCHECK(gpu_data_manager);
+  if (gpu_client_ && gpu_data_manager->GpuAccessAllowed(nullptr))
     gpu_client_->PreEstablishGpuChannel();
 
   // We may reach Init() during process death notification (e.g.
