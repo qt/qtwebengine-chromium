@@ -1711,7 +1711,11 @@ bool RenderProcessHostImpl::Init() {
   is_dead_ = false;
   sent_render_process_ready_ = false;
 
-  gpu_client_->PreEstablishGpuChannel();
+  // Don't grant further access to GPU if it is not allowed.
+  GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
+  DCHECK(gpu_data_manager);
+  if (gpu_client_ && gpu_data_manager->GpuAccessAllowed(nullptr))
+    gpu_client_->PreEstablishGpuChannel();
 
   // We may reach Init() during process death notification (e.g.
   // RenderProcessExited on some observer). In this case the Channel may be
