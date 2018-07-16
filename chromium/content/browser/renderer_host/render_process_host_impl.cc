@@ -1942,16 +1942,22 @@ bool RenderProcessHostImpl::Init() {
     InitializeChannelProxy();
   }
 
+  // Don't grant further access to GPU if it is not allowed.
+  GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
+  DCHECK(gpu_data_manager);
+
   base::TimeTicks gpu_channel_request_start_time;
-  if (ShouldSendGpuChannelEarly()) {
-    gpu_channel_request_start_time = base::TimeTicks::Now();
-    // Pre-establish the GPU channel and send the renderer pipe at renderer
-    // launch time.
-    gpu_client_->InitializeGpuChannelForNewRenderer(
-        mojo_invitation_.AttachMessagePipe(kGPUChannelAttachmentName));
-  } else {
-    gpu_client_->InitializeGpuChannelForNewRenderer(
-        mojo::ScopedMessagePipeHandle());
+  if (gpu_client_ && gpu_data_manager->GpuAccessAllowed(nullptr)) {
+    if (ShouldSendGpuChannelEarly()) {
+      gpu_channel_request_start_time = base::TimeTicks::Now();
+      // Pre-establish the GPU channel and send the renderer pipe at renderer
+      // launch time.
+      gpu_client_->InitializeGpuChannelForNewRenderer(
+          mojo_invitation_.AttachMessagePipe(kGPUChannelAttachmentName));
+    } else {
+      gpu_client_->InitializeGpuChannelForNewRenderer(
+          mojo::ScopedMessagePipeHandle());
+    }
   }
 
   // Set cache information after establishing a channel since the handles are
