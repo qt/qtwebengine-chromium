@@ -350,9 +350,6 @@ bool GpuDataManagerImplPrivate::GpuAccessAllowed(
     return false;
   }
 
-  if (in_process_gpu_)
-    return true;
-
   if (card_disabled_) {
     if (reason) {
       *reason = "GPU access is disabled ";
