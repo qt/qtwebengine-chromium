@@ -1004,7 +1004,7 @@ GpuProcessTransportFactory::CreatePerCompositorData(
 }
 
 void GpuProcessTransportFactory::OnLostMainThreadSharedContext() {
-  LOG(ERROR) << "Lost UI shared context.";
+  DLOG(WARNING) << "Lost UI shared context.";
 
   // Keep old resources around while we call the observers, but ensure that
   // new resources are created if needed.
