@@ -513,7 +513,7 @@ GpuProcessHost* GpuProcessHost::Get(GpuProcessKind kind, bool force_create) {
   GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
   DCHECK(gpu_data_manager);
   if (!gpu_data_manager->GpuProcessStartAllowed()) {
-    DLOG(ERROR) << "!GpuDataManagerImpl::GpuProcessStartAllowed()";
+    DLOG(WARNING) << "!GpuDataManagerImpl::GpuProcessStartAllowed()";
     return nullptr;
   }
 
