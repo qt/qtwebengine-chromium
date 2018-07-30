@@ -28,6 +28,10 @@
 
 #include <libxml/parser.h>
 #include <libxml/parserInternals.h>
+#include <libxml/xmlversion.h>
+#if defined(LIBXML_CATALOG_ENABLED)
+#include <libxml/catalog.h>
+#endif
 #include <libxslt/xslt.h>
 #include <memory>
 #include "core/css/StyleEngine.h"
@@ -646,6 +650,9 @@ static void InitializeLibXMLIfNecessary() {
   if (did_init)
     return;
 
+#if defined(LIBXML_CATALOG_ENABLED)
+  xmlCatalogSetDefaults(XML_CATA_ALLOW_NONE);
+#endif
   xmlInitParser();
   xmlRegisterInputCallbacks(MatchFunc, OpenFunc, ReadFunc, CloseFunc);
   xmlRegisterOutputCallbacks(MatchFunc, OpenFunc, WriteFunc, CloseFunc);
