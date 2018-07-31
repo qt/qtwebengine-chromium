@@ -114,9 +114,10 @@ void PepperMediaDeviceManager::EnumerateDevices(
                      callback, ToMediaDeviceType(type)));
 #else
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&PepperMediaDeviceManager::DevicesEnumerated,
-                            AsWeakPtr(), callback, ToMediaDeviceType(type),
-                            std::vector<MediaDeviceInfoArray>()));
+      FROM_HERE, base::BindOnce(&PepperMediaDeviceManager::DevicesEnumerated,
+                                AsWeakPtr(), callback, ToMediaDeviceType(type),
+                                std::vector<MediaDeviceInfoArray>(),
+                                std::vector<blink::mojom::VideoInputDeviceCapabilitiesPtr>()));
 #endif
 }
 
