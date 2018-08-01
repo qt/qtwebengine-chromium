@@ -73,7 +73,7 @@ T StringTo(ByteStringView strc,
     cc++;
   }
   size_t scale = 0;
-  if (cc < len && strc[cc] == '.') {
+  if (cc < len) {
     cc++;
     while (cc < len) {
       value +=
