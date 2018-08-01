@@ -167,7 +167,7 @@ float FX_atof(const ByteStringView& strc) {
     cc++;
   }
   int scale = 0;
-  if (cc < len && strc[cc] == '.') {
+  if (cc < len) {
     cc++;
     while (cc < len) {
       value += FractionalScale(scale, FXSYS_DecimalCharToInt(strc.CharAt(cc)));
