@@ -632,6 +632,16 @@ void FetchManager::Loader::Start() {
 
   // "- |request|'s mode is |no CORS|"
   if (request_->Mode() == network::mojom::FetchRequestMode::kNoCORS) {
+   // "If |request|'s redirect mode is not |follow|, then return a network
+   // error.
+    if (request_->Redirect() != network::mojom::FetchRedirectMode::kFollow) {
+      PerformNetworkError("Fetch API cannot load " +
+                          request_->Url().GetString() +
+                          ". Request mode is \"no-cors\" but the redirect mode "
+                          " is not \"follow\".");
+      return;
+    }
+
     // "Set |request|'s response tainting to |opaque|."
     request_->SetResponseTainting(FetchRequestData::kOpaqueTainting);
     // "The result of performing a scheme fetch using |request|."
