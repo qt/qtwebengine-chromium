@@ -806,8 +806,7 @@ GpuProcessHost::~GpuProcessHost() {
         base::BindOnce(&OnGpuProcessHostDestroyedOnUI, host_id_, message));
   }
 
-  if (in_process_)
-      in_process_gpu_thread_->WaitUntilThreadStarted();
+  in_process_gpu_thread_.reset();
 
   // If there are any remaining offscreen contexts at the point the GPU process
   // exits, assume something went wrong, and block their URLs from accessing
@@ -832,18 +831,10 @@ bool GpuProcessHost::Init() {
     gpu::GpuPreferences gpu_preferences = GetGpuPreferencesFromCommandLine();
     GpuDataManagerImpl::GetInstance()->UpdateGpuPreferences(
         &gpu_preferences, GPU_PROCESS_KIND_SANDBOXED);
-    in_process_gpu_thread_.reset(GetGpuMainThreadFactory()(
+    in_process_gpu_thread_ = GetGpuMainThreadFactory()(
         InProcessChildThreadParams(base::ThreadTaskRunnerHandle::Get(),
                                    process_->GetInProcessMojoInvitation()),
-        gpu_preferences));
-    base::Thread::Options options;
-#if (defined(OS_WIN) || defined(OS_MACOSX)) && !defined(TOOLKIT_QT)
-    // WGL needs to create its own window and pump messages on it.
-    options.message_pump_type = base::MessagePumpType::UI;
-#endif
-    if (base::FeatureList::IsEnabled(features::kGpuUseDisplayThreadPriority))
-      options.priority = base::ThreadPriority::DISPLAY;
-    in_process_gpu_thread_->StartWithOptions(options);
+        gpu_preferences);
   } else if (!LaunchGpuProcess()) {
     return false;
   }
