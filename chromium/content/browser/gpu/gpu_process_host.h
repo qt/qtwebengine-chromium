@@ -48,6 +48,7 @@ class Thread;
 
 namespace content {
 class BrowserChildProcessHostImpl;
+class GpuThreadController;
 
 #if BUILDFLAG(IS_MAC)
 class CATransactionGPUCoordinator;
@@ -244,7 +245,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // Otherwise, under rare timings when the thread is still in Init(),
   // it could crash as it fails to find a message pipe to the host.
   std::unique_ptr<BrowserChildProcessHostImpl> process_;
-  std::unique_ptr<base::Thread> in_process_gpu_thread_;
+  std::unique_ptr<GpuThreadController> in_process_gpu_thread_;
 
 #if BUILDFLAG(IS_MAC)
   scoped_refptr<CATransactionGPUCoordinator> ca_transaction_gpu_coordinator_;
