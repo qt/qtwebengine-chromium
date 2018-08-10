@@ -7,6 +7,7 @@
 
 #include "base/macros.h"
 #include "base/threading/thread.h"
+#include "content/browser/gpu/gpu_main_thread_factory.h"
 #include "content/common/content_export.h"
 #include "content/common/in_process_child_thread_params.h"
 #include "gpu/config/gpu_preferences.h"
@@ -38,7 +39,7 @@ class InProcessGpuThread : public base::Thread {
   DISALLOW_COPY_AND_ASSIGN(InProcessGpuThread);
 };
 
-CONTENT_EXPORT base::Thread* CreateInProcessGpuThread(
+CONTENT_EXPORT std::unique_ptr<GpuThreadController> CreateInProcessGpuThread(
     const InProcessChildThreadParams& params,
     const gpu::GpuPreferences& gpu_preferences);
 
