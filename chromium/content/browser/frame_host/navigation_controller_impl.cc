@@ -382,6 +382,7 @@ void NavigationControllerImpl::ReloadInternal(bool check_for_repost,
       reload_type = ReloadType::NONE;
 
       nav_entry->set_should_replace_entry(true);
+      nav_entry->set_is_renderer_initiated(entry->is_renderer_initiated());
       pending_entry_ = nav_entry;
       DCHECK_EQ(-1, pending_entry_index_);
     } else {
