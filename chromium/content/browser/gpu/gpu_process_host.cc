@@ -797,8 +797,7 @@ GpuProcessHost::~GpuProcessHost() {
     }
   }
 
-  if (in_process_)
-      in_process_gpu_thread_->WaitUntilThreadStarted();
+  in_process_gpu_thread_.reset();
 
   // If there are any remaining offscreen contexts at the point the GPU process
   // exits, assume something went wrong, and block their URLs from accessing
@@ -838,22 +837,12 @@ bool GpuProcessHost::Init() {
     DCHECK(GetGpuMainThreadFactory());
     gpu::GpuPreferences gpu_preferences = GetGpuPreferencesFromCommandLine();
     GpuDataManagerImpl::GetInstance()->UpdateGpuPreferences(&gpu_preferences);
-    in_process_gpu_thread_.reset(GetGpuMainThreadFactory()(
+    in_process_gpu_thread_ = GetGpuMainThreadFactory()(
         InProcessChildThreadParams(
             base::ThreadTaskRunnerHandle::Get(),
             process_->GetInProcessMojoInvitation(),
             process_->child_connection()->service_token()),
-        gpu_preferences));
-    base::Thread::Options options;
-#if (defined(OS_WIN) || defined(OS_MACOSX)) && !defined(TOOLKIT_QT)
-    // WGL needs to create its own window and pump messages on it.
-    options.message_loop_type = base::MessageLoop::TYPE_UI;
-#endif
-#if defined(OS_ANDROID) || defined(OS_CHROMEOS) || defined(USE_OZONE)
-    options.priority = base::ThreadPriority::DISPLAY;
-#endif
-    in_process_gpu_thread_->StartWithOptions(options);
-
+        gpu_preferences);
     OnProcessLaunched();  // Fake a callback that the process is ready.
   } else if (!LaunchGpuProcess()) {
     return false;
