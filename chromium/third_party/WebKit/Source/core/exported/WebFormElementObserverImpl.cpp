@@ -76,7 +76,6 @@ void WebFormElementObserverImpl::ObserverCallback::Deliver(
         return;
       }
     } else {
-      HTMLElement& element = *ToHTMLElement(record->target());
       if (record->attributeName() == "action") {
         // If the action was modified, we just assume that the form as
         // submitted.
@@ -87,7 +86,7 @@ void WebFormElementObserverImpl::ObserverCallback::Deliver(
       // Otherwise, either "style" or "class" was modified. Check the
       // computed style.
       CSSComputedStyleDeclaration* style =
-          CSSComputedStyleDeclaration::Create(&element);
+          CSSComputedStyleDeclaration::Create(record->target());
       if (style->GetPropertyValue(CSSPropertyDisplay) == "none") {
         callback_->ElementWasHiddenOrRemoved();
         Disconnect();
