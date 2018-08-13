@@ -97,7 +97,6 @@ void V8HTMLConstructor::htmlConstructor(
 
   ExceptionState exceptionState(isolate, ExceptionState::ConstructionContext,
                                 "HTMLElement");
-  v8::TryCatch tryCatch(isolate);
 
   // 6. Let prototype be Get(NewTarget, "prototype"). Rethrow any exceptions.
   v8::Local<v8::Value> prototype;
