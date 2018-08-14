@@ -193,8 +193,11 @@ static bool passesTimingAllowCheck(
     const SecurityOrigin& initiatorSecurityOrigin,
     const AtomicString& originalTimingAllowOrigin,
     ExecutionContext* context) {
+  const KURL& response_url = response.wasFetchedViaServiceWorker()
+                                 ? response.originalURLViaServiceWorker()
+                                 : response.url();
   RefPtr<SecurityOrigin> resourceOrigin =
-      SecurityOrigin::create(response.url());
+      SecurityOrigin::create(response_url);
   if (resourceOrigin->isSameSchemeHostPort(&initiatorSecurityOrigin))
     return true;
 
