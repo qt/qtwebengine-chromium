@@ -887,4 +887,21 @@ SecurityOrigin* BaseAudioContext::getSecurityOrigin() const {
   return nullptr;
 }
 
+bool BaseAudioContext::WouldTaintOrigin(const KURL& url) const {
+  // Data URLs don't taint the origin.
+  if (url.protocolIsData()) {
+    return false;
+  }
+
+  Document* document =  toDocument(getExecutionContext());
+  if (document && document->getSecurityOrigin()) {
+    // The origin is tainted if and only if we cannot read content from the URL.
+    return !document->getSecurityOrigin()->canRequest(url);
+  }
+
+  // Be conservative and assume it's tainted if it's not a data url and if we
+  // can't get the security origin of the document.
+  return true;
+}
+
 }  // namespace blink

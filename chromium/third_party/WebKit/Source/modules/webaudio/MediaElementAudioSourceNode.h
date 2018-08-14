@@ -54,7 +54,6 @@ class MediaElementAudioSourceHandler final : public AudioHandler {
   // Helpers for AudioSourceProviderClient implementation of
   // MediaElementAudioSourceNode.
   void setFormat(size_t numberOfChannels, float sampleRate);
-  void onCurrentSrcChanged(const KURL& currentSrc);
   void lock();
   void unlock();
 
@@ -63,11 +62,9 @@ class MediaElementAudioSourceHandler final : public AudioHandler {
   // As an audio source, we will never propagate silence.
   bool propagatesSilence() const override { return false; }
 
-  // Must be called only on the audio thread.
-  bool passesCORSAccessCheck();
-
-  // Must be called only on the main thread.
-  bool passesCurrentSrcCORSAccessCheck(const KURL& currentSrc);
+  // Returns true if the origin of the media element is tainted so that the
+  // audio should be muted when playing through WebAudio.
+  bool wouldTaintOrigin();
 
   // Print warning if CORS restrictions cause MediaElementAudioSource to output
   // zeroes.
@@ -84,21 +81,11 @@ class MediaElementAudioSourceHandler final : public AudioHandler {
 
   std::unique_ptr<MultiChannelResampler> m_multiChannelResampler;
 
-  // |m_passesCurrentSrcCORSAccessCheck| holds the value of
-  // context()->getSecurityOrigin() &&
-  // context()->getSecurityOrigin()->canRequest(mediaElement()->currentSrc()),
-  // updated in the ctor and onCurrentSrcChanged() on the main thread and used
-  // in passesCORSAccessCheck() on the audio thread, protected by
-  // |m_processLock|.
-  bool m_passesCurrentSrcCORSAccessCheck;
-
-  // Indicates if we need to print a CORS message if the current source has
-  // changed and we have no access to it. Must be protected by |m_processLock|.
-  bool m_maybePrintCORSMessage;
-
-  // The value of mediaElement()->currentSrc().string() in the ctor and
-  // onCurrentSrcChanged().  Protected by |m_processLock|.
-  String m_currentSrcString;
+  // True if the orgin would be tainted by the media element.  In this case,
+  // this node outputs silence.  This can happen if the media element source is
+  // a cross-origin source which we're not allowed to access due to CORS
+  // restrictions.
+  bool is_origin_tainted_;
 };
 
 class MediaElementAudioSourceNode final : public AudioSourceNode,
@@ -122,7 +109,6 @@ class MediaElementAudioSourceNode final : public AudioSourceNode,
 
   // AudioSourceProviderClient functions:
   void setFormat(size_t numberOfChannels, float sampleRate) override;
-  void onCurrentSrcChanged(const KURL& currentSrc) override;
   void lock() override;
   void unlock() override;
 

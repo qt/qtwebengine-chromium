@@ -47,10 +47,7 @@ MediaElementAudioSourceHandler::MediaElementAudioSourceHandler(
       m_mediaElement(mediaElement),
       m_sourceNumberOfChannels(0),
       m_sourceSampleRate(0),
-      m_passesCurrentSrcCORSAccessCheck(
-          passesCurrentSrcCORSAccessCheck(mediaElement.currentSrc())),
-      m_maybePrintCORSMessage(!m_passesCurrentSrcCORSAccessCheck),
-      m_currentSrcString(mediaElement.currentSrc().getString()) {
+      is_origin_tainted_(false) {
   DCHECK(isMainThread());
   // Default to stereo. This could change depending on what the media element
   // .src is set to.
@@ -76,11 +73,18 @@ void MediaElementAudioSourceHandler::dispose() {
 
 void MediaElementAudioSourceHandler::setFormat(size_t numberOfChannels,
                                                float sourceSampleRate) {
+  bool is_tainted = wouldTaintOrigin();
+
+  if (is_tainted) {
+    printCORSMessage(mediaElement()->currentSrc().getString());
+  }
+					       
   if (numberOfChannels != m_sourceNumberOfChannels ||
       sourceSampleRate != m_sourceSampleRate) {
     if (!numberOfChannels ||
         numberOfChannels > BaseAudioContext::maxNumberOfChannels() ||
         !AudioUtilities::isValidAudioBufferSampleRate(sourceSampleRate)) {
+
       // process() will generate silence for these uninitialized values.
       DLOG(ERROR) << "setFormat(" << numberOfChannels << ", "
                   << sourceSampleRate << ") - unhandled format change";
@@ -88,13 +92,16 @@ void MediaElementAudioSourceHandler::setFormat(size_t numberOfChannels,
       Locker<MediaElementAudioSourceHandler> locker(*this);
       m_sourceNumberOfChannels = 0;
       m_sourceSampleRate = 0;
+      is_origin_tainted_ = is_tainted;
       return;
     }
 
-    // Synchronize with process() to protect m_sourceNumberOfChannels,
-    // m_sourceSampleRate, and m_multiChannelResampler.
+    // Synchronize with process() to protect |source_number_of_channels_|,
+    // |source_sample_rate_|, |multi_channel_resampler_|. and
+    // |is_origin_tainted_|.
     Locker<MediaElementAudioSourceHandler> locker(*this);
 
+    is_origin_tainted_ = is_tainted;
     m_sourceNumberOfChannels = numberOfChannels;
     m_sourceSampleRate = sourceSampleRate;
 
@@ -117,36 +124,20 @@ void MediaElementAudioSourceHandler::setFormat(size_t numberOfChannels,
   }
 }
 
-bool MediaElementAudioSourceHandler::passesCORSAccessCheck() {
-  DCHECK(mediaElement());
+bool MediaElementAudioSourceHandler::wouldTaintOrigin() {
+  // If we're cross-origin and allowed access vie CORS, we're not tainted.
+  if (mediaElement()->webMediaPlayer()->didPassCORSAccessCheck()) {
+    return false;
+  }
 
-  return (mediaElement()->webMediaPlayer() &&
-          mediaElement()->webMediaPlayer()->didPassCORSAccessCheck()) ||
-         m_passesCurrentSrcCORSAccessCheck;
-}
+  // Handles the case where the url is a redirect to another site that we're not
+  // allowed to access.
+  if (!mediaElement()->hasSingleSecurityOrigin()) {
+    return true;
+  }
 
-void MediaElementAudioSourceHandler::onCurrentSrcChanged(
-    const KURL& currentSrc) {
-  DCHECK(isMainThread());
-
-  // Synchronize with process().
-  Locker<MediaElementAudioSourceHandler> locker(*this);
-
-  m_passesCurrentSrcCORSAccessCheck =
-      passesCurrentSrcCORSAccessCheck(currentSrc);
-
-  // Make a note if we need to print a console message and save the |curentSrc|
-  // for use in the message.  Need to wait until later to print the message in
-  // case HTMLMediaElement allows access.
-  m_maybePrintCORSMessage = !m_passesCurrentSrcCORSAccessCheck;
-  m_currentSrcString = currentSrc.getString();
-}
-
-bool MediaElementAudioSourceHandler::passesCurrentSrcCORSAccessCheck(
-    const KURL& currentSrc) {
-  DCHECK(isMainThread());
-  return context()->getSecurityOrigin() &&
-         context()->getSecurityOrigin()->canRequest(currentSrc);
+  // Test to see if the current media URL taint the origin of the audio context?
+  return context()->WouldTaintOrigin(mediaElement()->currentSrc());
 }
 
 void MediaElementAudioSourceHandler::printCORSMessage(const String& message) {
@@ -185,20 +176,7 @@ void MediaElementAudioSourceHandler::process(size_t numberOfFrames) {
       provider.provideInput(outputBus, numberOfFrames);
     }
     // Output silence if we don't have access to the element.
-    if (!passesCORSAccessCheck()) {
-      if (m_maybePrintCORSMessage) {
-        // Print a CORS message, but just once for each change in the current
-        // media element source, and only if we have a document to print to.
-        m_maybePrintCORSMessage = false;
-        if (context()->getExecutionContext()) {
-          context()->getExecutionContext()->postTask(
-              BLINK_FROM_HERE,
-              createCrossThreadTask(
-                  &MediaElementAudioSourceHandler::printCORSMessage,
-                  PassRefPtr<MediaElementAudioSourceHandler>(this),
-                  m_currentSrcString));
-        }
-      }
+    if (is_origin_tainted_) {
       outputBus->zero();
     }
   } else {
@@ -286,10 +264,6 @@ HTMLMediaElement* MediaElementAudioSourceNode::mediaElement() const {
 void MediaElementAudioSourceNode::setFormat(size_t numberOfChannels,
                                             float sampleRate) {
   mediaElementAudioSourceHandler().setFormat(numberOfChannels, sampleRate);
-}
-
-void MediaElementAudioSourceNode::onCurrentSrcChanged(const KURL& currentSrc) {
-  mediaElementAudioSourceHandler().onCurrentSrcChanged(currentSrc);
 }
 
 void MediaElementAudioSourceNode::lock() {
