@@ -2907,6 +2907,12 @@ uploading your change for review.  These are checked by presubmit scripts.
   <int value="194" label="WCI_NEW_WIDGET_PROCESS_MISMATCH"/>
   <int value="195" label="AUTH_INVALID_EFFECTIVE_DOMAIN"/>
   <int value="196" label="AUTH_INVALID_RELYING_PARTY"/>
+  <int value="197" label="RWH_COPY_REQUEST_ATTEMPT"/>
+  <int value="198" label="SYNC_COMPOSITOR_NO_FUTURE_FRAME"/>
+  <int value="199" label="SYNC_COMPOSITOR_NO_BEGIN_FRAME"/>
+  <int value="200" label="WEBUI_BAD_HOST_ACCESS"/>
+  <int value="201" label="RFMF_BLOB_URL_TOKEN_FOR_NON_BLOB_URL"/>
+  <int value="202" label="PERMISSION_SERVICE_BAD_PERMISSION_DESCRIPTOR"/>
 </enum>
 
 <enum name="BadMessageReasonExtensions">
