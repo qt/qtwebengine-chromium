@@ -5,6 +5,9 @@
 #include "content/browser/permissions/permission_service_impl.h"
 
 #include <stddef.h>
+
+#include <memory>
+#include <set>
 #include <utility>
 
 #include "base/bind.h"
@@ -189,8 +192,15 @@ void PermissionServiceImpl::RequestPermissions(
   }
 
   std::vector<PermissionType> types(permissions.size());
+  std::set<PermissionType> duplicates_check;
   for (size_t i = 0; i < types.size(); ++i) {
     if (!PermissionDescriptorToPermissionType(permissions[i], &types[i])) {
+      ReceivedBadMessage();
+      return;
+    }
+    // Each permission should appear at most once in the message.
+    bool inserted = duplicates_check.insert(types[i]).second;
+    if (!inserted) {
       ReceivedBadMessage();
       return;
     }
