@@ -8,9 +8,11 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "content/browser/bad_message.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/permission_manager.h"
 #include "content/public/browser/permission_type.h"
+#include "content/public/browser/render_frame_host.h"
 
 using blink::mojom::PermissionDescriptorPtr;
 using blink::mojom::PermissionName;
@@ -21,36 +23,49 @@ namespace content {
 
 namespace {
 
-PermissionType PermissionDescriptorToPermissionType(
-    const PermissionDescriptorPtr& descriptor) {
+
+bool PermissionDescriptorToPermissionType(
+    const PermissionDescriptorPtr& descriptor,
+    PermissionType* permission_type) {
   switch (descriptor->name) {
     case PermissionName::GEOLOCATION:
-      return PermissionType::GEOLOCATION;
+      *permission_type = PermissionType::GEOLOCATION;
+      return true;
     case PermissionName::NOTIFICATIONS:
-      return PermissionType::NOTIFICATIONS;
+      *permission_type = PermissionType::NOTIFICATIONS;
+      return true;
     case PermissionName::PUSH_NOTIFICATIONS:
-      return PermissionType::PUSH_MESSAGING;
+      *permission_type = PermissionType::PUSH_MESSAGING;
+      return true;
+
     case PermissionName::MIDI: {
       if (descriptor->extension && descriptor->extension->is_midi() &&
           descriptor->extension->get_midi()->sysex) {
-        return PermissionType::MIDI_SYSEX;
+        *permission_type = PermissionType::MIDI_SYSEX;
+        return true;
       }
-      return PermissionType::MIDI;
+      *permission_type = PermissionType::MIDI;
+      return true;
     }
     case PermissionName::PROTECTED_MEDIA_IDENTIFIER:
-      return PermissionType::PROTECTED_MEDIA_IDENTIFIER;
+      *permission_type = PermissionType::PROTECTED_MEDIA_IDENTIFIER;
+      return true;
     case PermissionName::DURABLE_STORAGE:
-      return PermissionType::DURABLE_STORAGE;
+      *permission_type = PermissionType::DURABLE_STORAGE;
+      return true;
     case PermissionName::AUDIO_CAPTURE:
-      return PermissionType::AUDIO_CAPTURE;
+      *permission_type = PermissionType::AUDIO_CAPTURE;
+      return true;
     case PermissionName::VIDEO_CAPTURE:
-      return PermissionType::VIDEO_CAPTURE;
+      *permission_type = PermissionType::VIDEO_CAPTURE;
+      return true;
     case PermissionName::BACKGROUND_SYNC:
-      return PermissionType::BACKGROUND_SYNC;
+      *permission_type = PermissionType::BACKGROUND_SYNC;
+      return true;
   }
 
   NOTREACHED();
-  return PermissionType::NUM;
+  return false;
 }
 
 // This function allows the usage of the the multiple request map
@@ -120,10 +135,16 @@ void PermissionServiceImpl::RequestPermission(
     return;
   }
 
+  PermissionType type;
+  if (!PermissionDescriptorToPermissionType(permission, &type)) {
+    ReceivedBadMessage();
+    return;
+  }
+
   int pending_request_id = pending_requests_.Add(new PendingRequest(
       base::Bind(&PermissionRequestResponseCallbackWrapper, callback), 1));
   int id = browser_context->GetPermissionManager()->RequestPermission(
-      PermissionDescriptorToPermissionType(permission),
+      type,
       context_->render_frame_host(), origin.GetURL(), user_gesture,
       base::Bind(&PermissionServiceImpl::OnRequestPermissionResponse,
                  weak_factory_.GetWeakPtr(), pending_request_id));
@@ -168,8 +189,12 @@ void PermissionServiceImpl::RequestPermissions(
   }
 
   std::vector<PermissionType> types(permissions.size());
-  for (size_t i = 0; i < types.size(); ++i)
-    types[i] = PermissionDescriptorToPermissionType(permissions[i]);
+  for (size_t i = 0; i < types.size(); ++i) {
+    if (!PermissionDescriptorToPermissionType(permissions[i], &types[i])) {
+      ReceivedBadMessage();
+      return;
+    }
+  }
 
   int pending_request_id = pending_requests_.Add(
       new PendingRequest(callback, permissions.size()));
@@ -225,10 +250,12 @@ void PermissionServiceImpl::RevokePermission(
     PermissionDescriptorPtr permission,
     const url::Origin& origin,
     const PermissionStatusCallback& callback) {
-  PermissionType permission_type =
-      PermissionDescriptorToPermissionType(permission);
-  PermissionStatus status =
-      GetPermissionStatusFromType(permission_type, origin);
+  PermissionType permission_type;
+  if (!PermissionDescriptorToPermissionType(permission, &permission_type)) {
+    ReceivedBadMessage();
+    return;
+  }
+  PermissionStatus status = GetPermissionStatusFromType(permission_type, origin);
 
   // Resetting the permission should only be possible if the permission is
   // already granted.
@@ -253,15 +280,24 @@ void PermissionServiceImpl::AddPermissionObserver(
     last_known_status = current_status;
   }
 
-  context_->CreateSubscription(PermissionDescriptorToPermissionType(permission),
-                               origin, std::move(observer));
+  PermissionType type;
+  if (!PermissionDescriptorToPermissionType(permission, &type)) {
+    ReceivedBadMessage();
+    return;
+  }
+
+  context_->CreateSubscription(type, origin, std::move(observer));
 }
 
 PermissionStatus PermissionServiceImpl::GetPermissionStatus(
     const PermissionDescriptorPtr& permission,
     const url::Origin& origin) {
-  return GetPermissionStatusFromType(
-      PermissionDescriptorToPermissionType(permission), origin);
+  PermissionType type;
+  if (!PermissionDescriptorToPermissionType(permission, &type)) {
+    ReceivedBadMessage();
+    return PermissionStatus::DENIED;
+  }
+  return GetPermissionStatusFromType(type, origin);
 }
 
 PermissionStatus PermissionServiceImpl::GetPermissionStatusFromType(
@@ -293,6 +329,18 @@ void PermissionServiceImpl::ResetPermissionStatus(PermissionType type,
   browser_context->GetPermissionManager()->ResetPermission(
       type, requesting_origin,
       embedding_origin.is_empty() ? requesting_origin : embedding_origin);
+}
+
+void PermissionServiceImpl::ReceivedBadMessage() {
+  if (context_->render_frame_host()) {
+    bad_message::ReceivedBadMessage(
+        context_->render_frame_host()->GetProcess(),
+        bad_message::PERMISSION_SERVICE_BAD_PERMISSION_DESCRIPTOR);
+  } else {
+    bad_message::ReceivedBadMessage(
+        context_->render_process_host(),
+        bad_message::PERMISSION_SERVICE_BAD_PERMISSION_DESCRIPTOR);
+  }
 }
 
 }  // namespace content

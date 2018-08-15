@@ -90,6 +90,7 @@ class PermissionServiceImpl : public blink::mojom::PermissionService {
       PermissionType type,
       const url::Origin& origin);
   void ResetPermissionStatus(PermissionType type, const url::Origin& origin);
+  void ReceivedBadMessage();
 
   RequestsMap pending_requests_;
   // context_ owns |this|.
