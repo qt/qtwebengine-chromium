@@ -96,7 +96,7 @@ void HeapObjectHeader::ZapMagic() {
 
 void HeapObjectHeader::Finalize(Address object, size_t object_size) {
   HeapAllocHooks::FreeHookIfEnabled(object);
-  const GCInfo* gc_info = ThreadHeap::GcInfo(GcInfoIndex());
+  const GCInfo* gc_info = GCInfoTable::Get().GCInfoFromIndex(GcInfoIndex());
   if (gc_info->HasFinalizer())
     gc_info->finalize_(object);
 
@@ -1698,7 +1698,8 @@ static bool IsUninitializedMemory(void* object_pointer, size_t object_size) {
 #endif
 
 static void MarkPointer(Visitor* visitor, HeapObjectHeader* header) {
-  const GCInfo* gc_info = ThreadHeap::GcInfo(header->GcInfoIndex());
+  const GCInfo* gc_info =
+      GCInfoTable::Get().GCInfoFromIndex(header->GcInfoIndex());
   if (gc_info->HasVTable() && !VTableInitialized(header->Payload())) {
     // We hit this branch when a GC strikes before GarbageCollected<>'s
     // constructor runs.

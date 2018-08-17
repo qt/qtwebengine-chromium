@@ -66,7 +66,7 @@ void ProcessHeap::Init() {
   total_allocated_object_size_ = 0;
   total_marked_object_size_ = 0;
 
-  GCInfoTable::Init();
+  GCInfoTable::CreateGlobalTable();
   CallbackStackMemoryPool::Instance().Initialize();
 }
 
@@ -711,7 +711,7 @@ void ThreadHeap::TakeSnapshot(SnapshotType type) {
 
   // 0 is used as index for freelist entries. Objects are indexed 1 to
   // gcInfoIndex.
-  ThreadState::GCSnapshotInfo info(GCInfoTable::GcInfoIndex() + 1);
+  ThreadState::GCSnapshotInfo info(GCInfoTable::Get().GcInfoIndex() + 1);
   String thread_dump_name =
       String::Format("blink_gc/thread_%lu",
                      static_cast<unsigned long>(thread_state_->ThreadId()));
@@ -761,8 +761,8 @@ void ThreadHeap::TakeSnapshot(SnapshotType type) {
   size_t total_dead_count = 0;
   size_t total_live_size = 0;
   size_t total_dead_size = 0;
-  for (size_t gc_info_index = 1; gc_info_index <= GCInfoTable::GcInfoIndex();
-       ++gc_info_index) {
+  for (size_t gc_info_index = 1;
+      gc_info_index <= GCInfoTable::Get().GcInfoIndex(); ++gc_info_index) {
     total_live_count += info.live_count[gc_info_index];
     total_dead_count += info.dead_count[gc_info_index];
     total_live_size += info.live_size[gc_info_index];
@@ -837,7 +837,7 @@ void ThreadHeap::WriteBarrierInternal(BasePage* page, const void* value) {
   // Mark and push trace callback.
   header->Mark();
   PushTraceCallback(header->Payload(),
-                    ThreadHeap::GcInfo(header->GcInfoIndex())->trace_);
+                    GCInfoTable::Get().GCInfoFromIndex(header->GcInfoIndex())->trace_);
 }
 
 ThreadHeap* ThreadHeap::main_thread_heap_ = nullptr;
