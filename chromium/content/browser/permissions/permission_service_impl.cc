@@ -12,6 +12,7 @@
 
 #include "base/bind.h"
 #include "base/memory/ptr_util.h"
+#include "content/browser/bad_message.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/permission_manager.h"
 #include "content/public/browser/permission_type.h"
@@ -259,7 +260,7 @@ void PermissionServiceImpl::AddPermissionObserver(
     return;
   }
 
-  context_->CreateSubscription(type, origin_, std::move(observer))
+  context_->CreateSubscription(type, origin_, std::move(observer));
 }
 
 PermissionStatus PermissionServiceImpl::GetPermissionStatus(
