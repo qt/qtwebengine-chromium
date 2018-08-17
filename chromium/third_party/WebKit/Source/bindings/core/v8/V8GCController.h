@@ -61,7 +61,12 @@ class CORE_EXPORT V8GCController {
   static void TraceDOMWrappers(v8::Isolate*, Visitor*);
   static bool HasPendingActivity(v8::Isolate*, ExecutionContext*);
 
+  // Called when Oilpan traces references from V8 wrappers to DOM wrappables.
   static v8::HeapProfiler::RetainerInfos GetRetainerInfos(v8::Isolate*);
+
+  // Called upon terminating a thread when Oilpan clears references from V8
+  // wrappers to DOM wrappables.
+  static void ClearDOMWrappers(v8::Isolate*);
 };
 
 }  // namespace blink
